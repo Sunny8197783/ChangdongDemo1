@@ -94,5 +94,14 @@ export const stubs = {
       getHudState: () => ({ element: 'fire', index: 0, elements: [], slots: [], charging: false, chargeFrac: 0 }) };
   },
   enemies() { return { update: noop, list: [], getObjective: () => ({ phase: 'camps', campsCleared: 0, campsTotal: 3, boss: null }) }; },
-  ui(game) { return { update: noop, toast: noop, init() { if (game.isTest) game.start(); else document.addEventListener('click', () => game.state === 'title' && game.start(), { once: true }); } }; },
+  sword() {
+    return { update: noop, getHudState: () => ({ element: 'fire', index: 0, elements: [], slots: [], charging: false, chargeFrac: 0 }) };
+  },
+  story(game) {
+    return { update: noop, begin: noop, debugSkip: noop, getObjective: () => null, getMarkers: () => [], hasPrompt: () => false };
+  },
+  cinematic(game) {
+    return { update: noop, active: false, timeScale: 1, playIntro: (done) => done?.(), play: (s, o) => o?.onEnd?.(), finisher: (o) => { o?.onImpact?.(); o?.onEnd?.(); } };
+  },
+  ui(game) { return { update: noop, toast: noop, init() { if (game.isTest) return; else document.addEventListener('click', () => game.state === 'title' && game.newGame(), { once: true }); } }; },
 };

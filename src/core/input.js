@@ -11,6 +11,14 @@ export class Input {
     this._dx = 0; this._dy = 0; this._wheel = 0;
     this.locked = false;
     this.sim = null;
+    this._locks = new Set();
+    const self = this;
+    this.raw = {
+      down: (c) => self.keys.has(c), pressed: (c) => self.keysPressed.has(c), released: (c) => self.keysReleased.has(c),
+      mouseDown: (b) => self.buttons.has(b), mousePressed: (b) => self.btnPressed.has(b), mouseReleased: (b) => self.btnReleased.has(b),
+      get mouseDX() { return self._rdx; }, get mouseDY() { return self._rdy; }, get wheel() { return self._rwheel; },
+    };
+    this._rdx = 0; this._rdy = 0; this._rwheel = 0;
 
     addEventListener('keydown', (e) => {
       if (['Tab', 'Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
@@ -66,17 +74,27 @@ export class Input {
   }
 
   update() {
-    this.mouseDX = this._dx; this.mouseDY = this._dy; this.wheel = this._wheel;
+    this._rdx = this._dx; this._rdy = this._dy; this._rwheel = this._wheel;
+    const L = this.gameLocked;
+    this.mouseDX = L ? 0 : this._dx; this.mouseDY = L ? 0 : this._dy; this.wheel = L ? 0 : this._wheel;
     this._dx = 0; this._dy = 0; this._wheel = 0;
   }
   endFrame() {
     this.keysPressed.clear(); this.keysReleased.clear();
     this.btnPressed.clear(); this.btnReleased.clear();
   }
-  down(c) { return this.keys.has(c); }
-  pressed(c) { return this.keysPressed.has(c); }
-  released(c) { return this.keysReleased.has(c); }
-  mouseDown(b) { return this.buttons.has(b); }
-  mousePressed(b) { return this.btnPressed.has(b); }
-  mouseReleased(b) { return this.btnReleased.has(b); }
+  // Gameplay queries. While gameplay input is locked (cutscenes, dialogue, menus) they all report nothing.
+  // UI / cinematic / story code that must still read keys uses input.raw.* instead.
+  down(c) { return !this.gameLocked && this.keys.has(c); }
+  pressed(c) { return !this.gameLocked && this.keysPressed.has(c); }
+  released(c) { return !this.gameLocked && this.keysReleased.has(c); }
+  mouseDown(b) { return !this.gameLocked && this.buttons.has(b); }
+  mousePressed(b) { return !this.gameLocked && this.btnPressed.has(b); }
+  mouseReleased(b) { return !this.gameLocked && this.btnReleased.has(b); }
+
+  /** Lock gameplay input under a reason key (e.g. 'cinematic', 'dialogue'); unlock with the same key. */
+  lock(reason = 'default') { this._locks.add(reason); }
+  unlock(reason = 'default') { this._locks.delete(reason); }
+  isLocked(reason) { return reason ? this._locks.has(reason) : this._locks.size > 0; }
+  get gameLocked() { return this._locks.size > 0; }
 }
