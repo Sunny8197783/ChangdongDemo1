@@ -40,8 +40,17 @@ export function toonMat(color = 0xffffff, opts = {}) {
     map: opts.map || null,
   });
   if (opts.flatShading) m.flatShading = true;
+  if (opts.rim !== false) { m.onBeforeCompile = toonRim; m.customProgramCacheKey = toonRimKey; }
   return m;
 }
+// Cheap fresnel rim for the bright BotW-style silhouette edge (keeps the surface's own hue).
+function toonRim(sh) {
+  sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+    { float rimK = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+      outgoingLight += rimK * 0.3 * diffuseColor.rgb * vec3(1.0, 0.96, 0.88); }
+    #include <opaque_fragment>`);
+}
+function toonRimKey() { return 'toonRim1'; }
 
 const outlineMats = new Map();
 function outlineMaterial(thickness, color) {

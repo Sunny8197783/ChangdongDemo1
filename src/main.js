@@ -119,13 +119,7 @@ function call(name, dt, realDt) {
     if (!call.errs[name]) { console.error(`[loop] ${name}.update:`, err); call.errs[name] = true; }
   }
 }
-function loop(now) {
-  requestAnimationFrame(loop);
-  let realDt = Math.min((now - last) / 1000, 0.1);
-  last = now;
-  fpsWin.push(realDt); if (fpsWin.length > 60) fpsWin.shift();
-  game.fps = fpsWin.length / fpsWin.reduce((a, b) => a + b, 0);
-
+function frame(realDt, render = true) {
   game.input.update();
   game.realTime += realDt;
 
@@ -145,8 +139,25 @@ function loop(now) {
   call('vfx', dt, realDt);
   call('ui', realDt, realDt);
   call('audio', realDt, realDt);
-  composer.render(realDt);
+  if (render) composer.render(realDt);
   game.input.endFrame();
 }
+function loop(now) {
+  requestAnimationFrame(loop);
+  let realDt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (game.frozen) return;
+  fpsWin.push(realDt); if (fpsWin.length > 60) fpsWin.shift();
+  game.fps = fpsWin.length / fpsWin.reduce((a, b) => a + b, 0);
+  frame(realDt);
+}
+// ---------- test hooks ----------
+// game.freeze(true) stops the rAF loop; game.step(n, dt) advances n frames deterministically without
+// rendering (last frame rendered when render=true). Used by tools/shot.js and tools/playtest.js.
+game.freeze = (on = true) => { game.frozen = on; if (!on) last = performance.now(); };
+game.step = (n = 1, dt = 1 / 60, render = false) => {
+  for (let i = 0; i < n; i++) frame(dt, render && i === n - 1);
+};
+game.renderNow = () => composer.render(0);
 
 boot();

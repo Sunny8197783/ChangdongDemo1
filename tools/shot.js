@@ -26,7 +26,8 @@ const server = http.createServer((req, res) => {
   if (ev) { try { const r = await p.evaluate(`(async()=>{${ev}})()`); console.log('EVAL:', JSON.stringify(r)); } catch (e) { console.log('EVAL ERROR:', e.message); } }
   const info = await p.evaluate(() => ({ stubbed: game.stubbed, fps: Math.round(game.fps || 0), state: game.state, entities: game.entities.length, calls: game.renderer.info.render.calls, tris: game.renderer.info.render.triangles }));
   console.log('INFO:', JSON.stringify(info));
-  await p.screenshot({ path: opt('--out', 'shot.png') });
+  await p.evaluate(() => { game.freeze(true); game.renderNow(); });
+  await p.screenshot({ path: opt('--out', 'shot.png'), timeout: 120000 });
   console.log(logs.length ? logs.slice(0, 40).join('\n') : 'no console errors');
   await b.close(); server.close();
 })();
