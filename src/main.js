@@ -11,12 +11,14 @@ import { createProgression } from './core/progression.js';
 
 const params = new URLSearchParams(location.search);
 const isTest = params.has('test');
-const BASE_PR = Math.min(devicePixelRatio, isTest ? 1 : 1.5);
+// Pixel-ratio cap depends on the quality preset (high-DPI laptops at 'medium' would otherwise render 2.25x pixels).
+const prCap = () => (isTest ? 1 : (game.settings?.values?.quality === 'high' ? 1.5 : 1.0));
+const basePR = () => Math.min(devicePixelRatio, prCap());
 
 // ---------- renderer / scene ----------
 const app = document.getElementById('app');
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(BASE_PR);
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, isTest ? 1 : 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -30,11 +32,26 @@ const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 12
 camera.position.set(0, 10, 30);
 scene.add(camera);
 
-const composer = new EffectComposer(renderer);
+// Canvas MSAA would only cover the final OutputPass quad; anti-alias the scene target itself instead (WebGL2).
+const composerRT = (samples) => new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples });
+const composer = new EffectComposer(renderer, composerRT(isTest ? 0 : 4));
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.6, 0.86);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
+
+// Every renderer.compile() (modules pre-warm their pools with it) must build the variant that is actually drawn:
+// with no target bound three r160 compiles the tone-mapped sRGB canvas variant, but the scene is drawn into the
+// composer's linear HalfFloat target. Bind that target for the compile when the caller didn't bind one.
+for (const fn of ['compile', 'compileAsync']) {
+  const orig = renderer[fn]?.bind(renderer);
+  if (!orig) continue;
+  renderer[fn] = (...a) => {
+    if (renderer.getRenderTarget()) return orig(...a);
+    renderer.setRenderTarget(composer.renderTarget1);
+    try { return orig(...a); } finally { renderer.setRenderTarget(null); }
+  };
+}
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -53,7 +70,12 @@ const game = {
   entities: [],
   isTest,
   _hitstop: 0, _slowScale: 1, _slowTime: 0,
-  hitstop(s) { this._hitstop = Math.max(this._hitstop, Math.min(s, 0.25)); },
+  _hitstopFrames: 0,
+  hitstop(s) {
+    this._hitstop = Math.max(this._hitstop, Math.min(s, 0.25));
+    // minimum frozen frame count so the freeze still reads on low-FPS machines
+    if (s > 0) this._hitstopFrames = Math.max(this._hitstopFrames, s >= 0.1 ? 4 : 3);
+  },
   slowmo(scale, s) { this._slowScale = scale; this._slowTime = Math.max(this._slowTime, s); },
   setState(s) {
     const prev = this.state; if (prev === s) return;
@@ -91,21 +113,35 @@ game.settings = createSettings(game);
 game.progression = createProgression(game);
 
 // ---------- settings owned by main: render scale, shadows, bloom ----------
+// Shadows: never toggle renderer.shadowMap.enabled (that changes every program key → full-scene recompile).
+// 'off' = shadow camera sees nothing, map rendered once (cleared to far depth) and frozen. 'low' quality =
+// shadow map refreshed every 2nd frame (the sun is static and the shadow camera is texel-snapped).
+const SHADOW_LAYERS_ALL = 1;   // layer 0 (default); hidden source parts live on other layers
+let shadowsOn = true, shadowEvery = 1, shadowFrame = 0;
+function applyShadowMode() {
+  const v = game.settings.values;
+  const on = !!v.shadows;
+  const sun = game.world?.sun;
+  shadowEvery = v.shadowQuality === 'low' || v.quality === 'low' ? 2 : 1;
+  renderer.shadowMap.autoUpdate = false;
+  shadowsOn = on;
+  if (sun) sun.shadow.camera.layers.mask = on ? SHADOW_LAYERS_ALL : 0;
+  renderer.shadowMap.needsUpdate = true;   // off: one clearing pass, then frozen
+}
 function applyRenderSettings() {
   const v = game.settings.values;
-  renderer.setPixelRatio(BASE_PR * (v.renderScale || 1));
-  composer.setPixelRatio?.(BASE_PR * (v.renderScale || 1));
+  const msaa = (v.quality === 'low' || isTest) ? 0 : 4;
+  if (composer.renderTarget1.samples !== msaa) { composer.renderTarget1.samples = msaa; composer.renderTarget2.samples = msaa; composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); }
+  renderer.setPixelRatio(basePR() * (v.renderScale || 1));
+  composer.setPixelRatio?.(basePR() * (v.renderScale || 1));
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
-  if (renderer.shadowMap.enabled !== !!v.shadows) {
-    renderer.shadowMap.enabled = !!v.shadows;
-    scene.traverse((o) => { if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach((m) => { m.needsUpdate = true; }); } });
-  }
+  applyShadowMode();
   bloomPass.enabled = !!v.bloom;
 }
 applyRenderSettings();
 game.events.on('settingsChanged', ({ key }) => {
-  if (['renderScale', 'shadows', 'bloom', '*'].includes(key)) applyRenderSettings();
+  if (['renderScale', 'shadows', 'shadowQuality', 'quality', 'bloom', '*'].includes(key)) applyRenderSettings();
 });
 
 // ---------- modules ----------
@@ -138,6 +174,8 @@ async function boot() {
     try { game[name].init?.(); } catch (err) { console.error(`[boot] ${name}.init failed:`, err); }
   }
   if (game.stubbed.length) console.warn('[boot] stubbed modules:', game.stubbed.join(', '));
+  applyShadowMode();
+  await prewarm();
 
   let skip = false;
   try { skip = sessionStorage.getItem('aw_skipTitle') === '1'; sessionStorage.removeItem('aw_skipTitle'); } catch (_) {}
@@ -156,6 +194,25 @@ async function boot() {
 
   game.ready = true;
   requestAnimationFrame(loop);
+}
+
+// Pre-warm every program at boot with the composer's HalfFloat target bound: three r160 picks the program
+// variant (tone mapping / output colour space) from the *current* render target, and every scene draw goes into
+// the composer target (linear, no tone mapping). Modules may expose prewarm() to add hidden instances of lazily
+// created materials first; they are removed again after compiling.
+async function prewarm() {
+  const tmp = [];
+  for (const name of ORDER) {
+    try { const objs = game[name]?.prewarm?.(); if (objs) for (const o of [].concat(objs)) if (o && !o.parent) { scene.add(o); tmp.push(o); } }
+    catch (err) { console.warn(`[boot] ${name}.prewarm`, err); }
+  }
+  // (compile visits every material, hidden or not; only lights must be visible to count, as in a real render;
+  //  the composer target is bound by the compile wrapper above)
+  try {
+    if (renderer.compileAsync && !isTest) await renderer.compileAsync(scene, camera);
+    else renderer.compile(scene, camera);
+  } catch (err) { console.warn('[boot] precompile', err); }
+  finally { for (const o of tmp) scene.remove(o); }
 }
 
 // ---------- loop ----------
@@ -177,7 +234,7 @@ function frame(realDt, render = true) {
   if (st === 'playing') {
     let scale = 1;
     if (game._slowTime > 0) { game._slowTime -= realDt; scale = game._slowScale; if (game._slowTime <= 0) game._slowScale = 1; }
-    if (game._hitstop > 0) { game._hitstop -= realDt; scale *= 0.03; }
+    if (game._hitstop > 0 || game._hitstopFrames > 0) { game._hitstop -= realDt; if (game._hitstopFrames > 0) game._hitstopFrames--; scale *= 0.03; }
     if (game.cinematic?.active) scale *= game.cinematic.timeScale ?? 1;
     dt = Math.min(realDt, 1 / 20) * scale;
     game.time += dt;
@@ -193,13 +250,19 @@ function frame(realDt, render = true) {
     dt = Math.min(realDt, 1 / 20);
     call('story', 0, realDt);
     call('cinematic', dt, realDt);
+  } else if (!game.cinematic?.active) {
+    // victory / title / dead: let the cinematic overlay & colour grade finish easing out (letterbox retract etc.)
+    call('cinematic', 0, realDt);
   }
   const ambientDt = st === 'dialogue' || st === 'cutscene' ? Math.min(realDt, 1 / 20) : dt;
   call('world', ambientDt, realDt);
   call('vfx', ambientDt, realDt);
   call('ui', realDt, realDt);
   call('audio', realDt, realDt);
-  if (render) composer.render(realDt);
+  if (render) {
+    if (shadowsOn && shadowEvery > 0 && (++shadowFrame % shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
+    composer.render(realDt);
+  }
   game.input.endFrame();
 }
 function loop(now) {

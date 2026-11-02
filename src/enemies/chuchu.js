@@ -20,6 +20,7 @@ export function createChuchu(ctx, pos, opts = {}) {
   e.variant = variant; e.element = el;
   e.friction = 9;
   const game = ctx.game;
+  let pending = null, pendingT = 0;
   const sy = new Spring(260, 9), wob = new Spring(160, 5), lean = new Spring(120, 10);
   sy.reset(1);
   let hopT = rand(0.5, 2), lungeCd = rand(1, 2), hit = false, touchCd = 0, aura = null, idleHopT = rand(1, 3);
@@ -46,12 +47,16 @@ export function createChuchu(ctx, pos, opts = {}) {
   }
 
   e.react = (result, hit, lx, lz) => {
-    sy.kick(-6 - Math.min(10, (result?.damage || 0) / 4));
+    // snap: displace the jelly immediately so the squash reads during hitstop, then it wobbles back
+    sy.x = Math.max(0.45, sy.x - 0.25 - Math.min(0.25, (result?.damage || 0) / 120)); sy.v = 0;
+    sy.kick(-2);
     wob.kick((Math.random() < 0.5 ? -1 : 1) * 8);
     lean.kick(lz * 6);
     if (e.state === 'lungePrep') e.setState('chase');
   };
   e.die = () => { aura?.stop?.(); };
+  e.interrupt = () => { crouch = 0; quiver = 0; pending = null; hit = true; };
+  e.onResume = () => { lungeCd = Math.max(lungeCd, 0.8); hopT = rand(0.3, 0.6); };
 
   e.think = (dt, sm) => {
     const pp = ctx.playerPos, p = e.object.position, d = e.distP;
@@ -112,9 +117,6 @@ export function createChuchu(ctx, pos, opts = {}) {
         }
         if (e.grounded && e.stateT > 0.1) { lungeCd = rand(1.8, 3); e.setState('chase'); hopT = rand(0.5, 0.9); }
         break;
-      case 'stagger':
-        if (e.stateT > e.staggerDur * 0.7) e.setState(e.aggro ? 'chase' : 'idle');
-        break;
       case 'return': {
         if (!e.grounded) break;
         hopT -= dt;
@@ -131,7 +133,6 @@ export function createChuchu(ctx, pos, opts = {}) {
   };
 
   // deferred idle hop (after brief crouch) without timers: store a pending action
-  let pending = null, pendingT = 0;
   function setTimeoutHop(fn) { pending = fn; pendingT = 0.22; }
 
   e.pose = (dt, sm, stunned) => {
@@ -140,7 +141,12 @@ export function createChuchu(ctx, pos, opts = {}) {
     let target = 1;
     if (!e.grounded) target = 1 + clamp(e.velocity.y * 0.05, -0.15, 0.3);
     else if (crouch > 0) target = 1 - crouch * 0.35;
-    if (e.state === 'dead') target = 0.6;
+    const rs = e.state;
+    if (rs === 'dead') target = 0.6;
+    else if (rs === 'knockdown') target = 0.5;               // splat
+    else if (rs === 'getup') target = 1.15;
+    else if (rs === 'flinch' || rs === 'stagger') target = 0.8;
+    else if (rs === 'recoil') target = 1.2;
     const y = Math.max(0.35, sy.update(dt, target));
     const w = wob.update(dt);
     const breathe = Math.sin(t * 3 + e.id.length) * 0.03;
@@ -156,7 +162,8 @@ export function createChuchu(ctx, pos, opts = {}) {
       lz = (-e.velocity.x * s + e.velocity.z * c) * 0.04;
     }
     rig.rotation.set(lean.update(dt, clamp(lz, -0.4, 0.4)), 0, w * 0.03);
-    if (stunned) { rig.rotation.z += Math.sin(t * 6) * 0.15; rig.rotation.x += Math.cos(t * 6) * 0.1; }
+    if (stunned || rs === 'parried') { rig.rotation.z += Math.sin(t * 6) * 0.15; rig.rotation.x += Math.cos(t * 6) * 0.1; }
+    if (rs === 'panic') { rig.rotation.z += Math.sin(t * 22) * 0.2; }
     model.core.position.y = 0.38 + Math.sin(t * 4) * 0.04;
     model.eyes.scale.y = (Math.sin(t * 1.3 + e.id.length) > 0.985) ? 0.15 : 1; // blink
     if (e.hurt > 0.5) model.eyes.scale.y = 0.3;

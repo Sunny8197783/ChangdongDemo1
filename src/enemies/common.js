@@ -45,6 +45,110 @@ export function mk(geo, mat, outline = 0.025, shadow = true) {
   return m;
 }
 
+// ------------------------------------------------------------------ rigid skinning (perf)
+// Every enemy model is ONE SkinnedMesh per material (+1 skinned outline) whose "bones" are the existing animation
+// pivot groups. Each part is rigidly bound (weight 1) to its pivot, geometry stays in pivot-local space, so
+// boneInverses/bindMatrix are identity and the pivots animate exactly like before. Geometry is cached per model
+// kind and shared by every instance; materials are shared (vfx.flashEntity clones on first hit).
+const _skinOutlineMats = new Map();
+export function skinOutlineMat(thickness, color = 0x1a1410) {
+  const key = thickness.toFixed(4) + ':' + color;
+  let m = _skinOutlineMats.get(key);
+  if (m) return m;
+  m = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { thickness: { value: thickness }, color: { value: new THREE.Color(color) } }]),
+    vertexShader: /* glsl */`
+      uniform float thickness;
+      #include <common>
+      #include <skinning_pars_vertex>
+      #include <fog_pars_vertex>
+      void main() {
+        #include <beginnormal_vertex>
+        vec3 transformed = position + normalize(objectNormal) * thickness;
+        #include <skinbase_vertex>
+        #include <skinning_vertex>
+        vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 color;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main() {
+        gl_FragColor = vec4(color, 1.0);
+        #include <fog_fragment>
+      }`,
+    side: THREE.BackSide, fog: true,
+  });
+  _skinOutlineMats.set(key, m);
+  return m;
+}
+let _vcBasic = null;
+/** Shared unlit vertex-colored material (glowing eyes / gems / cores; colors may exceed 1 for bloom). */
+export function vcBasicMat() { return _vcBasic || (_vcBasic = new THREE.MeshBasicMaterial({ vertexColors: true })); }
+
+const _skinGeoCache = new Map();
+const _ident = new THREE.Matrix4();
+function skinGeometry(key, parts) {
+  let g = _skinGeoCache.get(key);
+  if (g) return g;
+  const list = [];
+  for (const [bi, src] of parts) {
+    const c = src.clone();
+    for (const k of Object.keys(c.attributes)) if (!['position', 'normal', 'color'].includes(k)) c.deleteAttribute(k);
+    if (!c.attributes.color) {
+      const col = new Float32Array(c.attributes.position.count * 3).fill(1);
+      c.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+    const n = c.attributes.position.count;
+    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) { si[i * 4] = bi; sw[i * 4] = 1; }
+    c.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+    c.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+    list.push(c.index ? c.toNonIndexed() : c);
+  }
+  g = mergeGeometries(list);
+  g.computeBoundingSphere();
+  _skinGeoCache.set(key, g);
+  return g;
+}
+
+/**
+ * Build skinned meshes for a model.
+ * bones: array of Object3D pivots (all descendants of root). slots: [{name, mat, parts:[[boneIndex, geo]],
+ * outline (thickness|0), shadow, renderOrder}]. sphere: [cy, r] local bounding sphere (frustum culling).
+ * Returns {meshes:{name:SkinnedMesh}, outlines:[SkinnedMesh], skeleton}.
+ */
+export function buildSkin(kind, root, bones, slots, sphere = [1, 1.5]) {
+  const ident = bones.map(() => _ident);
+  const skeleton = new THREE.Skeleton(bones, ident.map((m) => m.clone()));
+  const bs = new THREE.Sphere(new THREE.Vector3(0, sphere[0], 0), sphere[1]);
+  const meshes = {}, outlines = [];
+  const mkSkinned = (geo, mat) => {
+    const m = new THREE.SkinnedMesh(geo, mat);
+    m.bindMode = THREE.AttachedBindMode;
+    m.bind(skeleton, _ident);
+    m.boundingSphere = bs;
+    m.raycast = () => {};
+    root.add(m);
+    return m;
+  };
+  for (const s of slots) {
+    const geo = skinGeometry(kind + ':' + s.name, s.parts);
+    const m = mkSkinned(geo, s.mat);
+    m.castShadow = s.shadow !== false;
+    if (s.renderOrder) m.renderOrder = s.renderOrder;
+    meshes[s.name] = m;
+    if (s.outline) {
+      const o = mkSkinned(geo, skinOutlineMat(s.outline));
+      o.name = 'outline'; o.castShadow = false; o.receiveShadow = false;
+      outlines.push(o);
+    }
+  }
+  return { meshes, outlines, skeleton };
+}
+
 /** Pivot group helper. */
 export function pivot(parent, x = 0, y = 0, z = 0) {
   const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g;
@@ -214,7 +318,7 @@ export function integrate(game, e, dt) {
   } else { e._stT = 0; e._stX = p.x; e._stZ = p.z; }
   p.x += (v.x + mv.x) * dt; p.z += (v.z + mv.z) * dt;
   p.y += v.y * dt;
-  const gh = w.getHeight(p.x, p.z);
+  const gh = w.getGroundHeight ? w.getGroundHeight(p.x, p.z) : w.getHeight(p.x, p.z);
   e.landed = 0;
   if (p.y <= gh || (e.grounded && v.y <= 0.01 && p.y - gh < 0.45)) {
     if (!e.grounded) e.landed = Math.max(0.01, -v.y);
@@ -230,7 +334,7 @@ export function integrate(game, e, dt) {
   }
   // keep out of deep water (unless flung)
   if (e.grounded && w.waterDepth && w.waterDepth(p.x, p.z) > 0.7 && w.waterDepth(px, pz) <= 0.7) {
-    p.x = px; p.z = pz; p.y = w.getHeight(px, pz);
+    p.x = px; p.z = pz; p.y = w.getGroundHeight ? w.getGroundHeight(px, pz) : w.getHeight(px, pz);
     e.blocked = true;
     e.waterBlockT = (e.waterBlockT || 0) + dt;
     // can't reach the player across water: give up instead of moonwalking at the shore

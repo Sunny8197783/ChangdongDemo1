@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { rand, clamp, pick, ELEMENT_COLORS } from '../core/utils.js';
 import { buildShaman } from './models.js';
-import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, walkCycle } from './base.js';
+import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, walkCycle, reactionPose } from './base.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
 const HIP = 0.66;
@@ -14,7 +14,7 @@ export function createShaman(ctx, pos, opts = {}) {
   model.lieY = 0.22;
   const e = makeEnemy(ctx, {
     kind: 'shaman', model, name: '보코 주술사', hp: 110, radius: 0.45, height: 1.5, mass: 0.8,
-    camp: opts.camp, facing: opts.facing, staggerDmg: 26, sight: 24,
+    camp: opts.camp, facing: opts.facing, staggerDmg: 26, sight: 24, chaseState: 'kite',
     resist: { [element]: 0.5 },
   }, pos);
   e.element = element;
@@ -32,13 +32,14 @@ export function createShaman(ctx, pos, opts = {}) {
       const r = rand(10, 14);
       const x = pp.x + Math.sin(away) * r, z = pp.z + Math.cos(away) * r;
       if (Math.hypot(x - e.home.x, z - e.home.z) > 26) continue;
+      if (ctx.village && Math.hypot(x - ctx.village.center.x, z - ctx.village.center.z) < ctx.village.radius + 3) continue;
       if (game.world.waterDepth?.(x, z) > 0.3) continue;
-      tpTo.set(x, game.world.getHeight(x, z), z);
+      tpTo.set(x, ctx.groundH(x, z), z);
       const tmp = tpTo.clone(); game.world.resolveCollision?.(tmp, 0.6);
       tpTo.copy(tmp);
       return true;
     }
-    tpTo.set(e.home.x + rand(-5, 5), 0, e.home.z + rand(-5, 5)); tpTo.y = game.world.getHeight(tpTo.x, tpTo.z);
+    tpTo.set(e.home.x + rand(-5, 5), 0, e.home.z + rand(-5, 5)); tpTo.y = ctx.groundH(tpTo.x, tpTo.z);
     return true;
   }
   function smoke(at) {
@@ -48,6 +49,8 @@ export function createShaman(ctx, pos, opts = {}) {
   }
 
   e.react = () => { if (e.state === 'cast') { stopCastFx(); } };
+  e.interrupt = () => { stopCastFx(); fired = true; };
+  e.onResume = () => { castCd = Math.max(castCd, 0.8); };
   e.die = () => { stopCastFx(); };
 
   e.think = (dt, sm) => {
@@ -101,9 +104,6 @@ export function createShaman(ctx, pos, opts = {}) {
         faceTo(e, pp.x, pp.z, 10, dt);
         if (e.stateT > 0.35) { castCd = Math.min(castCd, 0.6); e.setState('kite'); }
         break;
-      case 'stagger':
-        if (e.stateT > e.staggerDur) e.setState(e.aggro ? 'kite' : 'idle');
-        break;
       case 'return':
         faceTo(e, e.home.x, e.home.z, 5, dt);
         if (moveTo(e, e.home.x, e.home.z, 2.6 * sm, 0.8) < 1) { e.setState('idle'); }
@@ -115,12 +115,14 @@ export function createShaman(ctx, pos, opts = {}) {
   e.pose = (dt, sm, stunned) => {
     Object.assign(tgt, BASE);
     const t = game.time * 1 + e.id.length * 0.7;
-    let lambda = 10;
+    let lambda = 10, rl = 0;
     phase += dt * (1 + speed * 2.6);
     const st = e.state;
     let scale = 1, gemGlow = 1;
     if (st === 'dead') {
       tgt.aRz = -1.3; tgt.aLz = 1.3; tgt.headX = -0.5; tgt.lRx = -0.5; tgt.kR = 0.4; lambda = 8;
+    } else if ((rl = reactionPose(e, tgt, HIP, t, model.lieY))) {
+      lambda = rl;
     } else if (stunned) {
       tgt.headY = Math.sin(t * 5) * 0.4; tgt.headZ = Math.cos(t * 5) * 0.3; tgt.roll = Math.sin(t * 2.5) * 0.12; tgt.pitch = 0.2;
       tgt.aRx = -0.3; tgt.aLz = 0.4;
@@ -138,9 +140,6 @@ export function createShaman(ctx, pos, opts = {}) {
       scale = Math.max(0.01, 1 - e.stateT / 0.32); tgt.aRx = -2.5; tgt.aLx = -2.5; tgt.aLz = 0.8; tgt.aRz = -0.8;
     } else if (st === 'appear') {
       scale = Math.min(1, 0.05 + e.stateT / 0.3); tgt.aRx = -1.5; tgt.aLz = 1.2;
-    } else if (st === 'stagger') {
-      const k = Math.sin(clamp(e.stateT / e.staggerDur, 0, 1) * Math.PI);
-      tgt.pitch = -0.5 * k; tgt.headX = -0.6 * k; tgt.aRz = -1.0 * k; tgt.aLz = 1.1 * k; tgt.aLx = -1 * k; tgt.hipZ = -0.12 * k; lambda = 16;
     } else if (st === 'alert') {
       tgt.aLx = -1.6; tgt.aLz = 0.5; tgt.aRx = -1.2; tgt.headX = -0.2; tgt.pitch = -0.1; lambda = 14;
     } else {
@@ -158,7 +157,7 @@ export function createShaman(ctx, pos, opts = {}) {
     model.gem.rotation.y += dt * 2.5;
     model.gem.position.y = 1.55 + Math.sin(t * 3) * 0.03;
     const gs = 0.7 * gemGlow; model.halo.scale.set(gs, gs, 1);
-    model.gemMat.emissiveIntensity = 1.2 + gemGlow * 0.6;
+    model.gem.scale.setScalar(1 + (gemGlow - 1) * 0.25);
   };
   return e;
 }

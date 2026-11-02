@@ -162,7 +162,25 @@ export class Cape {
     }
     this.posAttr.array.set(cur);
     this.posAttr.needsUpdate = true;
-    this.geo.computeVertexNormals();
+    this._gridNormals();
+  }
+  /** Analytic grid normals (central differences) into the preallocated normal array — no allocation. */
+  _gridNormals() {
+    const P = this.cur, N = this.geo.attributes.normal.array, cols = this.cols, rows = this.rows;
+    for (let r = 0; r < rows; r++) {
+      const r0 = r > 0 ? r - 1 : r, r1 = r < rows - 1 ? r + 1 : r;
+      for (let c = 0; c < cols; c++) {
+        const c0 = c > 0 ? c - 1 : c, c1 = c < cols - 1 ? c + 1 : c;
+        const a = (r0 * cols + c) * 3, b = (r1 * cols + c) * 3, e = (r * cols + c0) * 3, f = (r * cols + c1) * 3;
+        const vx = P[b] - P[a], vy = P[b + 1] - P[a + 1], vz = P[b + 2] - P[a + 2];   // down the rows
+        const ux = P[f] - P[e], uy = P[f + 1] - P[e + 1], uz = P[f + 2] - P[e + 2];   // across the columns
+        let nx = vy * uz - vz * uy, ny = vz * ux - vx * uz, nz = vx * uy - vy * ux;
+        const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        const i = (r * cols + c) * 3;
+        N[i] = nx / l; N[i + 1] = ny / l; N[i + 2] = nz / l;
+      }
+    }
+    this.geo.attributes.normal.needsUpdate = true;
   }
   _link(a, b, rest, pinA) {
     const { cur } = this; a *= 3; b *= 3;

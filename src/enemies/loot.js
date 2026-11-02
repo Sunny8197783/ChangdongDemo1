@@ -63,7 +63,7 @@ export class Loot {
     if (!o.seek) {
       o.v.y -= 16 * dt;
       p.addScaledVector(o.v, dt);
-      const gh = world.getHeight(p.x, p.z) + 0.55 + Math.sin(o.t * 3 + o.ph) * 0.12;
+      const gh = (world.getGroundHeight ? world.getGroundHeight(p.x, p.z) : world.getHeight(p.x, p.z)) + 0.55 + Math.sin(o.t * 3 + o.ph) * 0.12;
       if (p.y < gh) { p.y = gh; if (o.v.y < 0) o.v.y *= -0.35; o.v.x *= 0.6; o.v.z *= 0.6; }
       if (pAlive && o.t > 0.55) {
         const d = p.distanceTo(pc);

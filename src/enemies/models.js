@@ -1,7 +1,7 @@
 // Procedural enemy models. Every model faces +Z in local space; object root sits at the feet.
 import * as THREE from 'three';
 import { toonMat, ELEMENT_COLORS } from '../core/utils.js';
-import { P, mergeParts, vcMat, vcFlatMat, mk, pivot, rockGeo, glowSpriteMat } from './common.js';
+import { P, mergeParts, vcMat, vcFlatMat, vcBasicMat, pivot, rockGeo, glowSpriteMat, buildSkin } from './common.js';
 
 const S = (r, w = 14, h = 10) => new THREE.SphereGeometry(r, w, h);
 const C = (rt, rb, h, n = 10) => new THREE.CylinderGeometry(rt, rb, h, n);
@@ -87,36 +87,33 @@ function bokoGeos() {
   }));
 }
 
-/** Humanoid rig shared by bokoblin and shaman. */
+/** Humanoid rig shared by bokoblin and shaman: pivots (bones) + rigid part list per bone. */
 function humanoid(g, o) {
-  const mat = vcMat();
   const root = new THREE.Group();
   const rig = pivot(root, 0, o.hipY, 0);
-  const pelvis = mk(g.pelvis, mat, o.ol); rig.add(pelvis);
   const spine = pivot(rig, 0, 0.08, 0);
-  const torso = mk(g.torso, mat, o.ol); spine.add(torso);
   const neck = pivot(spine, 0, o.neckY, 0.02);
-  const head = mk(g.head, mat, o.ol); neck.add(head);
   const sh = o.shoulderX;
   const armR = pivot(spine, -sh, o.shoulderY, 0), armL = pivot(spine, sh, o.shoulderY, 0);
-  armR.add(mk(g.upperArm, mat, o.ol)); armL.add(mk(g.upperArm, mat, o.ol));
   const foreR = pivot(armR, 0, -o.upperLen, 0), foreL = pivot(armL, 0, -o.upperLen, 0);
-  foreR.add(mk(g.foreArm, mat, o.ol)); foreL.add(mk(g.foreArm, mat, o.ol));
   const handR = pivot(foreR, 0, -o.foreLen, 0.03), handL = pivot(foreL, 0, -o.foreLen, 0.03);
   const legR = pivot(rig, -o.hipX, -0.06, 0), legL = pivot(rig, o.hipX, -0.06, 0);
-  legR.add(mk(g.thigh, mat, o.ol)); legL.add(mk(g.thigh, mat, o.ol));
   const kneeR = pivot(legR, 0, -o.thighLen, 0), kneeL = pivot(legL, 0, -o.thighLen, 0);
-  kneeR.add(mk(g.shin, mat, o.ol)); kneeL.add(mk(g.shin, mat, o.ol));
-  return { root, rig, pelvis, spine, torso, neck, head, armR, armL, foreR, foreL, handR, handL, legR, legL, kneeR, kneeL };
+  const bones = [rig, spine, neck, armR, armL, foreR, foreL, handR, handL, legR, legL, kneeR, kneeL];
+  const parts = [[0, g.pelvis], [1, g.torso], [2, g.head], [3, g.upperArm], [4, g.upperArm], [5, g.foreArm], [6, g.foreArm],
+    [9, g.thigh], [10, g.thigh], [11, g.shin], [12, g.shin]];
+  return { root, rig, spine, neck, armR, armL, foreR, foreL, handR, handL, legR, legL, kneeR, kneeL, bones, parts };
 }
 
 export function buildBokoblin() {
   const g = bokoGeos();
-  const m = humanoid(g, { hipY: 0.74, neckY: 0.66, shoulderX: 0.46, shoulderY: 0.48, upperLen: 0.36, foreLen: 0.3, hipX: 0.2, thighLen: 0.32, ol: 0.022 });
-  const club = mk(g.club, vcMat(), 0.022);
+  const m = humanoid(g, { hipY: 0.74, neckY: 0.66, shoulderX: 0.46, shoulderY: 0.48, upperLen: 0.36, foreLen: 0.3, hipX: 0.2, thighLen: 0.32 });
+  const club = pivot(m.handR);
   club.rotation.x = -0.55; // tilt toward the forearm direction
-  m.handR.add(club);
+  m.bones.push(club); m.parts.push([m.bones.length - 1, g.club]);
+  const sk = buildSkin('boko', m.root, m.bones, [{ name: 'body', mat: vcMat(), parts: m.parts, outline: 0.022 }], [1.0, 1.6]);
   m.weapon = club;
+  m.skin = sk; m.outlines = sk.outlines;
   m.headTop = 1.75;
   return m;
 }
@@ -184,20 +181,34 @@ function shamanGeos() {
   });
 }
 
+const _shamanHalo = {};
 export function buildShaman(element) {
   const g = shamanGeos();
-  const m = humanoid(g, { hipY: 0.66, neckY: 0.56, shoulderX: 0.34, shoulderY: 0.4, upperLen: 0.3, foreLen: 0.28, hipX: 0.14, thighLen: 0.22, ol: 0.02 });
-  const col = ELEMENT_COLORS[element];
-  const eyeMat = toonMat(0xffe27a, { emissive: 0xffc84a, emissiveIntensity: 2.2 });
-  const eyes = new THREE.Mesh(g.eyes, eyeMat); m.head.add(eyes);
-  const staff = mk(g.staff, vcMat(), 0.018);
-  staff.position.set(0, 0, 0.02); staff.rotation.x = 0.25;
-  m.handR.add(staff);
-  const gemMat = toonMat(col, { emissive: col, emissiveIntensity: 1.6 });
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), gemMat);
-  gem.position.set(0, 1.55, 0); staff.add(gem);
-  const halo = new THREE.Sprite(glowSpriteMat(col, 0.8)); halo.scale.setScalar(0.7); gem.add(halo);
-  m.staff = staff; m.gem = gem; m.gemMat = gemMat; m.halo = halo;
+  const m = humanoid(g, { hipY: 0.66, neckY: 0.56, shoulderX: 0.34, shoulderY: 0.4, upperLen: 0.3, foreLen: 0.28, hipX: 0.14, thighLen: 0.22 });
+  const col = ELEMENT_COLORS[element] ?? 0xff6a1f;
+  const staff = pivot(m.handR, 0, 0, 0.02); staff.rotation.x = 0.25;
+  const gem = pivot(staff, 0, 1.55, 0);
+  m.bones.push(staff, gem);
+  const iStaff = m.bones.length - 2, iGem = m.bones.length - 1;
+  m.parts.push([iStaff, g.staff]);
+  // unlit glow slot: eyes (on the neck bone) + element gem; colors > 1 feed the bloom
+  const glow = once('shamanGlow:' + element, () => {
+    const eyes = mergeParts([
+      P(S(0.05, 8, 6), 0xffe27a, [0.1, 0.16, 0.24], [0, 0, 0], [1.2, 0.7, 0.6]),
+      P(S(0.05, 8, 6), 0xffe27a, [-0.1, 0.16, 0.24], [0, 0, 0], [1.2, 0.7, 0.6]),
+    ]);
+    const gemG = mergeParts([P(new THREE.OctahedronGeometry(0.1, 0), col)]);
+    for (const [geo, k] of [[eyes, 2.2], [gemG, 1.9]]) { const c = geo.attributes.color.array; for (let i = 0; i < c.length; i++) c[i] *= k; }
+    return { eyes, gem: gemG };
+  });
+  const sk = buildSkin('shaman:' + element, m.root, m.bones, [
+    { name: 'body', mat: vcMat(), parts: m.parts, outline: 0.02 },
+    { name: 'glow', mat: vcBasicMat(), parts: [[2, glow.eyes], [iGem, glow.gem]], shadow: false },
+  ], [0.9, 1.5]);
+  const halo = new THREE.Sprite(_shamanHalo[element] || (_shamanHalo[element] = glowSpriteMat(col, 0.8)));
+  halo.scale.setScalar(0.7); gem.add(halo);
+  m.staff = staff; m.gem = gem; m.halo = halo;
+  m.skin = sk; m.outlines = sk.outlines;
   m.headTop = 1.55;
   return m;
 }
@@ -211,7 +222,7 @@ export const CHU_VARIANTS = {
 };
 const chuMats = {};
 export function buildChuchu(variant) {
-  const V = CHU_VARIANTS[variant];
+  const V = CHU_VARIANTS[variant] || CHU_VARIANTS.normal;
   const geos = once('chu', () => {
     const body = new THREE.SphereGeometry(0.62, 26, 18);
     const p = body.attributes.position;
@@ -223,85 +234,100 @@ export function buildChuchu(variant) {
       p.setXYZ(i, p.getX(i) * bulge, y + 0.36, p.getZ(i) * bulge);
     }
     body.computeVertexNormals();
-    return {
-      body,
-      core: new THREE.SphereGeometry(0.26, 14, 10),
-      eyes: mergeParts([
-        P(S(0.11, 12, 10), 0x15151c, [0.21, 0.5, 0.6], [0, 0.3, 0], [0.9, 1.25, 0.5]),
-        P(S(0.11, 12, 10), 0x15151c, [-0.21, 0.5, 0.6], [0, -0.3, 0], [0.9, 1.25, 0.5]),
-        P(S(0.035, 6, 5), 0xffffff, [0.24, 0.57, 0.65]),
-        P(S(0.035, 6, 5), 0xffffff, [-0.18, 0.57, 0.66]),
-        P(S(0.08, 8, 6), 0x15151c, [0, 0.3, 0.66], [0, 0, 0], [1.3, 0.45, 0.4]),
-      ]),
-    };
+    // eyes live on a bone at y=0.5 so the blink squashes them in place
+    const eyes = mergeParts([
+      P(S(0.11, 12, 10), 0x15151c, [0.21, 0.0, 0.6], [0, 0.3, 0], [0.9, 1.25, 0.5]),
+      P(S(0.11, 12, 10), 0x15151c, [-0.21, 0.0, 0.6], [0, -0.3, 0], [0.9, 1.25, 0.5]),
+      P(S(0.035, 6, 5), 0xffffff, [0.24, 0.07, 0.65]),
+      P(S(0.035, 6, 5), 0xffffff, [-0.18, 0.07, 0.66]),
+      P(S(0.08, 8, 6), 0x15151c, [0, -0.2, 0.66], [0, 0, 0], [1.3, 0.45, 0.4]),
+    ]);
+    const shine = mergeParts([P(S(0.09, 8, 6), 0xffffff, [-0.28, 0.72, 0.32], [0, 0, 0.6], [1.4, 0.7, 0.5])]);
+    return { body, eyes, shine };
+  });
+  const coreGeo = once('chuCore:' + variant, () => {
+    const g = mergeParts([P(S(0.26, 14, 10), V.core)]);
+    const k = V.element ? 1.5 : 0.9, c = g.attributes.color.array;
+    for (let i = 0; i < c.length; i++) c[i] *= k;
+    return g;
   });
   const mats = chuMats[variant] || (chuMats[variant] = {
     body: toonMat(V.body, { transparent: true, opacity: 0.86, emissive: V.element ? V.body : 0x000000, emissiveIntensity: V.element ? 0.25 : 0 }),
-    core: toonMat(V.core, { emissive: V.core, emissiveIntensity: V.element ? 1.4 : 0.35 }),
-    shine: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 }),
   });
   const root = new THREE.Group();
   const rig = pivot(root, 0, 0, 0);
-  const body = mk(geos.body, mats.body, 0.028); body.renderOrder = 2; rig.add(body);
-  const core = new THREE.Mesh(geos.core, mats.core); core.position.set(0, 0.38, -0.05); rig.add(core);
-  const eyes = new THREE.Mesh(geos.eyes, vcMat()); rig.add(eyes);
-  const shine = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), mats.shine); shine.scale.set(1.4, 0.7, 0.5);
-  shine.position.set(-0.28, 0.72, 0.32); shine.rotation.z = 0.6; rig.add(shine);
-  return { root, rig, body, core, eyes, headTop: 1.2, variant: V };
+  const core = pivot(rig, 0, 0.38, -0.05);
+  const eyes = pivot(rig, 0, 0.5, 0);
+  const sk = buildSkin('chu:' + variant, root, [rig, core, eyes], [
+    { name: 'inner', mat: vcBasicMat(), parts: [[1, coreGeo], [2, geos.eyes], [0, geos.shine]], shadow: false },
+    { name: 'body', mat: mats.body, parts: [[0, geos.body]], outline: 0.028, renderOrder: 2 },
+  ], [0.5, 1.0]);
+  return { root, rig, core, eyes, headTop: 1.2, variant: V, skin: sk, outlines: sk.outlines };
 }
 
 // ======================================================================= Stone Golem
+/** Transformed clone of a geometry (static sub-part baked into its parent bone). */
+function at(geo, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) {
+  const g = geo.clone();
+  const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
+  g.applyMatrix4(m);
+  return g;
+}
 export function buildGolem() {
-  const mat = vcFlatMat();
   const root = new THREE.Group();
   const rig = pivot(root, 0, 2.55, 0);
   const crystalMat = toonMat(0x6fdcff, { emissive: 0x2fb8ff, emissiveIntensity: 2.2 });
+  const eyeMat = toonMat(0xaef4ff, { emissive: 0x6fe0ff, emissiveIntensity: 3 });
   const glowCol = 0x5fd0ff;
-  const glows = [];
-  const R = (r, seed, sq, moss) => mk(rockGeo(r, seed, sq, 1, moss === false ? null : 0x7fae4e), mat, 0.05);
-  const joint = (parent, x, y, z, s = 0.22) => {
-    const c = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), crystalMat);
-    c.position.set(x, y, z); parent.add(c);
-    const h = new THREE.Sprite(glowSpriteMat(glowCol, 0.55)); h.scale.setScalar(s * 6); c.add(h); glows.push(h);
-    return c;
+  const glows = [], floaters = [], bones = [rig], rocks = [], crystals = [], rockParts = [];
+  const bi = (b) => { let i = bones.indexOf(b); if (i < 0) { bones.push(b); i = bones.length - 1; } return i; };
+  // every rock is its own bone so it can float/bob independently
+  const R = (parent, r, seed, sq, moss, x = 0, y = 0, z = 0) => {
+    const b = pivot(parent, x, y, z);
+    const geo = rockGeo(r, seed, sq, 1, moss === false ? null : 0x7fae4e);
+    rocks.push([bi(b), geo]); rockParts.push({ geo, bone: b });
+    return b;
   };
-  const floaters = [];
-  const fl = (mesh, amp = 0.06) => { floaters.push({ mesh, base: mesh.position.clone(), ph: Math.random() * 6.28, amp }); return mesh; };
+  const icoGeo = new THREE.IcosahedronGeometry(1, 0);
+  const joint = (parent, x, y, z, s = 0.22) => {
+    crystals.push([bi(parent), at(icoGeo, x, y, z, 0, 0, 0, s, s, s)]);
+    const h = new THREE.Sprite(glowSpriteMat(glowCol, 0.55)); h.scale.setScalar(s * 6); h.position.set(x, y, z); parent.add(h); glows.push(h);
+  };
+  const fl = (b, amp = 0.06) => { floaters.push({ mesh: b, base: b.position.clone(), ph: Math.random() * 6.28, amp }); return b; };
 
-  const pelvis = fl(R(0.95, 2, [1.2, 0.7, 0.95])); rig.add(pelvis);
+  fl(R(rig, 0.95, 2, [1.2, 0.7, 0.95]));
   const spine = pivot(rig, 0, 0.75, 0);
-  const chest = R(1.55, 5, [1.25, 1.0, 0.92]); chest.position.set(0, 1.15, -0.05); spine.add(chest);
-  const back1 = fl(R(0.7, 9, [1, 0.8, 0.7])); back1.position.set(0.7, 2.0, -0.95); spine.add(back1);
-  const back2 = fl(R(0.6, 11, [1, 0.9, 0.7])); back2.position.set(-0.8, 1.8, -1.0); spine.add(back2);
+  R(spine, 1.55, 5, [1.25, 1.0, 0.92], true, 0, 1.15, -0.05);
+  fl(R(spine, 0.7, 9, [1, 0.8, 0.7], true, 0.7, 2.0, -0.95));
+  fl(R(spine, 0.6, 11, [1, 0.9, 0.7], true, -0.8, 1.8, -1.0));
   // crystal core (weak point)
   const coreGroup = pivot(spine, 0, 1.1, 1.2);
+  const core = pivot(coreGroup);
   const coreGeo = new THREE.OctahedronGeometry(0.5, 0); coreGeo.scale(0.85, 1.25, 0.6);
-  const core = mk(coreGeo, crystalMat, 0.03, false); coreGroup.add(core);
+  crystals.push([bi(core), coreGeo]);
   const coreGlow = new THREE.Sprite(glowSpriteMat(glowCol, 0.95)); coreGlow.scale.setScalar(3.2); coreGroup.add(coreGlow); glows.push(coreGlow);
-  const coreRing = mk(new THREE.TorusGeometry(0.72, 0.09, 6, 18), toonMat(0x6d675c, { flatShading: true }), 0.03); coreRing.scale.set(1, 1.35, 1); coreGroup.add(coreRing);
+  const ring = mergeParts([P(new THREE.TorusGeometry(0.72, 0.09, 6, 18), 0x6d675c, [0, 0, 0], [0, 0, 0], [1, 1.35, 1])]);
+  rocks.push([bi(coreGroup), ring]); rockParts.push({ geo: ring, bone: coreGroup });
   // back crystals
   for (let i = 0; i < 4; i++) {
-    const c = new THREE.Mesh(new THREE.ConeGeometry(0.16 + i * 0.03, 0.9 + i * 0.15, 5), crystalMat);
-    c.position.set(-0.6 + i * 0.4, 2.3 + Math.sin(i) * 0.2, -0.7); c.rotation.set(-0.6, 0, (i - 1.5) * 0.35); spine.add(c);
+    crystals.push([bi(spine), at(new THREE.ConeGeometry(0.16 + i * 0.03, 0.9 + i * 0.15, 5), -0.6 + i * 0.4, 2.3 + Math.sin(i) * 0.2, -0.7, -0.6, 0, (i - 1.5) * 0.35)]);
   }
   // head
   const neck = pivot(spine, 0, 2.35, 0.25);
   joint(neck, 0, -0.15, 0, 0.18);
-  const head = fl(R(0.62, 17, [1.25, 0.8, 1.0]), 0.04); head.position.set(0, 0.45, 0.1); neck.add(head);
-  const eyeMat = toonMat(0xaef4ff, { emissive: 0x6fe0ff, emissiveIntensity: 3 });
-  const eyes = new THREE.Mesh(mergeParts([P(B(0.26, 0.08, 0.1), 0xffffff, [0.25, 0.48, 0.66], [0, 0, -0.2]), P(B(0.26, 0.08, 0.1), 0xffffff, [-0.25, 0.48, 0.66], [0, 0, 0.2])]), eyeMat);
-  neck.add(eyes);
-  const brow = R(0.35, 21, [2.2, 0.5, 0.8]); brow.position.set(0, 0.72, 0.45); neck.add(brow);
+  fl(R(neck, 0.62, 17, [1.25, 0.8, 1.0], true, 0, 0.45, 0.1), 0.04);
+  const eyesGeo = mergeParts([P(B(0.26, 0.08, 0.1), 0xffffff, [0.25, 0.48, 0.66], [0, 0, -0.2]), P(B(0.26, 0.08, 0.1), 0xffffff, [-0.25, 0.48, 0.66], [0, 0, 0.2])]);
+  R(neck, 0.35, 21, [2.2, 0.5, 0.8], true, 0, 0.72, 0.45);
   // arms
   const arm = (side) => {
     const sh = pivot(spine, side * 2.05, 1.7, 0);
-    const pad = fl(R(0.78, 30 + side, [1.1, 0.85, 1])); pad.position.set(side * 0.15, 0.25, 0); sh.add(pad);
+    fl(R(sh, 0.78, 30 + side, [1.1, 0.85, 1], true, side * 0.15, 0.25, 0));
     joint(sh, 0, -0.55, 0, 0.2);
-    const upper = fl(R(0.55, 33 + side, [0.9, 1.3, 0.9])); upper.position.set(0, -1.05, 0); sh.add(upper);
+    fl(R(sh, 0.55, 33 + side, [0.9, 1.3, 0.9], true, 0, -1.05, 0));
     const elbow = pivot(sh, 0, -1.75, 0);
     joint(elbow, 0, 0.05, 0, 0.2);
-    const fore = fl(R(0.58, 37 + side, [0.95, 1.25, 0.95])); fore.position.set(0, -0.6, 0); elbow.add(fore);
-    const fist = fl(R(0.82, 41 + side, [1.05, 0.95, 1.1], false)); fist.position.set(0, -1.5, 0.1); elbow.add(fist);
+    fl(R(elbow, 0.58, 37 + side, [0.95, 1.25, 0.95], true, 0, -0.6, 0));
+    const fist = fl(R(elbow, 0.82, 41 + side, [1.05, 0.95, 1.1], false, 0, -1.5, 0.1));
     joint(elbow, 0, -1.1, 0.05, 0.17);
     return { sh, elbow, fist };
   };
@@ -309,17 +335,23 @@ export function buildGolem() {
   // legs
   const leg = (side) => {
     const hip = pivot(rig, side * 0.85, -0.3, 0);
-    const thigh = fl(R(0.6, 50 + side, [0.95, 1.1, 0.95])); thigh.position.set(0, -0.55, 0); hip.add(thigh);
+    fl(R(hip, 0.6, 50 + side, [0.95, 1.1, 0.95], true, 0, -0.55, 0));
     const knee = pivot(hip, 0, -1.2, 0);
     joint(knee, 0, 0.05, 0.05, 0.17);
-    const shin = fl(R(0.55, 55 + side, [0.95, 1.05, 0.95])); shin.position.set(0, -0.45, 0); knee.add(shin);
-    const foot = R(0.6, 60 + side, [1.15, 0.5, 1.45], false); foot.position.set(0, -0.98, 0.18); knee.add(foot);
+    fl(R(knee, 0.55, 55 + side, [0.95, 1.05, 0.95], true, 0, -0.45, 0));
+    R(knee, 0.6, 60 + side, [1.15, 0.5, 1.45], false, 0, -0.98, 0.18);
     return { hip, knee };
   };
   const lR = leg(-1), lL = leg(1);
+  const sk = buildSkin('golem', root, bones, [
+    { name: 'rock', mat: vcFlatMat(), parts: rocks, outline: 0.05 },
+    { name: 'crystal', mat: crystalMat, parts: crystals, shadow: false },
+    { name: 'eyes', mat: eyeMat, parts: [[bi(neck), eyesGeo]], shadow: false },
+  ], [3.2, 5.5]);
   return {
     root, rig, spine, neck, armR: aR.sh, armL: aL.sh, foreR: aR.elbow, foreL: aL.elbow, fistR: aR.fist, fistL: aL.fist,
     legR: lR.hip, legL: lL.hip, kneeR: lR.knee, kneeL: lL.knee, core, coreGroup, coreGlow, crystalMat, eyeMat, glows, floaters,
+    rockParts, skin: sk, outlines: sk.outlines,
     headTop: 6.3,
   };
 }
@@ -348,11 +380,11 @@ export function buildDummy() {
       P(C(0.15, 0.15, 0.025, 16), 0xf6efe0, [0, 1.4, 0.305], [Math.PI / 2, 0, 0]),
       P(C(0.07, 0.07, 0.03, 12), 0xd84a3a, [0, 1.4, 0.31], [Math.PI / 2, 0, 0]),
     ];
-    return { body: mergeParts(parts), base: mergeParts([P(C(0.35, 0.45, 0.16, 10), 0x7a7266, [0, 0.08, 0]), P(C(0.13, 0.13, 0.2, 8), wood, [0, 0.2, 0])]) };
+    const body = mergeParts(parts); const bodyR = body.clone(); bodyR.translate(0, -0.2, 0);
+    return { body, bodyR, base: mergeParts([P(C(0.35, 0.45, 0.16, 10), 0x7a7266, [0, 0.08, 0]), P(C(0.13, 0.13, 0.2, 8), wood, [0, 0.2, 0])]) };
   });
   const root = new THREE.Group();
-  root.add(mk(g.base, vcMat(), 0.02));
   const rig = pivot(root, 0, 0.2, 0);
-  const body = mk(g.body, vcMat(), 0.022); body.position.y = -0.2; rig.add(body);
-  return { root, rig, headTop: 2.6 };
+  const sk = buildSkin('dummy', root, [root, rig], [{ name: 'body', mat: vcMat(), parts: [[0, g.base], [1, g.bodyR]], outline: 0.022 }], [1.3, 1.7]);
+  return { root, rig, headTop: 2.6, skin: sk, outlines: sk.outlines };
 }

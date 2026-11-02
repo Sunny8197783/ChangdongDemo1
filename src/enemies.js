@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { rand, pick, clamp } from './core/utils.js';
 import { Telegraphs } from './enemies/common.js';
-import { updateEnemy, alert as alertEnemy } from './enemies/base.js';
+import { updateEnemy, alert as alertEnemy, recoil as recoilEnemy } from './enemies/base.js';
 import { createBokoblin } from './enemies/bokoblin.js';
 import { createShaman } from './enemies/shaman.js';
 import { createChuchu } from './enemies/chuchu.js';
@@ -32,6 +32,9 @@ export function createEnemies(game) {
     game,
     playerPos: new THREE.Vector3(), playerCenter: new THREE.Vector3(), playerAlive: false,
     telegraphs: null, projectiles: null, loot: null,
+    cine: false, village: null, playerInVillage: false,
+    /** Feet height (frozen water / spire tops count as ground). */
+    groundH(x, z) { const w = game.world; return w.getGroundHeight ? w.getGroundHeight(x, z) : w.getHeight(x, z); },
     audio(name, opts) { try { game.audio?.play?.(name, opts); } catch (_) { /* optional */ } },
     takeToken(e) {
       if (tokens.has(e)) return true;
@@ -60,15 +63,18 @@ export function createEnemies(game) {
       const pe = game.player?.entity; if (!pe || !pe.alive) return null;
       _v.subVectors(ctx.playerPos, e.object.position).setY(0);
       if (_v.lengthSq() < 1e-6) _v.set(Math.sin(e.facing), 0, Math.cos(e.facing)); _v.normalize();
-      return game.combat.dealDamage(pe, {
+      const r = game.combat.dealDamage(pe, {
         amount: h.amount, element: h.element || 'physical', source: e, point: ctx.playerCenter.clone(),
         direction: _v.clone(), knockback: h.knockback ?? 6, launch: h.launch ?? 0, status: h.status || undefined, heavy: h.amount >= 20,
       });
+      // the blow bounced off the player's guard → attacker recoils (parries are handled by onParried)
+      if (r?.blocked && !r.parried && game.player?.blocking) recoilEnemy(ctx, e, pe);
+      return r;
     },
     /** Area slam damaging the player. */
     slam(center, radius, h, source, fx = 1) {
       const vfx = game.vfx;
-      _v2.copy(center); _v2.y = game.world.getHeight(center.x, center.z) + 0.15;
+      _v2.copy(center); _v2.y = ctx.groundH(center.x, center.z) + 0.15;
       vfx.shockwave(_v2, { color: 0xf0d6a0, radius: radius * 1.15, duration: 0.45, opacity: 0.85, thickness: 0.35 });
       vfx.burst(_v2, { count: Math.round(18 * fx), color: [0xd9c094, 0x9a8460], speed: 5 * fx, spread: 0.35, dir: _v.set(0, 1, 0), size: 0.8 * fx, sizeEnd: 1.8 * fx, life: 0.9, shape: 'smoke', additive: false, drag: 2.2, ground: true });
       vfx.debris?.(_v2, { count: Math.round(6 * fx), size: 0.3 * fx, speed: 6, material: 'rock' });
@@ -78,7 +84,7 @@ export function createEnemies(game) {
       const pp = ctx.playerPos;
       const d = Math.hypot(pp.x - center.x, pp.z - center.z);
       if (d > radius + (pe.radius || 0.4)) return;
-      if (h.jumpAvoid && pp.y - game.world.getHeight(pp.x, pp.z) > 0.9) return;
+      if (h.jumpAvoid && pp.y - ctx.groundH(pp.x, pp.z) > 0.9) return;
       _v.set(pp.x - center.x, 0, pp.z - center.z); if (_v.lengthSq() < 1e-4) _v.set(0, 0, 1); _v.normalize();
       game.combat.dealDamage(pe, { amount: h.amount, element: h.element || 'physical', source, point: ctx.playerCenter.clone(), direction: _v.clone(),
         knockback: h.knockback ?? 8, launch: h.launch ?? 4, heavy: true });
@@ -99,7 +105,7 @@ export function createEnemies(game) {
     onEnemyDied(e) { onDied(e); },
     remove(e) { removeEnemy(e); },
     spawnSummon(type, pos, opts = {}) {
-      pos.y = game.world.getHeight(pos.x, pos.z);
+      pos.y = ctx.groundH(pos.x, pos.z);
       const e = spawn(type, pos, { ...opts, camp: null });
       e.summoned = true;
       e.velocity.y = 7; e.grounded = false;
@@ -113,7 +119,7 @@ export function createEnemies(game) {
   function spawn(type, pos, opts = {}) {
     const f = FACTORIES[type];
     const p = pos.clone();
-    if (opts.snap !== false) p.y = game.world.getHeight(p.x, p.z);
+    if (opts.snap !== false) p.y = ctx.groundH(p.x, p.z);
     const e = f(ctx, p, opts);
     game.scene.add(e.object);
     game.combat.register(e);
@@ -162,6 +168,8 @@ export function createEnemies(game) {
     vfx.flash?.(_v, { color: 0xffe27a, intensity: 8, distance: 25, duration: 0.8 });
     ctx.audio('reaction', { position: pos, volume: 0.9, pitch: 1.2 });
   }
+
+  const hasStory = () => !!game.story && !(game.stubbed || []).includes('story') && game.story.begin !== undefined;
 
   let prebuiltGolem = null;
   function spawnBoss() {
@@ -257,6 +265,24 @@ export function createEnemies(game) {
     },
     /** Debug / tests: spawn(type, pos, opts). */
     spawn(type, pos, opts) { return spawn(type, pos, opts); },
+    /**
+     * Training: make the nearest dummy perform ONE slow, telegraphed practice attack (2 damage) on targetEntity
+     * so a block / parry can be practiced. In reach (≤3.4 m) it swings; farther away it lobs a slow practice orb
+     * (reflectable). Returns {kind:'swing'|'orb', eta, source} or null (no dummy / busy).
+     */
+    practiceAttack(targetEntity = game.player?.entity) {
+      if (!targetEntity?.object) return null;
+      const tp = targetEntity.object.position;
+      let best = null, bd = Infinity;
+      for (const e of all) {
+        if (!e.isDummy || !e.alive || !e.practice) continue;
+        const d = e.object.position.distanceToSquared(tp);
+        if (d < bd) { bd = d; best = e; }
+      }
+      return best ? best.practice(targetEntity) : null;
+    },
+    /** Alias (contract name variant). */
+    spawnPracticeAttack(targetEntity) { return api.practiceAttack(targetEntity); },
     /** Debug: start the boss fight immediately. */
     spawnBoss() { if (!boss) { for (const c of camps) c.cleared = true; campsCleared = camps.length; spawnBoss(); } return boss; },
 
@@ -286,6 +312,9 @@ export function createEnemies(game) {
         if (pe.getCenter) pe.getCenter(ctx.playerCenter); else ctx.playerCenter.copy(ctx.playerPos).setY(ctx.playerPos.y + (pe.height || 1.8) * 0.5);
         ctx.playerAlive = pe.alive !== false;
       }
+      ctx.cine = !!game.cinematic?.active;
+      const V = ctx.village = game.world.village?.center ? game.world.village : null;
+      ctx.playerInVillage = !!V && Math.hypot(ctx.playerPos.x - V.center.x, ctx.playerPos.z - V.center.z) < V.radius + 4;
       for (let i = all.length - 1; i >= 0; i--) {
         const e = all[i];
         if (e._alertDelay > 0) { e._alertDelay -= dt; if (e._alertDelay <= 0 && !e.aggro && e.alive && ctx.playerAlive) alertEnemy(ctx, e, false); }
@@ -294,15 +323,19 @@ export function createEnemies(game) {
         }
       }
       separate();
-      // distance LOD: outlines are sub-pixel far away; hide them (halves far-camp draw calls)
+      // distance LOD: outlines beyond ~45 m and shadows beyond ~70 m off (draw-call budget)
       const cp = game.camera.position;
-      for (const e of all) {
-        if (!e.object) continue;
-        if (!e._outlines) { e._outlines = []; e.object.traverse((o) => { if (o.isMesh && o.name === 'outline') e._outlines.push(o); }); }
-        const far = e.object.position.distanceToSquared(cp) > 55 * 55;
-        if (e._olFar !== far) { e._olFar = far; for (const o of e._outlines) o.visible = !far; }
+      for (let i = 0; i < all.length; i++) {
+        const e = all[i];
+        const d2 = e.object.position.distanceToSquared(cp);
+        const far = d2 > 45 * 45, noSh = d2 > 70 * 70;
+        if (e._olFar !== far) { e._olFar = far; const ol = e.model?.outlines; if (ol) for (const o of ol) o.visible = !far; }
+        if (e._shFar !== noSh) {
+          e._shFar = noSh; const ms = e.model?.skin?.meshes;
+          if (ms) for (const k in ms) { const m = ms[k]; if (m.userData._cs === undefined) m.userData._cs = m.castShadow; m.castShadow = !noSh && m.userData._cs; }
+        }
       }
-      ctx.projectiles.update(dt);
+      if (!ctx.cine) ctx.projectiles.update(dt);
       ctx.loot.update(dt);
       ctx.telegraphs.update(dt, game.time);
       // rebuild alive list
@@ -316,7 +349,8 @@ export function createEnemies(game) {
         if (victoryT <= 0) {
           const stats = { kills, timeSec: Math.round(playTime), reactions: game.combat.discovered?.size ?? 0 };
           game.events.emit('victory', { stats });
-          game.setState?.('victory');
+          // with a story module the ending cutscene plays first and the story sets the state; stub → old behaviour
+          if (!hasStory()) game.setState?.('victory');
         }
       }
     },

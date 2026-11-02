@@ -65,7 +65,10 @@ export class Engine {
     this.comp.connect(this.master); this.master.connect(dest);
 
     this.sfx = ctx.createGain(); this.sfx.gain.value = 0.95; this.sfx.connect(this.comp);
-    this.music = ctx.createGain(); this.music.gain.value = 0.26; this.music.connect(this.comp);
+    this.music = ctx.createGain(); this.music.gain.value = 0.26;
+    // music low-pass (opened fully; swept down for time-slow moments such as perfect dodges)
+    this.musicLP = ctx.createBiquadFilter(); this.musicLP.type = 'lowpass'; this.musicLPOpen = Math.min(20000, ctx.sampleRate * 0.45); this.musicLP.frequency.value = this.musicLPOpen; this.musicLP.Q.value = 0.7;
+    this.music.connect(this.musicLP); this.musicLP.connect(this.comp);
     this.ambience = ctx.createGain(); this.ambience.gain.value = 0.4; this.ambience.connect(this.comp);
 
     this.reverb = ctx.createConvolver(); this.reverb.buffer = makeImpulse(ctx);

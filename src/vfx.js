@@ -34,7 +34,25 @@ export function createVFX(game) {
     _t2.crossVectors(d, _t1);
   }
 
-  function burst(pos, o = {}) {
+  // settings.particleScale (0..1) scales every burst count / emitter rate. Stochastic rounding keeps
+  // tiny per-frame bursts (count 1–2) alive at low scales instead of rounding them all away.
+  let pScale = 1;
+  const readScale = () => {
+    const v = game.settings?.values?.particleScale;
+    pScale = Number.isFinite(v) ? Math.max(0, Math.min(1.5, v)) : 1;
+  };
+  readScale();
+  function scaledCount(n) {
+    // live-particle budget: past ~900 live particles every new burst is thinned (finisher peaks stay smooth)
+    const live = (add?.count || 0) + (alpha?.count || 0);
+    const budget = live > 900 ? Math.max(0.25, 1 - (live - 900) / 900) : 1;
+    const sc = pScale * budget;
+    if (sc === 1) return n;
+    const x = n * sc, f = Math.floor(x);
+    return f + (Math.random() < x - f ? 1 : 0);
+  }
+
+  function burst(pos, o = {}, preScaled = false) {
     if (!pos) return;
     const shape = o.shape || 'soft';
     const additive = o.additive ?? !NORMAL_SHAPES[shape];
@@ -42,7 +60,8 @@ export function createVFX(game) {
     let frame = o.frame ?? FRAMES[shape] ?? 0;
     let stretch = o.velocityStretch === true ? 0.06 : (o.velocityStretch || 0);
     if (stretch > 0 && shape === 'spark') frame = FRAMES.streak;
-    const count = Math.min(1500, Math.max(0, Math.round(o.count ?? 12)));
+    const count = Math.min(1500, Math.max(0, preScaled ? Math.round(o.count ?? 12) : scaledCount(Math.round(o.count ?? 12))));
+    if (count === 0) return;
     const speed = o.speed ?? 3, speedVar = o.speedVar ?? speed * 0.5;
     const spread = o.spread ?? 1;
     const size = o.size ?? 0.3, sizeEnd = o.sizeEnd ?? size;
@@ -116,15 +135,15 @@ export function createVFX(game) {
       }
       if (!e.alive) { e.handle.alive = false; emitters.splice(i, 1); continue; }
       if (e.follow) { e.follow.getWorldPosition(e.pos); e.pos.add(e.offset); }
-      e.acc += e.rate * dt;
+      e.acc += e.rate * pScale * dt;
       const n = Math.floor(e.acc);
-      if (n > 0) { e.acc -= n; e.opts.count = n; burst(e.pos, e.opts); }
+      if (n > 0) { e.acc -= n; e.opts.count = n; burst(e.pos, e.opts, true); }
     }
   }
 
   // ---------- lights ----------
   const lights = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 3; i++) {
     const l = new THREE.PointLight(0xffffff, 0, 10, 2);
     l.castShadow = false;
     game.scene.add(l);
@@ -348,9 +367,10 @@ export function createVFX(game) {
     dome: (pos, o) => (pos ? ground.dome(pos, o) : null),
     decal: (pos, o) => (pos ? ground.decal(pos, o) : null),
     beam: (from, to, o) => (from && to ? beams.beam(from, to, o) : { stop() {}, setEnds() {} }),
-    debris: (pos, o) => (pos ? debrisFx.debris(pos, o) : null),
+    debris: (pos, o) => (pos ? debrisFx.debris(pos, pScale < 1 && o?.count > 1 ? { ...o, count: Math.max(1, scaledCount(o.count)) } : o) : null),
     hitstop: (s) => game.hitstop?.(s),
     get trauma() { return trauma; },
+    get particleScale() { return pScale; },
     stats() {
       return { additive: add.count, alpha: alpha.count, emitters: emitters.length, beams: beams.count(), trails: trails.count(),
         debris: debrisFx.count(), ghosts: ghosts.length, ...ground.stats() };
@@ -359,6 +379,7 @@ export function createVFX(game) {
       add.count = 0; alpha.count = 0; emitters.length = 0; jobs.length = 0; trauma = 0;
     },
     init() {
+      game.events?.on?.('settingsChanged', ({ key }) => { if (key === 'particleScale' || key === '*') readScale(); });
       game.events?.on?.('stateChange', ({ state }) => {
         if (state === 'title') { trauma = 0; }
       });

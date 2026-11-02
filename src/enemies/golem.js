@@ -6,7 +6,7 @@ import { rand, clamp, damp, pick } from '../core/utils.js';
 import { buildGolem } from './models.js';
 import { makeEnemy, faceTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid } from './base.js';
 
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
 const HIP = 2.62;
 const BASE = newPose(HIP);
 const C1 = { col: 0x6fdcff, em: 0x2fb8ff, glow: 0x5fd0ff };
@@ -67,6 +67,13 @@ export function createGolem(ctx, pos, opts = {}) {
     return a;
   }
 
+  let staggerLen = 2.4;
+  // perfect parry of a punch: the colossus reels for 1.6 s, core exposed
+  e.onBossParried = () => {
+    if (['emerge', 'roar', 'phase2', 'stagger'].includes(e.state)) return;
+    staggerLen = 1.6; e.setState('stagger'); coreFlash = 1;
+    ctx.audio('shatter', { position: e.object.position, volume: 0.7, pitch: 0.7 });
+  };
   e.react = (result, hit) => {
     coreFlash = 1;
     poise += result?.damage || 0;
@@ -75,7 +82,7 @@ export function createGolem(ctx, pos, opts = {}) {
       return;
     }
     if (poise > 280 && poiseCd <= 0 && !['emerge', 'roar', 'phase2', 'stagger'].includes(e.state)) {
-      poise = 0; poiseCd = 9; e.setState('stagger');
+      poise = 0; poiseCd = 9; staggerLen = 2.4; e.setState('stagger');
       ctx.audio('shatter', { position: e.object.position, volume: 0.7, pitch: 0.6 });
       model.coreGroup.getWorldPosition(_v);
       vfx.burst(_v, { count: 30, color: [0xffffff, phase2 ? C2.glow : C1.glow], speed: 7, spread: 1, size: 0.2, sizeEnd: 0, life: 0.6, shape: 'shard', gravity: 8 });
@@ -204,7 +211,7 @@ export function createGolem(ctx, pos, opts = {}) {
         if (e.stateT > (lastAtk === 'slam' ? 1.3 : 0.75) / k) { cd = rand(1.0, 2.0) / mul; e.setState('chase'); }
         break;
       case 'stagger':
-        if (e.stateT > 2.4) { e.setState('chase'); cd = 0.5; }
+        if (e.stateT > staggerLen) { e.setState('chase'); cd = 0.5; }
         break;
     }
     speed = Math.hypot(e.move.x, e.move.z);
@@ -314,14 +321,15 @@ export function createGolem(ctx, pos, opts = {}) {
       vfx.shake(1);
       ctx.audio('explode_earth', { position: p, volume: 1.2, pitch: 0.5 });
       ctx.audio('shatter', { position: p, volume: 1 });
-      const meshes = [];
-      model.root.traverse((o) => { if (o.isMesh && o.name !== 'outline') meshes.push(o); });
-      for (const m of meshes) {
-        if (m.material === model.crystalMat || m.material === model.eyeMat) { m.visible = false; continue; }
-        m.getWorldPosition(_v); m.getWorldQuaternion(_q);
-        const s = new THREE.Vector3(); m.getWorldScale(s);
-        game.scene.attach(m);
-        m.position.copy(_v); m.quaternion.copy(_q);
+      // the live model is one skinned mesh: spawn a free rigid piece per rock part at its bone's world transform
+      const mat = model.skin?.meshes?.rock?.material;
+      model.root.updateMatrixWorld(true);
+      for (const rp of model.rockParts || []) {
+        const m = new THREE.Mesh(rp.geo, mat);
+        m.castShadow = true;
+        rp.bone.matrixWorld.decompose(m.position, m.quaternion, m.scale);
+        _v.copy(m.position);
+        game.scene.add(m);
         _v2.subVectors(_v, p).setY(0).normalize();
         parts.push({ m, v: new THREE.Vector3(_v2.x * rand(2, 6), rand(3, 9), _v2.z * rand(2, 6)), w: new THREE.Vector3(rand(-3, 3), rand(-3, 3), rand(-3, 3)), rest: false });
       }

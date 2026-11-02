@@ -100,3 +100,17 @@ export const MARKER_SVG = {
   done: `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z" fill="#1d2a22" stroke="#9fe8b0" stroke-width="1.2" opacity=".8"/>
     <path d="M8 12.2 11 15l5-6" stroke="#9fe8b0" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>`,
 };
+
+// v2 additions: quest / npc compass markers and small HUD glyphs.
+MARKER_SVG.quest = `<svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2 21 7v10l-9 5-9-5V7z" fill="#2c2410" stroke="#ffd36a" stroke-width="1.5"/>
+    <path d="M12 5.5 13.6 10.4 18.5 12 13.6 13.6 12 18.5 10.4 13.6 5.5 12 10.4 10.4z" fill="#ffe39a"/></svg>`;
+MARKER_SVG.npc = `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9.5" fill="#132430" stroke="#9fe0ff" stroke-width="1.4"/>
+    <circle cx="12" cy="9.4" r="3" fill="#dff6ff"/><path d="M6.8 17.4c.9-2.6 2.9-3.9 5.2-3.9s4.3 1.3 5.2 3.9" fill="#dff6ff"/></svg>`;
+
+export const LOCK_SVG = `<svg viewBox="0 0 16 16" width="13" height="13" class="aw-lock"><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="#d9c08a" stroke="#3a2c14" stroke-width=".8"/>
+  <path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" fill="none" stroke="#d9c08a" stroke-width="1.6"/><circle cx="8" cy="10.6" r="1.1" fill="#3a2c14"/></svg>`;
+export const SHIELD_SVG = `<svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2.2 20 5v6.4c0 5-3.4 8.8-8 10.4-4.6-1.6-8-5.4-8-10.4V5z" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M12 5.4v13.2M7.2 9.6h9.6" stroke="currentColor" stroke-width="1.2" opacity=".7"/></svg>`;
+export const DASH_SVG = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 7h7M2 12h9M3 17h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
+  <path d="M12 4.5 21 12l-9 7.5 2.4-7.5z" fill="currentColor"/></svg>`;
+export const STAMINA_SVG = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M13.5 2 5.5 13.2h5.6L9.8 22l8.7-12h-5.7z" fill="#9dff7a" stroke="#efffe6" stroke-width="1" stroke-linejoin="round"/></svg>`;

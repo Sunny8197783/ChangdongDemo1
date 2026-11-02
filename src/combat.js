@@ -27,6 +27,9 @@ export const REACTIONS = [
 ];
 const RX = Object.fromEntries(REACTIONS.map((r) => [r.id, r]));
 
+/** Team filter for player attacks: everything that isn't on the player's team (enemies and props). */
+export const FOES = '!player';
+const EMPTY = [];
 const FIRE = 'fire', ICE = 'ice', LIGHT = 'lightning', WIND = 'wind', EARTH = 'earth';
 
 export function createCombat(game) {
@@ -112,11 +115,16 @@ export function createCombat(game) {
   }
 
   // ---------------- queries ----------------
+  // team filter: undefined = all, 'enemy' = exact team, '!player' = every team except 'player' (enemies + props)
+  const teamOk = (e, team) => !team || (team === FOES ? e.team !== 'player' : team.charCodeAt(0) === 33 ? e.team !== team.slice(1) : e.team === team);
   function queryRadius(point, r, team, out) {
     const res = out || [];
     if (out) out.length = 0;
-    for (const e of game.entities) {
-      if (!e.alive || !e.object || (team && e.team !== team)) continue;
+    const neg = !!team && team.charCodeAt(0) === 33, tn = neg ? (team === FOES ? 'player' : team.slice(1)) : team;
+    const ents = game.entities;
+    for (let i = 0; i < ents.length; i++) {
+      const e = ents[i];
+      if (!e.alive || !e.object || (team && (neg ? e.team === tn : e.team !== tn))) continue;
       const p = e.object.position;
       const dx = p.x - point.x, dz = p.z - point.z;
       const rr = r + (e.radius || 0.5);
@@ -130,7 +138,7 @@ export function createCombat(game) {
     let best = null, bestT = maxDist;
     const dl = Math.hypot(dir.x, dir.z);
     for (const e of game.entities) {
-      if (!e.alive || !e.object || (team && e.team !== team)) continue;
+      if (!e.alive || !e.object || !teamOk(e, team)) continue;
       const p = e.object.position, R = e.radius || 0.5, H = e.height || 1.6;
       let tHit = -1;
       if (dl > 1e-5) {
@@ -366,27 +374,55 @@ export function createCombat(game) {
 
   // ---------------- damage ----------------
   const NONE = { damage: 0, reaction: null, crit: false, killed: false };
+  const prog = () => game.progression;
+  /** True when the hit was dealt by the player (spells, sword, player-triggered props). */
+  const isPlayerSource = (hit) => hit.source === 'player' || hit.source?.team === 'player';
   function dealDamage(t, hit = {}) {
     if (!t || !t.alive || t.invulnerable) return NONE;
     if (!t.statuses) t.statuses = {};
     if (!t.velocity) t.velocity = new THREE.Vector3();
     const el = hit.element || 'physical';
-    const point = hit.point ? new THREE.Vector3().copy(hit.point) : center(t, new THREE.Vector3());
-    const tags = hit.tags || [];
+    const tags = hit.tags || EMPTY;
     const isDot = tags.includes('dot');
     const isTick = isDot || tags.includes('zone') || tags.includes('tick');
-    let mult = 1, rx = null;
-    // enemy attacks don't trigger elemental reactions on the player (statuses still apply)
-    if (!hit.noReaction && !isDot && t.team !== 'player') {
+    const isMelee = tags.includes('melee');
+    const fromPlayer = isPlayerSource(hit);
+    const isProp = !!t.isProp;
+
+    // ---- block hook (player barrier / guard / dodge, or any entity that blocks) ----
+    let blockMul = 1;
+    if (t.onBeforeDamage) {
+      let r = null;
+      try { r = t.onBeforeDamage(hit); } catch (err) { console.error('[combat] onBeforeDamage', err); }
+      if (r) {
+        const bp = hit.point || center(t, tv[0]);
+        if (r.parried && hit.source && typeof hit.source === 'object') { try { hit.source.onParried?.(t); } catch (err) { console.error('[combat] onParried', err); } }
+        if (r.reflect && hit.projectile?.reflect) { try { hit.projectile.reflect(t); } catch (err) { console.error('[combat] reflect', err); } }
+        if (r.cancel) {
+          game.events.emit('blocked', { target: t, parried: !!r.parried, perfect: !!r.perfect, dodged: !!r.dodged, point: bp.clone ? bp.clone() : bp, source: hit.source });
+          return { damage: 0, reaction: null, crit: false, killed: false, blocked: true, parried: !!r.parried };
+        }
+        if (r.mul != null) {
+          blockMul = Math.max(0, r.mul);
+          game.events.emit('blocked', { target: t, parried: false, perfect: false, point: bp.clone ? bp.clone() : bp, source: hit.source, mul: blockMul });
+        }
+      }
+    }
+
+    const point = hit.point ? new THREE.Vector3().copy(hit.point) : center(t, new THREE.Vector3());
+    let mult = blockMul, rx = null;
+    // enemy attacks don't trigger elemental reactions on the player (statuses still apply); props never react
+    if (!hit.noReaction && !isDot && t.team !== 'player' && !isProp) {
       try { rx = react(t, el, hit, point.clone()); } catch (err) { console.error('[combat] reaction', err); }
       if (rx) mult *= rx.mult;
     }
     if (!t.alive) return NONE; // could have died from chain
     mult *= (t.resist && t.resist[el] != null) ? t.resist[el] : 1;
     if (t.statuses.exposed) mult *= 1.3;
-    const fromPlayer = hit.source === 'player' || hit.source?.team === 'player';
+    const vsFoe = fromPlayer && t.team !== 'player';
+    if (vsFoe) { try { mult *= prog()?.damageMul?.(el) ?? 1; } catch (_) { /* */ } }
     let crit = false;
-    if (fromPlayer && t.team !== 'player' && !isTick && !hit.noCrit && Math.random() < 0.1) { crit = true; mult *= 1.5; }
+    if (vsFoe && !isProp && (hit.crit || (!isTick && !hit.noCrit && Math.random() < 0.1))) { crit = true; mult *= 1.5; }
     let dmg = Math.max(0, Math.round((hit.amount || 0) * mult));
     if (dmg <= 0 && !rx) return NONE;
     dmg = Math.max(1, dmg);
@@ -401,6 +437,11 @@ export function createCombat(game) {
       if (t.hp <= 0) { t.hp = 0; killed = true; }
     }
 
+    // awakening gauge (master path): player damage on real foes; finishers don't refill it
+    if (vsFoe && !isProp && !tags.includes('finisher')) {
+      try { prog()?.addAwakening?.(dmg * 0.12 + (rx ? 4 : 0)); } catch (_) { /* */ }
+    }
+
     // statuses from hit
     if (!killed) {
       if (hit.status && !(rx && rx.skipStatus)) for (const k in hit.status) applyStatus(t, k, hit.status[k]);
@@ -409,7 +450,7 @@ export function createCombat(game) {
 
     // knockback
     const mass = t.mass || 1;
-    let kb = hit.knockback || 0, launch = rx?.noLaunch ? 0 : (hit.launch || 0);
+    let kb = (hit.knockback || 0) * (blockMul < 1 ? 0.35 : 1), launch = rx?.noLaunch ? 0 : (hit.launch || 0) * (blockMul < 1 ? 0 : 1);
     if (rx?.knock) kb = Math.max(kb, rx.knock);
     if (rx?.launch) launch = Math.max(launch, rx.launch);
     if (t.statuses.frozen) { kb *= 0.2; launch *= 0.2; }
@@ -430,40 +471,54 @@ export function createCombat(game) {
       }
     }
 
-    // feedback
+    // feedback (타격감): every real hit freezes the frame; heavier hits freeze longer
     if (!isTick || rx || killed) {
-      const isUlt = tags.includes('ultimate');
+      const isUlt = tags.includes('ultimate') || tags.includes('finisher');
       const sc = clamp(dmg / 35, 0.4, 2.2);
-      vfxCall('impact', point, { element: el === 'physical' ? 'physical' : el, scale: sc });
+      if (!hit.noImpactFx) vfxCall('impact', point, { element: el === 'physical' ? 'physical' : el, scale: sc });
       vfxCall('flashEntity', t, crit ? 0xfff2a0 : 0xffffff, 0.12);
-      let hs = dmg >= 45 || hit.heavy ? 0.07 : 0.03;
-      if (rx) hs = Math.max(hs, 0.09);
-      if (killed) hs = Math.max(hs, 0.08);
-      if (isUlt || (t.isBoss && (killed || dmg >= 80))) hs = Math.max(hs, 0.12);
-      if (tags.includes('reaction') && !killed) hs = Math.min(hs, 0.05);
-      if (isTick) hs = killed ? 0.06 : (rx ? 0.04 : 0);
-      // rate-limit hitstop so multi-hit spells punctuate instead of stutter
-      const rt = game.realTime || 0;
-      if (hs > 0 && (killed || rt - lastHsAt > 0.25 || hs > lastHsAmt + 0.02)) {
-        game.hitstop(hs); lastHsAt = rt; lastHsAmt = hs;
+      let hs;
+      if (hit.hitstop != null) hs = hit.hitstop;
+      else {
+        hs = dmg >= 45 || hit.heavy ? 0.1 : 0.055;
+        if (crit) hs += 0.02;
+        if (rx) hs = Math.max(hs, 0.11);
+        if (killed) hs = Math.max(hs, 0.1);
+        if (isUlt || (t.isBoss && (killed || dmg >= 80))) hs = Math.max(hs, 0.15);
+        if (tags.includes('reaction') && !killed) hs = Math.min(hs, 0.06);
+        if (isTick) hs = killed ? 0.07 : (rx ? 0.05 : 0);
+        if (isProp) hs = Math.min(hs, 0.05);
+        if (t.team === 'player') hs = Math.min(Math.max(hs, 0.06), 0.1);
       }
-      let sh = clamp(dmg / 140, 0.06, 0.45) + (rx ? 0.15 : 0) + (killed ? 0.1 : 0);
-      if (t.team === 'player') sh = Math.max(sh, 0.25);
-      if (!isUlt) sh = Math.min(sh, 0.5);
-      if (isTick) sh = Math.min(sh, 0.12);
+      if (hs > 0) {
+        const rt = game.realTime || 0;
+        // melee hits always freeze (each slash must land); spell volleys are rate-limited so they punctuate, not stutter
+        if (isMelee || killed || rt - lastHsAt > 0.12 || hs > lastHsAmt + 0.02) {
+          game.hitstop(hs); lastHsAt = rt; lastHsAmt = hs;
+        }
+      }
+      let sh;
+      if (hit.shake != null) sh = hit.shake;
+      else {
+        sh = clamp(dmg / 120, 0.08, 0.5) + (rx ? 0.15 : 0) + (killed ? 0.1 : 0) + (crit ? 0.05 : 0);
+        if (t.team === 'player') sh = Math.max(sh, 0.25);
+        if (!isUlt) sh = Math.min(sh, 0.5);
+        if (isTick) sh = Math.min(sh, 0.12);
+        if (isProp) sh = Math.min(sh, 0.15);
+      }
       pendingShake = Math.max(pendingShake, sh);
-      if (fromPlayer && !isTick && dmg < 45 && game.camera) {
+      if (fromPlayer && !isTick && !isMelee && dmg < 45 && game.camera) {
         const kd = tv[0].subVectors(point, game.camera.position);
-        if (kd.lengthSq() > 1e-4) vfxCall('kick', kd.normalize(), 0.05);
+        if (kd.lengthSq() > 1e-4) vfxCall('kick', kd.normalize(), 0.06);
       }
-      if (t.team !== 'player') sfx(killed ? 'enemy_death' : 'enemy_hurt', { position: point, volume: isTick ? 0.35 : 0.6 });
+      if (t.team !== 'player' && !isProp) sfx(killed ? 'enemy_death' : 'enemy_hurt', { position: point, volume: isTick ? 0.35 : 0.6 });
     } else {
       vfxCall('flashEntity', t, 0xffa060, 0.08);
     }
 
-    const result = { damage: dmg, reaction: rx?.id || null, crit, killed };
+    const result = { damage: dmg, reaction: rx?.id || null, crit, killed, blocked: blockMul < 1 };
     const isPlayer = t.team === 'player';
-    game.events.emit('damage', { target: t, amount: dmg, element: el, point: point.clone(), crit, reaction: result.reaction, killed, isPlayer, source: hit.source, dot: isTick && !rx && !killed });
+    game.events.emit('damage', { target: t, amount: dmg, element: el, point: point.clone(), crit, reaction: result.reaction, killed, isPlayer, isProp, source: hit.source, dot: isTick && !rx && !killed, melee: isMelee });
     if (isPlayer) game.events.emit('playerHurt', { amount: dmg, element: el });
 
     if (killed) {
@@ -494,7 +549,7 @@ export function createCombat(game) {
           st.tick -= dt;
           if (st.tick <= 0) {
             st.tick += 0.5;
-            dealDamage(e, { amount: e.isBoss ? 8 : 6, element: FIRE, source: st.source || 'player', tags: ['dot'], noReaction: true });
+            dealDamage(e, { amount: e.isBoss ? 8 : 6, element: FIRE, source: e.team === 'player' ? 'env' : (st.source || 'player'), tags: ['dot'], noReaction: true });
             if (!e.alive) break;
           }
           st.spreadT -= dt;
@@ -509,7 +564,7 @@ export function createCombat(game) {
           st.tick -= dt;
           if (st.tick <= 0) {
             st.tick = 0.9; st.stunT = e.isBoss ? 0 : 0.22;
-            dealDamage(e, { amount: 3, element: LIGHT, source: 'player', tags: ['dot'], noReaction: true });
+            dealDamage(e, { amount: 3, element: LIGHT, source: e.team === 'player' ? 'env' : 'player', tags: ['dot'], noReaction: true });
             if (!e.alive) break;
           }
         } else if (k === 'airborne') {
@@ -532,6 +587,9 @@ export function createCombat(game) {
     REACTIONS, discovered,
     register, unregister, dealDamage, applyStatus, hasStatus, clearStatus, canAct, speedMul,
     queryRadius, raycastEntities, getCenter: center, discover,
+    FOES, isPlayerSource,
+    /** True for entities the player's attacks may hit (enemies and props such as fire barrels). */
+    isFoe: (e) => !!e && e.team !== 'player',
     _warm: (g) => statusFx.warm(g),
     update,
   };

@@ -1,4 +1,5 @@
-// Procedural generative music (exploration / battle / boss layers) and ambience (wind bed, birds).
+// Procedural generative music (field / battle / boss layers + v2 themes from themes.js) and ambience.
+import { THEMES } from './themes.js';
 
 const R = (a, b) => a + Math.random() * (b - a);
 const pickR = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -15,20 +16,30 @@ const EXPLORE_PROG = [0, 5, 9, 7, 0, 9, 5, 2];
 const MINOR = [0, 2, 3, 5, 7, 8, 10];
 const BATTLE_PROG = [0, 8, 3, 10];
 
+// Layer gains per mode. 'explore' is the old name of 'field'.
+const LAYERS = ['field', 'battle', 'boss', 'title', 'intro', 'village', 'ending'];
+const MIX = {
+  field: { field: 1 }, explore: { field: 1 },
+  battle: { field: 0.12, battle: 1.25 }, boss: { battle: 1.25, boss: 1 },
+  title: { title: 1.6 }, intro: { intro: 1.7 }, village: { village: 1.6 }, ending: { ending: 1.3 },
+  victory: {}, silent: {},
+};
+const FAST_IN = { battle: 0.6, boss: 0.6 };
+
 export class Music {
   constructor(E) {
     this.E = E;
     const ctx = E.ctx;
     this.layers = {};
-    for (const name of ['explore', 'battle', 'boss']) {
+    for (const name of LAYERS) {
       const g = ctx.createGain(); g.gain.value = 0; g.connect(E.music);
-      const s = ctx.createGain(); s.gain.value = name === 'explore' ? 0.9 : 0.45; g.connect(s); s.connect(E.musicSend);
-      this.layers[name] = { gain: g, level: 0, target: 0 };
+      const s = ctx.createGain(); s.gain.value = name === 'battle' || name === 'boss' ? 0.45 : 0.9; g.connect(s); s.connect(E.musicSend);
+      this.layers[name] = { gain: g, level: 0, target: 0, step0: 0 };
     }
     this.step = 0;
     this.nextTime = 0;
     this.started = false;
-    this.mode = 'explore';
+    this.mode = 'field';
     this.tonic = 62;               // D4
     this.phraseDeg = 5;            // index into extended pentatonic
     this.phraseNotes = null;
@@ -36,27 +47,31 @@ export class Music {
     this.silenceUntil = 0;
   }
 
-  start() {
+  start(mode = this.mode) {
     if (this.started) return;
     this.started = true;
     this.nextTime = this.E.now() + 0.15;
-    this.setMode('explore', true);
+    this.setMode(mode, true);
   }
 
   setMode(mode, instant = false) {
+    if (mode === 'explore') mode = 'field';
+    const prev = this.mode;
     this.mode = mode;
-    const tg = { explore: [1, 0, 0], battle: [0.12, 1.25, 0], boss: [0, 1.25, 1], victory: [0, 0, 0], silent: [0, 0, 0] }[mode] || [1, 0, 0];
-    const names = ['explore', 'battle', 'boss'];
+    const tg = MIX[mode] || MIX.field;
     const now = this.E.now();
-    names.forEach((n, i) => {
+    for (const n of LAYERS) {
       const L = this.layers[n];
-      L.target = tg[i];
+      const target = tg[n] || 0;
+      // themed layers restart their phrase when they come back from silence
+      if (target > 0 && L.level < 0.02 && (L.target === 0 || instant)) L.step0 = this.step;
+      L.target = target;
       L.gain.gain.cancelScheduledValues(now);
       L.gain.gain.setValueAtTime(L.gain.gain.value, now);
-      // battle comes in fast; exploration returns slowly
-      const tc = instant ? 0.05 : (tg[i] > L.level ? (n === 'explore' ? 2.5 : 0.6) : (n === 'explore' ? 0.6 : 1.8));
-      L.gain.gain.setTargetAtTime(tg[i], now, tc);
-    });
+      // battle comes in fast; calm layers return slowly; theme changes cross-fade ~1.5 s
+      const tc = instant ? 0.05 : target > L.level ? (FAST_IN[n] || (prev === 'battle' || prev === 'boss' ? 2.5 : 1.2)) : (n === 'battle' || n === 'boss' ? 1.8 : 0.7);
+      L.gain.gain.setTargetAtTime(target, now, tc);
+    }
   }
 
   update(realDt) {
@@ -73,14 +88,20 @@ export class Music {
     }
   }
 
-  audible(n) { const L = this.layers[n]; return L.target > 0.01 || L.level > 0.01; }
-
   schedule(step, t) {
     const s16 = step % 16, bar = (step / 16) | 0;
-    if (this.audible('explore')) this.exploreStep(s16, bar, t);
+    if (this.audible('field')) this.exploreStep(s16, bar, t);
     if (this.audible('battle')) this.battleStep(s16, bar, t, step);
     if (this.audible('boss')) this.bossStep(s16, bar, t, step);
+    for (const n in THEMES) {
+      if (!this.audible(n)) continue;
+      const L = this.layers[n], rel = step - L.step0;
+      if (rel < 0) continue;
+      THEMES[n](this, rel % 16, (rel / 16) | 0, t, L.gain);
+    }
   }
+
+  audible(n) { const L = this.layers[n]; return L.target > 0.01 || L.level > 0.01; }
 
   // ---------------- exploration ----------------
   noteFromDeg(deg, base) {
@@ -89,7 +110,7 @@ export class Music {
   }
 
   exploreStep(s16, bar, t) {
-    const E = this.E, out = this.layers.explore.gain;
+    const E = this.E, out = this.layers.field.gain;
     // key drift every 16 bars: D -> G -> A -> D (gentle modal feeling)
     if (s16 === 0 && bar % 16 === 0) this.tonic = [62, 67, 64, 62][(bar / 16 | 0) % 4];
     const root = this.tonic + EXPLORE_PROG[(bar >> 1) % EXPLORE_PROG.length];

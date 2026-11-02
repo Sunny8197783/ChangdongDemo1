@@ -33,6 +33,7 @@ export const SPELLS = {
           S.vfx('explosion', pos, { element: 'fire', scale: 0.55 });
           S.sfx('impact_fire', { position: pos });
           S.aoe(pos, 1.8, ent, () => ({ amount: 8, element: 'fire', status: { burning: 2 }, knockback: 4 }));
+          S.terrain.ignite(pos, 1.5);
         },
       });
     },
@@ -56,7 +57,7 @@ export const SPELLS = {
           S.sfx('explode_fire', { position: pos });
           S.aoe(pos, R, null, (e, d) => ({ amount: dmg * (1 - 0.45 * d / R), element: 'fire', status: { burning: 4 }, knockback: 10 + 6 * c, launch: 4 + 4 * c, heavy: true }));
           const g = S.ground(pos);
-          if (pos.y - g.y < R) S.zones.spawn('fire', g, { radius: R * 0.75, duration: 5 });
+          if (pos.y - g.y < R) { S.zones.spawn('fire', g, { radius: R * 0.75, duration: 5 }); S.terrain.ignite(g, 3 + 2 * c); }
         },
       });
     },
@@ -100,6 +101,7 @@ export const SPELLS = {
             S.sfx('explode_earth', { position: g, volume: 1.2 });
             S.aoe(g, R, null, (e, d) => ({ amount: 130 * (1 - 0.55 * d / R), element: 'fire', status: { burning: 5 }, knockback: 18, launch: 11, heavy: true, tags: ['ultimate'] }));
             S.zones.spawn('fire', g, { radius: 6, duration: 7 });
+            S.terrain.ignite(g, 8);
             S.vfx('decal', g, { color: 0x1a0c08, radius: 7, duration: 12, opacity: 0.8 });
             for (let i = 0; i < 14; i++) {
               const a = (i / 14) * Math.PI * 2 + Math.random() * 0.2;
@@ -127,6 +129,7 @@ export const SPELLS = {
             S.vfx('impact', pos, { element: 'ice', scale: 0.6 });
             S.vfx('burst', pos, { count: 8, color: [0xffffff, 0x7fe3ff], shape: 'shard', speed: 5, spread: 1, size: 0.12, life: 0.4, gravity: -8 });
             S.sfx('impact_ice', { position: pos, volume: 0.6 });
+            S.terrain.chill(pos, 1.2);
           },
         });
       }
@@ -146,6 +149,7 @@ export const SPELLS = {
         },
         onImpact(p, pos, ent, ground) {
           S.vfx('explosion', pos, { element: 'ice', scale: 0.8 });
+          S.terrain.chill(pos, 4);
           if (ground) {
             for (let i = 0; i < 6; i++) { const a = i / 6 * 6.28; const x = pos.x + Math.cos(a) * 1.1, z = pos.z + Math.sin(a) * 1.1; S.props.spikes.spawn(x, S.height(x, z), z, { height: 1.2 + Math.random(), width: 0.8, hold: 2.5, tiltX: Math.sin(a) * 0.5, tiltZ: -Math.cos(a) * 0.5 }); }
             S.zones.spawn('ice', pos, { radius: 2.8, duration: 6 });
@@ -187,6 +191,7 @@ export const SPELLS = {
           }
           S.aoe(pt, 2.6 * w, null, (e) => (hitSet.has(e) ? null : (hitSet.add(e), { amount: 48, element: 'ice', status: { frozen: 3 }, launch: 4, heavy: false, tags: ['ultimate'] })));
           S.zones.elementAt(pt, 2, 'ice');
+          S.terrain.chill(pt, 3.2);
           if (i === 4 || i === 9 || i === N - 1) S.zones.spawn('ice', pt, { radius: 3.6, duration: 8 });
         });
       }
@@ -199,7 +204,7 @@ export const SPELLS = {
     cast(S, aim) {
       const o = aim.origin;
       let target = aim.target;
-      if (!target) { const r = S.combat.raycastEntities(o, aim.dir, 45, 'enemy'); if (r) target = r.entity; }
+      if (!target) { const r = S.combat.raycastEntities(o, aim.dir, 45, '!player'); if (r) target = r.entity; }
       if (target && S.center(target).distanceTo(o) > 50) target = null;
       const end = target ? S.center(target).clone() : (aim.point.distanceTo(o) > 45 ? o.clone().addScaledVector(aim.dir, 45) : aim.point.clone());
       S.vfx('beam', o, end, { color: C.lightning, width: 0.14, duration: 0.16, jagged: 0.4, segments: 12, branches: 1 });
@@ -208,11 +213,16 @@ export const SPELLS = {
       if (target) {
         S.combat.dealDamage(target, { amount: 16, element: 'lightning', source: 'player', point: end, status: { shocked: 3 }, direction: aim.dir.clone(), knockback: 1 });
         S.zones.elementAt(S.ground(end), 1, 'lightning');
-        const next = S.nearestEnemy(end, 8, [target]);
-        if (next) {
+        // 번개 축복 (lightning blessing) adds extra chain jumps
+        const chained = [target]; let from = end;
+        for (let j = 0, nj = 1 + S.chainBonus(); j < nj; j++) {
+          const next = S.nearestEnemy(from, 8 + j * 2, chained);
+          if (!next) break;
+          chained.push(next);
           const c2 = S.center(next).clone();
-          S.vfx('beam', end, c2, { color: C.lightning, width: 0.1, duration: 0.18, jagged: 0.4, segments: 10 });
+          S.vfx('beam', from, c2, { color: C.lightning, width: 0.1, duration: 0.18, jagged: 0.4, segments: 10 });
           S.combat.dealDamage(next, { amount: 10, element: 'lightning', source: 'player', point: c2, status: { shocked: 2 } });
+          from = c2;
         }
       } else {
         S.vfx('impact', end, { element: 'lightning', scale: 0.7 });
@@ -224,10 +234,10 @@ export const SPELLS = {
     element: 'lightning', kind: 'heavy', name: '연쇄 번개', desc: '충전할수록 더 많은 적에게 튀는 거대한 번개', mp: 18, cd: 1.5, chargeTime: 1.0,
     cast(S, aim, c) {
       const o = aim.origin.clone();
-      const n = Math.round(3 + 3 * c);
+      const n = Math.round(3 + 3 * c) + S.chainBonus();
       let dmg = 30 + 25 * c;
       let target = aim.target;
-      if (!target) { const r = S.combat.raycastEntities(o, aim.dir, 60, 'enemy'); if (r) target = r.entity; }
+      if (!target) { const r = S.combat.raycastEntities(o, aim.dir, 60, '!player'); if (r) target = r.entity; }
       if (!target) target = S.nearestEnemy(aim.point, 6, []);
       S.vfx('screenFlash', 0xe0d0ff, 0.12, 0.15);
       if (!target) {
@@ -282,7 +292,8 @@ export const SPELLS = {
         emitter: { rate: 30, color: [0xffffff, C.wind], shape: 'leaf', speed: 1, spread: 1, size: 0.12, life: 0.5, drag: 2 },
         data: { aoe: 1.5 },
         onHitEntity(p, e, r, pt) { S.vfx('burst', pt, { count: 14, color: [0xffffff, C.wind], shape: 'leaf', speed: 7, spread: 1, size: 0.14, life: 0.5, drag: 2 }); S.sfx('impact_wind', { position: pt, volume: 0.6 }); },
-        onImpact(p, pos) { S.vfx('impact', pos, { element: 'wind', scale: 0.7 }); },
+        onUpdate(p) { p._wt = (p._wt || 0) + 1; if (p._wt % 6 === 0) S.terrain.wind(p.pos, p.vel, 0.7, 3); },
+        onImpact(p, pos) { S.vfx('impact', pos, { element: 'wind', scale: 0.7 }); S.terrain.wind(pos, p.vel, 0.8, 3.5); },
       });
     },
   },
@@ -300,7 +311,7 @@ export const SPELLS = {
       S.vfx('fovKick', 3, 0.25);
       S.sfx('explode_wind', { position: o });
       const v = new THREE.Vector3();
-      for (const e of S.combat.queryRadius(o, range, 'enemy')) {
+      for (const e of S.combat.queryRadius(o, range, '!player')) {
         v.subVectors(e.object.position, pp).setY(0);
         const d = v.length(); if (d < 0.01) continue;
         v.multiplyScalar(1 / d);
@@ -308,6 +319,7 @@ export const SPELLS = {
         S.combat.dealDamage(e, { amount: 18 + 22 * c, element: 'wind', source: 'player', point: S.center(e).clone(), direction: v.clone(), knockback: 12 + 14 * c, launch: 7 + 6 * c, heavy: c > 0.8 });
       }
       S.zones.elementAt(o.clone().addScaledVector(fd, range * 0.5), range * 0.45, 'wind', { dir: fd });
+      S.terrain.wind(o.clone().addScaledVector(fd, range * 0.5), fd, 1.2 + c * 0.6, range * 0.7);
     },
   },
   wind_ultimate: {

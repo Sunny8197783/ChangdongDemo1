@@ -104,7 +104,7 @@ export class Animator {
     r.elbowL.rotation.set(up[5], 0, 0);
 
     // ---------- lower body ----------
-    const crouch = up[11] + s.squash * 0.7;
+    const crouch = up[11] + s.squash * 0.7 + (s.swCr || 0);
     let lL = -sinp * amp * ground, lR = sinp * amp * ground;
     let kL = Math.max(0, Math.sin(ph + Math.PI * 0.5)) * amp * 1.25 * ground + 0.05;
     let kR = Math.max(0, Math.sin(ph - Math.PI * 0.5)) * amp * 1.25 * ground + 0.05;
@@ -125,14 +125,14 @@ export class Animator {
     r.ankleR.rotation.x = -(lR + kR) * 0.6 * (1 - s.wAir * 0.5);
 
     const bob = Math.cos(ph * 2) * 0.028 * amp * ground + Math.abs(breath) * 0.004;
-    r.hips.position.y = 0.92 + bob + up[10] - crouch * 0.13 - s.squash * 0.05;
+    r.hips.position.y = 0.92 + bob + up[10] - crouch * 0.13 - s.squash * 0.05 + (s.swHy || 0);
     r.hips.rotation.y = sinp * 0.13 * amp * ground;
-    r.torso.rotation.set(up[8], -r.hips.rotation.y * 0.85 + up[9], -s.bank * 0.3);
+    r.torso.rotation.set(up[8] + (s.swTl || 0), -r.hips.rotation.y * 0.85 + up[9] + (s.swTw || 0), -s.bank * 0.3);
     r.torso.scale.set(1 + breath * 0.008, 1 + breath * 0.006, 1 + breath * 0.008);
-    r.head.rotation.set(up[12] - up[8] * 0.6 + s.aimPitch * 0.35 * s.wAction, -up[9] * 0.5, 0);
+    r.head.rotation.set(up[12] - up[8] * 0.6 + s.aimPitch * 0.35 * s.wAction + (s.swHd || 0) - (s.swTl || 0) * 0.5, -up[9] * 0.5 - (s.swTw || 0) * 0.45, 0);
 
     // whole-body lean / bank / squash / death fall
-    r.body.rotation.set(s.dead * -1.42 + s.accel * 0.04, 0, s.bank);
+    r.body.rotation.set(s.dead * -1.42 + s.accel * 0.04, 0, s.bank + (s.swBk || 0));
     r.body.position.y = s.dead * 0.1;
     const sq = s.squash;
     r.body.scale.set(1 + sq * 0.07, 1 - sq * 0.12, 1 + sq * 0.07);

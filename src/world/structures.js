@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { toonMat } from '../core/utils.js';
 import { mulberry32, sstep, distPolyline } from './noise.js';
 import { part, merge, mat4, staticMesh } from './prefab.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LAYOUT, WATER_LEVEL } from './terrain.js';
 import { buildFires } from './fire.js';
 
@@ -460,8 +461,9 @@ export function buildStructures(game, world) {
     colliders.push({ x, z, r: 0.6, kind: 'stone' });
   }
   tp.push(part(new THREE.CylinderGeometry(1.6, 1.8, 0.3, 10), stone, mat4(tx, TH + 0.05, tz)));
-  // signposts
+  // signposts: all board labels share one canvas atlas + one merged plane mesh (1 draw call)
   const signs = [];
+  const labels = [], labelQuads = [];
   const sign = (x, z, rotY, boards) => {
     const y = getHeight(x, z);
     const T = mat4(x, y, z, 0, rotY, 0);
@@ -469,19 +471,27 @@ export function buildStructures(game, world) {
     boards.forEach((b, k) => {
       const bt = T.clone().multiply(mat4(b.dir * 0.45, 2.3 - k * 0.55, 0, 0, 0, b.tilt || 0));
       tp.push(part(new THREE.BoxGeometry(1.6, 0.42, 0.08), woodColor(0xb08a58, 0x8a6a40), bt));
-      const tex = signTexture([b.text]);
-      const pm = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
-      for (const side of [1, -1]) {
-        const pl = pm.clone();
-        pl.applyMatrix4(bt.clone().multiply(mat4(0, 0, side * 0.045, 0, side > 0 ? 0 : Math.PI, 0)));
-        group.add(pl); signs.push(pl);
-      }
+      const row = labels.length; labels.push(b.text);
+      for (const side of [1, -1]) labelQuads.push({ row, m: bt.clone().multiply(mat4(0, 0, side * 0.045, 0, side > 0 ? 0 : Math.PI, 0)) });
     });
     colliders.push({ x, z, r: 0.25, kind: 'sign' });
   };
-  sign(5, 108, -0.2, [{ text: '훈련장', dir: 0 }, { text: '고대 유적 ↑', dir: 0 }]);
+  sign(5, 108, -0.2, [{ text: '바람결 마을 ↓', dir: 0 }, { text: '고대 유적 ↑', dir: 0 }]);
   sign(-7, 63, 0.4, [{ text: '← 서쪽 야영지', dir: 0 }, { text: '북쪽 야영지 →', dir: 0 }]);
   sign(6, 97, -0.55, [{ text: '동쪽 야영지 →', dir: 0 }]);
+  if (world.extraSigns) for (const sg of world.extraSigns) sign(sg.x, sg.z, sg.rotY, sg.boards);
+  if (labels.length) {
+    const tex = signTexture(labels);
+    const quads = labelQuads.map(({ row, m }) => {
+      const g = new THREE.PlaneGeometry(1.5, 0.375);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - (row + 1 - uv.getY(i)) / labels.length);
+      g.applyMatrix4(m); return g;
+    });
+    const sm = new THREE.Mesh(mergeGeometries(quads, false), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true }));
+    sm.name = 'signLabels';
+    group.add(sm); signs.push(sm);
+  }
   staticMesh(group, merge(tp), { outline: 0.03, outlineColor: 0x2a2620 });
 
   // ---------------- waterfall at the river head

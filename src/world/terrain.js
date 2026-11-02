@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { toonMat } from '../core/utils.js';
 import { fbm, vnoise, ridge, sstep, smin, distPolyline, mulberry32 } from './noise.js';
+import { VILLAGE } from './villageLayout.js';
 
 export const SIZE = 360;
 export const SEG = 240;
@@ -25,8 +26,8 @@ function bbox(pts, m) {
 const inBox = (b, x, z) => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1;
 
 export const LAYOUT = {
-  spawn: [0, 121],
-  training: [0, 100], trainingR: 11,
+  spawn: [VILLAGE.houses[0].door[0], VILLAGE.houses[0].door[1]],
+  training: [VILLAGE.training.x, VILLAGE.training.z], trainingR: VILLAGE.training.r,
   camps: [
     { id: 'camp0', name: '서쪽 보코블린 야영지', x: -80, z: 20, r: 14 },
     { id: 'camp1', name: '동쪽 보코블린 야영지', x: 85, z: -5, r: 14 },
@@ -37,13 +38,12 @@ export const LAYOUT = {
   lake: { x: 38, z: 38, rx: 30, rz: 21 },
   riverRaw: [[-126, -104], [-112, -84], [-86, -52], [-58, -26], [-30, -6], [-8, 10], [14, 24], [32, 34]],
   pathsRaw: {
-    main: [[0, 123], [0, 100], [-5, 82], [-12, 60], [-16, 36], [-13, 12], [-6, -14], [3, -36], [10, -55]],
+    main: [[0, 113], [0, 100], [-5, 82], [-12, 60], [-16, 36], [-13, 12], [-6, -14], [3, -36], [10, -55]],
     arena: [[10, -55], [7, -70], [2, -84], [0, -96], [0, -104]],
     west: [[-12, 60], [-34, 50], [-58, 34], [-80, 20]],
     east: [[0, 100], [24, 89], [54, 79], [78, 60], [90, 30], [85, -5]],
   },
-  hills: [
-    [0, 126, 2.8, 13], [-48, 92, 6, 17], [58, 112, 5, 15], [-30, -78, 7, 17], [52, -62, 6, 14],
+  hills: [ [-48, 92, 6, 17], [58, 112, 5, 15], [-30, -78, 7, 17], [52, -62, 6, 14],
     [-128, 12, 8, 15], [124, -30, 7, 15], [44, -100, 7, 13], [-64, -104, 8, 15], [-104, 120, 7, 16],
     [100, 110, 6, 14], [-40, 10, 3, 12], [55, 10, 3.5, 11], [-90, 60, 4, 14],
   ],
@@ -72,11 +72,40 @@ const _seg = { i: 0, t: 0, u: 0 };
 
 function riverWidth(u) { return 3.2 + u * 2.2; }
 
+/** 0..1 village blend weight (1 inside the cozy nook, 0 outside). */
+export function villageMask(x, z) {
+  const M = VILLAGE.mask;
+  const vx = (x - M.x) / M.rx, vz = (z - M.z) / M.rz;
+  const d2 = vx * vx + vz * vz;
+  if (d2 > 2.0) return 0;
+  return sstep(1.28, 0.9, Math.sqrt(d2) + vnoise(x * 0.05, z * 0.05, 121) * 0.07);
+}
+
 function mountainFactor(x, z) {
   const r = Math.hypot(x, z);
   const ang = Math.atan2(z, x);
   const wob = fbm(Math.cos(ang) * 2.2 + 7, Math.sin(ang) * 2.2 + 3, 3, 91) * 16;
-  return sstep(136, 178, r + wob);
+  // behind the village (south) the rise starts later so roofs and the altar have sky behind them
+  const south = sstep(0.45, 0.9, z / Math.max(r, 1));
+  return sstep(136 + south * 14, 178 + south * 6, r + wob) * (1 - villageMask(x, z));
+}
+
+/** Village stone lanes weight 0..1. */
+const laneBox = (() => { const pts = VILLAGE.lanes.flat(); return bbox(pts, 4); })();
+export function laneWeight(x, z) {
+  if (!inBox(laneBox, x, z)) return 0;
+  let w = 0;
+  for (const l of VILLAGE.lanes) {
+    const d = distPolyline(x, z, l);
+    if (d < 3) w = Math.max(w, sstep(1.9, 1.1, d + vnoise(x * 0.5, z * 0.5, 72) * 0.35));
+  }
+  const P = VILLAGE.plaza;
+  const dp = Math.hypot(x - P.x, z - P.z);
+  if (dp < P.r + 2) w = Math.max(w, sstep(P.r + 0.4, P.r - 0.6, dp + vnoise(x * 0.4, z * 0.4, 73) * 0.6));
+  const A = VILLAGE.altar;
+  const da = Math.hypot(x - A.x, z - A.z);
+  if (da < A.r + 3) w = Math.max(w, sstep(A.r + 1.6, A.r + 0.6, da));
+  return w;
 }
 
 /** Pre-flatten height (no camps/arena/paths). */
@@ -98,7 +127,9 @@ function rawHeight(x, z) {
   const mf = mountainFactor(x, z);
   if (mf > 0) {
     const rd = ridge(x * 0.018, z * 0.018, 4, 7);
-    h += Math.pow(mf, 1.6) * (38 + rd * 62) + mf * fbm(x * 0.06, z * 0.06, 3, 9) * 5;
+    // southern backdrop (behind 바람결 마을) is a lower, rolling valley wall instead of a sheer cliff
+    const south = sstep(0.45, 0.9, z / Math.max(Math.hypot(x, z), 1));
+    h += Math.pow(mf, 1.6) * (38 + rd * 62) * (1 - 0.55 * south) + mf * fbm(x * 0.06, z * 0.06, 3, 9) * 5;
   }
   // lake
   const L = LAYOUT.lake;
@@ -123,6 +154,12 @@ function rawHeight(x, z) {
       h = smin(h, shape + (1 - head) * 30, 1.6);
     }
   }
+  // village nook: ground eased to a gentle plateau, rising a little toward the cliffs behind
+  const vm = villageMask(x, z);
+  if (vm > 0) {
+    const vh = VILLAGE.base + fbm(x * 0.03, z * 0.03, 2, 122) * 0.55 + sstep(150, 168, z) * 2.4;
+    h = h + (vh - h) * vm;
+  }
   return h;
 }
 
@@ -137,6 +174,12 @@ T.camps = LAYOUT.camps.map((c) => avgRaw(c.x, c.z, c.r * 0.6));
 T.training = avgRaw(LAYOUT.training[0], LAYOUT.training[1], 6);
 T.arena = avgRaw(LAYOUT.arena.x, LAYOUT.arena.z, 10) + LAYOUT.arena.rise;
 T.rampEnd = rawHeight(LAYOUT.ramp.x, LAYOUT.ramp.z1);
+T.pads = VILLAGE.pads.map((p) => rawHeight(p.x, p.z));
+{
+  const Pd = VILLAGE.pond;
+  T.pond = rawHeight(Pd.x, Pd.z) - 0.35;
+  VILLAGE.pond.level = T.pond;
+}
 LAYOUT.targets = T;
 
 /** Path weight 0..1 (1 in the middle of a dirt path). */
@@ -188,6 +231,21 @@ export function fullHeight(x, z) {
   }
   const pw = pathWeight(x, z);
   if (pw > 0 && _z.arena < 0.5) h -= 0.14 * pw;
+  if (villageMask(x, z) > 0) {
+    const pads = VILLAGE.pads;
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i]; const dx = x - p.x, dz = z - p.z;
+      if (Math.abs(dx) > p.r + 3 || Math.abs(dz) > p.r + 3) continue;
+      const w = sstep(p.r + 2.5, p.r, Math.hypot(dx, dz));
+      if (w > 0) h = h + (T.pads[i] - h) * w;
+    }
+    const Pd = VILLAGE.pond;
+    const dd = Math.hypot(x - Pd.x, z - Pd.z) / Pd.r + vnoise(x * 0.3, z * 0.3, 74) * 0.06;
+    if (dd < 1.6) {
+      const shape = dd < 1 ? T.pond - 0.12 - Pd.depth * (1 - dd * dd) : T.pond - 0.12 + (dd - 1) * 2.2;
+      h = smin(h, shape, 0.6);
+    }
+  }
   return h;
 }
 
@@ -229,6 +287,7 @@ export function buildTerrain(game) {
     sand: C(0xe8d49b), wetSand: C(0xa89a72), lakebed: C(0x6f8a6a),
     rock: C(0x9a8670), rockDark: C(0x6a5a4c), rockWarm: C(0xb48a62), rockBlue: C(0x7f8fae),
     snow: C(0xf5f8fc), stone: C(0xb9b4a6),
+    cobble: C(0xc9bda4), cobbleDark: C(0x9a8f7c), lawn: C(0x7fc44a),
   };
   const colors = new Float32Array(NV * NV * 3);
   const colTexData = new Uint8Array(NV * NV * 4);
@@ -261,6 +320,21 @@ export function buildTerrain(game) {
     // path
     const pw = pathWeight(x, z);
     if (pw > 0) { tmp.copy(P.path).lerp(P.dirt, n3 * 0.6); col.lerp(tmp, pw * 0.92); dens *= 1 - sstep(0.15, 0.6, pw); }
+    // village: cobbled lanes + plaza, trimmed lawn, pond shore
+    const vm = villageMask(x, z);
+    if (vm > 0) {
+      const lw = laneWeight(x, z);
+      if (lw > 0) {
+        const cob = Math.sin(x * 2.6 + Math.sin(z * 1.9) * 1.3) * Math.sin(z * 2.4 + Math.sin(x * 1.7)) * 0.5 + 0.5;
+        tmp.copy(P.cobble).lerp(P.cobbleDark, sstep(0.55, 0.8, cob) * 0.6 + n3 * 0.2);
+        col.lerp(tmp, lw * 0.95); dens *= 1 - sstep(0.1, 0.5, lw);
+      }
+      col.lerp(P.lawn, vm * 0.25 * (1 - lw));
+      dens *= 1 - vm * 0.35;
+      const Pd = VILLAGE.pond;
+      const dpd = Math.hypot(x - Pd.x, z - Pd.z) / Pd.r;
+      if (dpd < 1.35) { tmp.copy(P.sand).lerp(P.lakebed, sstep(1.0, 0.6, dpd)); col.lerp(tmp, sstep(1.35, 1.05, dpd)); dens *= sstep(1.05, 1.35, dpd); }
+    }
     // camps: trampled dirt
     if (zz.camp > 0) {
       const c = LAYOUT.camps[zz.campIdx];
@@ -283,12 +357,16 @@ export function buildTerrain(game) {
       const band = Math.sin(h * 0.9 + n2 * 3) * 0.5 + 0.5;
       tmp.copy(P.rock).lerp(P.rockWarm, band * 0.55).lerp(P.rockDark, sstep(0.5, 0.9, n2) * 0.5);
       tmp.lerp(P.rockBlue, mf * 0.35);
-      col.lerp(tmp, rockW); dens *= 1 - rockW;
+      // green ledges break up moderate slopes (no uniform brown wall)
+      const ledge = sstep(0.45, 0.72, n1 * 0.7 + n3 * 0.3) * (1 - sstep(0.32, 0.5, slope));
+      tmp.lerp(P.grassDark, ledge * 0.75);
+      col.lerp(tmp, rockW); dens *= 1 - rockW * (1 - ledge * 0.6);
     }
     // snow
     const snowW = sstep(50, 60, h + n2 * 10) * (1 - sstep(0.38, 0.6, slope));
     if (snowW > 0) { col.lerp(P.snow, snowW); dens *= 1 - snowW; }
     if (h < WATER_LEVEL + 0.35) dens = 0;
+    if (vm > 0 && h < T.pond + 0.2 && Math.hypot(x - VILLAGE.pond.x, z - VILLAGE.pond.z) < VILLAGE.pond.r * 1.3) dens = 0;
     dens *= 1 - sstep(0.4, 0.95, mf) * 0.85;
     dens *= 1 - sstep(38, 48, h);
     colors[k * 3] = col.r; colors[k * 3 + 1] = col.g; colors[k * 3 + 2] = col.b;
@@ -321,10 +399,24 @@ export function buildTerrain(game) {
 
   const mat = toonMat(0xffffff, { vertexColors: true, map: makeGrainTexture(), steps: 4, rim: false });
   // triplanar grain (no stretching on cliffs) + horizontal rock strata darkening steep faces
+  const burn = { uBurnTex: { value: null }, uBurnXform: { value: new THREE.Vector4(0, 0, 0, 0) }, uBurnTime: { value: 0 } };
+  {
+    const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat); blank.needsUpdate = true;
+    burn.uBurnTex.value = blank;
+  }
   mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, burn);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\n vTW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTN = normalize(mat3(modelMatrix) * objectNormal);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN; uniform sampler2D uBurnTex; uniform vec4 uBurnXform; uniform float uBurnTime;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { vec2 bt = texture2D(uBurnTex, (vTW.xz - uBurnXform.xy) * uBurnXform.zw).rg;
+          float flat_ = smoothstep(0.55, 0.85, normalize(vTN).y);
+          float ch = smoothstep(0.05, 0.75, bt.r) * flat_;
+          float speck = fract(sin(dot(floor(vTW.xz * 3.0), vec2(12.9898, 78.233))) * 43758.5453);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13, 0.11, 0.10) + speck * 0.05, ch * 0.85);
+          totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * bt.g * flat_ * (0.55 + 0.35 * sin(uBurnTime * 9.0 + vTW.x * 1.7 + vTW.z * 1.3));
+          totalEmissiveRadiance += vec3(0.9, 0.25, 0.04) * ch * step(0.92, speck) * (0.4 + 0.4 * sin(uBurnTime * 3.0 + speck * 40.0)) * (1.0 - bt.g) * smoothstep(0.6, 1.0, bt.r); }`)
       .replace('#include <map_fragment>', `
       #ifdef USE_MAP
         vec3 tn = normalize(vTN);
@@ -337,7 +429,7 @@ export function buildTerrain(game) {
         diffuseColor.rgb *= 1.0 - smoothstep(0.35, 0.75, slope) * (0.09 + 0.07 * band + 0.03 * band2);
       #endif`);
   };
-  mat.customProgramCacheKey = () => 'terrainTri1';
+  mat.customProgramCacheKey = () => 'terrainTri2';
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true; mesh.castShadow = true;
   mesh.name = 'terrain';
@@ -350,7 +442,7 @@ export function buildTerrain(game) {
   colorTex.minFilter = colorTex.magFilter = THREE.LinearFilter;
   colorTex.needsUpdate = true;
 
-  return { mesh, heights, normals, getHeight, heightTex, colorTex, colTexData, mountainFactor };
+  return { mesh, heights, normals, getHeight, heightTex, colorTex, colTexData, mountainFactor, burn };
 }
 
 /** Painterly grain texture to break vertex colour flatness. */

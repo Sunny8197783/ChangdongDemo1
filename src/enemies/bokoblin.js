@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { rand, clamp, pick } from '../core/utils.js';
 import { buildBokoblin } from './models.js';
-import { makeEnemy, faceTo, moveTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid, walkCycle } from './base.js';
+import { makeEnemy, faceTo, moveTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid, walkCycle, reactionPose } from './base.js';
 
 const _v = new THREE.Vector3();
 const HIP = 0.74;
@@ -22,6 +22,10 @@ export function createBokoblin(ctx, pos, opts = {}) {
 
   const game = ctx.game;
   const attack = (kind) => game.events.emit('enemyAttack', { enemy: e, kind });
+  // reactions (base.js): interrupted attacks reset; super-armor only during the active swing frames
+  e.interrupt = () => { swingHit = true; smashCombo = false; e.sitting = false; if (ring && (e.state === 'leap' || e.state === 'leapPrep')) ring.t = Math.max(ring.t, ring.dur); ring = null; };
+  e.onResume = () => { attackCd = Math.max(attackCd, 0.6); };
+  e.armor = () => (e.state === 'swing' && e.stateT < 0.2) || e.state === 'leap';
 
   e.think = (dt, sm) => {
     const pp = ctx.playerPos, p = e.object.position, d = e.distP;
@@ -94,7 +98,7 @@ export function createBokoblin(ctx, pos, opts = {}) {
           leapTarget.set(pp.x, 0, pp.z);
           _v.set(leapTarget.x - p.x, 0, leapTarget.z - p.z);
           const len = _v.length(); if (len > 0.5) leapTarget.addScaledVector(_v, -1.1 / len);
-          leapTarget.y = game.world.getHeight(leapTarget.x, leapTarget.z);
+          leapTarget.y = ctx.groundH(leapTarget.x, leapTarget.z);
           e.velocity.set((leapTarget.x - p.x) / T, 22 * T / 2, (leapTarget.z - p.z) / T);
           e.grounded = false; e.leaping = true;
           ring = ctx.telegraphs.show(leapTarget, 2.9, T, 0xff5a2a);
@@ -118,10 +122,6 @@ export function createBokoblin(ctx, pos, opts = {}) {
           e.setState('chase');
         }
         break;
-      case 'stagger':
-        e.leaping = false;
-        if (e.stateT > e.staggerDur) { e.setState(e.aggro ? 'chase' : 'idle'); attackCd = Math.max(attackCd, 0.6); }
-        break;
       case 'return': {
         faceTo(e, e.home.x, e.home.z, 5, dt);
         if (moveTo(e, e.home.x, e.home.z, 3 * sm, 0.8) < 1) {
@@ -138,12 +138,14 @@ export function createBokoblin(ctx, pos, opts = {}) {
   e.pose = (dt, sm, stunned) => {
     Object.assign(tgt, BASE);
     const t = game.time + e.id.length;
-    let lambda = 12;
+    let lambda = 12, rl = 0;
     phase += dt * (1.2 + speed * 2.3);
     const st = e.state;
     if (st === 'dead') {
       tgt.aRz = -1.4; tgt.aLz = 1.4; tgt.aRx = -0.5; tgt.aLx = -0.5; tgt.lRx = -0.6; tgt.lLx = -0.2; tgt.kR = 0.5; tgt.kL = 0.3; tgt.headX = -0.4;
       lambda = 8;
+    } else if ((rl = reactionPose(e, tgt, HIP, t, model.lieY))) {
+      lambda = rl;
     } else if (stunned) {
       tgt.headY = Math.sin(t * 5) * 0.4; tgt.headZ = Math.cos(t * 5) * 0.3; tgt.roll = Math.sin(t * 2.5) * 0.12;
       tgt.pitch = 0.2; tgt.aRx = 0.2; tgt.aLx = 0.2; tgt.aRz = -0.5; tgt.aLz = 0.5; tgt.fRx = -0.4; tgt.fLx = -0.4; tgt.kR = tgt.kL = 0.4; tgt.lRx = tgt.lLx = -0.3; tgt.hipY = HIP - 0.08;
@@ -181,12 +183,6 @@ export function createBokoblin(ctx, pos, opts = {}) {
       tgt.aRx = up ? -3.6 : -0.8; tgt.fRx = up ? -0.8 : -0.1; tgt.aLx = up ? -3.2 : -1.2; tgt.aLz = 0.4;
       tgt.pitch = up ? -0.35 : 0.5; tgt.lRx = -0.9; tgt.lLx = -0.4; tgt.kR = 1.2; tgt.kL = 0.8; tgt.spineX = up ? -0.3 : 0.4;
       lambda = up ? 10 : 22;
-    } else if (st === 'stagger') {
-      const k = Math.sin(clamp(e.stateT / e.staggerDur, 0, 1) * Math.PI);
-      tgt.pitch = -0.55 * k; tgt.spineX = -0.3 * k; tgt.headX = -0.6 * k;
-      tgt.aRx = -1.2 * k; tgt.aRz = -1.1 * k; tgt.aLx = -1.4 * k; tgt.aLz = 1.2 * k; tgt.fRx = tgt.fLx = -0.5;
-      tgt.lRx = 0.4 * k; tgt.lLx = -0.6 * k; tgt.kL = 0.6 * k; tgt.hipY = HIP - 0.1 * k; tgt.hipZ = -0.15 * k;
-      lambda = 16;
     } else if (st === 'alert') {
       tgt.aRx = -2.2; tgt.fRx = -0.6; tgt.aLx = -1.8; tgt.aLz = 0.7; tgt.aRz = -0.6; tgt.headX = -0.25; tgt.pitch = -0.15;
       tgt.kR = tgt.kL = e.grounded ? 0.4 : 0.9; tgt.lRx = tgt.lLx = e.grounded ? -0.25 : -0.7;

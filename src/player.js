@@ -1,10 +1,14 @@
-// Player: wizard hero, third-person controller, camera, aim, stats.
+// Player: hero (mage or swordsman), third-person controller, camera, aim, stats, block & dash per class.
 import * as THREE from 'three';
 import { ELEMENT_COLORS, clamp, lerp, damp, dampAngle, angleDiff, rand } from './core/utils.js';
 import { buildWizard } from './player/model.js';
 import { Cape } from './player/cape.js';
 import { RuneCircle, Afterimages } from './player/fx.js';
 import { Animator, CAST_DUR } from './player/anim.js';
+import { buildSwordGear, setOutfit } from './player/swordsman.js';
+import { skinMerge } from './player/model.js';
+import { PF, STANCE, lerpPose, applySwordArms } from './player/swordpose.js';
+import { Barrier } from './player/defense.js';
 
 const WALK = 5.5, SPRINT = 9, GRAVITY = 22, JUMP_VEL = 8;
 const GLIDE_FALL = 2.5, GLIDE_SPEED = 8;
@@ -14,19 +18,38 @@ const CAM_DIST = 5.5, CAM_DIST_AIM = 3.8, SHOULDER = 1.2, SHOULDER_AIM = 0.85, P
 const BASE_FOV = 62;
 const DEEP_WATER = 1.15;
 const AIM_CONE = Math.cos(THREE.MathUtils.degToRad(4.5));
+// v2 defense
+const DASH_DIST = 6, DASH_TIME = 0.18, DASH_IFRAMES = 0.25, DASH_RECHARGE = 0.9, DASH_STAMINA = 12, DASH_CHARGES = 2;
+const PERFECT_DODGE_WIN = 0.10, PERFECT_BLINK_WIN = 0.10, PERFECT_GUARD = 0.18, PERFECT_BARRIER = 0.2;
+const BARRIER_DRAIN = 6, GUARD_BREAK_T = 0.8, UPDRAFT_VY_CAP = 9;
+const DODGE_COL = new THREE.Color(0.45, 0.75, 1), DASH_COL = new THREE.Color(0.85, 0.92, 1);
 
 export function createPlayer(game) {
   const { scene, camera, events, input } = game;
 
   const rig = buildWizard();
   const root = rig.root;
-  root.traverse((o) => { if (o.isMesh) o.castShadow = o.castShadow && o.name !== 'outline'; });
+  const gear = buildSwordGear(rig);
+  // Perf: only sizeable parts cast shadows (each caster is an extra shadow-pass draw call; tiny trims/buttons/eyes
+  // are invisible in the soft cel shadow). Outlines never cast.
+  root.updateMatrixWorld(true);
+  const _ws = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!o.castShadow || o.name === 'outline') { o.castShadow = false; return; }
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    o.getWorldScale(_ws);
+    if (o.geometry.boundingSphere.radius * Math.max(_ws.x, _ws.y, _ws.z) < 0.13) o.castShadow = false;
+  });
   scene.add(root);
+  // Perf: the whole rig (≈170 draw calls) → a handful of rigidly skinned meshes (see model.js skinMerge)
+  try { rig.skin = skinMerge(root); } catch (err) { console.warn('[player] skinMerge failed, using per-part meshes', err); }
   const anim = new Animator(rig);
   const cape = new Cape(scene, rig.torso, rig.capeAnchors, 9, 0.112);
   const chargeCircle = new RuneCircle(scene, 1.15);
   const sigil = new RuneCircle(scene, 1.9);
-  const ghosts = new Afterimages(scene, root, 6);
+  const ghosts = new Afterimages(scene, root, 5);
+  const barrier = new Barrier(scene);
 
   // ---------- entity ----------
   const velocity = new THREE.Vector3();
@@ -34,6 +57,7 @@ export function createPlayer(game) {
     id: 'player', team: 'player', alive: true, object: root, radius: 0.4, height: 1.8,
     hp: 100, maxHp: 100, mass: 1, velocity, grounded: true, statuses: {}, name: '마법사',
     isPlayer: true, invulnerable: false,
+    onBeforeDamage(hit) { return beforeDamage(hit); },
     onHit(result, hit) { onHit(result, hit); },
     onDeath(result, hit) { onDeath(result, hit); },
     getCenter(out = new THREE.Vector3()) { return out.copy(root.position).setY(root.position.y + 1.0); },
@@ -47,7 +71,7 @@ export function createPlayer(game) {
   let yaw = 0, pitch = -0.12;
   let gliding = false, sprinting = false, exhausted = false;
   let stamina = 100, mp = 100, lastMpSpend = -10, lastStamUse = -10;
-  let blinkT = 0, blinkCd = 0, invulT = 0, ghostTimer = 0;
+  let blinkT = 0, blinkCd = 0, invulT = 0, ghostTimer = 0, blinkGuardT = 0, blinkStartT = -10;
   const blinkFrom = new THREE.Vector3(), blinkTo = new THREE.Vector3(), blinkDir = new THREE.Vector3();
   let castKind = null, castT = 0, castRecent = 0, gemFlare = 0;
   let charging = false, chargeFrac = 0, chargeEl = null;
@@ -60,6 +84,25 @@ export function createPlayer(game) {
   let accelF = 0, lastSpeed = 0;
   let sparkleT = 0, convergeT = 0, wadeT = 0;
   let aimPitch = 0;
+  // ---- v2: class, block & dash, updraft, sword action interface ----
+  let cls = null;   // null until the path is chosen (neutral villager look, no Q/E skills)
+  let blocking = false, blockT = 0, blockHeld = false, guardBreakT = 0;
+  let dashCharges = DASH_CHARGES, dashRecharge = 0, dashT = 0, dashIframeT = 0, dashStartT = -10, ghostT2 = 0;
+  const dashDir = new THREE.Vector3();
+  let counterReady = 0, counterTarget = null, perfectFx = 0, dilateT = 0;
+  let inUpdraft = false, updraftT = 0, airJumps = 0;
+  let drawnW = 0, swordDrawn = false;
+  let combatHasBlock = false;
+  /** Written every frame by the sword module (game.sword); consumed by the player on its next update. */
+  const action = {
+    active: false, facing: null, turn: 30, move: 1, vel: new THREE.Vector3(), setVy: NaN, gravityMul: 1,
+    bodyYaw: 0, pose: new Float32Array(PF), poseW: 0, cancelable: true, dodgeCancelable: true, noGlide: false, superArmor: false,
+  };
+  /** Support-skill / buff modifiers (written by the sword module). */
+  const mods = { atkMul: 1, dmgTakenMul: 1, moveMul: 1, atkSpeed: 1, doubleJump: false, extraDash: 0, noKnockback: false };
+  const stancePose = new Float32Array(PF), finalPose = new Float32Array(PF);
+  const defHud = { block: { active: false, perfect: false, type: 'barrier' }, dash: { charges: 1, maxCharges: 1, cooldownFrac: 0 } };
+  const swordTipV = new THREE.Vector3();
 
   // camera state
   const pivot = new THREE.Vector3();
@@ -80,7 +123,11 @@ export function createPlayer(game) {
   };
 
   const W = () => game.world;
-  const groundAt = (x, z) => { const h = W()?.getHeight?.(x, z); return Number.isFinite(h) ? h : 0; };
+  /** Feet height: world.getGroundHeight (terrain or frozen water) with getHeight fallback. */
+  const groundAt = (x, z) => {
+    const w = W(); const h = w?.getGroundHeight ? w.getGroundHeight(x, z) : w?.getHeight?.(x, z);
+    return Number.isFinite(h) ? h : 0;
+  };
   const waterLevel = () => { const w = W()?.waterLevel; return Number.isFinite(w) ? w : -1e9; };
   /** water depth at (x,z) given ground height h (0 when dry). */
   const waterDepth = (x, z, h) => {
@@ -103,6 +150,10 @@ export function createPlayer(game) {
     rig.light.color.copy(elemColor);
     rig.moteMat.color.copy(elemColor).lerp(new THREE.Color(1, 1, 1), 0.25);
     chargeCircle.setColor(elemColor); sigil.setColor(elemColor);
+    barrier.setColor(elemColor);
+    entity.resist = el === 'fire' ? { fire: 0.35 } : undefined; // attuned to fire: own grass fires barely singe
+    gear.gemMat.color.copy(elemColor).multiplyScalar(1.3);
+    gear.edgeMat.uniforms.uColor.value.copy(elemColor);
     if (changed && game.state === 'playing') {
       gemFlare = Math.max(gemFlare, 0.6);
       api.getStaffTip(v4);
@@ -132,8 +183,188 @@ export function createPlayer(game) {
       entity.hp = Math.min(entity.maxHp, entity.hp + result.damage);
       return;
     }
+    const dmg = result?.damage || 0;
+    // Fallback for a combat module without the onBeforeDamage hook: evaluate block/dodge now and refund.
+    if (hit && !hit._pbd && !result?.blocked) {
+      const r = beforeDamage(hit);
+      if (r?.cancel) {
+        entity.hp = Math.min(entity.maxHp, entity.hp + dmg); velocity.set(0, 0, 0);
+        if (r.parried && hit.source && typeof hit.source === 'object') { try { hit.source.onParried?.(entity); } catch (e) { /* */ } }
+        ev('blocked', { target: entity, parried: !!r.parried, perfect: !!r.perfect, point: hit.point, source: hit.source });
+        return;
+      }
+      if (r?.mul != null) {
+        entity.hp = Math.min(entity.maxHp, entity.hp + dmg * (1 - r.mul));
+        ev('blocked', { target: entity, parried: false, perfect: false, point: hit.point, source: hit.source });
+      }
+    }
+    if (hit?._pbdRes?.cancel || result?.blocked) return;
+    if (hit?._pbdRes?.mul != null) { velocity.multiplyScalar(0.35); hurt = Math.max(hurt, 0.35); return; }
+    // support buffs: damage reduction / stagger immunity
+    if (mods.dmgTakenMul < 1 && dmg > 0 && !(hit?.tags || []).includes('dot')) entity.hp = Math.min(entity.maxHp, entity.hp + dmg * (1 - mods.dmgTakenMul));
+    if (mods.noKnockback || action.superArmor) { velocity.set(0, 0, 0); hurt = Math.max(hurt, 0.3); return; }
     hurt = 1;
     if (charging) gemFlare = 0.3;
+  }
+
+  // ---------- block / dash (v2) ----------
+  function sourcePos(hit, out) {
+    const s = hit?.source;
+    if (s && typeof s === 'object' && s.object) return out.copy(s.object.position);
+    if (hit?.point) return out.copy(hit.point);
+    return null;
+  }
+  /** player.entity.onBeforeDamage — called by combat before damage is applied. */
+  function beforeDamage(hit) {
+    if (!hit) return null;
+    if (hit._pbd) return hit._pbdRes || null;
+    hit._pbd = true; hit._pbdRes = null;
+    const src = hit.source;
+    if (src === 'player' || src?.team === 'player') return null;
+    const tags = hit.tags || [];
+    if (tags.includes('dot') || tags.includes('tick') || !entity.alive || dying) return null;
+    let r = null;
+    if (cls === 'sword' && dashIframeT > 0) {
+      if (game.time - dashStartT <= PERFECT_DODGE_WIN) perfectDodge(hit);
+      else dodgedFx();
+      r = { cancel: true, dodged: true };
+    } else if (cls === 'mage' && blinkGuardT > 0) {
+      // blink i-frames are handled here (not entity.invulnerable) so a well-timed blink can be rewarded
+      if (game.time - blinkStartT <= PERFECT_BLINK_WIN) perfectBlink(hit);
+      else dodgedFx();
+      r = { cancel: true, dodged: true };
+    } else if (blocking) {
+      let front = true;
+      if (cls === 'sword' && sourcePos(hit, v4)) {
+        v4.sub(pos).setY(0);
+        if (v4.lengthSq() > 0.04) front = v4.normalize().dot(v3.set(Math.sin(facing), 0, Math.cos(facing))) > -0.25;
+      }
+      if (front) {
+        const perfect = blockT <= (cls === 'sword' ? PERFECT_GUARD : PERFECT_BARRIER);
+        const amt = hit.amount || 0;
+        if (perfect) { r = { cancel: true, parried: true, perfect: true, reflect: true }; doParry(hit); }
+        else if (cls === 'mage') {
+          mp = Math.max(0, mp - amt * 0.5); lastMpSpend = game.time;
+          r = { mul: 0.2, reflect: false };
+          blockFx(hit, false);
+          if (mp <= 0.5) breakBlock();
+        } else {
+          stamina -= 6 + amt * 0.6; lastStamUse = game.time;
+          if (stamina <= 0) { stamina = 0; r = { mul: 0.6 }; guardBreak(); }
+          else { r = { mul: 0.3 }; blockFx(hit, false); }
+        }
+      }
+    }
+    hit._pbdRes = r;
+    return r;
+  }
+  function blockFx(hit, perfect) {
+    const c = ELEMENT_COLORS[element];
+    if (!sourcePos(hit, v4)) v4.set(pos.x + Math.sin(facing), pos.y, pos.z + Math.cos(facing));
+    v4.sub(pos).setY(0); if (v4.lengthSq() < 1e-4) v4.set(Math.sin(facing), 0, Math.cos(facing)); v4.normalize();
+    if (cls === 'mage') {
+      barrier.hit(v4, perfect);
+      v1.copy(pos).addScaledVector(v4, 1.3).setY(pos.y + 1.0);
+      vfxCall('burst', v1, { count: perfect ? 30 : 12, color: [c, 0xffffff], speed: perfect ? 6 : 3, spread: 0.6, dir: v4, size: 0.1, sizeEnd: 0, life: 0.35, shape: 'spark', drag: 3 });
+      game.audio?.play?.(perfect ? 'reflect' : 'barrier_hit', { position: v1 });
+    } else {
+      api.getSwordTip(v1); v1.lerp(v2.copy(pos).addScaledVector(v4, 0.6).setY(pos.y + 1.2), 0.6);
+      vfxCall('burst', v1, { count: perfect ? 46 : 14, color: [0xfff3c0, 0xffb040], speed: perfect ? 11 : 5, speedVar: 3, spread: perfect ? 1 : 0.5, dir: v4, size: perfect ? 0.13 : 0.09, sizeEnd: 0, life: perfect ? 0.5 : 0.3, shape: 'spark', drag: 2.5, velocityStretch: 0.05 });
+      vfxCall('flash', v1, { color: 0xfff0c0, intensity: perfect ? 6 : 2, distance: perfect ? 10 : 5, duration: perfect ? 0.3 : 0.12 });
+      if (!perfect) { game.audio?.play?.('block_hit', { position: v1 }); vfxCall('shake', 0.12); velocity.multiplyScalar(0.4); }
+    }
+  }
+  function doParry(hit) {
+    blockFx(hit, true);
+    perfectFx = 1;
+    if (cls === 'sword') {
+      game.hitstop?.(0.12); game.slowmo?.(0.4, 0.5);
+      api.getSwordTip(v1);
+      vfxCall('shockwave', v1, { color: 0xffe6a0, radius: 2.4, duration: 0.3, vertical: true, opacity: 0.9, thickness: 0.18 });
+      vfxCall('screenFlash', 0xfff4d0, 0.28, 0.25);
+      vfxCall('fovKick', -4, 0.3); vfxCall('shake', 0.25);
+      game.audio?.play?.('parry', { position: v1 });
+      counterReady = 1.2; counterTarget = typeof hit.source === 'object' ? hit.source : null;
+    } else {
+      game.hitstop?.(0.08);
+      vfxCall('screenFlash', ELEMENT_COLORS[element], 0.2, 0.25);
+      vfxCall('fovKick', -3, 0.25);
+    }
+    ev('parry', { perfect: true, cls, source: hit.source, point: hit.point || pos.clone() });
+  }
+  function perfectDodge(hit) {
+    if (counterReady > 0.5) return;
+    game.slowmo?.(0.3, 1.2);
+    vfxCall('screenFlash', 0x4f9dff, 0.32, 1.1);
+    vfxCall('fovKick', 6, 0.5);
+    ghosts.spawn(pos, facing, DODGE_COL, 0.8, 1);
+    game.audio?.play?.('perfect_dodge', { position: pos });
+    counterReady = 1.5; counterTarget = typeof hit?.source === 'object' ? hit.source : null;
+    perfectFx = 1; dilateT = 1.3;
+    ev('perfectDodge', { source: hit?.source || null, position: pos.clone() });
+  }
+  let dodgedFxT = -10;
+  function dodgedFx() {
+    if (game.time - dodgedFxT < 0.3) return;
+    dodgedFxT = game.time;
+    game.audio?.play?.('dash', { position: pos, volume: 0.5 });
+    vfxCall('burst', v1.copy(pos).setY(pos.y + 1), { count: 8, color: [0xdde8ff, 0xffffff], speed: 3, spread: 1, size: 0.08, sizeEnd: 0, life: 0.25, shape: 'spark', drag: 3 });
+  }
+  let perfectBlinkT = -10;
+  function perfectBlink(hit) {
+    if (game.time - perfectBlinkT < 0.8) return;
+    perfectBlinkT = game.time;
+    game.slowmo?.(0.5, 0.5);
+    vfxCall('screenFlash', ELEMENT_COLORS[element], 0.22, 0.45);
+    vfxCall('fovKick', 4, 0.35);
+    game.audio?.play?.('perfect_dodge', { position: pos });
+    mp = Math.min(100, mp + BLINK_MP);
+    perfectFx = 1;
+    ev('perfectDodge', { source: hit?.source || null, position: pos.clone(), cls: 'mage' });
+  }
+  function breakBlock() {
+    if (!blocking) return;
+    blocking = false; blockT = 0;
+    game.audio?.play?.(cls === 'mage' ? 'mana_empty' : 'guard_break', { position: pos });
+  }
+  function guardBreak() {
+    breakBlock();
+    guardBreakT = GUARD_BREAK_T; exhausted = true; hurt = 1;
+    vfxCall('burst', v1.copy(pos).setY(pos.y + 1.2), { count: 20, color: [0xffd28a, 0xffffff], speed: 5, spread: 1, size: 0.1, life: 0.4, shape: 'spark', drag: 3 });
+    vfxCall('shake', 0.3);
+    ev('guardBreak', { position: pos.clone() });
+  }
+  function startBlock() {
+    if (blocking || guardBreakT > 0 || dashT > 0 || blinkT > 0) return;
+    if (cls === 'mage' ? mp < 3 : stamina < 5) return;
+    blocking = true; blockT = 0;
+    endGlide();
+    game.audio?.play?.(cls === 'mage' ? 'barrier_up' : 'block', { position: pos });
+    if (cls === 'sword') { swordDrawn = true; api.swordIdleT = 0; }
+  }
+  function tryDash(canAct) {
+    if (!entity.alive || dying || dashT > 0 || !canAct || guardBreakT > 0) return;
+    const maxC = DASH_CHARGES + (mods.extraDash || 0);
+    if (dashCharges <= 0) return;
+    if (stamina < DASH_STAMINA && !exhausted) { /* allow into exhaustion */ }
+    if (exhausted && stamina < DASH_STAMINA) { game.audio?.play?.('guard_break', { volume: 0.3, pitch: 1.6 }); return; }
+    stamina = Math.max(0, stamina - DASH_STAMINA); lastStamUse = game.time;
+    if (dashCharges === maxC) dashRecharge = DASH_RECHARGE;
+    dashCharges--;
+    if (wish.lengthSq() > 0.01) dashDir.copy(wish).setY(0).normalize();
+    else dashDir.set(-Math.sin(yaw), 0, -Math.cos(yaw)).negate(); // no input: hop backwards from the camera view
+    blocking = false;
+    endGlide();
+    dashT = DASH_TIME; dashIframeT = DASH_IFRAMES; dashStartT = game.time; ghostT2 = 0;
+    facing = Math.atan2(dashDir.x, dashDir.z);
+    if (grounded) vy = 0;
+    const c = ELEMENT_COLORS[element];
+    v1.copy(pos).setY(pos.y + 0.3);
+    vfxCall('burst', v1, { count: 10, color: 0xe6dbc0, speed: 2.5, spread: 0.5, dir: v2.copy(dashDir).negate().setY(0.3), size: 0.35, sizeEnd: 0.9, life: 0.45, shape: 'smoke', additive: false, drag: 3 });
+    vfxCall('burst', v1.setY(pos.y + 1), { count: 12, color: [c, 0xffffff], speed: 3, spread: 0.6, dir: v2.copy(dashDir).negate(), size: 0.08, sizeEnd: 0, life: 0.3, shape: 'spark', drag: 3 });
+    vfxCall('fovKick', 3, 0.22);
+    game.audio?.play?.('dash', { position: pos });
+    ev('dash', { position: pos.clone(), direction: dashDir.clone() });
   }
   function onDeath() {
     if (dying) return;
@@ -148,8 +379,9 @@ export function createPlayer(game) {
     for (const k of Object.keys(entity.statuses || {})) { try { game.combat?.clearStatus?.(entity, k); } catch (e) { /* */ } }
     entity.statuses = entity.statuses || {};
     for (const k of Object.keys(entity.statuses)) delete entity.statuses[k];
-    entity.alive = true; entity.hp = entity.maxHp; mp = 100; stamina = 100; exhausted = false;
+    entity.alive = true; entity.hp = entity.maxHp; mp = 100; stamina = maxStam(); exhausted = false;
     dying = false; deadW = 0; deadTime = 0; hurt = 0; blinkT = 0; blinkCd = 0; invulT = 1.5; entity.invulnerable = true;
+    blocking = false; guardBreakT = 0; dashT = 0; dashIframeT = 0; dashCharges = DASH_CHARGES + (mods.extraDash || 0); counterReady = 0;
     root.visible = true; cape.mesh.visible = true;
     if (!game.entities.includes(entity)) game.combat?.register?.(entity);
     placeAtSpawn(true);
@@ -188,7 +420,7 @@ export function createPlayer(game) {
     const th = groundAt(blinkTo.x, blinkTo.z);
     blinkTo.y = grounded ? th : Math.max(th, pos.y + 0.3);
     blinkT = BLINK_TIME; blinkCd = BLINK_CD;
-    entity.invulnerable = true; invulT = BLINK_TIME + 0.18;
+    blinkGuardT = BLINK_TIME + 0.18; blinkStartT = game.time;
     gliding && endGlide();
     vy = 0; ghostTimer = 0;
     const c = ELEMENT_COLORS[element];
@@ -211,20 +443,110 @@ export function createPlayer(game) {
     squash = Math.max(squash, 0.35);
   }
 
-  function endGlide() { if (gliding) { gliding = false; ev('glideEnd', { position: pos.clone() }); } }
+  function endGlide() {
+    if (gliding) { gliding = false; ev('glideEnd', { position: pos.clone() }); }
+    if (inUpdraft) { inUpdraft = false; ev('updraftExit', { position: pos.clone() }); }
+  }
+
+  function setClass(c) {
+    c = c === 'sword' ? 'sword' : c === 'mage' ? 'mage' : null;
+    cls = c;
+    setOutfit(rig, gear, cape, c || 'mage');
+    if (!c) {
+      // neutral villager look before the blessing: no hat, staff or vial
+      if (rig.hat) rig.hat.visible = false;
+      if (rig.staff) rig.staff.visible = false;
+      if (rig.vial) rig.vial.visible = false;
+    }
+    entity.name = c === 'sword' ? '검사' : c === 'mage' ? '마법사' : '바람결의 젊은이';
+    swordDrawn = false; drawnW = 0;
+    gear.sword.visible = false; gear.sheathed.visible = c === 'sword';
+    blocking = false;
+    dashCharges = DASH_CHARGES + (mods.extraDash || 0);
+  }
 
   // ---------- api ----------
+  const maxStam = () => api.maxStamina || 100;
   const api = {
     entity, object: root, rig,
     get hp() { return entity.hp; }, set hp(v) { entity.hp = v; },
     get maxHp() { return entity.maxHp; }, set maxHp(v) { entity.maxHp = v; },
     get mp() { return mp; }, set mp(v) { mp = clamp(v, 0, 100); }, maxMp: 100,
-    get stamina() { return stamina; }, set stamina(v) { stamina = clamp(v, 0, 100); }, maxStamina: 100,
+    get stamina() { return stamina; }, set stamina(v) { stamina = clamp(v, 0, maxStam()); }, maxStamina: 100,
     get exhausted() { return exhausted; },
     get gliding() { return gliding; }, get sprinting() { return sprinting; },
     get grounded() { return grounded; },
     get blinkCooldown() { return blinkCd; }, blinkCooldownMax: BLINK_CD, blinkCost: BLINK_MP,
     get element() { return element; },
+    // ---- v2 ----
+    get cls() { return cls; },
+    get blocking() { return blocking; },
+    get dashing() { return dashT > 0 || blinkT > 0; },
+    get guardBroken() { return guardBreakT > 0; },
+    get counterReady() { return counterReady; },
+    get counterTarget() { return counterTarget; },
+    consumeCounter() { const t = counterTarget; counterReady = 0; counterTarget = null; return t; },
+    get facing() { return facing; },
+    get swordDrawn() { return swordDrawn; },
+    swordIdleT: 0,
+    action, mods, gear,
+    get camForward() { return camFwd; },
+    setClass,
+    /** Draw/sheathe the sword (swordsman). */
+    setSwordDrawn(on) {
+      on = !!on && cls === 'sword';
+      if (on === swordDrawn) return;
+      swordDrawn = on;
+      game.audio?.play?.('sword_draw', { position: pos, pitch: on ? 1 : 0.8, volume: on ? 0.8 : 0.5 });
+      if (on) { api.getSwordTip(v1); vfxCall('burst', v1, { count: 10, color: [ELEMENT_COLORS[element], 0xffffff], speed: 2, spread: 1, size: 0.08, sizeEnd: 0, life: 0.3, shape: 'spark', drag: 3 }); }
+    },
+    getSwordTip(out = new THREE.Vector3()) { return (swordDrawn ? gear.tip : gear.sheathed).getWorldPosition(out); },
+    getSwordBase(out = new THREE.Vector3()) { return (swordDrawn ? gear.base : gear.sheathed).getWorldPosition(out); },
+    /** Instantly move the hero (sword skills). */
+    teleport(p, snapGround = true) {
+      const ox = pos.x, oy = pos.y, oz = pos.z;
+      pos.copy(p);
+      try { W()?.resolveCollision?.(pos, entity.radius); } catch (e) { /* */ }
+      const gh = groundAt(pos.x, pos.z);
+      if (snapGround || pos.y < gh) { pos.y = gh; vy = 0; grounded = true; }
+      cape.shift(pos.x - ox, pos.y - oy, pos.z - oz);
+      root.updateMatrixWorld(true);
+    },
+    setFacing(a) { facing = prevFacing = a; root.rotation.y = a; },
+    spawnGhost(color, life = 0.35, opacity = 0.8) { ghosts.spawn(pos, facing + action.bodyYaw, color, life, opacity); },
+    /** Slow-mo compensation: during the perfect-dodge 반격 window the hero moves at full speed. */
+    timeComp() { return dilateT > 0 && game._slowTime > 0 && game._slowScale > 0 ? 1 / game._slowScale : 1; },
+    getDefenseHud() {
+      const hud = defHud;
+      hud.block.active = blocking;
+      hud.block.perfect = blocking && blockT <= (cls === 'sword' ? PERFECT_GUARD : PERFECT_BARRIER);
+      hud.block.type = cls === 'sword' ? 'guard' : 'barrier';
+      if (cls === 'sword') {
+        hud.dash.charges = dashCharges; hud.dash.maxCharges = DASH_CHARGES + (mods.extraDash || 0);
+        hud.dash.cooldownFrac = dashCharges < hud.dash.maxCharges ? clamp(dashRecharge / DASH_RECHARGE, 0, 1) : 0;
+      } else {
+        hud.dash.charges = blinkCd <= 0 ? 1 : 0; hud.dash.maxCharges = 1; hud.dash.cooldownFrac = clamp(blinkCd / BLINK_CD, 0, 1);
+      }
+      return hud;
+    },
+    /** New game: put the hero in their home in the village. */
+    placeInVillage() {
+      checkpoint = null;
+      for (const k of Object.keys(entity.statuses || {})) delete entity.statuses[k];
+      entity.alive = true; entity.hp = entity.maxHp; mp = 100; stamina = maxStam(); exhausted = false;
+      dying = false; deadW = 0; hurt = 0; blocking = false; dashT = 0; blinkT = 0; counterReady = 0;
+      root.visible = true; cape.mesh.visible = true;
+      const home = W()?.village?.playerHome || W()?.playerSpawn;
+      if (home) { pos.set(home.x, 0, home.z); try { W()?.resolveCollision?.(pos, entity.radius + 0.3); } catch (e) { /* */ } }
+      else pos.set(0, 0, 120);
+      pos.y = groundAt(pos.x, pos.z);
+      vy = 0; hv.set(0, 0, 0); velocity.set(0, 0, 0); grounded = wasGrounded = true;
+      const yawH = W()?.village?.playerHomeYaw;
+      facing = prevFacing = Number.isFinite(yawH) ? yawH : Math.PI;
+      yaw = facing - Math.PI; pitch = -0.12;
+      root.rotation.set(0, facing, 0); root.updateMatrixWorld(true);
+      cape.reset(); camSnap = true;
+    },
     get yaw() { return yaw; }, get pitch() { return pitch; },
     /** Test hook: set camera look angles directly. */
     setLook(y, p = pitch) { yaw = y; pitch = clamp(p, PITCH_MIN, PITCH_MAX); },
@@ -243,7 +565,10 @@ export function createPlayer(game) {
         const r = W()?.bossArena?.rampStart;
         if (r) checkpoint = { x: r.x, z: r.z, boss: true };
       });
-      events.on('stateChange', (p) => { if (p?.state === 'playing' && p.prev === 'title') camSnap = true; });
+      events.on('stateChange', (p) => { if (p?.state === 'playing' && (p.prev === 'title' || p.prev === 'cutscene')) camSnap = true; });
+      events.on('pathChosen', (p) => setClass(p?.cls));
+      setClass(game.progression?.cls || null);
+      try { combatHasBlock = /onBeforeDamage/.test(String(game.combat?.dealDamage || '')); } catch (e) { combatHasBlock = false; }
       // frame the hero for the title screen
       updateCamera(0.016);
     },
@@ -317,17 +642,20 @@ export function createPlayer(game) {
     respawn,
 
     update(dt, realDt) {
+      dt *= api.timeComp();
       const t = game.time;
       const combat = game.combat;
-      let canAct = entity.alive && !dying;
+      let canAct = entity.alive && !dying && guardBreakT <= 0;
       try { if (canAct && combat?.canAct) canAct = combat.canAct(entity) !== false; } catch (e) { /* */ }
       let sm = 1;
       try { sm = combat?.speedMul ? (combat.speedMul(entity) ?? 1) : 1; } catch (e) { /* */ }
 
       // ---------- camera look input ----------
       if (!dying) {
-        yaw -= input.mouseDX * SENS;
-        pitch = clamp(pitch - input.mouseDY * SENS, PITCH_MIN, PITCH_MAX);
+        const sv = game.settings?.values;
+        const sens = SENS * (Number.isFinite(sv?.mouseSens) ? sv.mouseSens : 1);
+        yaw -= input.mouseDX * sens;
+        pitch = clamp(pitch - input.mouseDY * sens * (sv?.invertY ? -1 : 1), PITCH_MIN, PITCH_MAX);
       }
       camFwd.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
       camRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
@@ -335,12 +663,25 @@ export function createPlayer(game) {
       // ---------- timers ----------
       blinkCd = Math.max(0, blinkCd - dt);
       if (invulT > 0) { invulT -= dt; if (invulT <= 0) entity.invulnerable = false; }
+      if (blinkGuardT > 0) blinkGuardT -= dt;
       castRecent = Math.max(0, castRecent - dt);
       gemFlare = Math.max(0, gemFlare - dt * 2.2);
       hurt = Math.max(0, hurt - dt * 3.2);
       squash = Math.max(0, squash - dt * 4);
       jumpBuffer = Math.max(0, jumpBuffer - dt);
       if (castKind) { castT += dt; if (castT >= CAST_DUR[castKind]) castKind = null; }
+      // v2 timers
+      if (guardBreakT > 0) guardBreakT -= dt;
+      if (dashIframeT > 0) dashIframeT -= dt;
+      if (counterReady > 0) { counterReady -= realDt; if (counterReady <= 0) counterTarget = null; }
+      perfectFx = Math.max(0, perfectFx - realDt * 2);
+      if (dilateT > 0) dilateT -= realDt;
+      {
+        const maxC = DASH_CHARGES + (mods.extraDash || 0);
+        if (dashCharges > maxC) dashCharges = maxC;
+        if (dashCharges < maxC) { dashRecharge -= dt; if (dashRecharge <= 0) { dashCharges++; dashRecharge = dashCharges < maxC ? DASH_RECHARGE : 0; } }
+      }
+      if (cls !== 'sword' && action.active) action.active = false;
 
       // ---------- move intent ----------
       const ix = (input.down('KeyD') ? 1 : 0) - (input.down('KeyA') ? 1 : 0);
@@ -349,10 +690,35 @@ export function createPlayer(game) {
       wish.set(0, 0, 0).addScaledVector(camRight, ix).addScaledVector(v1, iz);
       if (wish.lengthSq() > 1) wish.normalize();
       if (!canAct) wish.set(0, 0, 0);
+      const actOn = cls === 'sword' && action.active;
+      const rawMoving = wish.lengthSq() > 0.01;
+      if (actOn) wish.multiplyScalar(action.move);
       const moving = wish.lengthSq() > 0.01;
 
-      if (input.pressed('Space') && canAct) jumpBuffer = 0.12;
-      if (input.pressed('KeyQ')) tryBlink(canAct);
+      // ---------- block (E hold) ----------
+      const skillsOn = !!cls && game.progression?.chosen !== false;
+      // dodge/guard may cancel an attack's recovery once its last hit window is over (sword.js dodgeCancelable)
+      const dodgeOk = !actOn || action.cancelable || action.dodgeCancelable;
+      blockHeld = input.down('KeyE') && canAct && skillsOn;
+      if (blocking) {
+        blockT += dt;
+        if (!blockHeld || !canAct) breakBlock();
+        else if (cls === 'mage') {
+          mp -= BARRIER_DRAIN * dt; lastMpSpend = t;
+          if (mp <= 0) { mp = 0; breakBlock(); }
+        } else lastStamUse = t;
+      } else if (blockHeld && dodgeOk) {
+        const ok = cls === 'mage' ? mp >= 3 : stamina >= 5;
+        if (ok) startBlock();
+        else if (input.pressed('KeyE')) game.audio?.play?.(cls === 'mage' ? 'mana_empty' : 'guard_break', { volume: 0.4 });
+      }
+
+      if (input.pressed('Space') && canAct && !(actOn && !action.cancelable)) jumpBuffer = 0.12;
+      if (input.pressed('KeyQ') && skillsOn) {
+        if (cls === 'sword') { if (dodgeOk) tryDash(canAct); }
+        else tryBlink(canAct);
+      }
+      void rawMoving;
 
       // ---------- death ----------
       if (dying) {
@@ -378,12 +744,12 @@ export function createPlayer(game) {
         cape.shift(pos.x - ox, pos.y - oy, pos.z - oz);
         root.visible = false; cape.mesh.visible = false;
         ghostTimer -= dt;
-        if (ghostTimer <= 0) { ghostTimer = 0.024; ghosts.spawn(pos, facing, elemColor, 0.38, 0.75); }
+        if (ghostTimer <= 0) { ghostTimer = 0.05; ghosts.spawn(pos, facing, elemColor, 0.38, 0.75); }
         if (blinkT <= 0) endBlink();
         vy = 0; grounded = blinkT > 0 ? grounded : pos.y <= groundAt(pos.x, pos.z) + 0.01;
       } else {
         // ---------- stamina / sprint ----------
-        const wantSprint = input.down('ShiftLeft') && moving && grounded && !exhausted && canAct && !charging;
+        const wantSprint = input.down('ShiftLeft') && moving && grounded && !exhausted && canAct && !charging && !blocking && !actOn && dashT <= 0;
         sprinting = wantSprint && stamina > 0;
         // ---------- water ----------
         let gh = groundAt(pos.x, pos.z);
@@ -394,11 +760,19 @@ export function createPlayer(game) {
         let speed = sprinting ? SPRINT : WALK;
         if (charging) speed *= 0.55;
         else if (castKind || castRecent > 0.3) speed *= 0.8;
-        speed *= sm * wade;
+        if (blocking) speed *= cls === 'sword' ? 0.45 : 0.55;
+        speed *= sm * wade * (mods.moveMul || 1);
         if (swimming) speed = Math.min(speed, 2.6);
 
         // ---------- jump ----------
         if (grounded) { coyote = 0.12; airTime = 0; } else { coyote -= dt; airTime += dt; }
+        if (grounded) airJumps = 0;
+        if (jumpBuffer > 0 && coyote <= 0 && !grounded && mods.doubleJump && airJumps < 1 && canAct && !swimming && !gliding && airTime > 0.1) {
+          airJumps++; vy = JUMP_VEL * 0.95; jumpBuffer = 0; airTime = 0.05;
+          ev('jump', { position: pos.clone(), double: true });
+          vfxCall('burst', v1.copy(pos).setY(pos.y + 0.1), { count: 16, color: [ELEMENT_COLORS.wind, 0xffffff], speed: 3, spread: 0.3, dir: v2.set(0, -1, 0), size: 0.1, sizeEnd: 0, life: 0.4, shape: 'spark', drag: 3 });
+          vfxCall('shockwave', v1, { color: ELEMENT_COLORS.wind, radius: 1.6, duration: 0.3, opacity: 0.7, thickness: 0.12 });
+        }
         if (jumpBuffer > 0 && coyote > 0 && canAct && !swimming) {
           vy = JUMP_VEL; grounded = false; coyote = 0; jumpBuffer = 0;
           ev('jump', { position: pos.clone() });
@@ -407,14 +781,23 @@ export function createPlayer(game) {
 
         // ---------- glide ----------
         const heightAbove = pos.y - (depth > 0 ? Math.max(gh, wl) : gh);
-        const canGlide = !grounded && input.down('Space') && canAct && !exhausted && stamina > 0 && airTime > 0.22 && vy < 0.5 && heightAbove > 0.9;
+        const canGlide = !grounded && input.down('Space') && canAct && !exhausted && stamina > 0 && airTime > 0.22 && (gliding || vy < 0.5) && heightAbove > 0.9
+          && !(actOn && action.noGlide) && dashT <= 0 && !blocking;
         if (canGlide && !gliding) {
           gliding = true; ev('glideStart', { position: pos.clone() });
           vfxCall('burst', v1.copy(pos).setY(pos.y - 0.1), { count: 22, color: [ELEMENT_COLORS[element], 0xffffff], speed: 3, spread: 0.25, dir: v2.set(0, -0.2, 0), size: 0.1, life: 0.6, shape: 'spark', drag: 2 });
         } else if (!canGlide && gliding) endGlide();
 
         // ---------- horizontal ----------
-        if (gliding) {
+        if (dashT > 0) {
+          const k = 1 - dashT / DASH_TIME;
+          const v = (DASH_DIST / (DASH_TIME * 0.7)) * (1 - 0.6 * k);
+          hv.copy(dashDir).multiplyScalar(v);
+          dashT -= dt;
+          ghostT2 -= dt;
+          if (ghostT2 <= 0) { ghostT2 = 0.045; ghosts.spawn(pos, facing, perfectFx > 0 ? DODGE_COL : DASH_COL, 0.3, 0.55); }
+          if (dashT <= 0) { hv.copy(dashDir).multiplyScalar(WALK * 0.7); squash = Math.max(squash, 0.25); }
+        } else if (gliding) {
           if (moving) v2.copy(wish).multiplyScalar(GLIDE_SPEED * sm);
           else v2.set(Math.sin(facing), 0, Math.cos(facing)).multiplyScalar(GLIDE_SPEED * 0.55 * sm);
           hv.x = damp(hv.x, v2.x, 2.2, dt); hv.z = damp(hv.z, v2.z, 2.2, dt);
@@ -427,17 +810,27 @@ export function createPlayer(game) {
         // ---------- vertical ----------
         // fold external vertical velocity (launch) into own vy
         if (Math.abs(velocity.y) > 1e-4) { vy += velocity.y; velocity.y = 0; if (vy > 0) grounded = false; }
+        if (actOn && Number.isFinite(action.setVy)) { vy = action.setVy; if (vy > 0) grounded = false; }
         const vyBefore = vy;
         if (!grounded) {
           if (gliding) {
             if (vy < -GLIDE_FALL) vy = damp(vy, -GLIDE_FALL, 6, dt);
             else vy = Math.max(vy - GRAVITY * 0.25 * dt, -GLIDE_FALL);
-          } else vy -= GRAVITY * dt;
+            // rising heat from burning grass lifts the glider (BotW updraft)
+            let up = 0;
+            try { up = W()?.surface?.getUpdraft?.(pos) || 0; } catch (e) { up = 0; }
+            if (up > 0) {
+              vy = Math.min(vy + up * dt, UPDRAFT_VY_CAP);
+              updraftT = 0.25;
+              if (!inUpdraft) { inUpdraft = true; ev('updraftEnter', { position: pos.clone() }); }
+              if (Math.random() < 0.3) vfxCall('burst', v1.set(pos.x + rand(-0.8, 0.8), pos.y - 0.6, pos.z + rand(-0.8, 0.8)), { count: 1, color: [0xffd090, 0xff8040], speed: 4, spread: 0.1, dir: UP, size: 0.06, sizeEnd: 0, life: 0.5, shape: 'spark' });
+            } else if (inUpdraft) { updraftT -= dt; if (updraftT <= 0) { inUpdraft = false; ev('updraftExit', { position: pos.clone() }); } }
+          } else vy -= GRAVITY * dt * (actOn ? action.gravityMul : 1);
         }
 
         // ---------- integrate ----------
-        pos.x += (hv.x + velocity.x) * dt;
-        pos.z += (hv.z + velocity.z) * dt;
+        pos.x += (hv.x + velocity.x + (actOn ? action.vel.x : 0)) * dt;
+        pos.z += (hv.z + velocity.z + (actOn ? action.vel.z : 0)) * dt;
         pos.y += vy * dt;
         const fr = grounded ? 9 : 0.8;
         velocity.x *= Math.exp(-fr * dt); velocity.z *= Math.exp(-fr * dt);
@@ -504,11 +897,12 @@ export function createPlayer(game) {
 
         // ---------- stamina ----------
         if (sprinting) { stamina -= 18 * dt; lastStamUse = t; }
-        else if (gliding) { stamina -= 10 * dt; lastStamUse = t; }
+        else if (gliding) { stamina -= (inUpdraft ? 4 : 10) * dt; lastStamUse = t; }
+        else if (blocking && cls === 'sword') lastStamUse = t;
         else if (t - lastStamUse > 0.5) stamina += (grounded ? 30 : 12) * dt;
         if (stamina <= 0) { stamina = 0; exhausted = true; sprinting = false; endGlide(); }
         if (exhausted && stamina >= 30) exhausted = false;
-        stamina = Math.min(100, stamina);
+        stamina = Math.min(maxStam(), stamina);
 
         // ---------- water fx ----------
         if (depth > 0.05 && grounded || depth > DEEP_WATER) {
@@ -526,14 +920,18 @@ export function createPlayer(game) {
       if (entity.alive && t - lastMpSpend > 0.8) mp = Math.min(100, mp + 9 * dt);
 
       // ---------- facing ----------
-      const aiming = (charging || castRecent > 0) && !dying;
+      const aiming = cls === 'mage' && (charging || castRecent > 0 || blocking) && !dying;
       const hspeed = Math.hypot(hv.x, hv.z);
-      let target = facing;
+      let target = facing, turnL = aiming ? 22 : (gliding ? 5 : 12);
       if (aiming) target = yaw + Math.PI;
+      else if (actOn && action.facing != null) { target = action.facing; turnL = action.turn; }
+      else if (cls === 'sword' && blocking) { target = yaw + Math.PI; turnL = 16; }
+      else if (actOn) target = facing;
+      else if (dashT > 0) target = facing;
       else if (hspeed > 0.6 && blinkT <= 0) target = Math.atan2(hv.x, hv.z);
       prevFacing = facing;
-      if (!dying && canAct) facing = dampAngle(facing, target, aiming ? 22 : (gliding ? 5 : 12), dt);
-      root.rotation.set(0, facing, 0);
+      if (!dying && canAct) facing = dampAngle(facing, target, turnL, dt);
+      root.rotation.set(0, facing + (actOn ? action.bodyYaw : 0), 0);
       turnRate = dt > 0 ? damp(turnRate, angleDiff(prevFacing, facing) / dt, 10, dt) : turnRate;
       bank = damp(bank, clamp(-turnRate * 0.045 * clamp(hspeed / 6, 0, 1.4), -0.3, 0.3) + (gliding ? clamp(-turnRate * 0.12, -0.45, 0.45) : 0), 8, dt);
 
@@ -559,7 +957,7 @@ export function createPlayer(game) {
       wSprint = damp(wSprint, sprinting ? 1 : 0, 6, dt);
       wAir = damp(wAir, !grounded && !gliding && blinkT <= 0 ? 1 : 0, grounded ? 14 : 7, dt);
       wGlide = damp(wGlide, gliding ? 1 : 0, 6, dt);
-      const actionTarget = (castKind || charging) && !dying ? 1 : 0;
+      const actionTarget = (castKind || charging || (blocking && cls === 'mage')) && !dying ? 1 : 0;
       wAction = damp(wAction, actionTarget, actionTarget ? 22 : 7, dt);
       wAim = damp(wAim, aiming ? 1 : 0, 7, realDt);
       wFov = damp(wFov, sprinting ? 1 : gliding ? 0.6 : 0, 4, realDt);
@@ -578,7 +976,7 @@ export function createPlayer(game) {
       A.castKind = castKind; A.castT01 = castKind ? castT / CAST_DUR[castKind] : 0;
       if (!castKind && wAction > 0.01 && !charging) A.castKind = A._lastKind || null, A.castT01 = 1;
       if (castKind) A._lastKind = castKind;
-      if (charging) A.castKind = null;
+      if (charging || (blocking && cls === 'mage')) A.castKind = null;
       A.chargeFrac = chargeFrac; A.hurt = hurt; A.squash = squash;
       A.dead = deadW < 1 ? deadW * deadW * (3 - 2 * deadW) : 1;
       A.bank = bank; A.vy = grounded ? 0 : vy; A.localVx = lvx; A.localVz = lvz;
@@ -586,8 +984,33 @@ export function createPlayer(game) {
       A.flare = clamp(wGlide * 0.9 + (grounded ? 0 : clamp(-vy / 14, 0, 0.7)), 0, 1);
       A.flutter = clamp(wGlide + wSprint * 0.4 + clamp(-vy / 20, 0, 0.5), 0, 1.5);
       A.accel = accelF * 0.05;
+      // ---------- swordsman stance / action pose ----------
+      const isSword = cls === 'sword';
+      if (isSword && (actOn || blocking)) swordDrawn = true;
+      drawnW = damp(drawnW, isSword && swordDrawn && !dying ? 1 : 0, 18, dt || realDt);
+      if (isSword) {
+        gear.sword.visible = swordDrawn; gear.sheathed.visible = !swordDrawn;
+        if (blocking) lerpPose(stancePose, STANCE.idle, STANCE.guard, 1);
+        else {
+          lerpPose(stancePose, STANCE.idle, STANCE.run, clamp(speedFrac / 1.4, 0, 1) * (1 - wAir) * (1 - wGlide));
+          if (wAir > 0.01) lerpPose(stancePose, stancePose, STANCE.air, wAir);
+          if (wGlide > 0.01) lerpPose(stancePose, stancePose, STANCE.glide, wGlide);
+        }
+        lerpPose(finalPose, stancePose, action.pose, actOn ? action.poseW : 0);
+        const w = drawnW;
+        A.swTw = finalPose[6] * w; A.swTl = finalPose[7] * w; A.swCr = finalPose[8] * w; A.swHy = finalPose[9] * w;
+        A.swHd = finalPose[14] * w; A.swBk = finalPose[15] * w;
+        if (actOn || blocking) { A.wAction = 0; A.castKind = null; }
+      } else { A.swTw = A.swTl = A.swCr = A.swHy = A.swHd = A.swBk = 0; }
       anim.update(A);
+      if (isSword && drawnW > 0.001) applySwordArms(rig, gear, finalPose, drawnW);
       root.updateMatrixWorld(true);
+      if (isSword) {
+        gear.edgeMat.uniforms.uTime.value = t;
+        const ei = 0.55 + (actOn ? 0.45 : 0) + perfectFx * 0.8 + (counterReady > 0 ? 0.6 : 0);
+        gear.edgeMat.uniforms.uIntensity.value = damp(gear.edgeMat.uniforms.uIntensity.value, ei, 10, realDt);
+      }
+      barrier.update(realDt, blocking && cls === 'mage', pos, t);
 
       // ---------- staff gem ----------
       const glow = 1 + chargeFrac * 1.6 + gemFlare * 1.5;
@@ -599,7 +1022,7 @@ export function createPlayer(game) {
       rig.gemCore.scale.setScalar(1 + chargeFrac * 1.2 + gemFlare * 0.6);
       rig.halo.scale.setScalar((0.5 + chargeFrac * 0.9 + gemFlare * 0.6) * pulse);
       rig.haloMat.opacity = 0.7 + chargeFrac * 0.3;
-      rig.light.intensity = (0.18 + Math.sin(t * 6.3) * 0.03) * glow * glow;
+      rig.light.intensity = cls === 'sword' ? 0 : (0.18 + Math.sin(t * 6.3) * 0.03) * glow * glow;
       rig.light.distance = 5 + chargeFrac * 4;
       for (let i = 0; i < rig.motes.length; i++) {
         const a = t * (2.2 + i * 0.37) + i * 1.9;
@@ -659,24 +1082,40 @@ export function createPlayer(game) {
   };
 
   // Approximate heights of solid colliders the camera should not pass through (trees/stakes skipped: jitter).
-  const CAM_SOLID = { pillar: 9, arch: 8, hut: 5, tent: 3.5, tower: 9, rubble: 1.4, rack: 2, crate: 1.2, stake: 2.8, totem: 3.2 }; // trees: see-through dither instead (world/prefab.js occludable)
+  // camera-blocking prop heights (trees: see-through dither instead, world/prefab.js occludable)
+  const CAM_SOLID = {
+    pillar: 9, arch: 8, hut: 5, tent: 3.5, tower: 9, rubble: 1.4, rack: 2, crate: 1.2, stake: 2.8, totem: 3.2,
+    house: 7.5, windmill: 12, well: 2.4, stall: 3.2, cart: 1.6, gate: 5,
+  };
   const CAM_PAD = { tree: 0.05, stake: 0.15, totem: 0.2 };
+  const camH = (c) => {
+    if (c._camH === undefined) {
+      c._camH = c.kind === 'rock' ? c.r * 1.3
+        : CAM_SOLID[c.kind] ?? (c.top != null && c.kind !== 'tree' ? Math.max(0, c.top - groundAt(c.x, c.z)) : 0);
+      c._camPad = CAM_PAD[c.kind] ?? 0.35;
+    }
+    return c._camH;
+  };
+  const boomCols = [];
   let camHoldT = 0;
   function propBoomLimit(dist, shoulder) {
-    const cols = W()?.colliders;
-    if (!cols || !cols.length) return dist;
+    const w = W();
+    const all = w?.colliders;
+    if (!all || !all.length) return dist;
     // boom end (horizontal) relative to pivot at f=1
     const dx = camRight.x * shoulder - camFwd.x * dist, dz = camRight.z * shoulder - camFwd.z * dist;
     const dy = -camFwd.y * dist;
     const a = dx * dx + dz * dz; if (a < 1e-6) return dist;
     const reach = Math.sqrt(a) + 4;
+    // only colliders in the grid cells around the boom (was: all ~1000 colliders every frame)
+    const cols = w.queryColliders ? w.queryColliders(pivot.x - reach - 3, pivot.z - reach - 3, pivot.x + reach + 3, pivot.z + reach + 3, boomCols) : all;
     let best = 1;
     for (let i = 0; i < cols.length; i++) {
       const c = cols[i];
-      const hgt = c.kind === 'rock' ? c.r * 1.3 : CAM_SOLID[c.kind];
+      const hgt = camH(c);
       if (!hgt) continue;
       const ox = pivot.x - c.x, oz = pivot.z - c.z;
-      const rr = c.r + (CAM_PAD[c.kind] ?? 0.35);
+      const rr = c.r + c._camPad;
       if (Math.abs(ox) > reach + rr || Math.abs(oz) > reach + rr) continue;
       const cc = ox * ox + oz * oz - rr * rr;
       if (cc < 0) continue; // pivot inside (player hugging it) — ignore

@@ -9,7 +9,7 @@
 const KEY = 'aw_settings_v2';
 
 export const PRESETS = {
-  low:    { grassDensity: 0.3, shadows: true,  shadowQuality: 'low',    renderScale: 0.75, bloom: false, drawDistance: 0.6, particleScale: 0.6 },
+  low:    { grassDensity: 0.3, shadows: false, shadowQuality: 'low',    renderScale: 0.75, bloom: false, drawDistance: 0.6, particleScale: 0.6 },
   medium: { grassDensity: 0.6, shadows: true,  shadowQuality: 'medium', renderScale: 1.0,  bloom: true,  drawDistance: 0.8, particleScale: 0.85 },
   high:   { grassDensity: 1.0, shadows: true,  shadowQuality: 'high',   renderScale: 1.0,  bloom: true,  drawDistance: 1.0, particleScale: 1.0 },
 };

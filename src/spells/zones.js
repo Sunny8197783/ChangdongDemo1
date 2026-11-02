@@ -115,9 +115,15 @@ export function createZones(S) {
       tick: 0, strikeT: 0.3, zapT: 0, comboT: 0, infusion: null, target: o.target ? o.target.clone() : null,
       speed: o.speed ?? 5, vis: takeVisual(type), seen: new Set(), height: type === 'storm' ? 16 : type === 'tornado' ? 11 : 2.4,
       fade: 0, burstT: 0, onEnd: o.onEnd || null,
+      strikeDmg: o.strikeDmg ?? 18, strikeMul: o.strikeMul ?? 1, dmgMul: o.dmgMul ?? 1,
     };
     setupVisual(z);
     zones.push(z);
+    // terrain interaction (grass fire / extinguish / walkable ice)
+    z.terrT = 0.9;
+    if (type === 'fire' || type === 'lava') S.terrain.ignite(z.pos, z.radius + 0.8);
+    else if (type === 'ice') S.terrain.chill(z.pos, z.radius);
+    else if (type === 'water') S.terrain.soak(z.pos, z.radius, 10);
     return z;
   }
 
@@ -180,7 +186,7 @@ export function createZones(S) {
   }
   function enemiesIn(z, extra = 0) {
     v.set(z.pos.x, z.pos.y + 1, z.pos.z);
-    S.combat.queryRadius(v, z.radius + extra, 'enemy', near);
+    S.combat.queryRadius(v, z.radius + extra, '!player', near);
     // queryRadius vertical check uses r; tall zones (storm) also want enemies high above ground
     return near;
   }
@@ -340,6 +346,8 @@ export function createZones(S) {
         u.fade.value = fade;
         u.zap.value = Math.max(0, u.zap.value - dt * 2.5);
       }
+      z.terrT -= dt;
+      if (z.terrT <= 0) { z.terrT = z.type === 'tornado' ? 0.4 : 1; terrainTick(z); }
       z.tick -= dt;
       const tickNow = z.tick <= 0;
       if (tickNow) z.tick += z.type === 'tornado' ? 0.35 : 0.5;
@@ -351,6 +359,18 @@ export function createZones(S) {
         case 'storm': updateStorm(z, dt, fade, tickNow, t); break;
         case 'tornado': updateTornado(z, dt, fade, tickNow, t); break;
       }
+    }
+  }
+
+  function terrainTick(z) {
+    switch (z.type) {
+      case 'fire': case 'lava': S.terrain.ignite(z.pos, z.radius + 0.5, 0.8); break;
+      case 'storm': S.terrain.soak(z.pos, z.radius, 8); break;
+      case 'tornado':
+        S.terrain.wind(z.pos, z.target ? v.subVectors(z.target, z.pos) : null, 1.5, z.radius + 3);
+        if (z.infusion === 'fire') S.terrain.ignite(z.pos, 2.2);
+        else if (z.infusion === 'ice') S.terrain.chill(z.pos, 3);
+        break;
     }
   }
 
@@ -427,9 +447,9 @@ export function createZones(S) {
       S.sfx('impact_lightning', { position: to, volume: 0.8 });
       p.flick = 1;
       if (target) {
-        S.combat.dealDamage(target, { amount: 18, element: 'lightning', source: 'player', point: to, status: { shocked: 3 }, tags: ['zone'] });
-        z.strikeT = 0.38;
-      } else { z.strikeT = 0.7; S.vfx('decal', to, { color: 0x2a2030, radius: 0.8, duration: 3, opacity: 0.5 }); }
+        S.combat.dealDamage(target, { amount: z.strikeDmg, element: 'lightning', source: 'player', point: to, status: { shocked: 3 }, tags: ['zone'] });
+        z.strikeT = 0.38 * z.strikeMul;
+      } else { z.strikeT = 0.7 * z.strikeMul; S.vfx('decal', to, { color: 0x2a2030, radius: 0.8, duration: 3, opacity: 0.5 }); }
       if (Math.random() < 0.3) S.vfx('screenFlash', 0xe8e0ff, 0.08, 0.1);
     }
   }

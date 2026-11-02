@@ -130,55 +130,95 @@ const ghostFS = /* glsl */`
     gl_FragColor = vec4(color * (0.55 + 1.6 * r), a);
   }`;
 
-/** Pool of silhouette clones of the live wizard rig that copy its pose when spawned. */
+/**
+ * Pool of afterimage ghosts. Each ghost is ONE mesh: on spawn the posed live rig (every visible part, in root
+ * space) is baked into that ghost's preallocated buffer, so a ghost costs 1 draw call instead of ~80.
+ * Ghosts don't animate after spawning, so a bake (~0.2 ms) only happens per spawn.
+ */
+const _gm = new THREE.Matrix4(), _gn = new THREE.Matrix3(), _gInv = new THREE.Matrix4(), _gv = new THREE.Vector3();
 export class Afterimages {
-  constructor(scene, liveRoot, count = 6) {
+  constructor(scene, liveRoot, count = 5) {
     this.items = [];
-    this.live = [];
-    liveRoot.traverse((o) => { this.live.push(o); });
+    this.liveRoot = liveRoot;
+    this.parts = [];          // {mesh, start, count}
+    let nv = 0, ni = 0;
+    const walk = (o) => {
+      if (o.isLight || o.isSprite || o.name === 'outline' || o.userData.noGhost) return;
+      if (o.isMesh && o.geometry?.attributes?.position && o.geometry.attributes.normal) {
+        const g = o.geometry; g.boundingSphere || g.computeBoundingSphere();
+        if (g.boundingSphere.radius >= 0.035) {
+          const c = g.attributes.position.count;
+          const ic = g.index ? g.index.count : c;
+          this.parts.push({ mesh: o, start: nv, count: c, istart: ni, icount: ic });
+          nv += c; ni += ic;
+        }
+      }
+      for (const ch of o.children) walk(ch);
+    };
+    walk(liveRoot);
+    // shared index buffer (topology is static)
+    const idx = new (nv > 65535 ? Uint32Array : Uint16Array)(ni);
+    for (const p of this.parts) {
+      const g = p.mesh.geometry;
+      if (g.index) for (let i = 0; i < p.icount; i++) idx[p.istart + i] = g.index.array[i] + p.start;
+      else for (let i = 0; i < p.icount; i++) idx[p.istart + i] = i + p.start;
+    }
+    const index = new THREE.BufferAttribute(idx, 1);
     for (let k = 0; k < count; k++) {
       const mat = new THREE.ShaderMaterial({
         uniforms: { color: { value: new THREE.Color(1, 1, 1) }, opacity: { value: 0 } },
         vertexShader: ghostVS, fragmentShader: ghostFS, transparent: true, depthWrite: false,
         blending: THREE.AdditiveBlending, side: THREE.FrontSide,
       });
-      const nodes = [];
-      const root = this._clone(liveRoot, mat, nodes);
-      root.visible = false;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nv * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nv * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      geo.setIndex(index);
+      const root = new THREE.Mesh(geo, mat);
+      root.frustumCulled = false; root.visible = false; root.renderOrder = 3;
       scene.add(root);
-      this.items.push({ root, nodes, mat, life: 0, max: 0.4 });
+      this.items.push({ root, mat, life: 0, max: 0.4 });
     }
   }
-  _clone(src, mat, nodes) {
-    let o;
-    if (src.isMesh && !src.userData.noGhost && src.name !== 'outline') { o = new THREE.Mesh(src.geometry, mat); o.frustumCulled = false; }
-    else o = new THREE.Object3D();
-    nodes.push(o);
-    for (const ch of src.children) {
-      if (ch.isLight || ch.isSprite || ch.name === 'outline' || ch.userData.noGhost) { nodes.push(null); continue; }
-      o.add(this._clone(ch, mat, nodes));
+  _visible(o) {
+    for (let p = o; p && p !== this.liveRoot; p = p.parent) if (!p.visible) return false;
+    return true;
+  }
+  _bake(geo) {
+    const pa = geo.attributes.position.array, na = geo.attributes.normal.array;
+    const lr = this.liveRoot;
+    lr.updateMatrixWorld(true);
+    _gInv.copy(lr.matrixWorld).invert();
+    for (const p of this.parts) {
+      const o = p.mesh, o3 = p.start * 3, n3 = p.count * 3;
+      if (!this._visible(o)) { pa.fill(0, o3, o3 + n3); continue; }   // degenerate: collapses to a point
+      _gm.multiplyMatrices(_gInv, o.matrixWorld);
+      _gn.getNormalMatrix(_gm);
+      const sp = o.geometry.attributes.position.array, sn = o.geometry.attributes.normal.array;
+      const e = _gm.elements, m = _gn.elements;
+      for (let i = 0; i < n3; i += 3) {
+        const x = sp[i], y = sp[i + 1], z = sp[i + 2];
+        pa[o3 + i] = e[0] * x + e[4] * y + e[8] * z + e[12];
+        pa[o3 + i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+        pa[o3 + i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+        const a = sn[i], b = sn[i + 1], c = sn[i + 2];
+        na[o3 + i] = m[0] * a + m[3] * b + m[6] * c;
+        na[o3 + i + 1] = m[1] * a + m[4] * b + m[7] * c;
+        na[o3 + i + 2] = m[2] * a + m[5] * b + m[8] * c;
+      }
     }
-    // keep traversal order aligned with this.live (depth-first, same as traverse)
-    return o;
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.normal.needsUpdate = true;
   }
   spawn(position, rotationY, color, life = 0.42, opacity = 0.9) {
     let it = this.items[0];
     for (const x of this.items) if (x.life <= 0) { it = x; break; } else if (x.life < it.life) it = x;
-    // copy local transforms: live traversal order == clone order (nulls for skipped subtrees)
-    this._copy(this.live[0], it.root);
+    this._bake(it.root.geometry);
     it.root.position.copy(position); it.root.rotation.set(0, rotationY, 0);
     it.root.scale.setScalar(1);
     it.mat.uniforms.color.value.copy(color);
     it.life = it.max = life; it.op = opacity;
     it.root.visible = true;
-  }
-  _copy(src, dst) {
-    dst.position.copy(src.position); dst.quaternion.copy(src.quaternion); dst.scale.copy(src.scale);
-    let j = 0;
-    for (const ch of src.children) {
-      if (ch.isLight || ch.isSprite || ch.name === 'outline' || ch.userData.noGhost) continue;
-      this._copy(ch, dst.children[j++]);
-    }
   }
   update(dt) {
     for (const it of this.items) {

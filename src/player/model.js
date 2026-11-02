@@ -13,7 +13,7 @@ export const COLORS = {
 
 const OUT = 0.016;
 
-function mk(geo, mat, parent, opts = {}) {
+export function mk(geo, mat, parent, opts = {}) {
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = opts.shadow !== false;
   m.receiveShadow = false;
@@ -26,13 +26,13 @@ function mk(geo, mat, parent, opts = {}) {
   return m;
 }
 
-function grp(parent, x = 0, y = 0, z = 0, name = '') {
+export function grp(parent, x = 0, y = 0, z = 0, name = '') {
   const g = new THREE.Group(); g.position.set(x, y, z); g.name = name; parent.add(g); return g;
 }
 
-const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+export const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 /** Canvas texture for lathe surfaces (u around, u=0/1 = front; v along profile). */
-function latheTexture(draw, W = 512, H = 256) {
+export function latheTexture(draw, W = 512, H = 256) {
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
   draw(g, W, H);
@@ -40,19 +40,19 @@ function latheTexture(draw, W = 512, H = 256) {
   t.wrapS = THREE.RepeatWrapping; t.anisotropy = 4;
   return t;
 }
-function frontPanel(g, W, H, half, border, color, y0 = 0, y1 = H) {
+export function frontPanel(g, W, H, half, border, color, y0 = 0, y1 = H) {
   const hw = half * W, bw = border * W;
   g.fillStyle = hex(color);
   g.fillRect(0, y0, hw, y1 - y0); g.fillRect(W - hw, y0, hw, y1 - y0);
   g.fillStyle = hex(COLORS.gold);
   g.fillRect(hw, y0, bw, y1 - y0); g.fillRect(W - hw - bw, y0, bw, y1 - y0);
 }
-function star(g, x, y, r) {
+export function star(g, x, y, r) {
   g.beginPath();
   for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? r * 0.35 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
   g.closePath(); g.fill();
 }
-function folds(g, W, H, n, alpha) {
+export function folds(g, W, H, n, alpha) {
   for (let i = 0; i < n; i++) {
     const x = (i + 0.5) / n * W;
     const gr = g.createLinearGradient(x - W / n / 2, 0, x + W / n / 2, 0);
@@ -115,29 +115,50 @@ class Skirt {
       this.r[i] = r; this.s[i] = r > 1e-5 ? x / r : 0; this.c[i] = r > 1e-5 ? z / r : 1;
       this.h[i] = THREE.MathUtils.clamp((0.07 - y) / 0.74, 0, 1);
     }
+    // per-vertex angle tables (angle addition at runtime: 6 trig calls per frame instead of ~2000)
+    this.s3 = new Float32Array(n); this.c3 = new Float32Array(n); this.s5 = new Float32Array(n); this.c5 = new Float32Array(n);
+    this.s2 = new Float32Array(n); this.c2 = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const ph = Math.atan2(this.s[i], this.c[i]);
+      this.s3[i] = Math.sin(ph * 3); this.c3[i] = Math.cos(ph * 3);
+      this.s5[i] = Math.sin(ph * 5); this.c5[i] = Math.cos(ph * 5);
+      this.s2[i] = Math.sin(ph * 2); this.c2[i] = Math.cos(ph * 2);
+    }
+    this._sig = NaN; this._settled = 0;
     const mat = toonMat(0xffffff, { map: skirtTexture(), side: THREE.DoubleSide });
     this.mesh = mk(geo, mat, parent, { outline: 0.014 });
-    this.mesh.userData.noMerge = true;
+    this.mesh.userData.noMerge = true; this.mesh.userData.skin = 'skirt'; this.mesh.userData.noSkin = true;
     this.mesh.frustumCulled = false;
   }
   /** legL/legR: leg pitch (neg = forward); vx,vz: model-space velocity; flare 0..1; t time */
   deform(legL, legR, vx, vz, vy, flare, t, flutter) {
+    if (!this.mesh.visible || (this.mesh.parent && !this.mesh.parent.visible)) return;
+    // the idle wave is tiny: once settled at rest, skip until something moves
+    const sig = Math.round(legL * 200) + Math.round(legR * 200) * 7 + Math.round(vx * 20) * 31 + Math.round(vz * 20) * 131 + Math.round(vy * 20) * 17 + Math.round(flare * 100) * 3 + Math.round(flutter * 100) * 11;
+    if (sig === this._sig && Math.abs(vx) + Math.abs(vz) + Math.abs(vy) < 0.05 && flare < 0.02 && flutter < 0.02) {
+      if (++this._settled > 2 && (this._settled & 3) !== 0) return;   // still animate the idle wave at 1/4 rate
+    } else this._settled = 0;
+    this._sig = sig;
     const p = this.geo.attributes.position.array;
     const n = this.h.length;
     const bx = THREE.MathUtils.clamp(-vx * 0.022, -0.22, 0.22);
     const bz = THREE.MathUtils.clamp(-vz * 0.022, -0.26, 0.22);
     const lift = THREE.MathUtils.clamp(vy * 0.02, -0.12, 0.12) + flare * 0.1;
+    const sA = Math.sin(t * 6.5), cA = Math.cos(t * 6.5), sB = Math.sin(t * 10.3), cB = Math.cos(t * 10.3), sC = Math.sin(t * 8), cC = Math.cos(t * 8);
+    const fl = 1 + flutter * 4;
+    const S = this.s, Cc = this.c, H = this.h, R = this.r, B = this.base, s3 = this.s3, c3 = this.c3, s5 = this.s5, c5 = this.c5, s2 = this.s2, c2 = this.c2;
     for (let i = 0; i < n; i++) {
-      const h = this.h[i]; const s = this.s[i], c = this.c[i];
+      const h = H[i]; const s = S[i], c = Cc[i];
       const h2 = h * h, h15 = h * Math.sqrt(h);
-      const ph = Math.atan2(s, c);
-      const wave = Math.sin(t * 6.5 + ph * 3) * 0.012 + Math.sin(t * 10.3 - ph * 5) * 0.007;
-      const rad = 1 + h2 * (wave * (1 + flutter * 4) + flare * 0.32);
+      // sin(t*6.5 + 3ph), sin(t*10.3 - 5ph), sin(2ph + t*8) via angle addition
+      const wave = (sA * c3[i] + cA * s3[i]) * 0.012 + (sB * c5[i] - cB * s5[i]) * 0.007;
+      const rad = 1 + h2 * (wave * fl + flare * 0.32);
       const legPush = (-legL * (0.5 + 0.5 * s) + -legR * (0.5 - 0.5 * s)) * 0.42 * h15;
-      const r = this.r[i] * rad;
-      p[i * 3] = r * s + bx * h2;
-      p[i * 3 + 2] = r * c + legPush + bz * h2;
-      p[i * 3 + 1] = this.base[i * 3 + 1] + lift * h2 * (0.6 + 0.4 * Math.sin(ph * 2 + t * 8) * flutter);
+      const r = R[i] * rad;
+      const i3 = i * 3;
+      p[i3] = r * s + bx * h2;
+      p[i3 + 2] = r * c + legPush + bz * h2;
+      p[i3 + 1] = B[i3 + 1] + lift * h2 * (0.6 + 0.4 * (s2[i] * cC + c2[i] * sC) * flutter);
     }
     this.geo.attributes.position.needsUpdate = true;
   }
@@ -158,8 +179,135 @@ function glowTexture() {
 let _glow = null;
 export const getGlowTexture = () => (_glow ||= glowTexture());
 
+// ------------------------------------------------------------------ rigid skinning (perf)
+// The hero rig is ~140 separate meshes (+ outlines) on many animated pivots. skinMerge() turns it into ONE
+// SkinnedMesh per (material, shadow) plus one skinned outline per thickness, whose "bones" are the original part
+// meshes themselves (weight 1, geometry in part-local space, identity bind) — so all animation / outfit code keeps
+// working on the originals, which stay in the graph for their matrices but are moved to a layer no camera renders.
+// Hidden parts (outfit swaps, sword drawn/sheathed, …) are collapsed with a zero bone matrix.
+export const HIDDEN_LAYER = 30;
+let _skinOutline = null;
+function skinOutlineMat(thickness, color) {
+  _skinOutline ||= new Map();
+  const key = thickness.toFixed(4) + ':' + color.getHexString();
+  let m = _skinOutline.get(key);
+  if (m) return m;
+  m = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { thickness: { value: thickness }, color: { value: color.clone() } }]),
+    vertexShader: /* glsl */`
+      uniform float thickness;
+      #include <common>
+      #include <skinning_pars_vertex>
+      #include <fog_pars_vertex>
+      void main() {
+        #include <beginnormal_vertex>
+        vec3 transformed = position + normalize(objectNormal) * thickness;
+        #include <skinbase_vertex>
+        #include <skinning_vertex>
+        vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 color;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main() {
+        gl_FragColor = vec4(color, 1.0);
+        #include <fog_fragment>
+      }`,
+    side: THREE.BackSide, fog: true,
+  });
+  _skinOutline.set(key, m);
+  return m;
+}
+export function skinMerge(root) {
+  root.updateMatrixWorld(true);
+  const parts = [];
+  const _ws = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh || o.name === 'outline' || o.userData.noSkin) return;
+    if (Array.isArray(o.material) || !o.material || o.morphTargetInfluences) return;
+    if (!o.geometry?.attributes?.position || !o.geometry.attributes.normal) return;
+    parts.push(o);
+  });
+  if (!parts.length) return null;
+  const bones = parts;
+  const ident = new THREE.Matrix4();
+  const skeleton = new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4()));
+  // zero the matrices of effectively hidden parts (visibility chain up to the root)
+  const baseUpdate = skeleton.update.bind(skeleton);
+  skeleton.update = function () {
+    baseUpdate();
+    const bm = this.boneMatrices;
+    for (let i = 0; i < bones.length; i++) {
+      let vis = true;
+      for (let p = bones[i]; p && p !== root; p = p.parent) if (!p.visible) { vis = false; break; }
+      if (!vis) bm.fill(0, i * 16, i * 16 + 16);
+    }
+    if (this.boneTexture) this.boneTexture.needsUpdate = true;
+  };
+  const prep = (o, bi) => {
+    let g = o.geometry.clone();
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.morphAttributes = {};
+    if (g.index) g = g.toNonIndexed();
+    const n = g.attributes.position.count;
+    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) { si[i * 4] = bi; sw[i * 4] = 1; }
+    g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+    return g;
+  };
+  const mkSkinned = (geo, mat) => {
+    const m = new THREE.SkinnedMesh(geo, mat);
+    m.bindMode = THREE.AttachedBindMode;
+    m.bind(skeleton, ident);
+    m.frustumCulled = false;
+    m.raycast = () => {};
+    m.userData.noGhost = true; m.userData.skinMerged = true;
+    root.add(m);
+    return m;
+  };
+  const byMat = new Map(), byOutline = new Map();
+  parts.forEach((o, bi) => {
+    const g = prep(o, bi);
+    const key = o.material.uuid + '|' + (o.castShadow ? 1 : 0) + '|' + (o.renderOrder || 0);
+    if (!byMat.has(key)) byMat.set(key, { mat: o.material, shadow: o.castShadow, ro: o.renderOrder || 0, geos: [] });
+    byMat.get(key).geos.push(g);
+    const ol = o.children.find((c) => c.name === 'outline');
+    if (ol) {
+      o.geometry.boundingSphere || o.geometry.computeBoundingSphere();
+      o.getWorldScale(_ws);
+      const big = o.geometry.boundingSphere.radius * Math.max(_ws.x, _ws.y, _ws.z) >= 0.06;
+      const th = ol.material.uniforms?.thickness?.value;
+      const col = ol.material.uniforms?.color?.value;
+      if (big && th && col) {
+        const ok = th.toFixed(4) + col.getHexString();
+        if (!byOutline.has(ok)) byOutline.set(ok, { th, col, geos: [] });
+        byOutline.get(ok).geos.push(g);
+      }
+      ol.layers.set(HIDDEN_LAYER);
+    }
+    o.layers.set(HIDDEN_LAYER);
+  });
+  const meshes = [];
+  for (const b of byMat.values()) {
+    const geo = mergeGeometries(b.geos, false); if (!geo) continue;
+    const m = mkSkinned(geo, b.mat); m.castShadow = b.shadow; m.receiveShadow = false; m.renderOrder = b.ro;
+    meshes.push(m);
+  }
+  for (const b of byOutline.values()) {
+    const geo = mergeGeometries(b.geos, false); if (!geo) continue;
+    const m = mkSkinned(geo, skinOutlineMat(b.th, b.col)); m.name = 'outline'; m.castShadow = false; m.receiveShadow = false;
+    meshes.push(m);
+  }
+  return { skeleton, meshes, parts };
+}
+
 /** Merge sibling meshes that share a material (and outline) into one mesh to cut draw calls. */
-function mergeStatic(root) {
+export function mergeStatic(root) {
   const parents = [];
   root.traverse((o) => { if (!o.isMesh) parents.push(o); });
   for (const parent of parents) {
@@ -243,17 +391,20 @@ export function buildWizard() {
   const torsoPts = [[0.205, -0.02], [0.215, 0.1], [0.218, 0.22], [0.2, 0.34], [0.165, 0.44], [0.11, 0.5], [0.06, 0.53]]
     .map(([r, y]) => new THREE.Vector2(r, y));
   const torsoGeo = new THREE.LatheGeometry(torsoPts, 32);
-  mk(torsoGeo, toonMat(0xffffff, { map: torsoTexture() }), torso, { scale: [1.12, 1, 0.88] });
+  const torsoMesh = mk(torsoGeo, toonMat(0xffffff, { map: torsoTexture() }), torso, { scale: [1.12, 1, 0.88] });
+  torsoMesh.userData.noMerge = true; torsoMesh.userData.skin = 'torso';
 
   // capelet / mantle over the shoulders
   const capeletPts = [[0.3, 0.25], [0.285, 0.3], [0.245, 0.38], [0.18, 0.46], [0.12, 0.51], [0.085, 0.55]]
     .map(([r, y]) => new THREE.Vector2(r, y));
   const capeletGeo = new THREE.LatheGeometry(capeletPts, 32);
-  mk(capeletGeo, toonMat(0xffffff, { map: capeletTexture(), side: THREE.DoubleSide }), torso, { scale: [1.16, 1, 1.0] });
+  rig.capelet = mk(capeletGeo, toonMat(0xffffff, { map: capeletTexture(), side: THREE.DoubleSide }), torso, { scale: [1.16, 1, 1.0] });
+  rig.capelet.userData.noMerge = true;
   // collar
   mk(new THREE.TorusGeometry(0.085, 0.024, 8, 18), M.gold, torso, { pos: [0, 0.55, 0], rot: [Math.PI / 2, 0, 0], outline: 0.01 });
   // gem brooch on chest
-  mk(new THREE.OctahedronGeometry(0.03), new THREE.MeshBasicMaterial({ color: 0x9ef7ff }), torso, { pos: [0, 0.45, 0.2], scale: [1, 1.3, 0.6], outline: 0.008 });
+  rig.brooch = mk(new THREE.OctahedronGeometry(0.03), new THREE.MeshBasicMaterial({ color: 0x9ef7ff }), torso, { pos: [0, 0.45, 0.2], scale: [1, 1.3, 0.6], outline: 0.008 });
+  rig.brooch.userData.noMerge = true;
 
   // belt + pouches + vial
   mk(new THREE.TorusGeometry(0.212, 0.03, 8, 28), M.leather, torso, { pos: [0, 0.03, 0], rot: [Math.PI / 2, 0, 0], scale: [1.12, 0.9, 1], outline: 0.012 });
@@ -266,7 +417,7 @@ export function buildWizard() {
     mk(flapGeo, M.leatherDark, pg, { pos: [0, 0.04, 0.005], outline: 0.008 });
     mk(new THREE.SphereGeometry(0.01, 6, 4), M.gold, pg, { pos: [0, 0.03, 0.04], outline: 0 });
   }
-  const vial = grp(torso, 0.12, -0.04, -0.17);
+  const vial = grp(torso, 0.12, -0.04, -0.17); rig.vial = vial;
   mk(new THREE.SphereGeometry(0.038, 10, 8), M.glass, vial, { outline: 0.008 });
   mk(new THREE.CylinderGeometry(0.014, 0.016, 0.04, 8), M.glass, vial, { pos: [0, 0.045, 0], outline: 0 });
   mk(new THREE.CylinderGeometry(0.016, 0.014, 0.022, 8), M.woodDark, vial, { pos: [0, 0.072, 0], outline: 0 });
@@ -278,13 +429,14 @@ export function buildWizard() {
   const wristGeo = new THREE.CylinderGeometry(0.035, 0.038, 0.12, 8); wristGeo.translate(0, -0.17, 0);
   const handGeo = new THREE.SphereGeometry(0.052, 12, 10); handGeo.scale(0.95, 1.1, 0.85);
   const thumbGeo = new THREE.SphereGeometry(0.022, 8, 6); thumbGeo.scale(1, 1.4, 1);
+  const sleeveMat = toonMat(COLORS.robe, { side: THREE.DoubleSide });
   for (const side of [1, -1]) {
     const arm = grp(torso, side * 0.235, 0.42, 0, side > 0 ? 'armL' : 'armR');
     mk(new THREE.SphereGeometry(0.075, 12, 8), M.robe, arm, { outline: 0.012 });
     mk(upperGeo, M.robe, arm);
     const elbow = grp(arm, 0, -0.27, 0);
     mk(new THREE.SphereGeometry(0.062, 10, 8), M.robe, elbow, { outline: 0 });
-    mk(sleeveGeo, toonMat(COLORS.robe, { side: THREE.DoubleSide }), elbow, { outline: 0.012 });
+    mk(sleeveGeo, sleeveMat, elbow, { outline: 0.012 });
     mk(cuffRing, M.gold, elbow, { pos: [0, -0.24, 0], outline: 0.008 });
     mk(wristGeo, M.skin, elbow, { outline: 0 });
     const hand = grp(elbow, 0, -0.27, 0);
@@ -392,9 +544,9 @@ export function buildWizard() {
   rig.haloMat = new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xff8844, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
   rig.halo = new THREE.Sprite(rig.haloMat); rig.halo.scale.setScalar(0.55); rig.halo.userData.noGhost = true;
   gemPivot.add(rig.halo);
-  rig.light = new THREE.PointLight(0xff8844, 1.6, 6, 2);
-  rig.light.userData.noGhost = true;
-  gemPivot.add(rig.light);
+  // no realtime light for the gem (perf: every lit fragment loops all point lights) — emissive + bloom halo.
+  // Light-like stand-in so callers can keep setting color/intensity/distance.
+  rig.light = { color: new THREE.Color(0xff8844), intensity: 0, distance: 6, userData: { noGhost: true } };
   rig.motes = [];
   const moteGeo = new THREE.OctahedronGeometry(0.016);
   rig.moteMat = new THREE.MeshBasicMaterial({ color: 0xffaa66, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -404,6 +556,12 @@ export function buildWizard() {
 
   for (const o of [rig.gem, rig.gemCore, ...rig.motes]) o.userData.noMerge = true;
   mergeStatic(root);
+  // tag recolorable meshes (class outfits swap colors/maps by tag; materials may be cloned later by vfx.flashEntity)
+  root.traverse((o) => {
+    if (!o.isMesh || o.name === 'outline') return;
+    if (o.material === M.robe || o.material === sleeveMat) o.userData.skin = 'robe';
+  });
+  rig.textures = { torso: torsoTexture, skirt: skirtTexture };
   // tiny trims don't need to cast shadows (saves shadow-pass draw calls)
   const _ws = new THREE.Vector3();
   root.updateMatrixWorld(true);

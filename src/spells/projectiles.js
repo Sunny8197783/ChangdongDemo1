@@ -244,7 +244,7 @@ export function createProjectiles(S) {
           if (p.pos.y < h + 0.05) { p.pos.y = h + 0.05; impact(p, true, null); done = true; break; }
         }
         // entities
-        S.combat.queryRadius(p.pos, p.radius, 'enemy', near);
+        S.combat.queryRadius(p.pos, p.radius, '!player', near);
         for (let j = 0; j < near.length; j++) {
           const e = near[j];
           if (p.hits.has(e)) continue;

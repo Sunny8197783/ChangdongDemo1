@@ -129,23 +129,30 @@ export function buildFires(game, positions) {
     group.add(m); return m;
   });
 
-  // ---- lights
-  const lights = positions.map((p) => {
-    const l = new THREE.PointLight(0xff8a3c, 12, 22, 1.6);
-    l.position.set(p.x, p.y + 1.4, p.z);
-    group.add(l); return l;
-  });
+  // ---- light: ONE shared camp-fire light (constant light count = no recompiles), parked at the camp
+  // nearest the camera within 45 m; intensity 0 otherwise.
+  const light = new THREE.PointLight(0xff8a3c, 0, 22, 1.6);
+  light.position.set(0, -60, 0);
+  group.add(light);
+  const lights = [light];
+  let near = -1;
 
   return {
     group, lights,
     update(t) {
       uTime.value = t;
       embers.material.uniforms.uScale.value = smoke.material.uniforms.uScale.value = game.renderer.domElement.height / 720;
-      for (let i = 0; i < lights.length; i++) {
-        const f = 0.82 + 0.1 * Math.sin(t * 11 + i * 3) + 0.08 * Math.sin(t * 17.3 + i) + 0.05 * Math.sin(t * 29 + i * 7);
-        lights[i].intensity = 12 * f;
-        glows[i].material.opacity = 0.3 * f;
+      const cam = game.camera.position;
+      let best = 45 * 45; near = -1;
+      for (let i = 0; i < positions.length; i++) {
+        const dx = positions[i].x - cam.x, dz = positions[i].z - cam.z, d2 = dx * dx + dz * dz;
+        if (d2 < best) { best = d2; near = i; }
       }
+      const i = near < 0 ? 0 : near;
+      const f = 0.82 + 0.1 * Math.sin(t * 11 + i * 3) + 0.08 * Math.sin(t * 17.3 + i) + 0.05 * Math.sin(t * 29 + i * 7);
+      glowMat.opacity = 0.3 * f;
+      if (near >= 0) { const p = positions[near]; light.position.set(p.x, p.y + 1.4, p.z); light.intensity = 12 * f; }
+      else light.intensity = 0;
     },
   };
 }

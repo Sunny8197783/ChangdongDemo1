@@ -83,7 +83,7 @@ function installHelpers() {
   p.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`));
   const t0 = Date.now();
   const stamp = () => ((Date.now() - t0) / 1000).toFixed(0) + 's';
-  await p.goto(`http://localhost:${port}/?test=1`);
+  await p.goto(`http://localhost:${port}/?test=1${opt('--url', '')}`);
   await p.waitForFunction(() => window.game && window.game.ready, null, { timeout: 90000 });
   await p.waitForTimeout(1500);
   await p.evaluate(installHelpers);
@@ -302,8 +302,10 @@ function installHelpers() {
       if (!b.invulnerable) game.combat.dealDamage(b, { amount: 500, element: 'earth', source: 'player', point: PT.center(b), noReaction: true });
       PT.step(0.5);
     }
-    for (let i = 0; i < 20 && game.state !== 'victory'; i++) PT.step(0.5);
-    return { bossAlive: b.alive, state: game.state, bossDefeated: PT.counts.bossDefeated || 0, victory: PT.counts.victory || 0 };
+    // v2: the story plays the ending cutscene (~42 s) before the victory screen
+    let endingCut = false;
+    for (let i = 0; i < 140 && game.state !== 'victory'; i++) { if (game.state === 'cutscene') endingCut = true; PT.step(0.5); }
+    return { bossAlive: b.alive, state: game.state, endingCutscene: endingCut, bossDefeated: PT.counts.bossDefeated || 0, victory: PT.counts.victory || 0 };
   });
   await p.waitForTimeout(300);
   await shot('08_victory');
