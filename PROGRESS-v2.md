@@ -17,3 +17,8 @@ If interrupted (usage limit): re-invoke Workflow with scriptPath + resumeFromRun
 agents replay from cache.
 
 ## Log
+- Workflow launched: run id `wf_bea88fb9-d61`, task id `wwcwmz62d`.
+  scriptPath: /root/.claude/projects/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/workflows/scripts/arcane-wilds-v2-wf_bea88fb9-d61.js
+  Resume: Workflow({scriptPath: <above>, resumeFromRunId: "wf_bea88fb9-d61"})
+  Journal: /root/.claude/projects/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/subagents/workflows/wf_bea88fb9-d61/journal.jsonl
+- Auto-resume scheduled task: trig_01PPiYrGbyLYVh3JXZBHsa9X (every 3h at :56). Delete when everything is done.
