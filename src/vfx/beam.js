@@ -65,9 +65,12 @@ export class Beams {
   }
 
   beam(from, to, opts = {}) {
-    let b = null, oldest = this.pool[0];
-    for (const x of this.pool) { if (!x.active) { b = x; break; } if (x.born < oldest.born) oldest = x; }
-    if (!b) b = oldest;
+    // effective pool by settings.effectQuality (high 18 / medium 11 / low 6): recycle the oldest beyond it
+    const q = this.game.settings?.values?.effectQuality || 'medium';
+    const budget = q === 'high' ? 18 : q === 'low' ? 6 : 11;
+    let b = null, oldest = null, active = 0;
+    for (const x of this.pool) { if (x.active) { active++; if (!oldest || x.born < oldest.born) oldest = x; } else if (!b) b = x; }
+    if (!b || active >= budget) b = oldest || b || this.pool[0];
     b.born = ++this.serial;
     b.from.copy(from); b.to.copy(to);
     b.width = opts.width ?? 0.35;

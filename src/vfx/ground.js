@@ -176,10 +176,19 @@ export class GroundFX {
     this._serial = 0;
   }
 
+  /** Effective pool size by settings.effectQuality (CONTRACT §23: features adding > 10 calls are quality-gated). */
+  _budget(pool) {
+    const q = this.game.settings?.values?.effectQuality || 'medium';
+    const full = pool.length;
+    const B = q === 'high' ? 1 : q === 'low' ? 0.3 : 0.6;
+    return Math.max(2, Math.round(full * B));
+  }
   _grab(pool) {
-    let best = pool[0];
-    for (const r of pool) { if (!r.active) return r; if (r.born < best.born) best = r; }
-    return best; // recycle oldest
+    let best = null, active = 0, freeR = null;
+    for (const r of pool) { if (r.active) { active++; if (!best || r.born < best.born) best = r; } else if (!freeR) freeR = r; }
+    if (freeR && active < this._budget(pool)) return freeR;
+    if (best) { best.active = false; best.mesh.visible = false; return best; }   // recycle the oldest
+    return freeR || pool[0];
   }
 
   shockwave(pos, opts = {}) {
@@ -294,7 +303,12 @@ const DECAL_STYLE = {
   crack: { base: 0x3b2a1c, glow: 0xffb35a, opacity: 0.85, add: false, glowDur: 1.2 },
   rune: { base: 0xffffff, glow: 0xc9a4ff, opacity: 0.9, add: true, glowDur: 99 },
   soft: { base: 0xffffff, glow: 0xffffff, opacity: 0.5, add: true, glowDur: 99 },
+  lichtenberg: { base: 0x1a1030, glow: 0xc9a4ff, opacity: 0.8, add: false, glowDur: 1.2 },
+  ripple: { base: 0xcfeaff, glow: 0x7fd3ff, opacity: 0.55, add: false, glowDur: 2.5 },
+  flowers: { base: 0x5fae3a, glow: 0xf4ffd0, opacity: 0.85, add: false, glowDur: 3 },
+  violet: { base: 0x1a0b2e, glow: 0xb14bff, opacity: 0.85, add: false, glowDur: 2 },
 };
+export { DECAL_STYLE, gridGeometry, conform };
 
 const _c = new THREE.Color();
 function guessType(color) {

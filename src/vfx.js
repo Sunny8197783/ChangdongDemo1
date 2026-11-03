@@ -1,4 +1,7 @@
-// VFX module: pooled particles, rings, decals, beams, trails, debris, lights, camera juice.
+// VFX module (v3, owner: combat): pooled particles, rings, decals, beams, trails, debris, camera juice, plus
+// hitFeel (the S1 tier table; only combat.dealDamage calls it), element/reaction presets (presets2.js), telegraphs,
+// dissolve, rune circles, smears, ground decal kinds, wind lines. No new lights: flashes are emissive sprites (the 3
+// existing pooled point lights stay in the scene and only pulse on effectQuality 'high').
 import * as THREE from 'three';
 import { createTextures, FRAMES } from './vfx/textures.js';
 import { ParticleSystem, F_GROUND, F_FLICKER, F_SWAY } from './vfx/particles.js';
@@ -7,8 +10,13 @@ import { Beams } from './vfx/beam.js';
 import { Trails } from './vfx/trail.js';
 import { Debris } from './vfx/debris.js';
 import { installPresets } from './vfx/presets.js';
+import { installPresets2 } from './vfx/presets2.js';
+import { createFeel } from './vfx/feel.js';
+import { createTelegraphs } from './vfx/telegraph.js';
+import { createDissolve } from './vfx/dissolve.js';
+import { createRunes } from './vfx/runes.js';
 
-const NORMAL_SHAPES = { smoke: 1, puff: 1, leaf: 1, rock: 1 };
+const NORMAL_SHAPES = { smoke: 1, puff: 1, leaf: 1, rock: 1, petal: 1, feather: 1, raven: 1 };
 const _c0 = new THREE.Color(), _c1 = new THREE.Color();
 const _dir = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 const _sp = new THREE.Vector3(), _cq = new THREE.Quaternion(), _e = new THREE.Euler(), _camPos = new THREE.Vector3();
@@ -70,7 +78,7 @@ export function createVFX(game) {
     const rotSpeed = o.rotSpeed ?? (shape === 'leaf' || shape === 'shard' || shape === 'snow' ? 4 : shape === 'smoke' || shape === 'puff' ? 0.6 : 0);
     const fadeIn = o.fadeIn ?? (shape === 'smoke' || shape === 'puff' ? 0.15 : 0);
     const curl = o.curl ?? 0, radius = o.radius ?? 0;
-    const disc = !!o.disc, sizeVar = o.sizeVar ?? 0.3;
+    const disc = !!o.disc, sizeVar = o.sizeVar ?? 0.3, inward = !!o.inward;
     let flags = 0;
     if (o.ground) flags |= F_GROUND;
     if (o.flicker ?? shape === 'ember') flags |= F_FLICKER;
@@ -97,6 +105,7 @@ export function createVFX(game) {
       let x = pos.x, y = pos.y, z = pos.z;
       if (radius > 0) { const r = radius * (disc ? 1 : Math.cbrt(Math.random())); x += dx * r; y += dy * r; z += dz * r; }
       let vx = dx * sp, vy = dy * sp + upV, vz = dz * sp;
+      if (inward) { vx = -vx; vy = -dy * sp + upV; vz = -vz; }   // spawn on the shell, travel to the centre (shadow pull)
       if (tang) { vx += -dz * tang; vz += dx * tang; }
       const s = 1 + (Math.random() * 2 - 1) * sizeVar;
       sys.spawn(x, y, z, vx, vy, vz, Math.max(0.02, life + (Math.random() * 2 - 1) * lifeVar), size * s, sizeEnd * s,
@@ -150,7 +159,21 @@ export function createVFX(game) {
     lights.push({ light: l, t: 1, dur: 1, i0: 0, born: 0 });
   }
   let lightSerial = 0;
+  // Emissive flash sprite (replaces the point-light flash; CONTRACT §20 "no new lights").
+  const flareOpts = { count: 1, shape: 'flare', color: 0xffffff, size: 1, sizeEnd: 1, life: 0.1, lifeVar: 0, speed: 0, alpha: 1, fadeIn: 0 };
+  function flashSprite(pos, color = 0xffffff, size = 2, duration = 0.1, alpha = 1) {
+    if (!pos) return;
+    flareOpts.color = color; flareOpts.size = size; flareOpts.sizeEnd = size * 1.25; flareOpts.life = Math.max(0.04, duration); flareOpts.alpha = alpha;
+    burst(pos, flareOpts, true);
+  }
+  const lightsOn = () => game.settings?.values?.effectQuality === 'high';
   function flash(pos, o = {}) {
+    if (!pos) return null;
+    flashSprite(pos, o.color ?? 0xffffff, Math.min(9, 1.2 + (o.distance ?? 10) * 0.32), Math.min(0.35, (o.duration ?? 0.25) * 0.8), Math.min(1, 0.35 + (o.intensity ?? 3) * 0.08));
+    if (!lightsOn()) return null;
+    return lightPulse(pos, o);
+  }
+  function lightPulse(pos, o = {}) {
     let s = null, oldest = lights[0];
     for (const x of lights) { if (x.t >= x.dur) { s = x; break; } if (x.born < oldest.born) oldest = x; }
     if (!s) s = oldest;
@@ -195,7 +218,10 @@ export function createVFX(game) {
     if (fovKicks.length > 6) fovKicks.shift();
     fovKicks.push({ deg, t: 0, dur: Math.max(0.05, duration) });
   }
-  function noise(t, s) { return Math.sin(t * 1.0 + s) * 0.5 + Math.sin(t * 2.31 + s * 1.7) * 0.3 + Math.sin(t * 4.77 + s * 3.1) * 0.2; }
+  // 3-octave value noise (DESIGN §9 S3): smooth, non-periodic, -1..1
+  function vhash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; }
+  function vnoise(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return vhash(i) * (1 - u) + vhash(i + 1) * u; }
+  function noise(t, s) { return vnoise(t + s * 17.3) * 0.57 + vnoise(t * 2.13 + s * 31.1) * 0.29 + vnoise(t * 4.41 + s * 7.7) * 0.14; }
   function applyCamera(realDt) {
     const cam = game.camera;
     // undo last frame's shake if nobody reset the camera since
@@ -203,16 +229,17 @@ export function createVFX(game) {
       cam.position.copy(shakeState.appliedPos); cam.quaternion.copy(shakeState.appliedQuat);
     }
     shakeState.active = false;
-    trauma = Math.max(0, trauma - 1.5 * realDt);
+    trauma = Math.max(0, trauma - 1.6 * realDt);
     _kick.multiplyScalar(Math.exp(-16 * realDt));
     const kickOn = _kick.lengthSq() > 1e-6;
     if (trauma > 0.001 || kickOn) {
-      const k = Math.pow(trauma, 1.5), T = game.realTime * 22;
+      const k = trauma * trauma, T = game.realTime * 18;   // trauma² (S3)
       shakeState.appliedPos.copy(cam.position); shakeState.appliedQuat.copy(cam.quaternion);
-      _sp.set(noise(T, 1.1), noise(T, 7.3), noise(T, 13.7)).multiplyScalar(0.3 * k).applyQuaternion(cam.quaternion);
+      _sp.set(noise(T, 1.1), noise(T, 7.3), noise(T, 13.7)).multiplyScalar(0.12 * k).applyQuaternion(cam.quaternion);
       cam.position.add(_sp);
       if (kickOn) cam.position.add(_kick);
-      _e.set(noise(T, 21.1) * 0.025 * k, noise(T, 31.9) * 0.025 * k, noise(T, 41.3) * 0.045 * k);
+      // pitch / yaw ≤ 2°, roll ≤ 2.5°
+      _e.set(noise(T, 21.1) * 0.035 * k, noise(T, 31.9) * 0.035 * k, noise(T, 41.3) * 0.0436 * k);
       _cq.setFromEuler(_e); cam.quaternion.multiply(_cq);
       cam.updateMatrixWorld();
       shakeState.lastPos.copy(cam.position); shakeState.lastQuat.copy(cam.quaternion); shakeState.active = true;
@@ -360,7 +387,7 @@ export function createVFX(game) {
 
   const api = {
     textures, FRAMES,
-    burst, emitter, flash, screenFlash, shake, kick, fovKick, flashEntity, spawnAfterimage, glowMaterial, glowSprite, after,
+    burst, emitter, flash, flashSprite, lightPulse, screenFlash, shake, kick, fovKick, flashEntity, spawnAfterimage, glowMaterial, glowSprite, after,
     trail: (obj, o) => trails.trail(obj, o),
     shockwave: (pos, o) => (pos ? ground.shockwave(pos, o) : null),
     ring: (pos, o) => (pos ? ground.shockwave(pos, o) : null),
@@ -372,8 +399,9 @@ export function createVFX(game) {
     get trauma() { return trauma; },
     get particleScale() { return pScale; },
     stats() {
-      return { additive: add.count, alpha: alpha.count, emitters: emitters.length, beams: beams.count(), trails: trails.count(),
-        debris: debrisFx.count(), ghosts: ghosts.length, ...ground.stats() };
+      const g = ground.stats();
+      return { additive: add.count, alpha: alpha.count, particles: add.count + alpha.count, emitters: emitters.length, beams: beams.count(), trails: trails.count(),
+        debris: debrisFx.count(), ghosts: ghosts.length, ...g, telegraphs: tele?.active?.() || 0, runes: runes?.active?.() || 0, dissolves: dis?.active?.() || 0 };
     },
     clear() {
       add.count = 0; alpha.count = 0; emitters.length = 0; jobs.length = 0; trauma = 0;
@@ -386,6 +414,8 @@ export function createVFX(game) {
     },
     update(dt, realDt) {
       const gh = game.world?.getHeight;
+      const tr = feel.takeTrauma(); if (tr > 0) shake(tr);
+      api._presetFrame?.();
       updateJobs(dt);
       updateEmitters(dt);
       add.update(dt, gh, game.time);
@@ -403,10 +433,38 @@ export function createVFX(game) {
         const p = Math.min(1, sf.t / sf.dur);
         overlay.style.opacity = String(sf.a * (1 - p) * (1 - p));
       } else if (overlay.style.opacity !== '0') overlay.style.opacity = '0';
+      feel.update(realDt);
+      tele.update(dt, realDt);
+      dis.update(dt);
+      runes.update(dt, realDt);
       applyCamera(realDt);
     },
   };
   installPresets(api, game);
+  installPresets2(api, game);
+  const feel = createFeel(game, api);
+  const tele = createTelegraphs(game, api);
+  const dis = createDissolve(game, api);
+  const runes = createRunes(game, api, textures);
+  api.hitFeel = feel.hitFeel;
+  api.feelStats = feel.stats;
+  api.resetFeelStats = feel.resetStats;
+  api.telegraph = tele.telegraph;
+  api.dissolve = dis.dissolve;
+  api.undissolve = dis.undissolve;
+  api.runeCircle = runes.runeCircle;
+  api.smear = runes.smear;
+  api.windLines = runes.windLines;
+  api.groundDecal = (kind, pos, r = 1.5, life = 8) => (pos ? ground.decal(pos, { type: kind, radius: r, duration: life }) : null);
+  /** Hidden instances of every lazily-shown material (main.js prewarm collects them; CONTRACT §23). */
+  api.prewarm = () => {
+    const g = new THREE.Group();
+    g.add(new THREE.Sprite(glowMaterial(0xffffff, { sprite: true })));
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 4, 3), glowMaterial(0xffffff)));
+    // telegraph / rune / smear meshes already live (hidden) in the scene; compile() visits hidden materials too
+    return g;
+  };
+  api.warmup = api.prewarm;
   void _camPos;
   return api;
 }
