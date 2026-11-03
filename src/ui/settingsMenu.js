@@ -14,6 +14,14 @@ const GRAPHICS = [
   { k: 'bloom', label: '블룸 (빛 번짐)', type: 'toggle' },
   { k: 'drawDistance', label: '시야 거리', type: 'range', min: 0.3, max: 1, step: 0.05, fmt: pct, commit: 'change' },
   { k: 'particleScale', label: '파티클 양', type: 'range', min: 0.2, max: 1, step: 0.05, fmt: pct, commit: 'input' },
+  { k: 'effectQuality', label: '효과 품질', type: 'seg', opts: ['low', 'medium', 'high'], names: SQ_LABEL, desc: '원소 효과·반응 연출의 양' },
+];
+// v3 (CONTRACT §18/§19): difficulty names come from game.settings.DIFFICULTY[id].nameKo when present
+const DIFF_FALLBACK = { easy: '쉬움', normal: '보통', hard: '어려움' };
+const GAMEPLAY = [
+  { k: 'difficulty', label: '난이도', type: 'seg', opts: ['easy', 'normal', 'hard'], names: DIFF_FALLBACK, desc: '적의 체력·피해량과 예고 시간' },
+  { k: 'screenShake', label: '화면 흔들림', type: 'range', min: 0, max: 1, step: 0.05, fmt: pct, commit: 'input' },
+  { k: 'damageNumbers', label: '피해 숫자 표시', type: 'toggle' },
 ];
 const CONTROLS = [
   { k: 'mouseSens', label: '마우스 감도', type: 'range', min: 0.2, max: 3, step: 0.05, fmt: (v) => '×' + v.toFixed(2), commit: 'input' },
@@ -40,6 +48,8 @@ function rowHTML(o) {
 
 export function createSettingsMenu(game, parent, { onClose } = {}) {
   const S = game.settings;
+  const DF = S?.DIFFICULTY;
+  if (DF) for (const id of Object.keys(DIFF_FALLBACK)) if (DF[id]?.nameKo) DIFF_FALLBACK[id] = DF[id].nameKo;
   const el = document.createElement('div');
   el.className = 'aw-screen aw-modal aw-settings';
   el.innerHTML = `
@@ -56,6 +66,8 @@ export function createSettingsMenu(game, parent, { onClose } = {}) {
           ${GRAPHICS.map(rowHTML).join('')}
         </section>
         <section class="aw-set-col">
+          <h3>게임플레이</h3>
+          ${GAMEPLAY.map(rowHTML).join('')}
           <h3>조작 · 표시</h3>
           ${CONTROLS.map(rowHTML).join('')}
           <h3>소리</h3>
@@ -70,7 +82,7 @@ export function createSettingsMenu(game, parent, { onClose } = {}) {
     </div>`;
   parent.appendChild(el);
 
-  const ALL = [...GRAPHICS, ...CONTROLS, ...SOUND];
+  const ALL = [...GRAPHICS, ...GAMEPLAY, ...CONTROLS, ...SOUND];
   const byKey = Object.fromEntries(ALL.map((o) => [o.k, o]));
   const ranges = {}, outs = {}, toggles = {}, segs = {};
   el.querySelectorAll('input.aw-range').forEach((n) => { ranges[n.dataset.k] = n; });

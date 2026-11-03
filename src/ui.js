@@ -1,88 +1,63 @@
-// UI module: DOM overlay inside #ui — title, settings, HUD (class-aware hotbar, awakening gauge, defense),
-// quest tracker, compass, damage numbers, banners, enemy bars, boss bar, grimoire, pause / death / victory, toasts.
-// Performance: no layout reads in the loop; DOM writes only on change; skill/defense panels at 20 Hz,
-// objective/markers at 4 Hz; animations restarted through a frame-delayed class queue (no forced reflow).
+// UI module (v3): DOM overlay inside #ui — title, settings, HUD (v3 9-slot hotbar + attune arc + signature, v2 fallback),
+// vitals (HP / MP·투지 / stamina, level badge, XP bar, regen strip), quest tracker, compass, damage & XP numbers, banners,
+// enemy bars (all statuses + stacks, break gauge, void shield, "다음 타격" hint), data-driven boss bar, interact prompt,
+// and the menus: 원소 별자리 skill tree (K), 캐릭터 (C), 원소 도감 (Tab), class panel, spirit-gate list, confirm dialog,
+// tree tour + one-time tips, pause / death / victory, toasts.
+// Performance: no layout reads in the loop; DOM writes only on change; skill/defense panels at 20 Hz, the next-hit preview
+// at 10 Hz, objective/markers at 4 Hz; animations restarted through a frame-delayed class queue (no forced reflow).
+// Rule 7: only own files, src/core/* and three are imported statically; every other module is reached through game.*.
 import * as THREE from 'three';
-import { ELEMENTS, ELEMENT_NAMES_KO, clamp } from './core/utils.js';
+import { clamp } from './core/utils.js';
+import { ALL_ELEMENTS, CLASSIC_ELEMENTS, elName } from './core/elements.js';
+import { CLASS_DEFS, familyOf } from './core/classes.js';
 import {
-  ELEMENT_CSS, elementSVG, spellSVG, RETICLE_SVG, STATUS_COLORS, STATUS_NAMES, MARKER_SVG,
+  ELEMENT_CSS, elCss, elementSVG, spellSVG, RETICLE_SVG, STATUS_COLORS, STATUS_NAMES, MARKER_SVG,
   LOCK_SVG, SHIELD_SVG, DASH_SVG, STAMINA_SVG,
 } from './ui/icons.js';
+import { h, esc, formatKeys, createAnimQueue } from './ui/dom.js';
 import { createSettingsMenu } from './ui/settingsMenu.js';
+import { createSkillTree } from './ui/skillTree.js';
+import { createTreeTour } from './ui/treeTour.js';
+import { createHotbar3 } from './ui/hotbar3.js';
+import { createBossBar } from './ui/bossbar.js';
+import { createPrompt } from './ui/prompt.js';
+import { createGateMenu, createConfirm } from './ui/gateMenu.js';
+import { createClassPanel } from './ui/classPanel.js';
+import { createCharacter } from './ui/character.js';
+import { createCodex } from './ui/codex.js';
+import {
+  HUD_KO, BOSS_KO, VICTORY_KO, CONTROLS, TUT, DEF_KO, TIPS, RES_KO, FAMILIES_FALLBACK, MASTERY_KO,
+} from './ui/text.js';
 
-const STATUS_KEYS = ['burning', 'frozen', 'wet', 'shocked', 'chilled', 'airborne', 'stunned'];
+const STATUS_FALLBACK = ['burning', 'frozen', 'wet', 'shocked', 'chilled', 'airborne', 'stunned'];
 const KIND_ORDER = ['basic', 'heavy', 'support', 'ultimate', 'finisher'];
 const KIND_KEY = { basic: 'LMB', heavy: 'RMB', ultimate: 'F', support: 'G', finisher: 'R' };
-const KEY_LABEL = { LMB: '좌클릭', RMB: '우클릭', F: 'F', G: 'G', R: 'R' };
+const KEY_LABEL = { LMB: '좌클릭', RMB: '우클릭', F: 'F', G: 'G', R: 'R', X: 'X' };
 const KIND_LABEL = { basic: '기본', heavy: '충전', ultimate: '궁극', support: '보조', finisher: '필살' };
 const COMBO_WINDOW = 2.5;
 const DMG_POOL = 56, BAR_POOL = 12, MARK_POOL = 10, PIP_POOL = 4;
-const SKILL_HZ = 1 / 20, OBJ_HZ = 1 / 4;
+const SKILL_HZ = 1 / 20, OBJ_HZ = 1 / 4, HINT_HZ = 1 / 10;
 const AWK_R = 44, AWK_C = 2 * Math.PI * AWK_R;
 
-function h(tag, cls, html) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (html != null) e.innerHTML = html;
-  return e;
-}
 const fmtTime = (s) => {
   s = Math.max(0, Math.round(s || 0));
   const m = Math.floor(s / 60), r = s % 60;
   return `${m}분 ${String(r).padStart(2, '0')}초`;
 };
-const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-// wraps key names in keycap spans
-function formatKeys(text) {
-  return esc(text)
-    .replace(/\b(WASD|Shift|Space|Tab|Esc|Q|E|F|R|G|M|1~5)\b/g, '<kbd>$1</kbd>')
-    .replace(/(좌클릭|우클릭|휠)/g, '<kbd>$1</kbd>');
-}
+const kbdRow = ([k, v]) => `<div>${k.split(' ').map((x) => (/^(길게|직전)$/.test(x) ? ` ${x}` : `<kbd>${esc(x)}</kbd>`)).join('')}</div><span>${esc(v)}</span>`;
 
-// --------------------------------------------------------------- controls (key map) panel
+// --------------------------------------------------------------- controls (key map) panel (v3, CONTRACT §6)
 const CONTROLS_HTML = `
   <div class="aw-ctl-cols">
     <div class="aw-ctl-grid">
-      <div class="aw-ctl-h">이동</div>
-      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div><span>이동</span>
-      <div><kbd>Shift</kbd></div><span>달리기 (기력 소모)</span>
-      <div><kbd>Space</kbd></div><span>점프 · 공중에서 꾹 눌러 활공</span>
-      <div><kbd>Q</kbd></div><span>대시 — 마법사: 순간이동 · 검사: 질풍보</span>
-      <div><kbd>E</kbd> 길게</div><span>방어 — 타이밍 맞춰 누르면 간파 · 반사</span>
-      <div class="aw-ctl-h">메뉴</div>
-      <div><kbd>Tab</kbd></div><span>마법서 (원소 반응 도감)</span>
-      <div><kbd>Esc</kbd></div><span>일시정지 · 메뉴</span>
-      <div><kbd>M</kbd></div><span>음소거</span>
+      <div class="aw-ctl-h">이동</div>${CONTROLS.move.map(kbdRow).join('')}
+      <div class="aw-ctl-h">메뉴</div>${CONTROLS.menu.map(kbdRow).join('')}
     </div>
     <div class="aw-ctl-grid">
-      <div class="aw-ctl-h">전투</div>
-      <div><kbd>좌클릭</kbd></div><span>기본 공격 (검사: 4연속 베기)</span>
-      <div><kbd>우클릭</kbd> 길게</div><span>충전 기술 — 놓으면 발동</span>
-      <div><kbd>F</kbd></div><span>궁극기 · NPC 곁에서는 대화</span>
-      <div><kbd>R</kbd></div><span>필살기 — 각성 게이지 충전 시 <em>(대가)</em></span>
-      <div><kbd>G</kbd></div><span>보조 스킬 <em>(대가)</em></span>
-      <div><kbd>1</kbd>~<kbd>5</kbd> · <kbd>휠</kbd></div><span>원소 전환 (해금된 원소만)</span>
-      <div class="aw-ctl-h">비법</div>
-      <div><kbd>Q</kbd> 직전</div><span>공격 직전 회피 → 완벽 회피 · 반격</span>
-      <div><kbd>E</kbd> 직전</div><span>공격 직전 방어 → 간파 (적 경직)</span>
+      <div class="aw-ctl-h">전투</div>${CONTROLS.combat.map(kbdRow).join('')}
     </div>
   </div>
-  <div class="aw-ctl-tip">원소를 겹쳐 맞히면 반응이 일어납니다 — 젖은 적에게 번개! 불타는 풀 위에서 활공하면 상승 기류를 타고 날아오릅니다.</div>`;
-
-// tutorial toasts per class (shown after the path is chosen, once gameplay resumes)
-const CLASS_TUT = {
-  mage: [
-    '좌클릭: 기본 마법 · 우클릭 길게: 충전 마법 · F: 궁극 마법',
-    'Q: 순간이동 · E 길게: 마력 방벽 — 맞기 직전에 펼치면 투사체를 반사합니다',
-  ],
-  sword: [
-    '좌클릭: 4연속 베기 · 우클릭 길게: 충전 베기 · F: 궁극기',
-    'Q: 질풍보 (2회 충전) · E 길게: 검 막기 — 타이밍을 맞추면 간파!',
-    '공격이 닿기 직전에 Q로 피하면 완벽 회피 — 이어지는 공격은 반격이 됩니다',
-  ],
-  all: ['1~5 / 휠: 원소 전환 — 원소를 엮어 반응을 일으키세요! Tab: 마법서'],
-  master: ['G: 보조 스킬 · 적에게 피해를 주어 각성 게이지를 채우면 R: 필살기!'],
-};
+  <div class="aw-ctl-tip">${esc(CONTROLS.tip)}</div>`;
 
 export function createUI(game) {
   const root = document.getElementById('ui') || document.body.appendChild(h('div'));
@@ -93,23 +68,20 @@ export function createUI(game) {
   addEventListener('resize', () => { W = innerWidth; H = innerHeight; });
   const prog = () => game.progression;
   const raw = () => game.input?.raw || game.input;
-
-  // ------------------------------------------------------------------ animation restart queue
-  // remove the class now, re-add it ≥ 2 frames later (after a style pass) → no forced reflow.
-  const aqNode = [], aqCls = [], aqF = [];
-  let frameNo = 0;
-  function restartAnim(node, cls) {
-    node.classList.remove(cls);
-    for (let i = 0; i < aqNode.length; i++) if (aqNode[i] === node && aqCls[i] === cls) { aqF[i] = frameNo; return; }
-    aqNode.push(node); aqCls.push(cls); aqF.push(frameNo);
-  }
-  function flushAnims() {
-    for (let i = aqNode.length - 1; i >= 0; i--) {
-      if (frameNo - aqF[i] < 2) continue;
-      aqNode[i].classList.add(aqCls[i]);
-      aqNode.splice(i, 1); aqCls.splice(i, 1); aqF.splice(i, 1);
+  const fam = () => game.player?.family || familyOf(prog()?.cls);
+  const AQ = createAnimQueue();
+  // deterministic delayed calls on the UI clock (realDt; frozen/stepped tests stay in order — no wall-clock setTimeout)
+  const laterT = [], laterF = [];
+  const later = (sec, fn) => { laterT.push(sec); laterF.push(fn); };
+  function tickLater(dt) {
+    for (let i = laterT.length - 1; i >= 0; i--) {
+      laterT[i] -= dt;
+      if (laterT[i] > 0) continue;
+      const f = laterF[i]; laterT.splice(i, 1); laterF.splice(i, 1);
+      try { f(); } catch (err) { console.warn('[ui] later', err); }
     }
   }
+  const restartAnim = (node, cls) => AQ.restart(node, cls);
 
   // ------------------------------------------------------------------ layers
   const hurtVig = root.appendChild(h('div', 'aw-vig aw-vig-hurt'));
@@ -121,30 +93,37 @@ export function createUI(game) {
   const screens = root.appendChild(h('div', 'aw-screens'));
   const fpsEl = root.appendChild(h('div', 'aw-fps'));
 
-  // ------------------------------------------------------------------ HUD: vitals + defense
+  // ------------------------------------------------------------------ HUD: vitals + level / XP / regen + defense
   const barHTML = '<div class="aw-bar"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-bar-gloss"></div><div class="aw-bar-ticks"></div></div>';
   const vitals = hud.appendChild(h('div', 'aw-vitals', `
+    <div class="aw-ptpip"><kbd>K</kbd><span></span></div>
     <div class="aw-vital aw-hp">
-      <div class="aw-vital-ico"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 21s-7.5-4.6-9.4-9.6C1.2 7.7 3.6 4 7.2 4c2.1 0 3.6 1.2 4.8 2.8C13.2 5.2 14.7 4 16.8 4c3.6 0 6 3.7 4.6 7.4C19.5 16.4 12 21 12 21z" fill="#ff5d7a" stroke="#ffe0e6" stroke-width="1.2"/><path d="M6.5 8.2c.5-1.2 1.6-1.8 2.6-1.7" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round" opacity=".8"/></svg></div>
+      <div class="aw-vital-ico"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 21s-7.5-4.6-9.4-9.6C1.2 7.7 3.6 4 7.2 4c2.1 0 3.6 1.2 4.8 2.8C13.2 5.2 14.7 4 16.8 4c3.6 0 6 3.7 4.6 7.4C19.5 16.4 12 21 12 21z" fill="#ff5d7a" stroke="#ffe0e6" stroke-width="1.2"/><path d="M6.5 8.2c.5-1.2 1.6-1.8 2.6-1.7" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round" opacity=".8"/></svg><i class="aw-lv">1</i></div>
       ${barHTML}<div class="aw-vital-num"><b>100</b><span>/100</span></div>
+      <div class="aw-regen"><i></i></div>
     </div>
     <div class="aw-vital aw-mp">
-      <div class="aw-vital-ico"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2 19 12 12 22 5 12z" fill="#4fa0ff" stroke="#dff0ff" stroke-width="1.2" stroke-linejoin="round"/><path d="M12 5.5 9 12h3" stroke="#fff" stroke-width="1.2" fill="none" opacity=".8"/></svg></div>
-      ${barHTML}<div class="aw-vital-num"><b>100</b><span>/100</span></div>
+      <div class="aw-vital-ico aw-res-ico"><svg class="ico-mp" viewBox="0 0 24 24" width="20" height="20"><path d="M12 2 19 12 12 22 5 12z" fill="#4fa0ff" stroke="#dff0ff" stroke-width="1.2" stroke-linejoin="round"/><path d="M12 5.5 9 12h3" stroke="#fff" stroke-width="1.2" fill="none" opacity=".8"/></svg><svg class="ico-res" viewBox="0 0 24 24" width="20" height="20"><path d="M12 2c2 4 6 5.6 6 10.4A6 6 0 0 1 6 12.4C6 9 8 7.6 9 5.6c.5 2 1.3 2.8 2.2 3.2C11 6.4 11.2 4.2 12 2z" fill="#ffb347" stroke="#fff0d6" stroke-width="1.1" stroke-linejoin="round"/></svg></div>
+      ${barHTML}<div class="aw-vital-num"><b>100</b><span>/100</span></div><em class="aw-res-lbl"></em>
     </div>
     <div class="aw-vital aw-st">
       <div class="aw-vital-ico">${STAMINA_SVG}</div>
       ${barHTML}<div class="aw-vital-num"><b>100</b><span>/100</span></div>
     </div>
+    <div class="aw-xp"><i></i><span></span></div>
     <div class="aw-def">
-      <div class="aw-def-item aw-def-dash"><span class="aw-def-ico">${DASH_SVG}</span><kbd>Q</kbd><span class="aw-def-lbl">대시</span><span class="aw-def-pips"></span></div>
+      <div class="aw-def-item aw-def-dash"><span class="aw-def-ico">${DASH_SVG}</span><kbd>Q</kbd><span class="aw-def-lbl">회피</span><span class="aw-def-pips"></span></div>
       <div class="aw-def-item aw-def-block"><span class="aw-def-ico">${SHIELD_SVG}</span><kbd>E</kbd><span class="aw-def-lbl">방어</span><span class="aw-def-state"></span></div>
     </div>`));
   function mkVital(sel) {
     const el = vitals.querySelector(sel);
-    return { el, fill: el.querySelector('.aw-bar-fill'), lag: el.querySelector('.aw-bar-lag'), num: el.querySelector('b'), max: el.querySelector('span'), last: -1, lastMax: -1, lagV: 1 };
+    return { el, fill: el.querySelector('.aw-bar-fill'), lag: el.querySelector('.aw-bar-lag'), num: el.querySelector('b'), max: el.querySelector('.aw-vital-num span'), last: -1, lastMax: -1, lagV: 1 };
   }
   const vHp = mkVital('.aw-hp'), vMp = mkVital('.aw-mp'), vSt = mkVital('.aw-st');
+  const lvBadge = vitals.querySelector('.aw-lv'), resLbl = vitals.querySelector('.aw-res-lbl');
+  const regenEl = vitals.querySelector('.aw-regen'), regenFill = regenEl.firstElementChild;
+  const xpEl = vitals.querySelector('.aw-xp'), xpFill = xpEl.firstElementChild, xpTxt = xpEl.querySelector('span');
+  const ptPip = vitals.querySelector('.aw-ptpip'), ptPipTxt = ptPip.querySelector('span');
   const defDash = vitals.querySelector('.aw-def-dash'), defBlock = vitals.querySelector('.aw-def-block');
   const defDashLbl = defDash.querySelector('.aw-def-lbl'), defBlockLbl = defBlock.querySelector('.aw-def-lbl');
   const defPipBox = defDash.querySelector('.aw-def-pips'), defBlockState = defBlock.querySelector('.aw-def-state');
@@ -172,13 +151,13 @@ export function createUI(game) {
   const hitmark = cross.querySelector('.aw-hitmark');
   const stamSvg = cross.querySelector('.aw-stam'), stamFg = cross.querySelector('.aw-stam-fg');
 
-  // ------------------------------------------------------------------ HUD: hotbar (class-aware)
+  // ------------------------------------------------------------------ HUD: hotbar — v2 renderer (fallback for the v2 HudState shape)
   const hotbar = hud.appendChild(h('div', 'aw-hotbar'));
   const finPrompt = hotbar.appendChild(h('div', 'aw-fin-prompt', '<kbd>R</kbd><span>필살기</span>'));
   const slotRow = hotbar.appendChild(h('div', 'aw-slots'));
   const gemRow = hotbar.appendChild(h('div', 'aw-gems'));
-  const elName = hotbar.appendChild(h('div', 'aw-elname'));
-  const gems = ELEMENTS.map((el, i) => {
+  const elNameEl = hotbar.appendChild(h('div', 'aw-elname'));
+  const gems = CLASSIC_ELEMENTS.map((el, i) => {
     const g = gemRow.appendChild(h('div', 'aw-gem', `<div class="aw-gem-face">${elementSVG(el, 26)}</div><div class="aw-gem-key">${i + 1}</div><div class="aw-gem-lock">${LOCK_SVG}</div>`));
     g.style.setProperty('--ec', ELEMENT_CSS[el]);
     return g;
@@ -209,8 +188,10 @@ export function createUI(game) {
       shown: false, _sig: '', _cd: -1, _ready: null, _low: null, _cdTxt: '', _cost: null, _act: null,
     };
   }
+  // v3 hotbar (9 slots)
+  const hb3 = createHotbar3(game, { anim: restartAnim }, hud);
 
-  // ------------------------------------------------------------------ HUD: objective, compass, boss bar
+  // ------------------------------------------------------------------ HUD: objective, compass, boss bar, prompt
   const objective = hud.appendChild(h('div', 'aw-objective', `
     <div class="aw-obj-head"><span class="aw-obj-diamond"></span><span class="aw-obj-title">목표</span></div>
     <div class="aw-obj-text"></div>
@@ -243,14 +224,7 @@ export function createUI(game) {
       on: false, vis: false, target: null, dim: null, _d: -1, _x: 0, _px: 0 });
   }
   const visMarks = [];
-
-  const bossBar = hud.appendChild(h('div', 'aw-boss', `
-    <div class="aw-boss-name"><span class="aw-boss-orn">❖</span><b></b><span class="aw-boss-orn">❖</span></div>
-    <div class="aw-boss-bar"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-bar-gloss"></div></div>
-    <div class="aw-boss-pips"><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div>`));
-  const bossName = bossBar.querySelector('b'), bossFill = bossBar.querySelector('.aw-bar-fill'), bossLag = bossBar.querySelector('.aw-bar-lag');
-
-  // small hint under crosshair
+  const bossBar = createBossBar(game, { anim: restartAnim }, hud);
   const hint = hud.appendChild(h('div', 'aw-hint'));
 
   // ------------------------------------------------------------------ banners, flashes & combo
@@ -263,8 +237,8 @@ export function createUI(game) {
   const edgeFlash = fxLayer.appendChild(h('div', 'aw-edge'));
   const combo = fxLayer.appendChild(h('div', 'aw-combo', '<div class="aw-combo-num">0</div><div class="aw-combo-lbl">COMBO</div><div class="aw-combo-timer"><i></i></div>'));
   const comboNum = combo.querySelector('.aw-combo-num'), comboTimer = combo.querySelector('.aw-combo-timer i');
+  const lvBurst = fxLayer.appendChild(h('div', 'aw-lvburst', '<i></i><i></i><i></i>'));
 
-  // small per-kind glyphs drawn over the element icon so the five slots read differently
   const KIND_GLYPH = {
     basic: '<svg viewBox="0 0 20 20"><path d="M3 15 Q9 3 17 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
     heavy: '<svg viewBox="0 0 20 20"><path d="M4 12 L10 6 L16 12 M4 17 L10 11 L16 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
@@ -291,7 +265,6 @@ export function createUI(game) {
     n.ox = (Math.random() - 0.5) * (opts.spread ?? 40); n.vy = opts.vy ?? 1.4;
     n.sx = 0; n.oy = 0; n.spx = n.spy = -1e4;
     if (point) n.pos.copy(point);
-    // de-clutter: numbers spawned close together on screen within 0.25 s stack upward & alternate sides
     if (point && project(point, numScr)) {
       let stack = 0;
       for (let i = 0; i < DMG_POOL; i++) {
@@ -306,19 +279,55 @@ export function createUI(game) {
     n.el.style.setProperty('--nc', color || '#fff');
     n.el.textContent = text;
   }
+  const numbersOn = () => game.settings?.values?.damageNumbers !== false;
 
-  // ------------------------------------------------------------------ enemy bar pool
+  // ------------------------------------------------------------------ enemy bar pool (v3 statuses from combat.STATUS_DEFS)
+  const SD = game.combat?.STATUS_DEFS || null;
+  const STATUS_KEYS = SD ? Object.keys(SD).filter((k) => !SD[k]?.playerOnly).slice(0, 29) : STATUS_FALLBACK.slice();
+  STATUS_KEYS.push('voidShield');                    // pseudo pip (numeric entity.voidShield, CONTRACT §8.1)
+  const VOID_BIT = STATUS_KEYS.length - 1;
+  const stColor = (k) => (k === 'voidShield' ? '#7a3cff' : SD?.[k]?.color || STATUS_COLORS[k] || '#ccc');
+  const stName = (k) => (k === 'voidShield' ? HUD_KO.voidShield : SD?.[k]?.nameKo || STATUS_NAMES[k] || k);
+  const stStacks = (k) => !!SD?.[k]?.stack;
+  const pipHTML = STATUS_KEYS.map((k) => `<i class="aw-pip${stStacks(k) ? ' stk' : ''}${k === 'voidShield' ? ' void' : ''}" style="--pc:${stColor(k)}" title="${esc(stName(k))}"><b></b></i>`).join('');
   const bars = [];
   for (let i = 0; i < BAR_POOL; i++) {
-    const e = worldLayer.appendChild(h('div', 'aw-ebar', `<div class="aw-ebar-name"></div><div class="aw-ebar-track"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div></div><div class="aw-ebar-pips">${STATUS_KEYS.map((k) => `<i class="aw-pip" style="--pc:${STATUS_COLORS[k]}" title="${STATUS_NAMES[k]}"></i>`).join('')}</div>`));
+    const e = worldLayer.appendChild(h('div', 'aw-ebar', `<div class="aw-ebar-next"></div><div class="aw-ebar-name"><span class="aw-ebar-weak"></span><span class="aw-ebar-nm"></span></div><div class="aw-ebar-track"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-ebar-void"></div></div><div class="aw-ebar-break"><i></i></div><div class="aw-ebar-pips">${pipHTML}</div>`));
     e.style.display = 'none';
+    const pp = [...e.querySelectorAll('.aw-pip')];
     bars.push({
-      el: e, name: e.querySelector('.aw-ebar-name'), fill: e.querySelector('.aw-bar-fill'), lag: e.querySelector('.aw-bar-lag'),
-      pips: [...e.querySelectorAll('.aw-pip')], ent: null, shown: false, lagV: 1, pipState: 0,
+      el: e, name: e.querySelector('.aw-ebar-nm'), weak: e.querySelector('.aw-ebar-weak'), fill: e.querySelector('.aw-bar-fill'), lag: e.querySelector('.aw-bar-lag'),
+      voidEl: e.querySelector('.aw-ebar-void'), brk: e.querySelector('.aw-ebar-break'), brkFill: e.querySelector('.aw-ebar-break i'), next: e.querySelector('.aw-ebar-next'),
+      pips: pp, digits: pp.map((p) => p.firstChild), stk: new Array(pp.length).fill(-1),
+      ent: null, shown: false, lagV: 1, pipState: 0, brkV: -1, voidV: -1, hasBrk: null, broken: null, nextTxt: '', rxPip: -1,
     });
   }
   const lastHit = new WeakMap(); // entity -> realTime of last damage
   const barLag = new WeakMap();
+  // "다음 타격" preview (10 Hz): the locked target + attuned element → combat.previewReaction
+  const nextHit = { target: null, id: '', name: '', color: '', pip: -1 };
+  function auraPipFor(rxId, target) {
+    const defs = game.combat?.REACTION_DEFS; const st = target?.statuses;
+    if (!defs || !st) return -1;
+    for (const r of defs) {
+      if (r.id !== rxId) continue;
+      const aura = r.match?.aura; if (!aura) continue;
+      for (const a of aura) if (st[a]) { const k = STATUS_KEYS.indexOf(a); if (k >= 0) return k; }
+    }
+    return -1;
+  }
+  function updateNextHit(target) {
+    const C = game.combat;
+    let att = null;
+    try { att = game.skills?.attuned || game.activeSkills?.()?.getHudState?.()?.attuned || null; } catch (_) { att = null; }
+    let r = null;
+    if (target && att && C?.previewReaction) { try { r = C.previewReaction(target, att); } catch (_) { r = null; } }
+    nextHit.target = r ? target : null;
+    nextHit.id = r?.id || ''; nextHit.name = r?.nameKo || r?.name || '';
+    const famC = C?.FAMILIES?.[r?.family]?.color || FAMILIES_FALLBACK[r?.family]?.color || '#ffd65a';
+    nextHit.color = famC;
+    nextHit.pip = r ? auraPipFor(r.id, target) : -1;
+  }
 
   // ------------------------------------------------------------------ toasts (+ queued tutorial toasts)
   function toast(text, opts = {}) {
@@ -347,21 +356,29 @@ export function createUI(game) {
 
   // ------------------------------------------------------------------ banners / cards / flashes
   let bannerT = 0, lastBannerId = '', lastBannerTime = -9;
-  function showBanner(text, sub, elements) {
-    if (cardT > 0) return false; // the card owns the upper-centre slot
-    const a = ELEMENT_CSS[elements?.[0]] || '#ffd27a', b = ELEMENT_CSS[elements?.[1]] || a;
+  function showBanner(text, sub, elements, famColor) {
+    if (cardT > 0) return false;
+    const e0 = elements?.[0], e1 = elements?.[1];
+    const a = e0 && e0 !== 'physical' && ELEMENT_CSS[e0] ? ELEMENT_CSS[e0] : famColor || '#ffd27a';
+    const b = e1 && e1 !== 'physical' && ELEMENT_CSS[e1] ? ELEMENT_CSS[e1] : a;
     bannerText.textContent = text;
     bannerSub.textContent = sub || '';
     banner.style.setProperty('--bg', `linear-gradient(100deg, ${a} 0%, #fffbe8 48%, ${b} 100%)`);
     banner.style.setProperty('--g1', a);
     banner.style.setProperty('--g2', b);
+    banner.style.setProperty('--fc', famColor || a);
     restartAnim(banner, 'show');
     bannerT = 1.6;
     return true;
   }
   let cardT = 0;
   const cardQ = [];
+  const cardLog = [];   // last requested cards (shown or queued), for tests / introspection
   function showCard(pre, title, sub, cls = '', dur = 3.2) {
+    cardLog.push(pre + '|' + title); if (cardLog.length > 12) cardLog.shift();
+    playCard(pre, title, sub, cls, dur);
+  }
+  function playCard(pre, title, sub, cls, dur) {
     const busy = !!game.cinematic?.active || game.state === 'cutscene';
     if (cardT > 0.35 || busy) { if (cardQ.length < 4) cardQ.push([pre, title, sub, cls, dur]); return; }
     bigCard.className = 'aw-card ' + cls;
@@ -394,14 +411,17 @@ export function createUI(game) {
     const def = rxById(p.id);
     const name = p.name || def?.name || p.id;
     const els = p.elements?.length ? p.elements : def?.elements;
+    const fm = p.family || def?.family;
+    const famColor = game.combat?.FAMILIES?.[fm]?.color || FAMILIES_FALLBACK[fm]?.color || null;
     const now = game.realTime;
     if (p.id === lastBannerId && now - lastBannerTime < 2.0) return;
     lastBannerId = p.id; lastBannerTime = now;
-    showBanner(name + '!', isCombo ? '원소 융합' : '원소 반응', els);
+    const famName = game.combat?.FAMILIES?.[fm]?.nameKo || FAMILIES_FALLBACK[fm]?.nameKo;
+    showBanner(name + '!', isCombo ? '원소 융합' : famName ? `원소 반응 · ${famName}` : '원소 반응', els, famColor);
     if (p.id && !seenReactions.has(p.id)) {
       seenReactions.add(p.id);
       const t = toast(`새로운 원소 반응 발견! — ${name}`, { duration: 4.2, kind: 'discover' });
-      if (els) t.querySelector('.aw-toast-orn').innerHTML = els.map((e) => elementSVG(e, 16)).join('');
+      if (els) t.querySelector('.aw-toast-orn').innerHTML = els.filter((e) => e !== 'physical').map((e) => elementSVG(e, 16)).join('');
     }
   }
 
@@ -418,13 +438,8 @@ export function createUI(game) {
       restartAnim(comboNum, 'pop');
     }
   }
-
-  // ------------------------------------------------------------------ hitmarker
   let hitT = 0;
-  function hitMarker(kill) {
-    hitmark.classList.toggle('kill', !!kill);
-    hitT = kill ? 0.32 : 0.16;
-  }
+  function hitMarker(kill) { hitmark.classList.toggle('kill', !!kill); hitT = kill ? 0.32 : 0.16; }
 
   // ------------------------------------------------------------------ screens
   const title = screens.appendChild(h('div', 'aw-screen aw-title', `
@@ -448,15 +463,16 @@ export function createUI(game) {
           </g>
         </svg>
       </div>
-      <div class="aw-title-gems">${ELEMENTS.map((e) => `<span style="--ec:${ELEMENT_CSS[e]}">${elementSVG(e, 22)}</span>`).join('')}</div>
+      <div class="aw-title-gems">${ALL_ELEMENTS.map((e) => `<span style="--ec:${ELEMENT_CSS[e]}">${elementSVG(e, 20)}</span>`).join('')}</div>
       <h1 class="aw-logo"><span class="aw-logo-text" data-text="아케인 와일즈">아케인 와일즈</span></h1>
       <div class="aw-logo-sub"><i></i>ARCANE WILDS — 원소의 수호자<i></i></div>
       <div class="aw-menu">
-        <button class="aw-btn aw-btn-primary" data-act="start">모험 시작</button>
+        <button class="aw-btn aw-btn-primary aw-btn-continue" data-act="continue">이어하기</button>
+        <button class="aw-btn aw-btn-primary aw-btn-start" data-act="start">모험 시작</button>
         <button class="aw-btn" data-act="settings">설정</button>
         <button class="aw-btn" data-act="controls">조작법</button>
       </div>
-      <div class="aw-title-foot">원소의 대륙 에테리아 — 손등에 떠오른 각인이 새로운 수호자를 부른다</div>
+      <div class="aw-title-foot">원소의 대륙 에테리아 — 다섯이라 배웠던 원소는, 사실 아홉이었다</div>
     </div>`));
   {
     const stars = title.querySelector('.aw-stars');
@@ -467,6 +483,13 @@ export function createUI(game) {
       s += `<i style="left:${x}%;top:${y}%;width:${sz}px;height:${sz}px;background:${c};animation-duration:${d}s;animation-delay:${dl}s"></i>`;
     }
     stars.innerHTML = s;
+  }
+  const btnContinue = title.querySelector('.aw-btn-continue'), btnStart = title.querySelector('.aw-btn-start');
+  function syncTitleButtons() {
+    let has = false; try { has = !!game.save?.has?.(); } catch (_) { has = false; }
+    btnContinue.style.display = has ? '' : 'none';
+    btnStart.textContent = has ? '새 게임' : '모험 시작';
+    btnStart.classList.toggle('aw-btn-primary', !has);
   }
 
   const controls = screens.appendChild(h('div', 'aw-screen aw-modal aw-controls', `
@@ -482,7 +505,9 @@ export function createUI(game) {
       <div class="aw-pause-obj"></div>
       <div class="aw-menu">
         <button class="aw-btn aw-btn-primary" data-act="resume">계속하기</button>
-        <button class="aw-btn" data-act="grimoire">마법서</button>
+        <button class="aw-btn" data-act="tree">스킬 트리 <kbd>K</kbd></button>
+        <button class="aw-btn" data-act="character">캐릭터 <kbd>C</kbd></button>
+        <button class="aw-btn" data-act="grimoire">원소 도감 <kbd>Tab</kbd></button>
         <button class="aw-btn" data-act="settings">설정</button>
         <button class="aw-btn" data-act="controls">조작법</button>
         <button class="aw-btn aw-btn-danger" data-act="restart">처음부터 다시</button>
@@ -503,39 +528,84 @@ export function createUI(game) {
   const victory = screens.appendChild(h('div', 'aw-screen aw-victory', `
     <div class="aw-victory-rays"></div>
     <div class="aw-panel aw-victory-panel">
-      <div class="aw-victory-pre">봉인의 수문장 정화</div>
-      <div class="aw-victory-title">승리</div>
-      <div class="aw-victory-sub">에테리아에 다시 평화가 찾아왔습니다</div>
+      <div class="aw-victory-pre"></div>
+      <div class="aw-victory-title">${VICTORY_KO.title}</div>
+      <div class="aw-victory-sub">${VICTORY_KO.sub}</div>
+      <div class="aw-victory-build"></div>
       <div class="aw-stats"></div>
       <div class="aw-menu aw-menu-row"><button class="aw-btn aw-btn-primary" data-act="restart">새로운 모험</button></div>
     </div>`));
-  const statsBox = victory.querySelector('.aw-stats');
+  const statsBox = victory.querySelector('.aw-stats'), victoryPre = victory.querySelector('.aw-victory-pre'), victoryBuild = victory.querySelector('.aw-victory-build');
 
-  const grim = screens.appendChild(h('div', 'aw-screen aw-grimoire', `
-    <div class="aw-book">
-      <div class="aw-book-page aw-book-left">
-        <div class="aw-book-title">원소 반응</div>
-        <div class="aw-book-count"></div>
-        <div class="aw-rx-list"></div>
-      </div>
-      <div class="aw-book-spine"></div>
-      <div class="aw-book-page aw-book-right">
-        <div class="aw-book-title aw-sp-title">주문 목록</div>
-        <div class="aw-book-count aw-sp-count"></div>
-        <div class="aw-spell-list"></div>
-      </div>
-      <div class="aw-book-foot"><kbd>Tab</kbd> 닫기</div>
-    </div>`));
+  // ------------------------------------------------------------------ v3 menus (modules)
+  const sub = {
+    anim: restartAnim, toast,
+    tip: (id, text, o) => tour.tip(id, text, o),
+    confirm: (text, onYes, onNo) => openConfirm(text, onYes, onNo),
+    openSkillTree: (el) => api.openSkillTree(el),
+    openClassPanel: (o) => api.openClassPanel(o),
+    modalClosed: (id) => onModalClosed(id),
+    anyModalOpen: () => anyModalOpen(),
+    seenReactions: () => seenReactions,
+    skillDefs: () => (game.skills && !game.skills.isStub && game.skills.defs?.size ? game.skills.defs : tree.defs()),
+  };
+  const tree = createSkillTree(game, sub, screens);
+  const tour = createTreeTour(game, sub, screens);
+  const charSheet = createCharacter(game, sub, screens);
+  const codex = createCodex(game, sub, screens);
+  const classPanel = createClassPanel(game, sub, screens);
+  const gateMenu = createGateMenu(game, sub, screens);
+  const confirmBox = createConfirm(game, sub, screens);
+  const prompt = createPrompt(game, sub, hud);
 
+  // ------------------------------------------------------------------ modal registry: lock, pause, Escape cascade
+  // order = Escape priority (topmost first)
+  const MODALS = [
+    { id: 'confirm', isOpen: () => confirmBox.isOpen, close: () => confirmBox.close() },
+    { id: 'tour', isOpen: () => tour.isOpen, close: () => tour.close() },
+    { id: 'settings', isOpen: () => settingsMenu.isOpen, close: () => settingsMenu.close() },
+    { id: 'controls', isOpen: () => controls.classList.contains('show'), close: () => closeControls() },
+    { id: 'gate', isOpen: () => gateMenu.isOpen, close: () => gateMenu.close(), pauses: true },
+    { id: 'class', isOpen: () => classPanel.isOpen, close: () => classPanel.close(), pauses: true, keep: true },
+    { id: 'tree', isOpen: () => tree.isOpen, close: () => closeTree(), pauses: true, menu: true },
+    { id: 'character', isOpen: () => charSheet.isOpen, close: () => charSheet.close(), pauses: true, menu: true },
+    { id: 'codex', isOpen: () => codex.isOpen, close: () => codex.close(), pauses: true, menu: true },
+  ];
+  const anyModalOpen = () => MODALS.some((m) => m.isOpen());
+  let pausedByMenu = false, treeOpenOverride = false;
   function syncModalLock() {
-    const sub = settingsMenu.isOpen || controls.classList.contains('show');
-    const open = sub || grimOpen;
-    // the pause panel steps aside while a sub-menu is open over it
-    pause.classList.toggle('show', game.state === 'paused' && !grimOpen && !sub);
+    const open = anyModalOpen();
+    const subOpen = MODALS.some((m) => m.isOpen() && m.id !== 'confirm');
+    pause.classList.toggle('show', game.state === 'paused' && !subOpen && !confirmBox.isOpen);
     try { if (open) game.input?.lock?.('menu'); else game.input?.unlock?.('menu'); } catch (_) { /* */ }
+    root.classList.toggle('aw-menu-open', open);
   }
+  /** Open a pausing menu: closes the other K/C/Tab menus, pauses gameplay (resumed when the last menu closes). */
+  function openMenu(id, fn) {
+    for (const m of MODALS) if (m.menu && m.id !== id && m.isOpen()) m.close();
+    if (game.state === 'playing') { pausedByMenu = true; game.pause(); }
+    fn();
+    game.audio?.play?.('ui_select');
+    syncModalLock();
+  }
+  function onModalClosed(id) {
+    if (id === 'class' || id === 'gate') { try { game.events.emit('altarLeave', { from: id }); } catch (_) { /* */ } }
+    syncModalLock();
+    if (pausedByMenu && !MODALS.some((m) => m.pauses && m.isOpen())) {
+      pausedByMenu = false;
+      if (game.state === 'paused') game.resume();
+    }
+  }
+  function closeTree() {
+    if (!tree.isOpen) return;
+    tree.close(); tour.close();
+    try { game.events.emit('treeClosed', {}); } catch (_) { /* */ }
+    onModalClosed('tree');
+  }
+  function openConfirm(text, onYes, onNo) { confirmBox.open(text, onYes, onNo); syncModalLock(); }
   function openControls() { controls.classList.add('show'); syncModalLock(); }
   function closeControls() { controls.classList.remove('show'); syncModalLock(); }
+  const canOpenMenus = () => (game.state === 'playing' || game.state === 'paused') && !game.cinematic?.active;
 
   // button wiring
   screens.addEventListener('click', (e) => {
@@ -543,14 +613,17 @@ export function createUI(game) {
     if (!b) return;
     game.audio?.play?.('ui_click');
     const act = b.dataset.act;
-    if (act === 'start') startGame();
+    if (act === 'start') startGame({ clearSave: true });
+    else if (act === 'continue') continueGame();
     else if (act === 'controls') openControls();
     else if (act === 'closeControls') closeControls();
     else if (act === 'settings') { settingsMenu.open(); syncModalLock(); }
-    else if (act === 'resume') { closeControls(); settingsMenu.close(); setGrimoire(false); game.resume(); }
+    else if (act === 'resume') { closeControls(); settingsMenu.close(); game.resume(); }
     else if (act === 'restart') game.restart();
     else if (act === 'respawn') doRespawn();
-    else if (act === 'grimoire') setGrimoire(!grimOpen);
+    else if (act === 'grimoire') api.openCodex();
+    else if (act === 'tree') api.openSkillTree();
+    else if (act === 'character') api.openCharacter();
   });
   screens.addEventListener('mouseover', (e) => {
     const b = e.target.closest('.aw-btn');
@@ -561,81 +634,17 @@ export function createUI(game) {
     if (game.state !== 'title') return;
     closeControls(); settingsMenu.close();
     title.classList.add('leaving');
-    try {
-      if (game.newGame) game.newGame(opts); else game.start();
-    } catch (err) { console.error('[ui] newGame', err); }
+    try { if (game.newGame) game.newGame(opts); else game.start(); } catch (err) { console.error('[ui] newGame', err); }
+  }
+  function continueGame() {
+    if (game.state !== 'title' || !game.continueGame) return;
+    closeControls(); settingsMenu.close();
+    title.classList.add('leaving');
+    try { game.continueGame(); } catch (err) { console.error('[ui] continueGame', err); }
   }
   function doRespawn() {
     if (game.state !== 'dead' && game.player?.entity?.alive !== false) return;
     try { game.player?.respawn?.(); } catch (err) { console.warn('[ui] respawn', err); }
-  }
-
-  // ------------------------------------------------------------------ grimoire
-  let grimOpen = false;
-  function buildGrimoire() {
-    const list = reactions(), disc = game.combat?.discovered || new Set();
-    const known = (id) => disc.has?.(id) || seenReactions.has(id);
-    const n = list.filter((r) => known(r.id)).length;
-    grim.querySelector('.aw-book-left .aw-book-count').textContent = list.length ? `발견 ${n} / ${list.length}` : '아직 기록된 반응이 없습니다';
-    const row = (r) => {
-      const k = known(r.id);
-      const icons = (r.elements || []).map((e) => elementSVG(e, 18)).join('<b class="aw-plus">+</b>');
-      return `<div class="aw-rx ${k ? 'known' : 'unknown'}" style="--g1:${ELEMENT_CSS[r.elements?.[0]] || '#ccc'};--g2:${ELEMENT_CSS[r.elements?.[1]] || '#ccc'}">
-        <div class="aw-rx-icons">${icons}</div>
-        <div class="aw-rx-body"><div class="aw-rx-name">${k ? r.name : '???'}</div>
-        <div class="aw-rx-desc">${k ? r.desc : (r.elements || []).map((e) => ELEMENT_NAMES_KO[e] || (e === 'water' ? '물' : e)).join(' + ') + ' — 미발견'}</div></div></div>`;
-    };
-    const basic = list.filter((r) => !r.fusion), fus = list.filter((r) => r.fusion);
-    grim.querySelector('.aw-rx-list').innerHTML =
-      basic.map(row).join('') + (fus.length ? `<div class="aw-rx-sec">마법 융합</div>${fus.map(row).join('')}` : '');
-
-    const pr = prog();
-    const isSword = pr?.cls === 'sword', master = !!pr?.isMaster?.();
-    const unlocked = (el) => (pr?.chosen ? pr.isElementUnlocked?.(el) !== false : true);
-    const order = { basic: 0, heavy: 1, ultimate: 2, support: 3, finisher: 4 };
-    const spRow = (el, kind, name, desc, meta) => `<div class="aw-sp-row">${spellSVG(el, kind === 'finisher' || kind === 'support' ? 'ultimate' : kind, 30)}<div class="aw-sp-body"><div class="aw-sp-name">${esc(name)}</div><div class="aw-sp-meta"><em>${KIND_LABEL[kind] || ''} · ${KEY_LABEL[KIND_KEY[kind]] || ''}</em>${meta}</div><div class="aw-sp-desc">${esc(desc || '')}</div></div></div>`;
-    let html = '';
-    if (isSword) {
-      grim.querySelector('.aw-sp-title').textContent = '검술 목록';
-      let hs = null; try { hs = game.sword?.getHudState?.(); } catch (_) { /* */ }
-      const el = hs?.element || pr?.element || 'fire';
-      grim.querySelector('.aw-sp-count').textContent = master ? `${ELEMENT_NAMES_KO[el]}의 대가` : '원소를 바꾸면 검술도 바뀝니다';
-      html += `<div class="aw-sp-el" style="--ec:${ELEMENT_CSS[el]}"><div class="aw-sp-head">${elementSVG(el, 18)}<span>${ELEMENT_NAMES_KO[el]} 검술</span></div><div class="aw-sp-grid">`;
-      for (const s of hs?.slots || []) {
-        const meta = s.staminaCost > 0 ? `<span class="aw-sp-st">기력 ${s.staminaCost}</span>` : s.cooldown > 0 ? `<span class="aw-sp-mp">${Math.round(s.cooldown)}초</span>` : '';
-        html += spRow(el, s.kind, s.name, s.desc, meta);
-      }
-      html += '</div></div>';
-    } else {
-      grim.querySelector('.aw-sp-title').textContent = '주문 목록';
-      grim.querySelector('.aw-sp-count').textContent = master ? `${ELEMENT_NAMES_KO[pr.element] || ''}의 대가 — 각성한 주문` : '다섯 원소 · 열다섯 주문';
-      const defs = game.spells?.SPELLS || game.spells?.defs || null;
-      for (const el of ELEMENTS) {
-        const lock = !unlocked(el);
-        if (lock && master) continue;
-        let sp = defs ? Object.values(defs).filter((d) => d.element === el) : [];
-        sp = sp.filter((d) => (master ? d.kind !== 'ultimate' || d.awakened : !d.awakened && order[d.kind] <= 2));
-        sp.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
-        html += `<div class="aw-sp-el${lock ? ' locked' : ''}" style="--ec:${ELEMENT_CSS[el]}"><div class="aw-sp-head">${elementSVG(el, 18)}<span>${ELEMENT_NAMES_KO[el]}</span>${lock ? LOCK_SVG : ''}</div><div class="aw-sp-grid">`;
-        if (!sp.length) html += `<div class="aw-sp-row"><div class="aw-sp-desc">주문 정보를 불러올 수 없습니다</div></div>`;
-        for (const d of sp) html += spRow(el, d.kind, d.name, d.desc, d.mp ? `<span class="aw-sp-mp">${d.mp} MP</span>` : '');
-        html += '</div></div>';
-      }
-    }
-    grim.querySelector('.aw-spell-list').innerHTML = html;
-  }
-  let grimPaused = false;
-  function setGrimoire(on) {
-    if (on === grimOpen) return;
-    grimOpen = on;
-    if (on) {
-      buildGrimoire(); game.audio?.play?.('ui_select');
-      // opening the book from gameplay pauses the world (and frees the cursor for scrolling)
-      if (game.state === 'playing') { grimPaused = true; game.pause(); }
-    }
-    grim.classList.toggle('show', on);
-    if (!on && grimPaused) { grimPaused = false; if (game.state === 'paused') game.resume(); }
-    syncModalLock();
   }
 
   // ------------------------------------------------------------------ state handling
@@ -643,38 +652,48 @@ export function createUI(game) {
   function applyState(s) {
     root.dataset.state = s;
     title.classList.toggle('show', s === 'title');
-    if (s !== 'title') title.classList.remove('leaving');
-    syncModalLock();
+    if (s === 'title') syncTitleButtons(); else title.classList.remove('leaving');
     if (s === 'paused') {
       const t = objText.textContent;
       pause.querySelector('.aw-pause-obj').textContent = t ? '현재 목표 — ' + t : '';
     }
     if (s !== 'title' && s !== 'paused') { closeControls(); settingsMenu.close(); }
+    // menus close when gameplay leaves playing/paused (the class panel survives dialogue: story opens it from a talk)
+    if (s !== 'playing' && s !== 'paused') {
+      pausedByMenu = false;
+      for (const m of MODALS) if (m.pauses && m.isOpen() && !(m.keep && (s === 'dialogue' || s === 'cutscene'))) m.close();
+      if (s !== 'dialogue' && s !== 'cutscene' && confirmBox.isOpen) confirmBox.close();
+    }
+    syncModalLock();
     if (s === 'dead') { death.classList.add('show', 'final'); deadT = 2.0; }
     if (s === 'playing') death.classList.remove('show', 'final');
     if (s === 'victory') showVictory();
-    if (s !== 'playing' && s !== 'paused') setGrimoire(false);
     if (s === 'playing' && !tutStarted) {
       tutStarted = true;
-      if (!prog()?.chosen) {
-        queueTut('WASD 이동 · Shift 달리기 · Space 점프 (공중에서 꾹 누르면 활공)', 1.5);
-        queueTut('마을 사람 가까이에서 F 대화하기 · 나침반의 표식을 따라가세요', 6);
-      }
+      if (!prog()?.chosen) TUT.start.forEach((t, i) => queueTut(t, i ? 6 : 1.5));
     }
   }
   let deadT = 0;
-  let victoryStats = null;
+  let victoryStats = null, finalName = '';
   function showVictory() {
     const st = victoryStats || {};
     const total = reactions().length;
     const kills = st.kills ?? game.enemies?.kills ?? 0;
     const rx = st.reactions ?? game.combat?.discovered?.size ?? seenReactions.size;
     const time = st.timeSec ?? playTime;
+    const P = prog();
+    const cd = CLASS_DEFS[P?.cls];
+    // build summary: top 3 trees by points
+    const top = ALL_ELEMENTS.map((el) => [el, P?.pointsIn?.(el, { forGates: false }) || 0]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    victoryPre.textContent = VICTORY_KO.pre(finalName);
+    victoryBuild.innerHTML = top.map(([el, pts]) => `<span class="aw-vb" style="--ec:${elCss(el)}">${elementSVG(el, 16)}${esc(elName(el))} <b>${pts}</b> <em>${esc(MASTERY_KO[P?.mastery?.(el)?.rank] || '')}</em></span>`).join('');
     statsBox.innerHTML = `
-      <div class="aw-stat"><div class="aw-stat-v">${kills}</div><div class="aw-stat-k">처치 수</div></div>
-      <div class="aw-stat"><div class="aw-stat-v">${rx}<small> / ${total || '-'}</small></div><div class="aw-stat-k">발견한 반응</div></div>
-      <div class="aw-stat"><div class="aw-stat-v">${fmtTime(time)}</div><div class="aw-stat-k">플레이 시간</div></div>
-      <div class="aw-stat"><div class="aw-stat-v">${maxCombo}</div><div class="aw-stat-k">최대 콤보</div></div>`;
+      <div class="aw-stat"><div class="aw-stat-v">${P?.level ?? 1}</div><div class="aw-stat-k">${VICTORY_KO.level}</div></div>
+      <div class="aw-stat"><div class="aw-stat-v aw-stat-s">${esc(cd?.nameKo || '-')}</div><div class="aw-stat-k">${VICTORY_KO.cls}</div></div>
+      <div class="aw-stat"><div class="aw-stat-v">${rx}<small> / ${total || '-'}</small></div><div class="aw-stat-k">${VICTORY_KO.rx}</div></div>
+      <div class="aw-stat"><div class="aw-stat-v">${kills}</div><div class="aw-stat-k">${VICTORY_KO.kills}</div></div>
+      <div class="aw-stat"><div class="aw-stat-v aw-stat-s">${fmtTime(time)}</div><div class="aw-stat-k">${VICTORY_KO.time}</div></div>
+      <div class="aw-stat"><div class="aw-stat-v">${Math.max(maxCombo, st.maxCombo || 0)}</div><div class="aw-stat-k">${VICTORY_KO.combo}</div></div>`;
     victory.classList.add('show');
     try { game.input.exitLock?.(); } catch (_) { /* */ }
   }
@@ -682,11 +701,13 @@ export function createUI(game) {
   // ------------------------------------------------------------------ objective / markers (4 Hz)
   let objKey = '', objTargetRef = null;
   const objTarget = new THREE.Vector3();
+  function bossLabel(o) { return o?.bossName || o?.boss?.name || bossBar.info?.name || BOSS_KO.fallbackName; }
   function fallbackObjective() {
     const o = game.enemies?.getObjective?.();
     if (!o) return null;
-    if (o.phase === 'camps') return { title: '마물 토벌', desc: '솔레아 평원의 마물 거점 소탕', progress: { cur: o.campsCleared, max: o.campsTotal }, _o: o };
-    if (o.phase === 'boss') return { title: '봉인의 유적', desc: '고대 바위 골렘을 쓰러뜨려라', _o: o };
+    if (o.title || o.desc) return { title: o.title, desc: o.desc, progress: o.progress, _o: o };
+    if (o.phase === 'camps') return { title: '마물 토벌', desc: '평원의 마물 거점 소탕', progress: { cur: o.campsCleared, max: o.campsTotal }, _o: o };
+    if (o.phase === 'boss') return { title: bossLabel(o), desc: `${bossLabel(o)}을(를) 쓰러뜨려라`, _o: o };
     return { title: '에테리아의 수호자', desc: '평원에 평화가 찾아왔다', _o: o };
   }
   function setMarker(i, pos, kind, label) {
@@ -716,7 +737,6 @@ export function createUI(game) {
     objTargetRef = o.marker || null;
     if (objTargetRef) objTarget.copy(objTargetRef);
 
-    // compass markers
     let n = 0;
     let list = null;
     if (fromStory) { try { list = game.story.getMarkers?.() || null; } catch (_) { list = null; } }
@@ -730,7 +750,7 @@ export function createUI(game) {
       const camps = eo?.camps || game.world?.camps || [];
       for (let i = 0; i < camps.length && n < MARK_POOL - 1; i++) if (camps[i].position) setMarker(n++, camps[i].position, camps[i].cleared ? 'done' : 'camp', camps[i].name || '마물 거점');
       const bp = eo?.boss?.object?.position || game.world?.bossArena?.position;
-      if (bp && eo?.phase !== 'done') setMarker(n++, bp, 'boss', '봉인의 유적');
+      if (bp && eo?.phase !== 'done') setMarker(n++, bp, 'boss', bossLabel(eo));
     }
     let dtxt = '';
     for (let i = 0; i < MARK_POOL; i++) {
@@ -753,6 +773,8 @@ export function createUI(game) {
   const ev = game.events;
   ev.on('stateChange', (p) => applyState(p.state));
   ev.on('skipTitle', () => { if (game.state === 'title') startGame({ skipIntro: true }); });
+  let killPos = null;
+  const killV = new THREE.Vector3();
   ev.on('damage', (p) => {
     if (!p) return;
     const amt = Math.round(p.amount || 0);
@@ -762,22 +784,47 @@ export function createUI(game) {
     const point = p.point || p.target?.object?.position;
     if (!point) return;
     if (p.isPlayer) {
-      spawnNumber('-' + amt, v2.copy(point).setY(point.y + 0.3), 'aw-num-player', '#ff5d6a', { life: 1.0, vy: 0.9, spread: 30 });
+      if (numbersOn()) spawnNumber('-' + amt, v2.copy(point).setY(point.y + 0.3), 'aw-num-player', '#ff5d6a', { life: 1.0, vy: 0.9, spread: 30 });
       return;
     }
-    const color = ELEMENT_CSS[p.element] || '#ffffff';
-    if (p.reaction) {
-      const rn = rxById(p.reaction)?.name || '';
-      spawnNumber(`${amt}${rn ? ' ' + rn : ''}`, point, 'aw-num-rx', '#ffd65a', { life: 1.4, scale: 1.25, vy: 1.6 });
-    } else if (p.crit) {
-      spawnNumber(amt + '!', point, 'aw-num-crit', color, { life: 1.2, scale: 1.45, vy: 1.5 });
-    } else if (p.dot) {
-      spawnNumber(String(amt), point, 'aw-num-dot', color, { life: 0.8, scale: 0.75, vy: 1.0, spread: 60 });
-    } else {
-      spawnNumber(String(amt), point, amt >= 80 ? 'aw-num-big' : '', color, { life: 0.9 + Math.min(0.6, amt / 150), scale: 0.85 + Math.min(1.1, amt / 90) });
+    if (p.killed) { killV.copy(point); killPos = killV; }
+    if (numbersOn()) {
+      const color = ELEMENT_CSS[p.element] || '#ffffff';
+      if (p.reaction) {
+        const rn = rxById(p.reaction)?.name || '';
+        spawnNumber(`${amt}${rn ? ' ' + rn : ''}`, point, 'aw-num-rx', '#ffd65a', { life: 1.4, scale: 1.25, vy: 1.6 });
+      } else if (p.crit) {
+        spawnNumber(amt + '!', point, 'aw-num-crit', color, { life: 1.2, scale: 1.45, vy: 1.5 });
+      } else if (p.dot || p.isDot) {
+        spawnNumber(String(amt), point, 'aw-num-dot', color, { life: 0.8, scale: 0.75, vy: 1.0, spread: 60 });
+      } else {
+        spawnNumber(String(amt), point, amt >= 80 ? 'aw-num-big' : '', color, { life: 0.9 + Math.min(0.6, amt / 150), scale: 0.85 + Math.min(1.1, amt / 90) });
+      }
     }
-    if (!p.dot) { bumpCombo(); hitMarker(p.killed); }
+    if (!p.dot && !p.isDot) { bumpCombo(); hitMarker(p.killed); }
   });
+  ev.on('kill', (p) => { const pt = p?.target?.object?.position || p?.point; if (pt) { killV.copy(pt); killPos = killV; } });
+  ev.on('xpGained', (p) => {
+    const n = Math.round(p?.amount || 0); if (n <= 0) return;
+    const pp = game.player?.object?.position;
+    const at = p?.source?.kind === 'kill' && killPos ? v2.copy(killPos).setY(killPos.y + 1.8) : pp ? v2.copy(pp).setY(pp.y + 2.4) : null;
+    if (at) spawnNumber(HUD_KO.xp(n), at, 'aw-num-xp', '#ffe38a', { life: 1.5, scale: 0.9, vy: 1.1, spread: 20 });
+    killPos = null;
+    xpDirty = true;
+  });
+  ev.on('levelUp', (p) => {
+    const L = p?.level ?? prog()?.level ?? 1;
+    showCard(HUD_KO.levelUpPre, HUD_KO.levelUpTitle(L), HUD_KO.levelUpSub(p?.pointsGained ?? 1), 'aw-card-level', 3.0);
+    game.audio?.play?.('level_up');
+    edge('awaken');
+    const pp = game.player?.object?.position;
+    if (pp && project(v2.copy(pp).setY(pp.y + 1), scr)) { lvBurst.style.left = scr.x.toFixed(0) + 'px'; lvBurst.style.top = scr.y.toFixed(0) + 'px'; }
+    else { lvBurst.style.left = '50%'; lvBurst.style.top = '60%'; }
+    restartAnim(lvBurst, 'show');
+    restartAnim(lvBadge, 'pop');
+    xpDirty = true;
+  });
+  for (const n of ['pointsChanged', 'skillLearned', 'skillUnlearned', 'respec', 'classChosen']) ev.on(n, () => { xpDirty = true; });
   ev.on('reaction', (p) => onReaction(p || {}, false));
   ev.on('zoneCombo', (p) => onReaction(p || {}, true));
   ev.on('playerHurt', (p) => { hurtA = Math.min(1, hurtA + 0.45 + Math.min(0.4, (p?.amount || 0) / 40)); });
@@ -787,21 +834,39 @@ export function createUI(game) {
     comboCount = 0; combo.classList.remove('on');
   });
   ev.on('playerRespawn', () => { death.classList.remove('show', 'final'); hurtA = 0; });
-  ev.on('spellFail', (p) => {
-    if (p?.reason === 'mana') { showHint('마력이 부족합니다'); restartAnim(vMp.el, 'shake'); }
-    else if (p?.reason === 'gauge') showHint('각성 게이지가 부족합니다');
-    else if (p?.reason === 'stamina') { showHint('기력이 부족합니다'); restartAnim(vSt.el, 'shake'); }
-  });
+  const FAIL = { mana: ['마력이 부족합니다', vMp], resource: [null, vMp], gauge: ['각성 게이지가 부족합니다', null], stamina: ['스태미나가 부족합니다', vSt] };
+  function onFail(p) {
+    const f = FAIL[p?.reason]; if (!f) return;
+    const txt = f[0] || (fam() === 'melee' ? '투지가 부족합니다' : '마력이 부족합니다');
+    showHint(txt); if (f[1]) restartAnim(f[1].el, 'shake');
+  }
+  ev.on('spellFail', onFail);
+  ev.on('skillFail', onFail);
   ev.on('campCleared', (p) => {
     const total = p?.total ?? 3, idx = (p?.index ?? 0) + 1;
     const cleared = game.enemies?.getObjective?.()?.campsCleared ?? idx;
     showCard('마물 거점', '거점 소탕!', `${cleared} / ${total}`, 'aw-card-camp', 3.0);
   });
   ev.on('bossSpawn', (p) => {
-    const nm = p?.boss?.name || '고대 바위 골렘';
-    setTimeout(() => showCard('봉인의 수문장', nm, '안개에 잠식된 거인이 깨어났다', 'aw-card-boss', 4.2), 700);
+    const nm = p?.name || p?.boss?.name || BOSS_KO.fallbackName;
+    later(0.7, () => showCard(p?.title || BOSS_KO.spawnPre, nm, p?.sub || '', 'aw-card-boss', 4.2));
   });
-  ev.on('bossDefeated', () => { showCard('', '수문장 정화', '봉인의 유적에 고요가 돌아오다', 'aw-card-camp', 3.0); });
+  ev.on('bossDefeated', (p) => {
+    const nm = p?.name || p?.boss?.name || BOSS_KO.fallbackName;
+    if (p?.final) finalName = nm;
+    showCard(BOSS_KO.defeatPre, nm, p?.final ? BOSS_KO.finalSub : BOSS_KO.defeatSub, 'aw-card-camp', 3.0);
+  });
+  ev.on('bossPhase', (p) => { if (p?.name) showFlash(p.name, BOSS_KO.phase(p.phase ?? 2), 'phase', 1.4, 2); });
+  ev.on('bossCheck', (p) => {
+    const nm = HUD_KO.check[p?.kind] || '';
+    if (p?.state === 'start') showFlash(nm, p.duration ? `${Math.round(p.duration)}초` : '', 'check', 1.3, 2);
+    else if (p?.state === 'success') showFlash(nm + ' ' + HUD_KO.checkOk, '', 'check', 1.1, 2);
+    else if (p?.state === 'fail') showFlash(nm + ' ' + HUD_KO.checkFail, '', 'break', 1.1, 2);
+  });
+  ev.on('lockStripped', (p) => showHint(HUD_KO.lockStripped + (p?.lock?.element || p?.lock ? ` — ${elName(p.lock?.element || p.lock)}` : '')));
+  ev.on('break', (p) => { if (p?.target?.team !== 'player') { showFlash(HUD_KO.broken, HUD_KO.breakSub, 'break', 1.0, 2); } });
+  ev.on('resonance', () => { showFlash(HUD_KO.resonance, HUD_KO.resonanceSub, 'awaken', 1.3, 3); edge('awaken'); });
+  ev.on('giftReady', () => toast(`V: ${HUD_KO.giftPrompt}`, { duration: 4, kind: 'tut' }));
   ev.on('victory', (p) => { victoryStats = p?.stats || null; if (game.state === 'victory') showVictory(); });
   ev.on('pickup', (p) => {
     const pp = game.player?.object?.position;
@@ -810,38 +875,41 @@ export function createUI(game) {
     if (p?.kind === 'heart') spawnNumber(`+${p.amount ?? ''} 생명력`, v2, 'aw-num-pick', '#ff8aa0', { life: 1.2, scale: 0.85 });
     else if (p?.kind === 'mana') spawnNumber(`+${p.amount ?? ''} MP`, v2, 'aw-num-pick', '#7cc4ff', { life: 1.2, scale: 0.85 });
   });
-  ev.on('elementChanged', () => restartAnim(elName, 'pop'));
+  ev.on('elementChanged', () => restartAnim(elNameEl, 'pop'));
+  ev.on('hpRegenStart', () => restartAnim(vHp.el, 'regenstart'));
 
   // quests
   ev.on('questStart', (p) => {
     if (!p?.title) return;
-    // shown a beat later and only if still the current quest (debug skips / chained stages)
-    setTimeout(() => {
+    later(0.3, () => {
       let cur = null; try { cur = game.story?.getObjective?.()?.title; } catch (_) { /* */ }
       if (cur == null || cur === p.title) showCard('새로운 임무', p.title, '', 'aw-card-quest', 3.4);
-    }, 300);
-    if (p.id === 'updraft') queueTut('불타는 풀 위에서 Space를 꾹 — 상승 기류를 타고 높이 날아오르세요', 4);
-    if (p.id === 'training') queueTut('스승의 지시를 따라 수련하세요 — 진행 상황은 오른쪽 위 임무 창에 표시됩니다', 3);
+    });
+    if (p.id === 'updraft') queueTut(TUT.updraft, 4);
+    if (p.id === 'training') queueTut(TUT.training, 3);
   });
   ev.on('questComplete', (p) => { if (p?.title) showCard('임무 완료', p.title, '', 'aw-card-done', 3.0); });
-  ev.on('pathChosen', (p) => {
-    skillSig = ''; // rebuild hotbar
-    const cls = p?.cls === 'sword' ? 'sword' : 'mage';
-    const master = p?.path === 'master';
-    CLASS_TUT[cls].forEach((t, i) => queueTut(t, i === 0 ? 2.5 : 1));
-    (master ? CLASS_TUT.master : CLASS_TUT.all).forEach((t) => queueTut(t, 1));
-  });
-  // defense & feel
+  function classTutorial(cls) {
+    skillSig = '';
+    const f = familyOf(cls);
+    (TUT[f] || TUT.caster).forEach((t, i) => queueTut(t, i === 0 ? 2.5 : 1));
+    TUT.all.forEach((t) => queueTut(t, 1));
+    if (!game.isTest) later(9, () => tour.tip('firstPoint', TIPS.firstPoint));
+  }
+  ev.on('classChosen', (p) => classTutorial(p?.cls));
+  ev.on('skillLearned', () => { try { if (prog()?.awakeningEnabled?.()) TUT.awaken.forEach((t) => queueTut(t, 1)); } catch (_) { /* */ } });
+  // defense & feel (no class literals: family / player kit names)
   ev.on('parry', (p) => {
-    const sword = p?.cls === 'sword' || prog()?.cls === 'sword';
-    showFlash(sword ? '간파!' : '반사!', sword ? 'PERFECT PARRY' : 'PERFECT BARRIER', 'parry', 0.95, 3);
+    const f = p?.cls ? familyOf(p.cls) : fam();
+    const [a, b] = DEF_KO.parry[f] || DEF_KO.parry.caster;
+    showFlash(a, b, 'parry', 0.95, 3);
     edge('parry');
     restartAnim(defBlock, 'pulse');
   });
   ev.on('perfectDodge', () => { showFlash('완벽 회피!', '반격의 기회', 'dodge', 1.1, 3); edge('dodge'); });
   ev.on('blocked', (p) => {
     if (p?.target?.team !== 'player' || p.parried || p.perfect || p.dodged) return;
-    showHint(prog()?.cls === 'sword' ? '막기!' : '방벽으로 막음', 'block');
+    showHint(DEF_KO.block[fam()] || DEF_KO.block.caster, 'block');
     restartAnim(defBlock, 'pulse');
   });
   ev.on('guardBreak', () => { showFlash('가드 붕괴!', '', 'break', 0.8, 2); restartAnim(vSt.el, 'shake'); });
@@ -856,31 +924,29 @@ export function createUI(game) {
     edge('awaken');
     game.audio?.play?.('awakening_ready');
   });
-  ev.on('finisherStart', () => { finPrompt.classList.remove('on'); });
+  ev.on('finisherStart', () => { finPrompt.classList.remove('on'); hb3.finisherStarted(); });
+  ev.on('gateTravel', () => { if (gateMenu.isOpen) gateMenu.close(); });
 
   // pause on Escape / lock loss, relock on canvas click
   let lockLostAt = -9, wasLocked = false;
   document.addEventListener('pointerlockchange', () => {
     const locked = !!document.pointerLockElement;
-    if (!locked && wasLocked && game.state === 'playing' && !game.isTest) {
+    if (!locked && wasLocked && game.state === 'playing' && !game.isTest && !anyModalOpen()) {
       lockLostAt = performance.now();
-      if (grimOpen) setGrimoire(false);
       game.pause();
     }
     wasLocked = locked;
   });
   const appEl = document.getElementById('app');
   appEl?.addEventListener('mousedown', (e) => {
-    if (game.state === 'playing' && !game.input.locked && !game.isTest) {
+    if (game.state === 'playing' && !game.input.locked && !game.isTest && !anyModalOpen()) {
       game.input.requestLock();
-      e.stopPropagation();   // the relock click must not also swing / cast (input listens on window)
+      e.stopPropagation();
     }
   });
-  // back to gameplay after a dialogue / cutscene without pointer lock (Esc pressed meanwhile, or no gesture to
-  // relock): pause instead of leaving a dead mouse camera
   ev.on('stateChange', (p) => {
     if (game.isTest || p?.state !== 'playing' || (p.prev !== 'dialogue' && p.prev !== 'cutscene')) return;
-    setTimeout(() => { if (game.state === 'playing' && !game.input.locked && !game.cinematic?.active) game.pause(); }, 450);
+    setTimeout(() => { if (game.state === 'playing' && !game.input.locked && !game.cinematic?.active && !anyModalOpen()) game.pause(); }, 450);
   });
 
   // ------------------------------------------------------------------ title camera (cinematic drift)
@@ -895,8 +961,8 @@ export function createUI(game) {
     let gy = 0;
     try { gy = game.world.getHeight?.(x, z) ?? sp.y; } catch (_) { gy = sp.y || 0; }
     camera.position.set(x, Math.max(gy, sp.y || 0) + 15 + Math.sin(t * 1.3) * 1.2, z);
-    const tree = game.world?.worldTree;
-    if (tree?.position) camLook.copy(tree.position).setY(tree.position.y + (tree.height || 60) * 0.45);
+    const treeObj = game.world?.worldTree;
+    if (treeObj?.position) camLook.copy(treeObj.position).setY(treeObj.position.y + (treeObj.height || 60) * 0.45);
     else {
       let ty = 0;
       try { ty = game.world.getHeight?.(sp.x, sp.z - 120) ?? 0; } catch (_) { /* */ }
@@ -907,14 +973,13 @@ export function createUI(game) {
   }
 
   // ------------------------------------------------------------------ tutorial state
-  let tutStarted = false, dummyHintDone = false, dummyT = 0, playTime = 0, maxCombo = 0;
+  let tutStarted = false, dummyHintDone = false, dummyT = 0, playTime = 0, maxCombo = 0, unspentT = 0;
 
   // ------------------------------------------------------------------ per-frame caches
   let stamVis = 0, stamLast = -1, chargeVis = 0, hurtA = 0, lastEl = '', lastTarget = null;
-  let bossLagV = 1, bossShown = false;
-  let objTimer = 0, skillTimer = 0, fpsTimer = 0, fpsShown = null;
-  let skillSig = '', hotbarShown = null, defShown = null, defSig = '', lockSig = '', finReady = null;
-  let lastAwk = -1;
+  let objTimer = 0, skillTimer = 0, hintTimer = 0, fpsTimer = 0, fpsShown = null, fullTick = true;
+  let skillSig = '', hotbarShown = null, hb3Shown = null, defShown = null, defSig = '', lockSig = '', finReady = null;
+  let lastAwk = -1, resShown = '', famShown = '', xpDirty = true, lvShown = -1, xpQ = -1, ptsShown = -1, regenQ = -1, regenOn = null;
   const dir = new THREE.Vector3();
 
   function project(p, out) {
@@ -939,25 +1004,47 @@ export function createUI(game) {
     return f;
   }
 
-  function updateVitals(dt) {
-    const P = game.player;
-    if (!P) return;
-    const ent = P.entity;
-    const hp = Math.max(0, ent?.hp ?? P.hp ?? 0), maxHp = ent?.maxHp ?? P.maxHp ?? 100;
+  function updateProgressHud(full) {
+    if (!full && !xpDirty) return;
+    const P = prog(); if (!P) return;
+    const L = P.level || 1;
+    if (L !== lvShown) { lvShown = L; lvBadge.textContent = String(L); }
+    const need = P.xpToNext?.() || 0;
+    const q = need > 0 ? Math.round(clamp((P.xp || 0) / need, 0, 1) * 200) / 200 : 0;
+    if (q !== xpQ) { xpQ = q; xpFill.style.transform = `scaleX(${q})`; xpTxt.textContent = need ? `${Math.floor(P.xp || 0)} / ${need}` : ''; }
+    const pts = P.chosen ? (P.points ?? 0) : 0;
+    if (pts !== ptsShown) { ptsShown = pts; ptPipTxt.textContent = HUD_KO.points(pts); ptPip.classList.toggle('on', pts > 0); if (pts > 0) restartAnim(ptPip, 'pop'); }
+    xpDirty = false;
+  }
+
+  function updateVitals(dt, full) {
+    const Pl = game.player;
+    if (!Pl) return;
+    const ent = Pl.entity;
+    const hp = Math.max(0, ent?.hp ?? Pl.hp ?? 0), maxHp = Pl.maxHp ?? ent?.maxHp ?? 100;
     const hf = updateVital(vHp, hp, maxHp, dt, 0.6, 0.01);
     vHp.el.classList.toggle('low', hf < 0.3);
-    const sword = prog()?.cls === 'sword';
-    if (!sword) updateVital(vMp, Math.max(0, P.mp ?? 0), P.maxMp ?? 100, dt, 0.8, 0.05);
-    const st = P.stamina ?? 100, stMax = P.maxStamina ?? 100, sf = clamp(st / stMax, 0, 1);
-    if (sword) {
-      updateVital(vSt, Math.max(0, st), stMax, dt, 0.9, 0.05);
-      vSt.el.classList.toggle('low', sf < 0.25);
-    }
-    // low hp heartbeat
+    const f = fam();
+    if (f !== famShown) { famShown = f; vitals.dataset.fam = f; hud.dataset.fam = f; }
+    const res = Pl.resource || (f === 'melee' ? 'resolve' : 'mp');
+    if (res !== resShown) { resShown = res; vitals.dataset.res = res; hud.dataset.res = res; resLbl.textContent = RES_KO[res] || ''; vMp.lastMax = -1; }
+    if (res === 'resolve') updateVital(vMp, Math.max(0, Pl.resolve ?? 0), Pl.maxResolve ?? 100, dt, 0.8, 0.05);
+    else updateVital(vMp, Math.max(0, Pl.mp ?? 0), Pl.maxMp ?? 100, dt, 0.8, 0.05);
+    const st = Pl.stamina ?? 100, stMax = Pl.maxStamina ?? 100, sf = clamp(st / stMax, 0, 1);
+    const melee = f === 'melee';
+    if (melee) { updateVital(vSt, Math.max(0, st), stMax, dt, 0.9, 0.05); vSt.el.classList.toggle('low', sf < 0.25); }
     lowVig.classList.toggle('on', hf < 0.3 && hf > 0 && game.state === 'playing');
-
-    // stamina ring next to the crosshair (BotW: only when not full; mage only — sword shows the bar)
-    const want = !sword && sf < 0.995 ? 1 : 0;
+    // regen strip + shimmer (player.regen: {active, delay, delayLeft, inCombat, rate})
+    if (full) {
+      const R = Pl.regen;
+      const on = !!R?.active;
+      if (on !== regenOn) { regenOn = on; vHp.el.classList.toggle('regen', on); }
+      const wait = !!R && !on && hp < maxHp && !R.disabled && R.delay > 0;
+      const rq = wait ? Math.round(clamp(1 - (R.delayLeft || 0) / R.delay, 0, 1) * 50) / 50 : on ? 1 : 0;
+      if (rq !== regenQ) { regenQ = rq; regenFill.style.transform = `scaleX(${rq})`; regenEl.classList.toggle('on', wait || on); regenEl.classList.toggle('full', on); }
+    }
+    // stamina ring next to the crosshair (casters; melee shows the bar)
+    const want = !melee && sf < 0.995 ? 1 : 0;
     const nv = stamVis + (want - stamVis) * Math.min(1, dt * (want ? 10 : 2.5));
     if (Math.abs(sf - stamLast) > 0.002) {
       stamFg.setAttribute('stroke-dashoffset', (ST_C * (1 - sf)).toFixed(2));
@@ -966,27 +1053,26 @@ export function createUI(game) {
     }
     if (Math.abs(nv - stamVis) > 0.003 || (nv === 0) !== (stamVis === 0)) { stamVis = nv < 0.003 ? 0 : nv; stamSvg.style.opacity = stamVis.toFixed(3); }
 
-    // aim target
     let target = null;
-    try { target = P.getAim?.()?.target || null; } catch (_) { /* */ }
+    try { target = Pl.getAim?.()?.target || null; } catch (_) { /* */ }
     if (target && (target.alive === false || target.isProp)) target = null;
     if (target !== lastTarget) { reticle.classList.toggle('lock', !!target); lastTarget = target; }
     if (target) lastHit.set(target, Math.max(lastHit.get(target) || 0, game.realTime - 4));
   }
 
   function updateDefense() {
-    const P = game.player;
+    const Pl = game.player;
     let d = null;
-    try { d = P?.getDefenseHud?.() || null; } catch (_) { d = null; }
+    try { d = Pl?.getDefenseHud?.() || null; } catch (_) { d = null; }
     const show = !!d && !!prog()?.chosen;
     if (show !== defShown) { defShown = show; vitals.classList.toggle('def-on', show); }
     if (!show) return;
-    const sword = d.block?.type === 'guard' || prog()?.cls === 'sword';
-    const sig = sword ? 's' : 'm';
+    const f = fam();
+    const sig = (d.dodgeName || '') + '|' + (d.defendName || '') + '|' + f;
     if (sig !== defSig) {
       defSig = sig;
-      defDashLbl.textContent = sword ? '질풍보' : '순간이동';
-      defBlockLbl.textContent = sword ? '검 막기' : '마력 방벽';
+      defDashLbl.textContent = d.dodgeName || DEF_KO.dodge[f] || '회피';
+      defBlockLbl.textContent = d.defendName || DEF_KO.defend[f] || '방어';
     }
     const dash = d.dash || {};
     const maxC = Math.min(PIP_POOL, dash.maxCharges || 1), ch = dash.charges ?? 0;
@@ -1000,9 +1086,8 @@ export function createUI(game) {
         if (on && p.on === false) restartAnim(p.el, 'ready');
         p.on = on; p.el.classList.toggle('on', on);
       }
-      // the pip being recharged fills up
-      const f = on ? 1 : i === ch ? clamp(1 - (dash.cooldownFrac ?? 0), 0, 1) : 0;
-      const q = Math.round(f * 40) / 40;
+      const fr = on ? 1 : i === ch ? clamp(1 - (dash.cooldownFrac ?? 0), 0, 1) : 0;
+      const q = Math.round(fr * 40) / 40;
       if (q !== p.f) { p.f = q; p.fill.style.transform = `scaleY(${q})`; }
     }
     const act = !!d.block?.active, perf = !!d.block?.perfect;
@@ -1015,15 +1100,21 @@ export function createUI(game) {
     }
   }
 
-  function updateSkills(dt, full) {
-    const pr = prog();
+  function getHud() {
     let S = null;
     try { S = game.activeSkills ? game.activeSkills() : game.spells; } catch (_) { S = game.spells; }
-    let hs = null;
-    try { hs = S?.getHudState?.(); } catch (_) { hs = null; }
+    try { return S?.getHudState?.() || null; } catch (_) { return null; }
+  }
+
+  function updateSkills(dt, full) {
+    const pr = prog();
+    const hs = getHud();
     const chosen = pr ? !!pr.chosen : true;
+    const v3 = hs?.v === 3;
     const show = !!hs && chosen && (hs.slots?.length || 0) > 0;
-    if (show !== hotbarShown) { hotbarShown = show; hotbar.classList.toggle('on', show); }
+    const s3 = show && v3, s2 = show && !v3;
+    if (s3 !== hb3Shown) { hb3Shown = s3; hb3.el.classList.toggle('on', s3); }
+    if (s2 !== hotbarShown) { hotbarShown = s2; hotbar.classList.toggle('on', s2); }
     if (!show) { chargeSvg.style.opacity = '0'; chargeVis = 0; return; }
 
     // charge ring: per frame (direct feedback)
@@ -1034,17 +1125,25 @@ export function createUI(game) {
       chargeFg.setAttribute('stroke-dashoffset', (CH_C * (1 - cf)).toFixed(2));
       chargeSvg.classList.toggle('full', cf >= 1);
     }
+    if (v3) {
+      const el = hs.attuned || hs.element;
+      if (el !== lastEl) { lastEl = el; hud.style.setProperty('--el', elCss(el)); }
+      hb3.update(hs, dt, full);
+      return;
+    }
     if (!full) return;
+    updateSkillsV2(hs, pr);
+  }
 
-    const cls = pr?.cls || 'mage', el = hs.element;
-    const sword = cls === 'sword';
-    // layout signature: which slots exist
+  /** v2 HudState renderer (spells/sword getHudState while skills is stubbed). Gems: the 5 classic elements. */
+  function updateSkillsV2(hs, pr) {
+    const el = hs.element;
+    const melee = (hs.family || fam()) === 'melee';
     let kinds = '';
     for (const s of hs.slots) kinds += s.kind[0];
-    const sig = cls + '|' + (pr?.path || '') + '|' + kinds;
+    const sig = (pr?.cls || '') + '|' + (pr?.path || '') + '|' + kinds;
     if (sig !== skillSig) {
       skillSig = sig;
-      hud.dataset.cls = cls;
       hud.dataset.master = pr?.isMaster?.() ? '1' : '0';
       for (const k of KIND_ORDER) {
         const s = slots[k];
@@ -1056,15 +1155,14 @@ export function createUI(game) {
     }
     if (el !== lastEl) {
       lastEl = el;
-      hud.style.setProperty('--el', ELEMENT_CSS[el] || '#fff');
-      gems.forEach((g, i) => g.classList.toggle('sel', ELEMENTS[i] === el));
-      elName.innerHTML = `<span>${ELEMENT_NAMES_KO[el] || ''}${pr?.isMaster?.() ? '의 대가' : ''}</span>`;
+      hud.style.setProperty('--el', elCss(el));
+      gems.forEach((g, i) => g.classList.toggle('sel', CLASSIC_ELEMENTS[i] === el));
+      elNameEl.innerHTML = `<span>${esc(elName(el) || '')}${pr?.isMaster?.() ? '의 대가' : ''}</span>`;
     }
-    // locked elements
     let ls = '';
     const els = hs.elements || [];
-    for (let i = 0; i < ELEMENTS.length; i++) {
-      const e = els.find ? els.find((x) => x.id === ELEMENTS[i]) : null;
+    for (let i = 0; i < CLASSIC_ELEMENTS.length; i++) {
+      const e = els.find ? els.find((x) => x.id === CLASSIC_ELEMENTS[i]) : null;
       ls += e && !e.locked ? '1' : '0';
     }
     if (ls !== lockSig) {
@@ -1073,9 +1171,8 @@ export function createUI(game) {
       gems.forEach((g, i) => { g.classList.toggle('locked', ls[i] === '0'); g.querySelector('.aw-gem-key').textContent = n > 1 ? String(i + 1) : ''; });
       gemRow.classList.toggle('single', n <= 1);
     }
-
     const mp = game.player?.mp ?? 999, st = game.player?.stamina ?? 999;
-    const buffOn = !!(hs.support?.active || (sword && game.sword?.buff));
+    const buffOn = !!(hs.support?.active || (melee && game.sword?.buff));
     for (let i = 0; i < hs.slots.length; i++) {
       const d = hs.slots[i];
       const s = slots[d.kind];
@@ -1085,7 +1182,6 @@ export function createUI(game) {
         s._sig = nsig;
         s.ico.innerHTML = spellSVG(el, d.kind === 'support' ? 'heavy' : d.kind === 'finisher' ? 'ultimate' : d.kind, d.kind === 'ultimate' || d.kind === 'finisher' ? 58 : 50)
           + `<span class="aw-slot-kind">${KIND_GLYPH[d.kind] || ''}</span>`;
-        // ' · 각성' suffix → small gold badge instead of wrapping into the cost line
         const nm = d.name || KIND_LABEL[d.kind];
         const aw = /\s*·\s*각성$/.test(nm);
         s.name.innerHTML = esc(aw ? nm.replace(/\s*·\s*각성$/, '') : nm) + (aw ? '<b class="aw-slot-awk">각성</b>' : '');
@@ -1094,52 +1190,34 @@ export function createUI(game) {
         s._cd = -1; s._cost = null;
         restartAnim(s.root, 'swap');
       }
-      // cost line
       let cost = '', costKind = '';
       if (d.kind === 'finisher') { cost = `각성 ${Math.floor(hs.awakening?.value ?? 0)}%`; costKind = 'awk'; }
-      else if (!sword && d.mpCost > 0) { cost = String(d.mpCost); costKind = 'mp'; }
+      else if (!melee && d.mpCost > 0) { cost = String(d.mpCost); costKind = 'mp'; }
       else if (d.staminaCost > 0) { cost = String(d.staminaCost); costKind = 'st'; }
       else if (d.cooldown > 0) { cost = `${Math.round(d.cooldown)}초`; costKind = 'cd'; }
       const ck = costKind + cost;
       if (ck !== s._cost) { s._cost = ck; s.cost.textContent = cost; s.costBox.dataset.k = costKind; }
-
       const frac = d.cooldown > 0 ? clamp(d.cooldownLeft / d.cooldown, 0, 1) : 0;
       const q = Math.round(frac * 120) / 120;
-      if (q !== s._cd) {
-        s._cd = q;
-        s.cd.style.setProperty('--cd', (q * 360).toFixed(1) + 'deg');
-        s.cd.style.opacity = q > 0 ? '1' : '0';
-      }
+      if (q !== s._cd) { s._cd = q; s.cd.style.setProperty('--cd', (q * 360).toFixed(1) + 'deg'); s.cd.style.opacity = q > 0 ? '1' : '0'; }
       let txt = d.cooldownLeft > 0.95 ? Math.ceil(d.cooldownLeft).toString() : '';
       const active = d.kind === 'support' && buffOn;
       if (active && hs.support?.timeLeft > 0 && !txt) txt = Math.ceil(hs.support.timeLeft).toString();
       if (txt !== s._cdTxt) { s._cdTxt = txt; s.cdnum.textContent = txt; }
       if (active !== s._act) { s._act = active; s.root.classList.toggle('active', active); }
-      const low = d.kind === 'finisher' ? false : sword ? d.staminaCost > 0 && st < d.staminaCost : mp < (d.mpCost || 0);
+      const low = d.kind === 'finisher' ? false : melee ? d.staminaCost > 0 && st < d.staminaCost : mp < (d.mpCost || 0);
       if (low !== s._low) { s._low = low; s.root.classList.toggle('nomp', low); }
       const ready = !!d.ready;
-      if (ready !== s._ready) {
-        if (ready && s._ready === false && !low) restartAnim(s.root, 'readyflash');
-        s._ready = ready;
-      }
+      if (ready !== s._ready) { if (ready && s._ready === false && !low) restartAnim(s.root, 'readyflash'); s._ready = ready; }
     }
     slots.heavy.root.classList.toggle('charging', !!hs.charging);
-
-    // awakening gauge (ornate ring around the R slot)
     const aw = hs.awakening;
     if (aw?.enabled && slots.finisher.shown) {
       const val = clamp(aw.value || 0, 0, 100);
       const q = Math.round(val * 2) / 2;
-      if (q !== lastAwk) {
-        lastAwk = q;
-        slots.finisher.awkFg?.setAttribute('stroke-dashoffset', (AWK_C * (1 - q / 100)).toFixed(2));
-      }
+      if (q !== lastAwk) { lastAwk = q; slots.finisher.awkFg?.setAttribute('stroke-dashoffset', (AWK_C * (1 - q / 100)).toFixed(2)); }
       const r = !!aw.ready && !game.spells?.finisherActive;
-      if (r !== finReady) {
-        finReady = r;
-        slots.finisher.root.classList.toggle('full', r);
-        finPrompt.classList.toggle('on', r);
-      }
+      if (r !== finReady) { finReady = r; slots.finisher.root.classList.toggle('full', r); finPrompt.classList.toggle('on', r); }
     } else if (finReady) { finReady = false; slots.finisher.root.classList.remove('full'); finPrompt.classList.remove('on'); }
   }
 
@@ -1160,16 +1238,12 @@ export function createUI(game) {
         if (vis) {
           m._x = COMPASS_W / 2 + rel * PX_PER_DEG;
           const d = Math.round(Math.hypot(dx, dz));
-          if (d !== m._d) {
-            m._d = d;
-            m.d.textContent = d + 'm';
-          }
+          if (d !== m._d) { m._d = d; m.d.textContent = d + 'm'; }
           visMarks.push(m);
         }
       }
       if (vis !== m.vis) { m.vis = vis; m.el.style.display = vis ? '' : 'none'; }
     }
-    // de-overlap: sort by screen x; a marker closer than 38px to its left neighbour is nudged right of it
     visMarks.sort((a, b) => a._x - b._x);
     for (let i = 0; i < visMarks.length; i++) {
       const m = visMarks[i];
@@ -1178,37 +1252,22 @@ export function createUI(game) {
     }
   }
 
-  function updateBoss(dt) {
-    let boss = null;
-    try { const o = game.enemies?.getObjective?.(); boss = o?.boss || game.enemies?.boss || null; } catch (_) { boss = null; }
-    if (boss && boss.alive === false) boss = null;
-    if (!!boss !== bossShown) {
-      bossShown = !!boss; bossBar.classList.toggle('show', bossShown);
-      if (boss) { bossName.textContent = boss.name || '고대 바위 골렘'; bossLagV = 1; }
-    }
-    if (boss) {
-      const bf = clamp(boss.hp / boss.maxHp, 0, 1);
-      bossFill.style.transform = `scaleX(${bf.toFixed(4)})`;
-      if (bossLagV > bf) bossLagV = Math.max(bf, bossLagV - dt * 0.25); else bossLagV = bf;
-      bossLag.style.transform = `scaleX(${bossLagV.toFixed(4)})`;
-    }
-  }
-
   function updateHUD(dt) {
-    updateVitals(dt);
     skillTimer -= dt;
     const full = skillTimer <= 0;
+    fullTick = full;
     if (full) { skillTimer = SKILL_HZ; updateDefense(); }
+    updateVitals(dt, full);
+    updateProgressHud(full);
     updateSkills(dt, full);
-
-    // hitmarker
     if (hitT > 0) { hitT -= dt; hitmark.style.opacity = clamp(hitT / 0.12, 0, 1).toFixed(2); }
     else if (hitmark.style.opacity !== '0') hitmark.style.opacity = '0';
-
     objTimer -= dt;
     if (objTimer <= 0) { objTimer = OBJ_HZ; updateObjective(); }
+    hintTimer -= dt;
+    if (hintTimer <= 0) { hintTimer = HINT_HZ; updateNextHit(lastTarget); }
     updateCompass();
-    updateBoss(dt);
+    bossBar.update(dt, full);
   }
 
   function updateNumbers(dt) {
@@ -1221,7 +1280,6 @@ export function createUI(game) {
       n.pos.y += n.vy * dt * (1 - k * 0.6);
       if (!project(n.pos, scr)) { if (!n.hidden) { n.hidden = true; n.el.style.opacity = '0'; } continue; }
       n.hidden = false;
-      // pop: overshoot then settle, fade out at the end
       const pop = k < 0.12 ? 0.4 + (k / 0.12) * 1.0 : k < 0.24 ? 1.4 - ((k - 0.12) / 0.12) * 0.4 : 1;
       const s = n.scale * pop;
       const a = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
@@ -1230,11 +1288,12 @@ export function createUI(game) {
     }
   }
 
-  function updateBars(dt) {
+  function updateBars(dt, full) {
     let bi = 0;
     const now = game.realTime;
     const cam = camera.position;
     const ents = game.entities || [];
+    const C = game.combat;
     if ((game.state === 'playing' || game.state === 'paused') && !game.cinematic?.active) {
       for (let i = 0; i < ents.length && bi < BAR_POOL; i++) {
         const e = ents[i];
@@ -1246,7 +1305,7 @@ export function createUI(game) {
         const lh = lastHit.get(e);
         const recent = lh !== undefined && now - lh < 6;
         const damaged = e.hp < e.maxHp;
-        if (!recent && !(e.aggro && damaged) && !(e.aggro && d2 < 18 * 18)) continue;
+        if (!recent && !(e.aggro && damaged) && !(e.aggro && d2 < 18 * 18) && e !== nextHit.target) continue;
         v2.copy(p); v2.y += (e.height || 1.6) + 0.55;
         if (!project(v2, scr)) continue;
         const b = bars[bi++];
@@ -1254,18 +1313,48 @@ export function createUI(game) {
           b.ent = e; b.name.textContent = e.name || '마물';
           b.lagV = barLag.get(e) ?? clamp(e.hp / e.maxHp, 0, 1);
           b.el.classList.toggle('dummy', !!e.isDummy);
+          b.el.classList.toggle('elite', !!(e.isElite || e.breakMax));
+          const wk = e.weakness ? [].concat(e.weakness) : null;
+          b.weak.innerHTML = wk ? wk.slice(0, 3).map((w) => elementSVG(w, 12)).join('') : '';
+          b.brkV = b.voidV = -1; b.hasBrk = null; b.broken = null; b.pipState = -1;
         }
         const f = clamp(e.hp / e.maxHp, 0, 1);
         if (b.lagV > f) b.lagV = Math.max(f, b.lagV - dt * 0.7); else b.lagV = f;
         barLag.set(e, b.lagV);
         b.fill.style.transform = `scaleX(${f.toFixed(3)})`;
         b.lag.style.transform = `scaleX(${b.lagV.toFixed(3)})`;
-        let mask = 0;
-        const st = e.statuses;
-        if (st) for (let k = 0; k < STATUS_KEYS.length; k++) if (st[STATUS_KEYS[k]]) mask |= 1 << k;
-        if (mask !== b.pipState) {
-          b.pipState = mask;
-          for (let k = 0; k < STATUS_KEYS.length; k++) b.pips[k].classList.toggle('on', !!(mask & (1 << k)));
+        if (full || b.pipState < 0) {
+          let mask = 0;
+          const st = e.statuses;
+          if (st) for (let k = 0; k < VOID_BIT; k++) if (st[STATUS_KEYS[k]]) mask |= 1 << k;
+          if ((e.voidShield || 0) > 0) mask |= 1 << VOID_BIT;
+          if (mask !== b.pipState) {
+            b.pipState = mask;
+            for (let k = 0; k < STATUS_KEYS.length; k++) b.pips[k].classList.toggle('on', !!(mask & (1 << k)));
+          }
+          // stack digits (seeded, radiant, corroded, chilled, marked …)
+          if (st) for (let k = 0; k < VOID_BIT; k++) {
+            if (!(mask & (1 << k)) || !stStacks(STATUS_KEYS[k])) continue;
+            const n = st[STATUS_KEYS[k]]?.stacks || 0;
+            if (n !== b.stk[k]) { b.stk[k] = n; b.digits[k].textContent = n > 1 ? String(n) : ''; }
+          }
+          // break gauge / broken / void shield
+          const bm = e.breakMax || 0;
+          if ((bm > 0) !== b.hasBrk) { b.hasBrk = bm > 0; b.brk.classList.toggle('on', b.hasBrk); }
+          if (bm > 0) {
+            const q = Math.round(clamp((e.breakValue ?? bm) / bm, 0, 1) * 50) / 50;
+            if (q !== b.brkV) { b.brkV = q; b.brkFill.style.transform = `scaleX(${q})`; }
+          }
+          let br = false; try { br = !!(C?.isBroken?.(e) || e.statuses?.broken); } catch (_) { br = false; }
+          if (br !== b.broken) { b.broken = br; b.el.classList.toggle('broken', br); }
+          const vq = Math.round(clamp((e.voidShield || 0) / 100, 0, 1) * 50) / 50;
+          if (vq !== b.voidV) { b.voidV = vq; b.voidEl.style.transform = `scaleX(${vq})`; }
+          // next-hit hint on the locked target
+          const isT = e === nextHit.target;
+          const txt = isT ? HUD_KO.nextHit(nextHit.name) : '';
+          if (txt !== b.nextTxt) { b.nextTxt = txt; b.next.textContent = txt; b.el.classList.toggle('hint', isT); if (isT) b.el.style.setProperty('--hc', nextHit.color); }
+          const rp = isT ? nextHit.pip : -1;
+          if (rp !== b.rxPip) { if (b.rxPip >= 0) b.pips[b.rxPip].classList.remove('rx'); if (rp >= 0) b.pips[rp].classList.add('rx'); b.rxPip = rp; }
         }
         const dist = Math.sqrt(d2);
         const sc = clamp(1.25 - dist / 45, 0.62, 1.1);
@@ -1281,32 +1370,36 @@ export function createUI(game) {
     }
   }
 
+  function nearRespec(r) {
+    const pp = game.player?.object?.position; const spots = game.world?.respecSpots;
+    if (!pp || !Array.isArray(spots)) return false;
+    for (const s of spots) { const dx = s.x - pp.x, dz = s.z - pp.z; if (dx * dx + dz * dz < r * r) return true; }
+    return false;
+  }
   function updateTutorial(dt) {
-    // queued tutorial toasts: one at a time, only during free gameplay
     if (tutGap > 0) tutGap -= dt;
     if (tutQ.length && tutGap <= 0) {
       const t = tutQ[0];
       t.delay -= dt;
       if (t.delay <= 0) { tutQ.shift(); toast(t.text, { duration: 5.6, kind: 'tut' }); tutGap = 5.2; }
     }
-    if (!dummyHintDone && prog()?.chosen) {
-      dummyT -= dt;
-      if (dummyT <= 0) {
-        dummyT = 0.5;
-        const pp = game.player?.object?.position;
-        if (pp) {
-          for (const e of game.entities) {
-            if (e.isDummy && e.alive && e.object && e.object.position.distanceToSquared(pp) < 13 * 13) {
-              dummyHintDone = true;
-              queueTut(prog()?.cls === 'sword'
-                ? '수련용 허수아비 — 연속 베기와 충전 베기를 시험해 보세요'
-                : '수련용 허수아비 — 마법을 시험해 보세요. 젖게 한 뒤 번개를 맞혀 보세요!', 0);
-              break;
-            }
-          }
+    if (!prog()?.chosen) return;
+    dummyT -= dt;
+    if (dummyT > 0) return;
+    dummyT = 0.5;
+    const pp = game.player?.object?.position;
+    if (!dummyHintDone && pp) {
+      for (const e of game.entities) {
+        if (e.isDummy && e.alive && e.object && e.object.position.distanceToSquared(pp) < 13 * 13) {
+          dummyHintDone = true;
+          queueTut(TUT.dummy[fam()] || TUT.dummy.caster, 0);
+          break;
         }
       }
     }
+    // unspent points near an altar or gate (DESIGN §5.6 contextual tip)
+    unspentT -= 0.5;
+    if (unspentT <= 0) { unspentT = 2; if ((prog()?.points || 0) > 0 && !tour.hasSeen('unspent') && nearRespec(30)) tour.tip('unspent', TIPS.unspent); }
   }
 
   // ------------------------------------------------------------------ api
@@ -1319,25 +1412,71 @@ export function createUI(game) {
     openSettings() { settingsMenu.open(); syncModalLock(); },
     closeSettings() { settingsMenu.close(); },
     get settingsOpen() { return settingsMenu.isOpen; },
-    setGrimoire, get grimoireOpen() { return grimOpen; },
+    // v2 grimoire names → the codex
+    setGrimoire(on) { if (on) api.openCodex(); else codex.close(); },
+    get grimoireOpen() { return codex.isOpen; },
+    // --- v3 (CONTRACT §18)
+    openSkillTree(el) {
+      if (!canOpenMenus()) return false;
+      openMenu('tree', () => tree.open(el));
+      if (!tour.hasSeen('treeTour') && (!game.isTest || /[?&]tour=1/.test(location.search))) { tour.start(); syncModalLock(); }
+      return true;
+    },
+    closeSkillTree() { closeTree(); },
+    get skillTreeOpen() { return tree.isOpen || treeOpenOverride; },
+    /** Test override only (tools/playtest3/skills.js sets it to exercise the equip rule); never set by game code. */
+    set skillTreeOpen(v) { treeOpenOverride = !!v; },
+    openCharacter() { if (!canOpenMenus()) return false; openMenu('character', () => charSheet.open()); return true; },
+    closeCharacter() { charSheet.close(); },
+    get characterOpen() { return charSheet.isOpen; },
+    openCodex(page) { if (!canOpenMenus()) return false; openMenu('codex', () => codex.open(page)); return true; },
+    closeCodex() { codex.close(); },
+    get codexOpen() { return codex.isOpen; },
+    openClassPanel(opts = {}) {
+      if (game.state === 'playing') { pausedByMenu = true; game.pause(); }
+      classPanel.open(opts); syncModalLock(); return true;
+    },
+    closeClassPanel() { classPanel.close(); },
+    get classPanelOpen() { return classPanel.isOpen; },
+    openGateMenu(gates, onPick) {
+      if (game.state === 'playing') { pausedByMenu = true; game.pause(); }
+      gateMenu.open(gates, onPick); syncModalLock(); return true;
+    },
+    closeGateMenu() { gateMenu.close(); },
+    get gateMenuOpen() { return gateMenu.isOpen; },
+    confirm(text, onYes, onNo) { openConfirm(text, onYes, onNo); },
+    startTreeTour() { tour.start(); syncModalLock(); },
+    tip(id, text, opts) { return tour.tip(id, text, opts); },
+    serializeTips: () => tour.serialize(),
+    deserializeTips: (arr) => tour.deserialize(arr),
+    get anyModalOpen() { return anyModalOpen(); },
+    // test/introspection helpers (read-only)
+    _cardLog: cardLog,
+    _parts: { tree, tour, charSheet, codex, classPanel, gateMenu, confirmBox, prompt, hb3, bossBar },
     init() {
       applyState(game.state);
     },
     update(dt, realDt) {
       dt = realDt || dt || 0;
-      frameNo++;
-      if (aqNode.length) flushAnims();
+      AQ.tick();
+      if (laterT.length) tickLater(dt);
       const s = game.state;
       const R = raw();
       const cine = !!game.cinematic?.active;
 
-      // keys (ungated: UI reads raw input)
+      // keys (ungated: UI reads raw input). UI owns K, C, Tab and Esc (CONTRACT §6).
       if (R) {
-        if (R.pressed('Tab') && (s === 'playing' || s === 'paused') && !cine && !settingsMenu.isOpen) setGrimoire(!grimOpen);
+        const menuOk = (s === 'playing' || s === 'paused') && !cine && !settingsMenu.isOpen && !confirmBox.isOpen && !classPanel.isOpen && !gateMenu.isOpen;
+        if (menuOk && !tour.isOpen) {
+          if (R.pressed('KeyK')) { if (tree.isOpen) closeTree(); else api.openSkillTree(); }
+          else if (R.pressed('KeyC')) { if (charSheet.isOpen) charSheet.close(); else api.openCharacter(); }
+          else if (R.pressed('Tab')) { if (codex.isOpen) codex.close(); else api.openCodex(); }
+        }
+        if (tree.isOpen && !confirmBox.isOpen && !tour.isOpen) tree.handleKeys(R);
+        if (confirmBox.isOpen && R.pressed('Enter')) confirmBox.yes();
         if (R.pressed('Escape')) {
-          if (settingsMenu.isOpen) settingsMenu.close();
-          else if (controls.classList.contains('show')) closeControls();
-          else if (grimOpen) setGrimoire(false);
+          const top = MODALS.find((m) => m.isOpen());
+          if (top) top.close();
           else if (s === 'playing' && !cine) game.pause();
           else if (s === 'paused' && performance.now() - lockLostAt > 400) game.resume();
         }
@@ -1347,7 +1486,6 @@ export function createUI(game) {
 
       if (s === 'title') titleCamera(dt);
 
-      // HUD visibility: hidden during cutscenes, dialogue and gameplay cinematics
       const on = (s === 'playing' || s === 'paused' || s === 'dead') && !cine;
       if (on !== hudOn) { hudOn = on; hud.classList.toggle('show', on); root.classList.toggle('aw-hide-hud', !on); }
 
@@ -1367,9 +1505,11 @@ export function createUI(game) {
 
       if (on) updateHUD(dt);
       updateNumbers(dt);
-      updateBars(dt);
+      updateBars(dt, fullTick || !on);
+      prompt.update();
+      tree.update(dt);
+      charSheet.update();
 
-      // vignettes
       if (hurtA > 0) { hurtA = Math.max(0, hurtA - dt * 1.8); hurtVig.style.opacity = hurtA.toFixed(3); }
       else if (hurtVig.style.opacity !== '0') hurtVig.style.opacity = '0';
 
@@ -1377,18 +1517,14 @@ export function createUI(game) {
       if (hintT > 0) { hintT -= dt; if (hintT <= 0) hint.classList.remove('show'); }
       if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) banner.classList.remove('show'); }
       if (flashT > 0) { flashT -= dt; if (flashT <= 0) { flashEl.classList.remove('show'); flashPrio = 0; } }
-      if (cardT > 0) {
-        cardT -= dt;
-        if (cardT <= 0) { bigCard.classList.remove('show'); }
-      }
-      if (cardT <= 0.35 && cardQ.length && !cine && s !== 'cutscene') { const c = cardQ.shift(); cardT = 0; showCard(...c); }
+      if (cardT > 0) { cardT -= dt; if (cardT <= 0) bigCard.classList.remove('show'); }
+      if (cardT <= 0.35 && cardQ.length && !cine && s !== 'cutscene') { const c = cardQ.shift(); cardT = 0; playCard(...c); }
 
       if (s === 'dead' && deadT > 0) {
         deadT -= dt;
         deathCount.textContent = deadT > 0 ? `${Math.ceil(deadT)}초 후 부활` : '부활 중...';
       }
 
-      // FPS counter (4 Hz)
       const showFps = !!game.settings?.values?.showFps;
       if (showFps !== fpsShown) { fpsShown = showFps; fpsEl.classList.toggle('on', showFps); fpsTimer = 0; }
       if (showFps) {
