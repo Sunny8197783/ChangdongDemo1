@@ -21,6 +21,9 @@ export function makeEnemy(ctx, cfg, pos) {
     facing: cfg.facing ?? rand(0, TAU), state: 'idle', stateT: 0, aggro: false, sight: cfg.sight ?? 22, leash: cfg.leash ?? 42,
     distP: 999, flX: new Spring(200, 13), flZ: new Spring(200, 13), tumble: 0, tumbleV: 0, launched: false,
     staggerDur: 0.6, staggerDmg: cfg.staggerDmg ?? 30, noTumble: !!cfg.noTumble, hurt: 0,
+    // v3 (DESIGN §9 A2): poise for elites / heavies (light hits drain it without interrupting; at 0 → 붕괴 stagger)
+    poiseMax: cfg.poiseMax || 0, poise: cfg.poiseMax || 0, poiseRegenT: 0, target: null,
+    xpValue: cfg.xpValue ?? 0, zoneLevel: 1, zoneDmgMul: 1, isElite: !!cfg.isElite,
     dying: false, deathT: 0, dissolved: false, removed: false, token: false, icon: null, iconT: 0, stars: null,
     // v2 hit feel: snapped hurt overlay (holds during hitstop), squash spring, reaction states
     chaseState: cfg.chaseState || 'chase', hurtSnap: 0, hitLX: 0, hitLZ: -1, sq: new Spring(300, 12),
@@ -46,8 +49,9 @@ function showIcon(e, kind) {
     e.icon.renderOrder = 20; e.icon.center.set(0.5, 0);
     e.object.add(e.icon);
   }
-  e.icon.material.map = kind === '?' ? tex.question : tex.alert;
-  e.icon.visible = true; e.iconT = 0; e.iconDur = kind === '?' ? 1.6 : 1.25;
+  e.icon.material.map = kind === '?' ? tex.question : kind === 'break' ? tex.poise : tex.alert;
+  e.icon.visible = true; e.iconT = 0; e.iconDur = kind === '?' ? 1.6 : kind === 'break' ? 1.1 : 1.25;
+  e.iconW = kind === 'break' ? 2.6 : 1;
 }
 function updateIcon(e, dt) {
   if (!e.icon || !e.icon.visible) return;
@@ -56,7 +60,7 @@ function updateIcon(e, dt) {
   const pop = t < 0.12 ? t / 0.12 * 1.35 : t < 0.25 ? 1.35 - (t - 0.12) / 0.13 * 0.35 : 1;
   const fade = t > e.iconDur - 0.25 ? Math.max(0, (e.iconDur - t) / 0.25) : 1;
   const s = 0.75 * pop * fade * k;
-  e.icon.scale.set(s, s, 1);
+  e.icon.scale.set(s * (e.iconW || 1), s, 1);
   e.icon.position.set(0, e.model.headTop + 0.15 + Math.sin(t * 9) * 0.04 + (t < 0.2 ? t : 0.2), 0);
   if (t > e.iconDur) e.icon.visible = false;
 }
@@ -80,6 +84,7 @@ function updateStars(e, dt, on) {
 }
 
 // ------------------------------------------------------------------ aggro
+export { showIcon };
 export function alert(ctx, e, silent = false) {
   if (e.aggro || e.dying || e.isDummy) return;
   e.aggro = true;
@@ -98,7 +103,7 @@ function perceive(ctx, e, dt = 0.016) {
   if (safe && e.aggro && !e.summoned) e.giveUp = true;
   if (!e.aggro) {
     if (e.giveUpT > 0 || safe) return;
-    const sight = e.state === 'return' ? e.sight * 0.55 : (e.sitting ? e.sight * 0.75 : e.sight);
+    const sight = (e.state === 'return' ? e.sight * 0.55 : (e.sitting ? e.sight * 0.75 : e.sight)) * (ctx.threat ? ctx.threat.stealthMul : 1);
     if (pAlive && e.distP < sight && Math.abs(pp.y - e.object.position.y) < 14) alert(ctx, e);
   } else {
     const leashD = Math.hypot(pp.x - e.home.x, pp.z - e.home.z);
@@ -217,6 +222,18 @@ function onHit(ctx, e, result, hit) {
       react(ctx, e, 'knockdown', 0.85);
     } else if (e.state === 'parried') {
       // stays open; hits don't cut the parry window short
+    } else if (e.poiseMax > 0) {
+      // poise (DESIGN §9 A2): hits drain it without interrupting; at 0 the 붕괴 stagger (0.8–1.2 s) + pop
+      e.poise -= (hit?.poise ?? dmg * 0.5) * (heavy ? 1.6 : 1);
+      e.poiseRegenT = 2.5;
+      if (e.poise <= 0) {
+        e.poise = e.poiseMax;
+        react(ctx, e, 'stagger', 0.8 + Math.min(0.4, dmg / 200));
+        e.reactDur = Math.max(e.reactDur, 0.8);
+        showIcon(e, 'break');
+        ctx.game.events.emit('enemyPoiseBreak', { enemy: e });
+        ctx.audio('shatter', { position: e.object.position, volume: 0.5, pitch: 0.9 });
+      }
     } else if (heavy || dmg >= e.staggerDmg) {
       react(ctx, e, 'stagger', heavy ? 0.9 : 0.55);
     } else if (!(e.armor?.())) {
@@ -265,9 +282,13 @@ function genericDeath(ctx, e, dt) {
   if (e.grounded) rig.position.y = damp(rig.position.y, e.model.lieY ?? 0.3, 8, dt);
   if (!e.dissolved && e.deathT > (e.dissolveAt ?? 1.05)) {
     e.dissolved = true;
-    ctx.dissolveFx(e);
+    ctx.dissolveFx(e, 0.7);
     ctx.loot.drop(e);
+    // DESIGN §9 A4: 0.9 s shader dissolve with a void-violet edge (vfx.dissolve), fallback = the v2 squash
+    e._vd = false;
+    try { e._vd = !!ctx.game.vfx?.dissolve?.(e, { dur: 0.9, color: e.dissolveColor ?? 0x9a5cff }); } catch (_) { e._vd = false; }
   }
+  if (e.dissolved && e._vd) return e.deathT > (e.dissolveAt ?? 1.05) + 1.0;
   if (e.dissolved) {
     const k = clamp((e.deathT - (e.dissolveAt ?? 1.05)) / 0.35, 0, 1);
     const sc = 1 - k * k;
@@ -330,6 +351,9 @@ export function updateEnemy(ctx, e, dt) {
     if (done) ctx.remove(e);
     return;
   }
+  // AI targeting goes through enemies.getThreatTarget (CONTRACT §14): ctx.playerPos / playerCenter / target become this
+  // enemy's target for the rest of its update (the real player is restored by ctx.retarget for the next enemy)
+  ctx.retarget?.(e);
   const pp = ctx.playerPos, p = e.object.position;
   e.distP = Math.hypot(pp.x - p.x, pp.z - p.z);
   // cinematic: AI frozen, no movement or attacks; pose held (except fresh hit snaps so finisher impacts read)
@@ -351,6 +375,7 @@ export function updateEnemy(ctx, e, dt) {
   e.hurt = Math.max(0, e.hurt - dt * 4);
   if (e.provokedT > 0) { e.provokedT -= dt; if (e.provokedT <= 0) e.leashBonus = 0; }
   e.sinceHurt = (e.sinceHurt ?? 99) + dt;
+  if (e.poiseMax > 0 && e.poise < e.poiseMax) { e.poiseRegenT -= dt; if (e.poiseRegenT <= 0) e.poise = Math.min(e.poiseMax, e.poise + e.poiseMax * 0.35 * dt); }
   e.panicCd -= dt;
   // out-of-combat regen: only after resting at home unhurt for 4s (no instant full heal on return)
   if (!e.aggro && !e.isBoss && !e.isDummy && e.state === 'idle' && e.sinceHurt > 4 && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.3 * dt);
@@ -417,7 +442,8 @@ function visuals(ctx, e, dt, sm, stunned, frozen = false) {
   const q = e.sq.update(dt) * (e.isBoss ? 0.3 : 1);
   if (q !== 0) { rig.scale.x *= 1 - q * 0.5; rig.scale.y *= 1 + q; rig.scale.z *= 1 - q * 0.5; }
   e.hurtSnap = Math.max(0, e.hurtSnap - dt * 5);
-  updateStars(e, dt, stunned || e.state === 'parried' || e.dizzyT > 0);
+  // v3 combat draws instanced stun/break stars (1 call total): the per-entity sprites only show for parried / dizzy
+  updateStars(e, dt, (stunned && !ctx.v3Stars) || e.state === 'parried' || e.dizzyT > 0);
 }
 
 function homeInVillage(ctx, e) {

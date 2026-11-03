@@ -88,7 +88,7 @@ function bokoGeos() {
 }
 
 /** Humanoid rig shared by bokoblin and shaman: pivots (bones) + rigid part list per bone. */
-function humanoid(g, o) {
+export function humanoid(g, o) {
   const root = new THREE.Group();
   const rig = pivot(root, 0, o.hipY, 0);
   const spine = pivot(rig, 0, 0.08, 0);
@@ -215,10 +215,15 @@ export function buildShaman(element) {
 
 // ======================================================================= Chuchu
 export const CHU_VARIANTS = {
-  normal: { body: 0x4fc6c0, core: 0x2b8f9a, name: '츄츄', element: null },
-  fire: { body: 0xff7a3a, core: 0xffd04a, name: '불꽃 츄츄', element: 'fire' },
-  ice: { body: 0xa8ecff, core: 0xffffff, name: '얼음 츄츄', element: 'ice' },
-  lightning: { body: 0xf0d84a, core: 0xb57bff, name: '전기 츄츄', element: 'lightning' },
+  normal: { body: 0x4fc6c0, core: 0x2b8f9a, name: '말랑이', element: null },
+  fire: { body: 0xff7a3a, core: 0xffd04a, name: '불꽃 말랑이', element: 'fire' },
+  ice: { body: 0xa8ecff, core: 0xffffff, name: '얼음 말랑이', element: 'ice' },
+  lightning: { body: 0xf0d84a, core: 0xb57bff, name: '전기 말랑이', element: 'lightning' },
+  // v3 variants (CONTRACT §14)
+  water: { body: 0x4fa8f0, core: 0xd8f4ff, name: '물방울 말랑이', element: 'water' },
+  nature: { body: 0x7fd84a, core: 0xf0ff9a, name: '새싹 말랑이', element: 'nature' },
+  light: { body: 0xffe6a0, core: 0xffffff, name: '햇살 말랑이', element: 'light' },
+  shadow: { body: 0x6a3a9a, core: 0xd9a0ff, name: '그늘 말랑이', element: 'shadow' },
 };
 const chuMats = {};
 export function buildChuchu(variant) {
