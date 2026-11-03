@@ -337,13 +337,13 @@ export function createHydra(ctx, arena, opts = {}) {
           break;
       }
     }
-    if (busy < (e.phase >= 1 ? 0 : 2) || (busy === 0)) {
-      const live = heads.filter((h) => !h.dead).length;
-      if (live && busy < Math.min(2, live)) {
-        const reach = d < 17;
-        const h = headPick(reach && Math.random() < 0.65 ? 'bite' : 'spit');
-        if (h) { if (reach && h === headPick('bite')) startBite(h); else startSpit(h); }
-      }
+    // up to 2 heads attack at once (no allocation unless an attack actually starts)
+    let live = 0, ready = 0;
+    for (const h of heads) { if (!h.dead) { live++; if (h.state === 'idle' && h.cd <= 0) ready++; } }
+    if (live && ready && busy < Math.min(2, live)) {
+      const reach = d < 17;
+      const h = headPick(reach && Math.random() < 0.65 ? 'bite' : 'spit');
+      if (h) { if (reach && h === headPick('bite')) startBite(h); else startSpit(h); }
     }
     // ambient: ripples + the core shimmer
     rippleT -= dt;

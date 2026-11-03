@@ -34,6 +34,13 @@ export function makeEnemy(ctx, cfg, pos) {
     /** Perfect parry / guard counter by `by` (combat calls this on the attacker). */
     onParried(by) { onParried(ctx, e, by); },
     showAlert() { showIcon(e, '!'); },
+    /** DESIGN §9 S2 hit pose pop (vfx.hitFeel calls it): heavier tiers squash harder and hold the hurt overlay a bit longer. */
+    hitPop(dir, tier) {
+      if (e.dying) return;
+      const k = tier === 'break' || tier === 'ult' ? 1 : tier === 'reaction' || tier === 'crit' ? 0.7 : tier === 'heavy' ? 0.5 : 0.25;
+      e.sq.x = Math.min(e.sq.x, -0.06 - 0.12 * k); e.sq.v = 0;
+      e.hurtSnap = Math.max(e.hurtSnap, 0.8 + 0.45 * k);
+    },
     setState(s) { e.state = s; e.stateT = 0; },
   };
   object.rotation.y = e.facing;
