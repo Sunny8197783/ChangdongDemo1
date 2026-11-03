@@ -1,11 +1,16 @@
-// Procedural canvas textures for VFX: particle atlas (4x4 frames) + ground decal textures.
+// Procedural canvas textures for VFX: particle atlas (8x8 frames at 128 px = 1024², CONTRACT §20) + ground decal textures.
+// Callers address frames ONLY through the FRAMES name map (never raw indices). 24 of the 64 cells are used.
 import * as THREE from 'three';
 
-export const ATLAS_COLS = 4;
+export const ATLAS_COLS = 8;
+export const ATLAS_CELL = 128;
 export const FRAMES = {
   soft: 0, glow: 0, spark: 1, star: 1, smoke: 2, shard: 3, ember: 4, snow: 5, leaf: 6, ring: 7,
-  streak: 8, crescent: 9, puff: 10, dot: 11, flare: 12, rock: 13, bolt: 14, mote: 15,
+  streak: 8, crescent: 9, puff: 10, dust: 10, dot: 11, flare: 12, rock: 13, bolt: 14, mote: 15,
+  rune: 16, petal: 17, droplet: 18, feather: 19, bubble: 20, wisp: 21, thorn: 22, raven: 23,
 };
+const cellX = (cell) => (cell % ATLAS_COLS) * ATLAS_CELL;
+const cellY = (cell) => Math.floor(cell / ATLAS_COLS) * ATLAS_CELL;
 
 // Small deterministic value noise for textures.
 function makeNoise(seed = 1) {
@@ -37,29 +42,28 @@ function pixelFrame(ctx, cell, S, fn) {
     d[i] = Math.min(255, o[0] * 255); d[i + 1] = Math.min(255, o[1] * 255); d[i + 2] = Math.min(255, o[2] * 255);
     d[i + 3] = Math.max(0, Math.min(255, o[3] * 255));
   }
-  const cx = (cell % ATLAS_COLS) * S, cy = Math.floor(cell / ATLAS_COLS) * S;
-  ctx.putImageData(img, cx, cy);
+  ctx.putImageData(img, cellX(cell), cellY(cell));
 }
 
 const sat = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const sstep = (a, b, x) => { const t = sat((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 function buildAtlas() {
-  const S = 128;
+  const S = ATLAS_CELL;
   const c = canvas(S * ATLAS_COLS, S * ATLAS_COLS);
   const ctx = c.getContext('2d');
   const nz = makeNoise(7);
   const out = [0, 0, 0, 0];
   const W = (a, l = 1) => { out[0] = l; out[1] = l; out[2] = l; out[3] = a; return out; };
 
-  // 0 soft glow: gaussian with hot core
-  pixelFrame(ctx, 0, S, (u, v) => {
+  // soft glow: gaussian with hot core
+  pixelFrame(ctx, FRAMES.soft, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const a = Math.exp(-r * r * 5.5) * sat(1 - r);
     return W(a);
   });
   // 1 sharp 4-point star spark
-  pixelFrame(ctx, 1, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.spark, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const ax = Math.abs(u), ay = Math.abs(v);
     const rays = Math.exp(-ay * 26) * sat(1 - ax) + Math.exp(-ax * 26) * sat(1 - ay);
@@ -68,7 +72,7 @@ function buildAtlas() {
     return W(sat(rays * 0.9 + diag + core) * sat(1 - r));
   });
   // 2 smoke puff (noisy, lumpy)
-  pixelFrame(ctx, 2, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.smoke, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const n = nz.fbm(u * 2.4 + 9, v * 2.4 + 3, 5);
     const edge = 1 - sstep(0.35, 1.0, r + (n - 0.5) * 0.7);
@@ -76,7 +80,7 @@ function buildAtlas() {
     return W(edge * (0.55 + 0.45 * n), shade);
   });
   // 3 ice shard: elongated diamond with facet shading
-  pixelFrame(ctx, 3, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.shard, S, (u, v) => {
     // elongated along u (x) so velocity-stretched quads align the shard with its motion
     const ax = Math.abs(v) / 0.3, ay = Math.abs(u) / 0.95;
     const d = ax + ay;
@@ -88,15 +92,14 @@ function buildAtlas() {
     return W(edge, l);
   });
   // 4 ember: small bright core with flicker tail
-  pixelFrame(ctx, 4, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.ember, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const a = Math.exp(-r * r * 22) + 0.35 * Math.exp(-r * r * 6);
     return W(sat(a) * sat(1 - r));
   });
   // 5 snowflake: 6 arms with ticks
   {
-    const cx = 1 * S, cy = 1 * S;
-    ctx.save(); ctx.translate(cx + S / 2, cy + S / 2);
+    ctx.save(); ctx.translate(cellX(FRAMES.snow) + S / 2, cellY(FRAMES.snow) + S / 2);
     ctx.strokeStyle = '#fff'; ctx.lineCap = 'round';
     ctx.shadowColor = '#fff'; ctx.shadowBlur = 6;
     for (let i = 0; i < 6; i++) {
@@ -113,7 +116,7 @@ function buildAtlas() {
     ctx.restore();
   }
   // 6 leaf: almond shape with midrib, two-tone (used normal-blended, tinted)
-  pixelFrame(ctx, 6, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.leaf, S, (u, v) => {
     const y = v / 0.9;
     const w = 0.42 * Math.sqrt(sat(1 - y * y)) * (1 - 0.25 * y);
     const ax = Math.abs(u);
@@ -129,19 +132,19 @@ function buildAtlas() {
     return W(a, l);
   });
   // 7 ring
-  pixelFrame(ctx, 7, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.ring, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const a = Math.exp(-Math.pow((r - 0.78) / 0.09, 2)) + 0.25 * Math.exp(-Math.pow((r - 0.78) / 0.22, 2));
     return W(sat(a));
   });
   // 8 streak: horizontal line (used for velocity-stretched sparks; quad x axis follows velocity)
-  pixelFrame(ctx, 8, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.streak, S, (u, v) => {
     const a = Math.exp(-v * v * 30) * sat(1 - u * u) * (1 - 0.3 * u);
     const core = Math.exp(-v * v * 160) * sat(1 - u * u * 1.4);
     return W(sat(a * 0.8 + core));
   });
   // 9 crescent: swoosh arc (wind)
-  pixelFrame(ctx, 9, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.crescent, S, (u, v) => {
     const r = Math.sqrt(u * u + (v + 0.15) * (v + 0.15));
     const ang = Math.atan2(v + 0.15, u);           // -pi..pi
     const t = sat((ang + Math.PI * 0.95) / (Math.PI * 0.9)); // 0..1 across the top arc
@@ -151,23 +154,23 @@ function buildAtlas() {
     return W(sat(band * Math.sin(t * Math.PI) * 1.2));
   });
   // 10 puff: rounder dense cloud (dust)
-  pixelFrame(ctx, 10, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.puff, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const n = nz.fbm(u * 3.1 + 21, v * 3.1 + 11, 4);
     const a = (1 - sstep(0.25, 0.95, r + (n - 0.5) * 0.45)) * (0.75 + 0.25 * n);
     return W(a, 0.8 + 0.2 * n);
   });
   // 11 dot: small hard circle
-  pixelFrame(ctx, 11, S, (u, v) => { const r = Math.sqrt(u * u + v * v); return W(sstep(0.6, 0.45, r)); });
+  pixelFrame(ctx, FRAMES.dot, S, (u, v) => { const r = Math.sqrt(u * u + v * v); return W(sstep(0.6, 0.45, r)); });
   // 12 flare: big glow with wide halo & core (flash sprites)
-  pixelFrame(ctx, 12, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.flare, S, (u, v) => {
     const r = Math.sqrt(u * u + v * v);
     const a = 0.65 * Math.exp(-r * r * 12) + 0.35 * Math.exp(-r * 3.2) * sat(1 - r);
     const rays = 0.25 * (Math.exp(-Math.abs(v) * 40) + Math.exp(-Math.abs(u) * 40)) * sat(1 - r);
     return W(sat(a + rays) * sat(1.05 - r));
   });
   // 13 rock chip silhouette (dust/gravel)
-  pixelFrame(ctx, 13, S, (u, v) => {
+  pixelFrame(ctx, FRAMES.rock, S, (u, v) => {
     const ang = Math.atan2(v, u), r = Math.sqrt(u * u + v * v);
     const rr = 0.55 + 0.18 * Math.sin(ang * 3 + 1) + 0.1 * Math.sin(ang * 5 + 2);
     const a = sstep(rr, rr - 0.05, r);
@@ -175,8 +178,7 @@ function buildAtlas() {
   });
   // 14 bolt: jagged little zigzag (electric crackle)
   {
-    const cx = 2 * S, cy = 3 * S;
-    ctx.save(); ctx.translate(cx + S / 2, cy + S / 2);
+    ctx.save(); ctx.translate(cellX(FRAMES.bolt) + S / 2, cellY(FRAMES.bolt) + S / 2);
     ctx.strokeStyle = '#fff'; ctx.lineJoin = 'miter'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
     const pts = [[-56, -10], [-30, 8], [-12, -14], [8, 12], [26, -6], [56, 10]];
     for (const [lw, al] of [[9, 0.35], [4, 1]]) {
@@ -186,7 +188,84 @@ function buildAtlas() {
     ctx.restore();
   }
   // 15 mote: soft tiny glow with sharper falloff
-  pixelFrame(ctx, 15, S, (u, v) => { const r = Math.sqrt(u * u + v * v); return W(sat(Math.exp(-r * r * 14) * 1.2) * sat(1 - r)); });
+  pixelFrame(ctx, FRAMES.mote, S, (u, v) => { const r = Math.sqrt(u * u + v * v); return W(sat(Math.exp(-r * r * 14) * 1.2) * sat(1 - r)); });
+
+  // ---- v3 frames (rune, petal, droplet, feather, bubble, wisp, thorn, raven) ----
+  // rune: glyph ring with ticks and an inner triangle
+  pixelFrame(ctx, FRAMES.rune, S, (u, v) => {
+    const r = Math.sqrt(u * u + v * v), ang = Math.atan2(v, u);
+    let a = Math.exp(-Math.pow((r - 0.78) / 0.05, 2)) + 0.6 * Math.exp(-Math.pow((r - 0.6) / 0.03, 2));
+    const seg = ((ang / (Math.PI * 2)) * 12 + 12) % 1;
+    if (r > 0.6 && r < 0.78) a += sstep(0.18, 0.08, Math.abs(seg - 0.5)) * 0.9;
+    for (let k = 0; k < 3; k++) {
+      const t = k * Math.PI * 2 / 3 - Math.PI / 2, nx = Math.cos(t + Math.PI / 2), ny = Math.sin(t + Math.PI / 2);
+      a += Math.exp(-Math.pow((u * nx + v * ny) + 0.28, 2) * 900) * (r < 0.6 ? 1 : 0) * 0.8;
+    }
+    a += 0.5 * Math.exp(-r * r * 40);
+    return W(sat(a) * sat(1.1 - r));
+  });
+  // petal: rounded teardrop, darker base, soft vein
+  pixelFrame(ctx, FRAMES.petal, S, (u, v) => {
+    const y = (v + 1) * 0.5;                       // 0 tip .. 1 base
+    const w = 0.62 * Math.pow(Math.sin(Math.min(1, y * 1.15) * Math.PI * 0.92), 0.8) * (1 - 0.35 * y);
+    const ax = Math.abs(u);
+    if (ax > w || y > 0.98) return W(0);
+    const a = sstep(w, w - 0.08, ax);
+    const l = 0.8 + 0.2 * (1 - y) + 0.12 * Math.exp(-ax * 40);
+    return W(a, l);
+  });
+  // droplet: water drop with a specular highlight
+  pixelFrame(ctx, FRAMES.droplet, S, (u, v) => {
+    const y = v * 1.1 + 0.15;
+    const w = y > 0 ? Math.sqrt(sat(1 - y * y * 1.6)) * 0.55 : 0.55 * sat(1 + y * 1.25) * Math.sqrt(sat(1 + y));
+    const ax = Math.abs(u);
+    if (ax > w) return W(0);
+    const a = sstep(w, w - 0.06, ax);
+    const hl = Math.exp(-((u + 0.18) * (u + 0.18) + (v - 0.2) * (v - 0.2)) * 60);
+    return W(a * (0.65 + 0.35 * (ax / Math.max(w, 1e-3))) + hl * 0.6, 0.85 + hl);
+  });
+  // feather: vane along u with a rachis and barb streaks
+  pixelFrame(ctx, FRAMES.feather, S, (u, v) => {
+    const x = (u + 1) * 0.5;
+    const w = 0.34 * Math.sin(sat(x) * Math.PI) * (0.6 + 0.4 * x);
+    const av = Math.abs(v);
+    const rachis = Math.exp(-v * v * 900) * sstep(0.02, 0.1, x) * 0.9;
+    if (av > w) return W(rachis);
+    const barbs = 0.75 + 0.25 * Math.sin((x * 40 + av * 30));
+    return W(sat(sstep(w, w - 0.06, av) * barbs + rachis), 0.9);
+  });
+  // bubble: thin rim + specular spot (reads on any background)
+  pixelFrame(ctx, FRAMES.bubble, S, (u, v) => {
+    const r = Math.sqrt(u * u + v * v);
+    const rim = Math.exp(-Math.pow((r - 0.8) / 0.06, 2)) + 0.12 * sat(1 - r / 0.8);
+    const hl = Math.exp(-((u + 0.32) * (u + 0.32) + (v - 0.32) * (v - 0.32)) * 70);
+    return W(sat(rim + hl) * sat(1.05 - r));
+  });
+  // wisp: comet head with a curling tail (soul / shadow particle)
+  pixelFrame(ctx, FRAMES.wisp, S, (u, v) => {
+    const head = Math.exp(-((u - 0.45) * (u - 0.45) + v * v) * 26);
+    const cy = Math.sin((u + 1) * 2.2) * 0.22;
+    const tail = Math.exp(-Math.pow(v - cy, 2) * 60) * sat((u + 0.9) / 1.4) * sat(1 - (u - 0.45) * 3);
+    return W(sat(head * 1.2 + tail * 0.75) * sat(1 - Math.sqrt(u * u + v * v) * 0.95));
+  });
+  // thorn: sharp tapered spike along u (velocity-stretch friendly)
+  pixelFrame(ctx, FRAMES.thorn, S, (u, v) => {
+    const x = (u + 1) * 0.5;                  // 0 base .. 1 tip
+    const w = 0.22 * Math.pow(1 - x, 1.4) + 0.01;
+    const av = Math.abs(v + 0.05 * x * x);
+    if (av > w) return W(0);
+    return W(sstep(w, w * 0.6, av), v > 0 ? 0.95 : 0.7);
+  });
+  // raven: bird silhouette (canvas path)
+  {
+    ctx.save(); ctx.translate(cellX(FRAMES.raven) + S / 2, cellY(FRAMES.raven) + S / 2);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.moveTo(-58, -6); ctx.quadraticCurveTo(-30, -34, -8, -8); ctx.lineTo(0, -14); ctx.lineTo(8, -8);
+    ctx.quadraticCurveTo(30, -34, 58, -6); ctx.quadraticCurveTo(30, -12, 12, 4); ctx.lineTo(6, 22); ctx.lineTo(0, 14);
+    ctx.lineTo(-6, 22); ctx.lineTo(-12, 4); ctx.quadraticCurveTo(-30, -12, -58, -6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -205,8 +284,8 @@ function buildDecal(kind) {
   const nz = makeNoise(kind.length * 13 + 5);
   // crack network precompute (for 'crack')
   const cracks = [];
-  if (kind === 'crack' || kind === 'frost') {
-    const n = kind === 'crack' ? 9 : 14;
+  if (kind === 'crack' || kind === 'frost' || kind === 'lichtenberg' || kind === 'violet') {
+    const n = kind === 'crack' ? 9 : kind === 'violet' ? 7 : 14;
     for (let i = 0; i < n; i++) {
       let a = (i / n) * Math.PI * 2 + nz.rnd() * 0.5, x = 0, y = 0;
       const pts = [[x, y]];
@@ -214,7 +293,7 @@ function buildDecal(kind) {
       for (let s = 0; s < steps; s++) {
         a += (nz.rnd() - 0.5) * 0.9; const l = 0.08 + nz.rnd() * 0.08;
         x += Math.cos(a) * l; y += Math.sin(a) * l; pts.push([x, y]);
-        if (kind === 'frost' && nz.rnd() < 0.5) { // side branch
+        if ((kind === 'frost' || kind === 'lichtenberg') && nz.rnd() < (kind === 'lichtenberg' ? 0.8 : 0.5)) { // side branch
           const ba = a + (nz.rnd() < 0.5 ? 1 : -1) * (0.6 + nz.rnd() * 0.5), bl = 0.05 + nz.rnd() * 0.08;
           cracks.push([[x, y], [x + Math.cos(ba) * bl, y + Math.sin(ba) * bl]]);
         }
@@ -275,6 +354,29 @@ function buildDecal(kind) {
       }
       a += 0.15 * Math.exp(-r * r * 3);
       m = sat(a); g = m; l = 1;
+    } else if (kind === 'lichtenberg') {
+      const cd = segDist(u, v);
+      const line = Math.exp(-cd * 120) * sat(1.05 - r);
+      m = sat(line * 0.9 + 0.25 * Math.exp(-r * r * 12)); g = sat(line * 1.2); l = 1;
+    } else if (kind === 'violet') {
+      const cd = segDist(u, v);
+      const crack = Math.exp(-cd * 80) * sat(1.1 - r);
+      const stain = (1 - sstep(0.2, 0.9, r + (n - 0.5) * 0.5)) * 0.45;
+      m = sat(crack + stain); g = crack * 0.9; l = 0.4 + 0.4 * n;
+    } else if (kind === 'ripple') {
+      const w = Math.sin(r * 26 - n * 2) * 0.5 + 0.5;
+      m = (Math.pow(w, 6) * 0.8 + 0.15) * sat(1 - r) * (0.7 + 0.3 * n); g = Math.pow(w, 10) * sat(1 - r * 1.1); l = 1;
+    } else if (kind === 'flowers') {
+      let a = 0;
+      for (let k = 0; k < 9; k++) {
+        const t = k / 9 * Math.PI * 2 + 0.3 * Math.sin(k * 7.1), rr = 0.55 + 0.25 * ((k * 0.618) % 1);
+        const fx = Math.cos(t) * rr, fy = Math.sin(t) * rr;
+        const dx = u - fx, dy = v - fy, d = Math.sqrt(dx * dx + dy * dy), pa = Math.atan2(dy, dx);
+        const petal = 0.09 * (0.6 + 0.4 * Math.cos(pa * 5));
+        a = Math.max(a, sstep(petal, petal - 0.02, d));
+      }
+      const grass = (1 - sstep(0.3, 1.0, r + (n - 0.5) * 0.4)) * 0.35;
+      m = sat(a + grass); g = a * 0.8; l = 0.6 + 0.4 * a;
     } else { // soft
       m = Math.exp(-r * r * 3) * sat(1 - r); g = m; l = 1;
     }
@@ -292,7 +394,7 @@ function buildDecal(kind) {
 export function createTextures() {
   const atlas = buildAtlas();
   const decals = {};
-  for (const k of ['scorch', 'frost', 'crack', 'rune', 'soft']) decals[k] = buildDecal(k);
+  for (const k of ['scorch', 'frost', 'crack', 'rune', 'soft', 'lichtenberg', 'ripple', 'flowers', 'violet']) decals[k] = buildDecal(k);
   // Standalone glow texture for sprites (projectile cores)
   const gc = canvas(128, 128); const g = gc.getContext('2d');
   const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
