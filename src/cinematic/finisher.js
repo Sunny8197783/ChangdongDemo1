@@ -2,13 +2,17 @@
 // freeze-frame + letterbox → close shot of the hero with element aura & calligraphic name splash →
 // orbit/rise power-up → wide shot of the blow landing on `center` (onImpact) → camera blends back to gameplay.
 import * as THREE from 'three';
-import { ELEMENT_COLORS, clamp } from '../core/utils.js';
+import { clamp } from '../core/utils.js';
+import { elColor } from '../core/elements.js';
+import { CLASS_DEFS, familyOf } from '../core/classes.js';
 import { makeRune, makePillar, glowTex } from './assets.js';
+import { SET_PIECES } from './spirits9.js';
 
 export function buildFinisher(C, o = {}) {
   const { game, ov, EASE } = C;
   const el = o.element || 'fire';
-  const col = ELEMENT_COLORS[el] ?? 0xffffff;
+  const col = el === 'symphony' ? 0xfff0f8 : elColor(el, 'hex');
+  const cls = o.cls || game.progression?.cls;
   const vfx = game.vfx;
   const sfx = (n, x) => { try { game.audio?.play?.(n, x); } catch (_) { /* */ } };
   const pObj = game.player?.object;
@@ -32,6 +36,9 @@ export function buildFinisher(C, o = {}) {
   const pillar = makePillar(stage, col, 1.1, 14);
   const glow = stage.sprite(col, 2.5, glowTex(), 0); stage.add(glow);
   let aura = null, T = 0, buildT = 0, impacted = false;
+  // bespoke set piece for the new elements and 원소 교향곡 (spirits9.js)
+  let piece = null;
+  try { piece = SET_PIECES[el]?.(stage, game, { center, hero: hero() }) || null; } catch (err) { console.warn('[cinematic] set piece', el, err); piece = null; }
   const BUILD = 0.3 + 1.3 + 0.9;
   // wide shot side: cheapest of 4 candidate placements (±side × ±30° swing), scored on collider penetration,
   // terrain, and line of sight camera → hero chest (props / trees / huts in between)
@@ -89,11 +96,13 @@ export function buildFinisher(C, o = {}) {
     rune.material.opacity = Math.min(1, t * 3) * 0.95; rune.scale.setScalar(1.6 + t * 2.4);
     pillar.material.uniforms.uOpacity.value = clamp((buildT - 1.6) * 2, 0, 1) * 0.32; pillar.scale.set(0.8 + t * 0.4, 8 + t * 10, 0.8 + t * 0.4);
     glow.material.opacity = 0.18 + t * 0.22; glow.scale.setScalar(1.6 + t * 1.6 + Math.sin(T * 14) * 0.15);
+    try { piece?.build(T, t); } catch (_) { piece = null; }
     try { o.onBuildup?.(t); } catch (err) { if (!buildup.err) { buildup.err = true; console.error('[cinematic] onBuildup', err); } }
   };
   const impact = () => {
     if (impacted) return; impacted = true;
     try { o.onImpact?.(); } catch (err) { console.error('[cinematic] onImpact', err); }
+    try { piece?.impact(); } catch (_) { /* */ }
     vfx?.screenFlash?.(col, 0.55, 0.45); vfx?.shake?.(0.85); vfx?.fovKick?.(9, 0.5);
     vfx?.shockwave?.(center, { color: col, radius: 14, duration: 0.8 });
     vfx?.flash?.(center, { color: col, intensity: 18, distance: 40, duration: 0.6 });
@@ -120,7 +129,8 @@ export function buildFinisher(C, o = {}) {
       look: () => L.copy(hero()).setY(hero().y + 1.25),
       fov: [42, 36],
       onStart() {
-        ov.splash(o.name || '필살기', { element: el, tag: o.cls === 'sword' ? '검 · 필살' : '마법 · 필살', dur: 2.15, style: 'side' });
+        const tag = el === 'symphony' ? '원소 교향곡' : `${CLASS_DEFS[cls]?.nameKo || (familyOf(cls) === 'melee' ? '검' : '마법')} · 필살`;
+        ov.splash(o.name || '필살기', { element: el, tag, dur: 2.15, style: 'side' });
         ov.grade('radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,0,0,0) 30%, rgba(4,2,10,.55) 100%)', 1, 0.25);
         sfx('finisher_charge', { volume: 0.6 });
         vfx?.burst?.(hero().clone().setY(hero().y + 1), { count: 40, color: [col, 0xffffff], speed: 7, spread: 1, size: 0.25, sizeEnd: 0, life: 0.6, shape: 'spark', drag: 2 });
@@ -147,6 +157,7 @@ export function buildFinisher(C, o = {}) {
         tickAura(dt);
         if (tt >= 0.2) impact();
         const f = 1 - clamp(tt / 0.5, 0, 1);
+        if (impacted) { try { piece?.after(T, clamp((tt - 0.2) / 1.05, 0, 1)); } catch (_) { piece = null; } }
         rune.material.opacity = 0.95 * f; pillar.material.uniforms.uOpacity.value = 0.85 * f; glow.material.opacity = 0.75 * f;
       },
     },

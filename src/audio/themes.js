@@ -7,50 +7,50 @@ const R = (a, b) => a + Math.random() * (b - a);
 export const STEP = 60 / 108 / 4;
 
 // ---------- instruments ----------
-function pad(E, out, t, notes, len, vol, cut = 1100) {
+export function pad(E, out, t, notes, len, vol, cut = 1100) {
   for (const m of notes) {
     E.osc(out, t, len, { type: 'triangle', f: mtof(m), vol, a: Math.min(2.2, len * 0.35), hold: len * 0.3, shape: 'lin', detune: R(-7, 7), filter: { type: 'lowpass', f: cut, q: 0.4 } });
   }
 }
-function strings(E, out, t, notes, len, vol, cut = 1500) {
+export function strings(E, out, t, notes, len, vol, cut = 1500) {
   for (const m of notes) {
     E.osc(out, t, len, { type: 'sawtooth', f: mtof(m), vol, a: Math.min(1.5, len * 0.3), hold: len * 0.35, shape: 'lin', detune: R(-9, 9), filter: { type: 'lowpass', f: cut, q: 0.5 } });
   }
 }
-function harp(E, out, t, m, vol, len = 1.4) {
+export function harp(E, out, t, m, vol, len = 1.4) {
   const f = mtof(m);
   E.osc(out, t, len, { type: 'triangle', f, vol, a: 0.002 });
   E.osc(out, t, len * 0.35, { type: 'sine', f: f * 2, vol: vol * 0.3, a: 0.002 });
 }
-function flute(E, out, t, m, len, vol) {
+export function flute(E, out, t, m, len, vol) {
   const f = mtof(m);
   E.osc(out, t, len, { type: 'triangle', f, vol, a: 0.07, hold: len * 0.5, vib: { rate: 5.2, depth: f * 0.006 }, filter: { type: 'lowpass', f: 2600, q: 0.6 } });
   E.osc(out, t, len, { type: 'sine', f: f * 2, vol: vol * 0.18, a: 0.09, hold: len * 0.4 });
   if (len > 0.35) E.noiseV(out, t, Math.min(len, 0.5), { color: 'white', vol: vol * 0.35, a: 0.03, filter: { type: 'bandpass', f: f * 2, q: 6 } }); // breath
 }
-function choir(E, out, t, m, len, vol) {
+export function choir(E, out, t, m, len, vol) {
   const f = mtof(m);
   E.formant(out, t, len, { f, vol, a: Math.min(1.6, len * 0.35), hold: len * 0.3, shape: 'lin', q: 9, vib: { rate: R(4.5, 5.5), depth: f * 0.007 }, formants: [[800, 1], [1150, 0.5], [2900, 0.15]] });
 }
-function horn(E, out, t, m, len, vol) {
+export function horn(E, out, t, m, len, vol) {
   const f = mtof(m);
   E.osc(out, t, len, { type: 'sawtooth', f, vol: vol * 0.5, a: 0.08, hold: len * 0.5, filter: { type: 'lowpass', f: 900, f1: 1600, ft: 0.3, q: 0.7 } });
   E.osc(out, t, len, { type: 'triangle', f, vol, a: 0.06, hold: len * 0.5, detune: 5 });
 }
-function timpani(E, out, t, vol, f = 82) {
+export function timpani(E, out, t, vol, f = 82) {
   E.osc(out, t, 0.7, { type: 'sine', f: f * 1.2, f1: f, ft: 0.1, vol, a: 0.002 });
   E.noiseV(out, t, 0.25, { color: 'brown', vol: vol * 0.6, a: 0.002, filter: { type: 'lowpass', f: 500 } });
 }
-function cymbalSwell(E, out, t, len, vol) {
+export function cymbalSwell(E, out, t, len, vol) {
   E.noiseV(out, t, len, { color: 'white', vol, a: len * 0.9, shape: 'lin', filter: { type: 'highpass', f: 5000 } });
 }
-function bass(E, out, t, m, len, vol) {
+export function bass(E, out, t, m, len, vol) {
   E.osc(out, t, len, { type: 'triangle', f: mtof(m), vol, a: 0.01 });
   E.osc(out, t, len * 0.7, { type: 'sine', f: mtof(m), vol: vol * 0.8, a: 0.02 });
 }
 
 // triad from root + quality
-const tri = (r, minor) => [r, r + (minor ? 3 : 4), r + 7];
+export const tri = (r, minor) => [r, r + (minor ? 3 : 4), r + 7];
 
 // ---------- TITLE: calm majestic D major, harp arpeggios, pad, horn melody ----------
 const TITLE_CH = [[62, 0], [59, 1], [55, 0], [57, 0]];          // D Bm G A (2 bars each)

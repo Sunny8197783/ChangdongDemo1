@@ -1,14 +1,21 @@
-// Cinematic module: shot sequencer (world & gameplay modes), DOM overlays (letterbox, titles, subtitles, fades,
-// film look, calligraphic skill splash, skip ring), camera helpers, and the four set pieces:
-// playIntro (lore intro), finisher (sword/magic 필살기 template), playBlessing (altar), playEnding.
+// Cinematic module v3 (CONTRACT §16): shot sequencer (world & gameplay modes), DOM overlays (letterbox, titles,
+// subtitles, fades, film look, calligraphic skill splash, skip ring), camera helpers, and the set pieces:
+// playIntro (lore), playClassRite (각인 의식), playReveal (갈라진 봉인), playSpiritFreed, playBossIntro, playPhase,
+// playFinale (the dive strike), playEnding (v3), finisher(o) (필살기 template for all 9 elements + 'symphony').
+// Every cinematic is skippable (hold Space/Esc; the finale strike asks for one input) and restores state on end.
 import * as THREE from 'three';
 import { clamp, lerp } from './core/utils.js';
+import { CLASS_IDS } from './core/classes.js';
+import { elColor } from './core/elements.js';
 import { createOverlay } from './cinematic/overlay.js';
 import { createGrade } from './cinematic/grade.js';
-import { Stage, makeRune, makePillar, makeMist, makeMotes, makeColossus, glowTex } from './cinematic/assets.js';
+import { Stage, makeRune, makePillar, makeMist, makeMotes, makeColossus, makeWyrm, glowTex, starTex, SPIRITS, LOST_SPIRITS, SPIRITS_ALL } from './cinematic/assets.js';
 import { buildIntro } from './cinematic/intro.js';
 import { buildFinisher } from './cinematic/finisher.js';
-import { buildBlessing, buildEnding } from './cinematic/ceremony.js';
+import { buildClassRite } from './cinematic/ceremony.js';
+import { buildReveal } from './cinematic/reveal.js';
+import { buildBossIntro, buildSpiritFreed, buildPhase, BOSS_CAM } from './cinematic/acts.js';
+import { buildFinale, buildEnding } from './cinematic/finale.js';
 
 const EASE = {
   linear: (t) => t,
@@ -235,7 +242,14 @@ export function createCinematic(game) {
     stage: () => new Stage(game),
     V: (x, y, z) => new THREE.Vector3(x, y, z),
     groundY,
+    active: () => !!seq,
+    /** End the current shot now (input-driven shots, e.g. the finale strike). */
+    next: () => { if (seq) { const s = seq.shots[seq.i]; if (s) seq.t = Math.max(seq.t, s.duration); } },
   };
+  const guard = (name, fn, onDone) => {
+    try { return fn(); } catch (err) { console.error(`[cinematic] ${name}`, err); finish(true); try { onDone?.(); } catch (_) { /* */ } return null; }
+  };
+  const _burst = new THREE.Vector3();
 
   const api = {
     active: false, timeScale: 1, overlay: ov, grade, EASE,
@@ -250,14 +264,39 @@ export function createCinematic(game) {
     finisher(o = {}) {
       try { return buildFinisher(ctx, o); } catch (err) { console.error('[cinematic] finisher', err); try { o.onImpact?.(); } catch (_) { /* */ } try { o.onEnd?.(); } catch (_) { /* */ } return null; }
     },
-    /** Altar ceremony: spirit(s) descend into the hero. element: 'fire'…|'all'. */
-    playBlessing(element = 'all', onDone) {
-      try { return buildBlessing(ctx, element, onDone); } catch (err) { console.error('[cinematic] blessing', err); finish(true); onDone?.(); return null; }
+    /** 각인 의식: the spirits of CLASS_DEFS[cls] (primaries big in front, secondaries small behind) descend into the hero. */
+    playClassRite(cls, onDone) {
+      const c = CLASS_IDS.includes(cls) ? cls : (game.progression?.cls || CLASS_IDS[0]);
+      return guard('class rite', () => buildClassRite(ctx, c, onDone), onDone);
     },
-    /** Ending after the boss: cleansing, spirits return, celebration, credits. */
-    playEnding(onDone) {
-      try { return buildEnding(ctx, onDone); } catch (err) { console.error('[cinematic] ending', err); finish(true); onDone?.(); return null; }
+    /** v2 shim → playClassRite(progression.cls). */
+    playBlessing(element = 'all', onDone) { return api.playClassRite(game.progression?.cls, onDone); },
+    /** 갈라진 봉인: golem core rune, 테라곤's memory, mist down a root channel to the plateau, the wyrm on the roots. */
+    playReveal(onDone) { return guard('reveal', () => buildReveal(ctx, onDone), onDone); },
+    /** One parametric template for 운디나 / 녹스 / 실바니아 / 루미엘 (and any element). */
+    playSpiritFreed(element, onDone) { return guard('spirit freed', () => buildSpiritFreed(ctx, element, onDone), onDone); },
+    /** Boss intro: fade → await enemies.prewarmBoss(id) → opts.spawn() → per-boss camera path + title card. */
+    playBossIntro(id, onDone, opts = {}) { return guard('boss intro', () => buildBossIntro(ctx, id, onDone, opts), onDone); },
+    /** Gameplay-mode boss phase transition (≤ 4 s, skippable). */
+    playPhase(id, phase, onDone) { return guard('phase', () => buildPhase(ctx, id, phase, onDone), onDone); },
+    /** The finale dive strike (gameplay mode, one input: LMB / R / X). onDone at the impact. */
+    playFinale(onDone) { return guard('finale', () => buildFinale(ctx, onDone), onDone); },
+    /** Ending v3: golden pollen, the crown blooms, the time-lapse, the festival, credits with nine spirits, 끝. */
+    playEnding(onDone) { return guard('ending', () => buildEnding(ctx, onDone), onDone); },
+    /** A subtitle line outside a cinematic (boss voice lines: Nox's purify, Kalis's revive). */
+    subtitle(text, sec = 3, speaker = '') { try { ov.subtitle(String(text || ''), { dur: sec, speaker }); } catch (_) { /* */ } },
+    /** Finisher impact hook (magic): an element ring burst at `point`. */
+    burstAt(point, element = 'physical') {
+      if (!point) return;
+      const col = element === 'symphony' ? 0xfff0f8 : elColor(element, 'hex');
+      _burst.copy(point);
+      try {
+        game.vfx?.shockwave?.(_burst, { color: col, radius: 9, duration: 0.7 });
+        game.vfx?.burst?.(_burst, { count: 50, color: [col, 0xffffff], speed: 10, spread: 1, size: 0.4, sizeEnd: 0, life: 0.9, shape: 'spark', drag: 1.5 });
+      } catch (_) { /* */ }
     },
+    SPIRITS, LOST_SPIRITS, SPIRITS_ALL, BOSS_CAM,
+    get mode() { return seq?.mode || null; },
     init() {
       // pre-warm our shader programs (sprite/rune/pillar/mist/motes/silhouette) so set pieces never compile mid-game;
       // the warm stage stays alive but hidden so the programs are never released
@@ -265,7 +304,7 @@ export function createCinematic(game) {
         const st = new Stage(game);
         const cam = game.camera; cam.updateMatrixWorld();
         const p = new THREE.Vector3(0, 0, -6).applyMatrix4(cam.matrixWorld);
-        const objs = [st.sprite(0xffffff, 1, glowTex()), makeRune(st, 0xffffff, 1), makePillar(st, 0xffffff, 1, 1), makeMist(st, p, { count: 2 }), makeMotes(st, p, { count: 2 }), makeColossus(st, 0.05)];
+        const objs = [st.sprite(0xffffff, 1, glowTex()), st.sprite(0xffffff, 1, starTex()), makeRune(st, 0xffffff, 1), makePillar(st, 0xffffff, 1, 1), makeMist(st, p, { count: 2 }), makeMotes(st, p, { count: 2 }), makeColossus(st, 0.05), makeWyrm(st, p, { scale: 0.02, segs: 3 }).root];
         for (const o of objs) { if (!o.parent) st.add(o); o.position.copy(p); }
         game.renderer.compile(game.scene, cam);
         st.group.visible = false;

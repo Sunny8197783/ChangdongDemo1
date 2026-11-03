@@ -2,15 +2,20 @@
 // silhouette, sky lanterns, fireworks). Everything is created lazily into a Stage and disposed with stage.dispose().
 // Cheap by design: sprites / one Points cloud / a few planes; no realtime lights (vfx.flash is pooled).
 import * as THREE from 'three';
-import { ELEMENT_COLORS } from '../core/utils.js';
+import { ELEMENT_DEFS, ALL_ELEMENTS, CLASSIC_ELEMENTS, elColor, elName } from '../core/elements.js';
 
-export const SPIRITS = [
-  { el: 'fire', name: '이그니스', title: '화염의 정령', css: '#ff8a3d' },
-  { el: 'ice', name: '글라시아', title: '냉기의 정령', css: '#8feaff' },
-  { el: 'lightning', name: '볼타', title: '번개의 정령', css: '#d4b4ff' },
-  { el: 'wind', name: '실피아', title: '바람의 정령', css: '#9dffcb' },
-  { el: 'earth', name: '테라곤', title: '대지의 정령', css: '#f0bd6e' },
-];
+/** The classic five (the village's lore and the intro) — stays 5 (CONTRACT §16). */
+export const SPIRITS = CLASSIC_ELEMENTS.map((el) => spiritMeta(el));
+/** The four erased spirits (DESIGN §8.1). */
+export const LOST_SPIRITS = ALL_ELEMENTS.filter((el) => !CLASSIC_ELEMENTS.includes(el)).map((el) => spiritMeta(el));
+/** All nine, in element order (class rite, ending credits). */
+export const SPIRITS_ALL = [...SPIRITS, ...LOST_SPIRITS];
+export const SPIRIT_OF = Object.fromEntries(SPIRITS_ALL.map((s) => [s.el, s]));
+function spiritMeta(el) {
+  const d = ELEMENT_DEFS[el];
+  return { el, name: d.spirit?.name || el, title: d.spirit?.title || `${elName(el)}의 정령`, css: elColor(el, 'css'), hex: elColor(el, 'hex') };
+}
+const RUNE_POINTS = 9;
 
 // ------------------------------------------------------------------ textures (built once, shared)
 const TEX = {};
@@ -59,11 +64,12 @@ export function runeTex() {
     for (let i = 0; i < 24; i++) {
       const a = (i / 24) * Math.PI * 2; g.save(); g.rotate(a); g.fillText(glyphs[i % glyphs.length], 0, -h * 0.75); g.restore();
     }
-    // pentagram + five element nodes
-    g.lineWidth = 2.5; g.beginPath();
-    for (let i = 0; i <= 5; i++) { const a = -Math.PI / 2 + (i * 2 * Math.PI * 2) / 5; const x = Math.cos(a) * h * 0.56, y = Math.sin(a) * h * 0.56; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    // nine-pointed star {9/4} + nine element nodes (아스트라의 아홉 아이)
+    const N = RUNE_POINTS;
+    g.lineWidth = 2.2; g.beginPath();
+    for (let i = 0; i <= N; i++) { const a = -Math.PI / 2 + (i * 4 * Math.PI * 2) / N; const x = Math.cos(a) * h * 0.56, y = Math.sin(a) * h * 0.56; i ? g.lineTo(x, y) : g.moveTo(x, y); }
     g.stroke();
-    for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i * Math.PI * 2) / 5; g.beginPath(); g.arc(Math.cos(a) * h * 0.56, Math.sin(a) * h * 0.56, h * 0.06, 0, Math.PI * 2); g.lineWidth = 3; g.stroke(); }
+    for (let i = 0; i < N; i++) { const a = -Math.PI / 2 + (i * Math.PI * 2) / N; g.beginPath(); g.arc(Math.cos(a) * h * 0.56, Math.sin(a) * h * 0.56, h * 0.05, 0, Math.PI * 2); g.lineWidth = 3; g.stroke(); }
     // tick marks
     g.lineWidth = 1.5;
     for (let i = 0; i < 72; i++) { const a = (i / 72) * Math.PI * 2; const r0 = h * 0.88, r1 = h * (i % 3 ? 0.91 : 0.94); g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); g.stroke(); }
@@ -117,7 +123,7 @@ export class Stage {
 // ------------------------------------------------------------------ spirit light
 /** A wisp: bright core + coloured halo + ribbon trail + sparkle emitter. `obj.position` drives it. */
 export function makeSpirit(stage, el, { size = 6, trail = true, trailWidth = 2.2, trailLen = 60, sparkles = true } = {}) {
-  const col = ELEMENT_COLORS[el] ?? 0xffffff;
+  const col = el === 'symphony' ? 0xfff0f8 : elColor(el, 'hex');
   const obj = new THREE.Group();
   const halo = stage.sprite(col, size * 2.4, glowTex(), 1);
   const core = stage.sprite(new THREE.Color(col).lerp(new THREE.Color(0xffffff), 0.55).getHex(), size * 0.7, starTex(), 1);
@@ -238,4 +244,46 @@ export function makeColossus(stage, scale = 1) {
   root.scale.setScalar(scale); stage.add(root);
   root.userData.eyes = root.children.filter((c) => c.isSprite);
   return root;
+}
+
+// ------------------------------------------------------------------ void wyrm silhouette (reveal, finale): instanced body (1 call)
+/** A coiled serpent silhouette around `center` (cinematic stand-in for 니드호그라; the real boss is the enemies owner's).
+ *  Returns {root, mesh, eyes[], shards[], head, tick(t)}. All segments share one InstancedMesh + one material. */
+export function makeWyrm(stage, center, { scale = 1, segs = 28, radius = 17, rise = 22, color = 0x09050f } = {}) {
+  const root = new THREE.Group(); root.position.copy(center);
+  const m = stage.mat(new THREE.MeshBasicMaterial({ color, fog: false }));
+  const g = stage.geo(new THREE.IcosahedronGeometry(1, 1));
+  const mesh = new THREE.InstancedMesh(g, m, segs + 1); mesh.frustumCulled = false; root.add(mesh);
+  const pts = [];
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Sc = new THREE.Vector3(), Pp = new THREE.Vector3(), E = new THREE.Euler();
+  const place = (t) => {
+    for (let i = 0; i <= segs; i++) {
+      const k = i / segs;
+      const a = k * Math.PI * 3.1 + t * 0.05;
+      const r = radius * (1 - k * 0.35) * scale;
+      const breathe = 1 + Math.sin(t * 1.3 - k * 6) * 0.04;
+      Pp.set(Math.cos(a) * r, (2 + k * rise + Math.sin(k * 9 + t * 0.6) * 1.6) * scale, Math.sin(a) * r);
+      const s = (i === segs ? 5.4 : 4.4 * (1 - k * 0.55) + 0.8) * scale * breathe;
+      E.set(0, -a, 0.3); Q.setFromEuler(E); Sc.set(s * 1.4, s, s);
+      M.compose(Pp, Q, Sc); mesh.setMatrixAt(i, M);
+      if (pts[i]) pts[i].copy(Pp); else pts[i] = Pp.clone();
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+  place(0);
+  const head = pts[segs];
+  const eyes = [];
+  for (let i = 0; i < 6; i++) { const e = stage.sprite(0xb14bff, 1.6 * scale, starTex(), 1); e.renderOrder = 15; root.add(e); eyes.push(e); }
+  const shards = CLASSIC_ELEMENTS.map((el, i) => { const s = stage.sprite(elColor(el, 'hex'), 4.2 * scale, glowTex(), 0.9); root.add(s); s.userData.seg = Math.min(segs - 1, Math.round(segs * (0.2 + i * 0.14))); return s; });
+  const core = stage.sprite(0xa02cff, 12 * scale, glowTex(), 0.55); root.add(core);
+  const tick = (t) => {
+    place(t);
+    const h = pts[segs];
+    eyes.forEach((e, i) => { const a = (i / eyes.length) * Math.PI * 2 + t * 0.4; e.position.set(h.x + Math.cos(a) * 3.2 * scale, h.y + 1.2 * scale + Math.sin(a) * 1.2 * scale, h.z + Math.sin(a) * 3.2 * scale); e.material.opacity = 0.7 + Math.sin(t * 5 + i) * 0.3; });
+    shards.forEach((s) => { const p = pts[s.userData.seg]; s.position.set(p.x, p.y + 3.6 * scale, p.z); s.material.opacity = 0.65 + Math.sin(t * 3 + s.userData.seg) * 0.3; });
+    const cp = pts[Math.max(0, segs - 3)]; core.position.set(cp.x, cp.y, cp.z);
+  };
+  tick(0);
+  stage.add(root);
+  return { root, mesh, eyes, shards, core, head, pts, tick };
 }
