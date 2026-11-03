@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Emitter } from './core/events.js';
 import { Input } from './core/input.js';
 import { stubs } from './core/stubs.js';
@@ -27,6 +28,23 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
+// NaN guard for every shader. On real GPUs pow(x<0, y) and sqrt(x<0) return NaN. With MSAA, varyings such as a
+// strip's uv can land slightly outside [0,1] at triangle edges, so effect shaders doing pow(1.0 - d, k) emit NaN
+// pixels. Bloom then smears that NaN across the frame, which shows up as the screen going black during big effects.
+// Clamping the base at the GLSL source level fixes every shader (ours and three's) in one place.
+{
+  const gl = renderer.getContext();
+  const origSource = gl.shaderSource.bind(gl);
+  const GUARD = '\n#define pow(a, b) pow(max((a), 0.0), (b))\n#define sqrt(a) sqrt(max((a), 0.0))\n';
+  gl.shaderSource = (shader, src) => {
+    if (typeof src === 'string' && !src.includes('#define pow(a, b)')) {
+      const nl = src.startsWith('#version') ? src.indexOf('\n') + 1 : 0;
+      src = src.slice(0, nl) + GUARD + src.slice(nl);
+    }
+    return origSource(shader, src);
+  };
+}
+
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1200);
 camera.position.set(0, 10, 30);
@@ -36,6 +54,19 @@ scene.add(camera);
 const composerRT = (samples) => new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples });
 const composer = new EffectComposer(renderer, composerRT(isTest ? 0 : 4));
 composer.addPass(new RenderPass(scene, camera));
+// Second safety net: scrub any NaN/Inf left in the HDR scene target (e.g. normalize(0) in some shader) before
+// bloom can spread it across the frame, and cap extreme additive stacking that would overflow half floats.
+const sanitizePass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = clamp(c, 0.0, 512.0);
+    }`,
+});
+composer.addPass(sanitizePass);
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.6, 0.86);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
