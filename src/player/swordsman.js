@@ -232,33 +232,4 @@ export function buildSwordGear(rig) {
   return gear;
 }
 
-const _mage = { torso: null, skirt: null, cape: null };
-/** Swap the hero's outfit. cls: 'mage' | 'sword'. */
-export function setOutfit(rig, gear, cape, cls) {
-  const sword = cls === 'sword';
-  for (const o of gear.all) o.visible = sword;
-  if (rig.hat) rig.hat.visible = !sword;
-  if (rig.staff) rig.staff.visible = !sword;
-  if (rig.capelet) rig.capelet.visible = !sword;
-  if (rig.brooch) rig.brooch.visible = !sword;
-  if (rig.vial) rig.vial.visible = !sword;
-  rig.root.traverse((o) => {
-    if (!o.isMesh || o.name === 'outline' || !o.userData.skin) return;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    for (const m of mats) {
-      if (!m) continue;
-      const k = o.userData.skin;
-      if (k === 'robe') m.color.setHex(sword ? SW.tunic : COLORS.robe);
-      else if (k === 'torso' || k === 'skirt') {
-        if (!_mage[k]) _mage[k] = m.map;
-        m.map = sword ? gear.tex[k] : _mage[k];
-        m.needsUpdate = false;
-      }
-    }
-  });
-  if (cape?.mesh?.material) {
-    const m = cape.mesh.material;
-    if (!_mage.cape) _mage.cape = m.map;
-    m.map = sword ? gear.tex.cape : _mage.cape;
-  }
-}
+// The outfit swap moved to player/classes.js (setClassOutfit, CLASS_OUTFITS) — it covers all 6 classes.

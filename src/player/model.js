@@ -550,7 +550,8 @@ export function buildWizard() {
   rig.motes = [];
   const moteGeo = new THREE.OctahedronGeometry(0.016);
   rig.moteMat = new THREE.MeshBasicMaterial({ color: 0xffaa66, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
-  for (let i = 0; i < 5; i++) {
+  const MOTES = 5;   // gem motes (tinted at runtime through rig.moteMat = elColor of the attuned element)
+  for (let i = 0; i < MOTES; i++) {
     const m = new THREE.Mesh(moteGeo, rig.moteMat); m.userData.noGhost = true; gemPivot.add(m); rig.motes.push(m);
   }
 
@@ -574,8 +575,9 @@ export function buildWizard() {
 
   // cape anchors (torso local), left->right of the character's back
   rig.capeAnchors = [];
-  for (let i = 0; i < 5; i++) {
-    const u = i / 4 * 2 - 1;
+  const CAPE_COLS = 5;
+  for (let i = 0; i < CAPE_COLS; i++) {
+    const u = i / (CAPE_COLS - 1) * 2 - 1;
     rig.capeAnchors.push(new THREE.Vector3(u * 0.25, 0.43 - Math.abs(u) * 0.04, -0.16 - (1 - u * u) * 0.05));
   }
   return rig;
