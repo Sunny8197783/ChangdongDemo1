@@ -9,6 +9,8 @@ import { toonMat, addOutline } from '../core/utils.js';
 import { elColor } from '../core/elements.js';
 import { fresnelMat, coreMat, crystalGeo, iceMatSolid, pillarGeo, rockMat } from './assets.js';
 
+const OPTIONAL_FX = new Set(['groundDecal', 'runeCircle', 'flashSprite', 'dome', 'debris']);
+
 const MAX_ALIVE = 4;
 const KIND_NAME = { treant: '나무정령', totem: '도발의 석상', clone: '신기루 분신', beacon: '빛의 표지', mirror: '빛의 거울', lightpillar: '빛의 기둥' };
 const ni = (g) => (g.index ? g.toNonIndexed() : g);
@@ -85,7 +87,8 @@ function lightPillarModel() {
 export function createSummons(S, api) {
   const { game } = S;
   const E = game.events;
-  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const C = () => game.combat;
   const mats = {
     bark: toonMat(0x6b4a2e, { emissive: 0x1a0f06, emissiveIntensity: 0.4 }), leaf: toonMat(0x6fcf4a, { emissive: 0x1d3a12, emissiveIntensity: 0.5 }),

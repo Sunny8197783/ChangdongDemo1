@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { elColor, elDef } from '../core/elements.js';
 import { fresnelMat } from './assets.js';
 
+const OPTIONAL_FX = new Set(['groundDecal', 'runeCircle', 'flashSprite', 'dome', 'debris']);
+
 export const ARCHETYPES = ['projectile', 'volley', 'lob', 'crawler', 'beam', 'cone', 'nova', 'zone', 'wall', 'pillar', 'chain', 'rain',
   'summon', 'blink', 'dash', 'leapslam', 'grapple', 'buff', 'mark', 'chainbind', 'tether', 'lane', 'mine', 'bubble'];
 
@@ -26,7 +28,8 @@ export function baseOf(p, charge = 1) {
 export function createArchetypes(S, api, { summons, structures }) {
   const { game } = S;
   const E = game.events;
-  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const C = () => game.combat;
   const pl = () => game.player;
   const ppos = () => pl()?.object?.position || S.playerPos();

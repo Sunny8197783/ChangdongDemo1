@@ -5,12 +5,15 @@
 import * as THREE from 'three';
 import { elColor } from '../core/elements.js';
 
+const OPTIONAL_FX = new Set(['groundDecal', 'runeCircle', 'flashSprite', 'dome', 'debris']);
+
 const FINISHER_NAMES = { water: '심해의 노래', nature: '영원의 숲', light: '여명의 날개', shadow: '까마귀 군주' };
 
 export function createBespoke(S, api, AR, { summons }) {
   const { game } = S;
   const E = game.events;
-  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const pl = () => game.player;
   const ppos = () => pl()?.object?.position || S.playerPos();
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();

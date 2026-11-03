@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { elColor } from '../core/elements.js';
 import { uTime, makeGroundDisc, conformDisc, fresnelMat, tornadoMat, tornadoGeo } from './assets.js';
 
+const OPTIONAL_FX = new Set(['groundDecal', 'runeCircle', 'flashSprite', 'dome', 'debris']);
+
 // pattern ids of the surface shader
 const PAT = { liquid: 0, mist: 1, holy: 2, vines: 3, sand: 4, spiral: 5, lane: 6 };
 /** Per-type look + rules. names are player-facing (Korean). */
@@ -118,7 +120,8 @@ function laneGeo() {
 export function createZones2(S) {
   const { game } = S;
   const E = game.events;
-  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const C = () => game.combat;
   const scene = game.scene;
   const zones = [];
@@ -382,7 +385,7 @@ export function createZones2(S) {
         if (playerInside(z)) {
           if (P.healPct) healP(mx * P.healPct * every, 'sanctuary');
           cleanse(P.dispel || ['corroded', 'blight']);
-          if (P.regenRateAdd || P.dmgTakenMul) { try { game.stats?.set?.('zone', { regenRateAdd: P.regenRateAdd || 0, dmgTakenMul: P.dmgTakenMul || 1 }, { duration: every + 0.2 }); } catch (_) { /* */ } }
+          if (P.regenRateAdd || P.dmgTakenMul) { try { game.stats?.set?.('zone:holy', { regenRateAdd: P.regenRateAdd || 0, dmgTakenMul: P.dmgTakenMul || 1 }, { duration: every + 0.2 }); } catch (_) { /* */ } }
         }
         break;
       }
