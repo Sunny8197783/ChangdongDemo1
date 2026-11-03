@@ -2,8 +2,10 @@
 // They let each module be developed and tested in isolation. Not used in the final game.
 import * as THREE from 'three';
 import { toonMat } from './utils.js';
+import { familyOf } from './classes.js';
 
 const noop = () => {};
+const NOT_FX = new Set(['prewarm', 'warmup', 'init', 'then', 'toJSON', 'stats', 'hitFeel', 'telegraph', 'dissolve']);
 
 export const stubs = {
   world(game) {
@@ -17,6 +19,9 @@ export const stubs = {
     return {
       update: noop,
       getHeight: () => 0,
+      getGroundHeight: () => 0,
+      clampToBounds: (p) => p,
+      respecSpots: [new THREE.Vector3(0, 0, 5)],
       getNormal: (x, z, out = new THREE.Vector3()) => out.set(0, 1, 0),
       raycast(origin, dir, maxDist = 200) {
         if (dir.y >= -1e-4) return null;
@@ -39,7 +44,11 @@ export const stubs = {
   },
   vfx(game) {
     const api = new Proxy({ update: noop, textures: {} }, {
-      get(t, k) { if (k in t) return t[k]; return () => ({ stop: noop, setPosition: noop, alive: false }); },
+      get(t, k) {
+        if (k in t) return t[k];
+        if (typeof k !== 'string' || NOT_FX.has(k)) return undefined;   // lifecycle hooks / thenable checks must stay absent
+        return () => ({ stop: noop, setPosition: noop, alive: false });
+      },
     });
     return api;
   },
@@ -93,7 +102,22 @@ export const stubs = {
     return { update: noop, elements: [], index: 0, element: 'fire',
       getHudState: () => ({ element: 'fire', index: 0, elements: [], slots: [], charging: false, chargeFrac: 0 }) };
   },
-  enemies() { return { update: noop, list: [], getObjective: () => ({ phase: 'camps', campsCleared: 0, campsTotal: 3, boss: null }) }; },
+  /** CONTRACT §2: full skills stub. Registries forward to game.archetypes so magic/melee can register while skills is missing. */
+  skills(game) {
+    return {
+      ownsInput: false, loadout: {}, attuned: null, trees: {}, nodes: new Map(), defs: new Map(), isStub: true,
+      registerImpl: (...a) => game.archetypes.registerImpl(...a),
+      registerArchetype: (...a) => game.archetypes.registerArchetype(...a),
+      applyPreset() { return false; }, update() {}, cast() { return false; }, castSlot() { return false; }, equip() { return false; },
+      unequip() {}, attune() { return false; }, cycleAttune() {}, isReady() { return false; }, cooldownLeft() { return 0; },
+      canEquip() { return { ok: false, reason: 'stub' }; }, resetCooldowns() {}, autoEquip() {}, useGift() { return false; },
+      effectiveParams() { return {}; }, serialize() { return null; }, deserialize() {},
+      family: () => game.player?.family || familyOf(game.progression?.cls),
+      style: () => game.player?.style || 'staff',
+      getHudState() { const m = familyOf(game.progression?.cls) === 'melee' ? game.sword : game.spells; return m?.getHudState?.(); },
+    };
+  },
+  enemies() { return { update: noop, list: [], anyAggroWithin: () => false, prewarmBoss: () => Promise.resolve(), getObjective: () => ({ phase: 'camps', campsCleared: 0, campsTotal: 3, boss: null }) }; },
   sword() {
     return { update: noop, getHudState: () => ({ element: 'fire', index: 0, elements: [], slots: [], charging: false, chargeFrac: 0 }) };
   },

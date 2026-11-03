@@ -71,11 +71,11 @@ function installHelpers() {
   const allLogs = [];
   const results = [];
   async function openPage(query) {
-    const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+    const p = await b.newPage({ viewport: { width: 640, height: 360 } });
     const logs = [];
     p.on('console', (m) => { if (['error', 'warning'].includes(m.type())) logs.push(`[${m.type()}] ${m.text().slice(0, 500)}`); });
     p.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`));
-    await p.goto(`http://localhost:${port}/?test=1${query}`);
+    await p.goto(`http://localhost:${port}/?test=1${/path=|cls=none/.test(query) ? '' : '&path=all'}${query}`);   // v3: legacy keymap
     await p.waitForFunction(() => window.game && window.game.ready, null, { timeout: 120000 });
     await p.waitForTimeout(800);
     await p.evaluate(installHelpers);
