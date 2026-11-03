@@ -4,7 +4,8 @@
 1. [완료] 설계 워크플로 `wf_5f014727-6ee` → docs/v3/DESIGN.md, docs/v3/CONTRACT.md (§24 JSON 빌드 작업), ARCHITECTURE.md v3 섹션 (커밋 3de9528)
 2. [진행중] 구현 워크플로 `arcane-wilds-v3-build` — 웨이브 0(core) → 1(skills,combat,player,world,ui) → 2(magic,melee,enemies) → 3(narrative) → 통합 → 리뷰/수정
    - 각 오너는 /home/user/wt/<owner> 워크트리, 브랜치 v3/<owner>; 웨이브마다 v3-rpg로 머지
-   - 재개: 아래 run id로 Workflow({scriptPath, resumeFromRunId})
+   - run `wf_c2cd01fc-099`, script: /root/.claude/projects/-home-user-changdongdemo1/73b5b35e-096f-5c23-8d86-2f6619326bcd/workflows/scripts/arcane-wilds-v3-build-wf_5c28193c-792.js
+   - 재개: Workflow({scriptPath, resumeFromRunId: "wf_c2cd01fc-099"})
 3. [대기] 직접 검증(플레이테스트·스크린샷) → 커밋 → origin v3-rpg 푸시 → 아티팩트 재배포
    (https://claude.ai/artifact/7LwzvnUbMZoR78eALTV69d)
 
