@@ -5,6 +5,7 @@
 const R = (a, b) => a + Math.random() * (b - a);
 const PENTA = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2, 9 / 4, 5 / 2, 3, 10 / 3, 4];
 const METAL = [1, 2.32, 2.76, 3.89, 5.4, 6.8];
+const CHIME_N = 5;   // bells per spirit chime cluster (not an element count)
 
 /** FM bell (inharmonic ratio) + soft sine fundamental. */
 function bell(E, o, t, f, vol, len, ratio = 2.76, a = 0.002) {
@@ -251,7 +252,7 @@ export const SFX2 = {
   // ---------------- SPIRITS ----------------
   spirit_chime(E, o, t, p) { // ethereal bell cluster
     const base = 1046.5 * p;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CHIME_N; i++) {
       const m = PENTA[(i * 2 + ((Math.random() * 3) | 0)) % 9];
       bell(E, o, t + i * R(0.05, 0.11), base * m, 0.07 * R(0.7, 1), 2.2, 3.5, 0.004);
     }

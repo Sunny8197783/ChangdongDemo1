@@ -33,7 +33,7 @@ export function buildIntro(C, onDone) {
 
   const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
   const _head = new THREE.Vector3();
-  const _placed = [0, 1, 2, 3, 4].map(() => ({ x: 0, y: 0 }));
+  const _placed = SPIRITS.map(() => ({ x: 0, y: 0 }));
   const player = game.player;
   const pObj = player?.object;
   const followGround = () => {
@@ -138,7 +138,7 @@ export function buildIntro(C, onDone) {
     from: camB2a.clone(), to: camB2b.clone(), fov: [44, 62],
     look: (e, s2, tt) => tmp.lerpVectors(V(crown.x, crown.y - 10, crown.z), V(-80, 14, -6), EASE.inOutSine(clamp((tt - 6.2) / 4.2, 0, 1))),
     onStart() {
-      spirits.forEach((sp, i) => { sp.setOpacity(0); sp.curve = null; sp.a0 = (i / 5) * Math.PI * 2 + 2.2; });
+      spirits.forEach((sp, i) => { sp.setOpacity(0); sp.curve = null; sp.a0 = (i / SPIRITS.length) * Math.PI * 2 + 2.2; });
       sfx('spirit_chime', { volume: 1, pitch: 1.2 });
       ov.subtitle('그 품에서, 다섯 원소의 정령이 태어났다.', { dur: 5.2 });
     },
@@ -189,7 +189,7 @@ export function buildIntro(C, onDone) {
       ov.title('원소의 대륙, 에테리아', { sub: '솔레아 평원', style: 'lore', dur: 7.6, fadeIn: 1.3, stagger: 0.08 });
       // spirits race ahead of the camera, then split off in five directions
       spirits.forEach((sp, i) => {
-        const dirA = (i / 5) * Math.PI * 2;
+        const dirA = (i / SPIRITS.length) * Math.PI * 2;
         sp.fly = { a: dirA, off: V((i - 2) * 6, 3 + (i % 2) * 4, 0) }; sp.k = 0.3;
       });
     },
@@ -235,14 +235,14 @@ export function buildIntro(C, onDone) {
     },
   });
   // ---- 5: the first guardians' seal
-  const beamFrom = SPIRITS.map((s, i) => { const a = (i / 5) * Math.PI * 2 - Math.PI / 2; return G(arena.x + Math.cos(a) * 46, 2, arena.z + Math.sin(a) * 46); });
+  const beamFrom = SPIRITS.map((s, i) => { const a = (i / SPIRITS.length) * Math.PI * 2 - Math.PI / 2; return G(arena.x + Math.cos(a) * 46, 2, arena.z + Math.sin(a) * 46); });
   const sealTop = V(arena.x, arena.y + 55, arena.z);
   shots.push({
     duration: 8.5, ease: 'inOutSine',
     from: V(48, 44, -62), to: V(36, 52, -70), lookFrom: V(0, 26, -125), lookTo: V(0, 30, -125), fov: [56, 60],
     onStart() {
       ov.subtitle('최초의 원소 수호자들은 다섯 정령과 계약을 맺고 —', { dur: 3.6 });
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < SPIRITS.length; i++) {
         const c = ELEMENT_COLORS[SPIRITS[i].el];
         setTimeoutish(0.25 + i * 0.22, () => {
           stage.keep(vfx?.beam?.(beamFrom[i], sealTop, { color: c, width: 4.5, duration: 2.8, jagged: 0.08, segments: 8 }));
@@ -339,7 +339,7 @@ export function buildIntro(C, onDone) {
       mark.position.copy(tmp); markHalo.position.copy(tmp);
       mark.material.opacity = g; markHalo.material.opacity = g * 0.75; mark.material.rotation = T * 0.8;
       markMotes.forEach((m, i) => {
-        const a = T * 2.2 + (i / 5) * Math.PI * 2;
+        const a = T * 2.2 + (i / SPIRITS.length) * Math.PI * 2;
         m.position.set(tmp.x + Math.cos(a) * 0.38, tmp.y + Math.sin(a * 1.3) * 0.12, tmp.z + Math.sin(a) * 0.38);
         m.material.opacity = g;
       });

@@ -104,9 +104,15 @@ const CSS = `
 
 const ELEMENT_GRAD = {
   fire: ['#fff1a8', '#ff8a2a', '#e0200c'], ice: ['#f2feff', '#8feaff', '#2f8cff'], lightning: ['#fffbe8', '#d6b8ff', '#7a4dff'],
-  wind: ['#f4fff6', '#9dffcb', '#22c08a'], earth: ['#fff2cc', '#f0bd6e', '#a5642a'], physical: ['#ffffff', '#f6ecd2', '#e9c46a'],
+  wind: ['#f4fff6', '#9dffcb', '#22c08a'], earth: ['#fff2cc', '#f0bd6e', '#a5642a'],
+  water: ['#f0fbff', '#6fc8ff', '#1f6fb8'], nature: ['#f4ffd0', '#9be86a', '#2f7d3a'], light: ['#ffffff', '#ffe08a', '#ffb02a'],
+  shadow: ['#efe2ff', '#b98bff', '#4a1f7a'], physical: ['#ffffff', '#f6ecd2', '#e9c46a'],
+  symphony: ['#fff6d8', '#ffb8e8', '#7a8cff'], void: ['#e8d8ff', '#9a6bff', '#2a0d4a'],
 };
-const ELEMENT_GLYPH = { fire: '炎', ice: '氷', lightning: '雷', wind: '風', earth: '地', physical: '剣' };
+const ELEMENT_GLYPH = {
+  fire: '炎', ice: '氷', lightning: '雷', wind: '風', earth: '地', water: '水', nature: '森', light: '光', shadow: '影',
+  physical: '剣', symphony: '響', void: '虛',
+};
 
 function grainURL() {
   const c = document.createElement('canvas'); c.width = c.height = 192;

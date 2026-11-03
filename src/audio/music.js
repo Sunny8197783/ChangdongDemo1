@@ -1,5 +1,8 @@
 // Procedural generative music (field / battle / boss layers + v2 themes from themes.js) and ambience.
-import { THEMES } from './themes.js';
+import { THEMES as THEMES2 } from './themes.js';
+import { THEMES3, MIX3 } from './themes3.js';
+
+const THEMES = { ...THEMES2, ...THEMES3 };
 
 const R = (a, b) => a + Math.random() * (b - a);
 const pickR = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -17,14 +20,15 @@ const MINOR = [0, 2, 3, 5, 7, 8, 10];
 const BATTLE_PROG = [0, 8, 3, 10];
 
 // Layer gains per mode. 'explore' is the old name of 'field'.
-const LAYERS = ['field', 'battle', 'boss', 'title', 'intro', 'village', 'ending'];
+const LAYERS = ['field', 'battle', 'boss', 'title', 'intro', 'village', 'ending', ...Object.keys(THEMES3)];
 const MIX = {
   field: { field: 1 }, explore: { field: 1 },
   battle: { field: 0.12, battle: 1.25 }, boss: { battle: 1.25, boss: 1 },
   title: { title: 1.6 }, intro: { intro: 1.7 }, village: { village: 1.6 }, ending: { ending: 1.3 },
   victory: {}, silent: {},
+  ...MIX3,
 };
-const FAST_IN = { battle: 0.6, boss: 0.6 };
+const FAST_IN = { battle: 0.6, boss: 0.6, final_boss: 0.8 };
 
 export class Music {
   constructor(E) {
@@ -33,7 +37,7 @@ export class Music {
     this.layers = {};
     for (const name of LAYERS) {
       const g = ctx.createGain(); g.gain.value = 0; g.connect(E.music);
-      const s = ctx.createGain(); s.gain.value = name === 'battle' || name === 'boss' ? 0.45 : 0.9; g.connect(s); s.connect(E.musicSend);
+      const s = ctx.createGain(); s.gain.value = name === 'battle' || name === 'boss' || name === 'final_boss' ? 0.45 : 0.9; g.connect(s); s.connect(E.musicSend);
       this.layers[name] = { gain: g, level: 0, target: 0, step0: 0 };
     }
     this.step = 0;
@@ -45,6 +49,8 @@ export class Music {
     this.phraseNotes = null;
     this.padVoices = [];
     this.silenceUntil = 0;
+    this.bossPhase = 1;      // final_boss layer (audio.js sets it on bossPhase)
+    this.motifs = [];        // element ids of broken oath shards (leitmotifs in final_boss phase 2)
   }
 
   start(mode = this.mode) {
@@ -69,7 +75,7 @@ export class Music {
       L.gain.gain.cancelScheduledValues(now);
       L.gain.gain.setValueAtTime(L.gain.gain.value, now);
       // battle comes in fast; calm layers return slowly; theme changes cross-fade ~1.5 s
-      const tc = instant ? 0.05 : target > L.level ? (FAST_IN[n] || (prev === 'battle' || prev === 'boss' ? 2.5 : 1.2)) : (n === 'battle' || n === 'boss' ? 1.8 : 0.7);
+      const tc = instant ? 0.05 : target > L.level ? (FAST_IN[n] || (prev === 'battle' || prev === 'boss' || prev === 'final_boss' ? 2.5 : 1.2)) : (n === 'battle' || n === 'boss' || n === 'final_boss' ? 1.8 : 0.7);
       L.gain.gain.setTargetAtTime(target, now, tc);
     }
   }

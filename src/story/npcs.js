@@ -374,6 +374,208 @@ function humanoidKid(B, o) {
   }
 }
 
+// ------------------------------------------------------------------------------------------- v3 characters
+// New mentors, the sage, zone NPCs and the four lost spirits. They use the merged pipeline (body + head in one mesh,
+// one outline, optional glow) so the village additions stay within ≈ +12 draw calls (DESIGN §12).
+Object.assign(CHARS, {
+  // 궁수 스승 아리엔 — cheerful: green hooded short cloak, leather vest, blonde ponytail, longbow + quiver on the back
+  rangerMentor(B, H, G) {
+    const o = { skin: SKIN.light, torso: 0x7a5a3a, sleeve: 0x4f8a4a, forearm: 0x8a6a4a, legs: 0x5a4a32, shoes: 0x4a3526,
+      belt: 0x3a2a1a, armPose: 'hips', gloves: 0x6a4a2a, collar: 0x4f8a4a };
+    humanoid(B, o);
+    B.add(GEO.cone, 0x3f7a3f, 0, 0.98, -0.1, -0.1, 0, 0, 0.3, 0.6, 0.12);           // short cloak
+    B.add(GEO.cyl, 0x8a5a32, 0.12, 1.0, -0.22, 0, 0, 0.35, 0.07, 0.6, 0.07);         // quiver
+    for (let i = 0; i < 4; i++) B.add(GEO.sph, i % 2 ? 0xffffff : 0x9dffcb, 0.2 + i * 0.025, 1.35 + i * 0.01, -0.22, 0, 0, 0.35, 0.03, 0.08, 0.012); // fletching
+    B.limb([-0.2, 0.55, -0.2], [0.22, 1.65, -0.2], 0.022, 0xa8783a);                  // bow stave
+    B.limb([-0.18, 0.6, -0.19], [0.2, 1.6, -0.19], 0.006, 0xf6f0e6);                  // string
+    G.add(GEO.sphLo, 0x9dffcb, 0.01, 1.1, -0.2, 0, 0, 0, 0.035);                       // grip charm
+    const hd = head(H, { skin: SKIN.light, headR: 0.235, eye: 0x2f6a3a, brows: 0xc8a050, mouth: true });
+    hair(H, hd.R, hd.cy, 'pony', 0xf2c860);
+    H.add(GEO.cap, 0x3f7a3f, 0, hd.cy + hd.R * 0.02, -hd.R * 0.12, -0.55, 0, 0, hd.R * 1.16, hd.R * 1.1, hd.R * 1.2); // hood (down)
+    return { top: 1.32 + hd.R * 2 + 0.05, merged: true };
+  },
+  // 성기사 스승 오르벤 — calm old shield-bearer: white tabard with a gold sun, plate shoulders, round shield on the back, hammer
+  paladinMentor(B, H, G) {
+    const o = { skin: SKIN.warm, torso: 0xe8e2d0, sleeve: 0x9aa3ad, forearm: 0x9aa3ad, legs: 0x6a6460, shoes: 0x3a3430,
+      torsoTop: 0.26, torsoBot: 0.23, torsoY1: 1.24, belt: 0x8a6a2a, armPose: 'staffR', shoulderW: 0.32, armR: 0.072, gloves: 0x7a828c, torsoDepth: 0.84 };
+    const hm = humanoid(B, o);
+    for (const s of [-1, 1]) { B.add(GEO.sph, 0xd8c070, s * 0.33, 1.2, 0, 0, 0, s * 0.35, 0.16, 0.1, 0.16); B.add(GEO.sph, 0xb0b8c2, s * 0.33, 1.16, 0, 0, 0, s * 0.35, 0.17, 0.06, 0.17); }
+    B.add(GEO.box, 0xe8e2d0, 0, 0.58, 0.12, 0.05, 0, 0, 0.3, 0.34, 0.03);             // tabard skirt
+    G.add(GEO.sphLo, 0xffe08a, 0, 1.02, 0.2, 0, 0, 0, 0.07, 0.07, 0.02);               // sun emblem
+    B.add(GEO.cyl, 0xd8c070, 0, 1.0, -0.27, Math.PI / 2, 0, 0, 0.36, 0.05, 0.36);       // shield rim
+    B.add(GEO.cyl, 0xe8e2d0, 0, 1.0, -0.3, Math.PI / 2, 0, 0, 0.32, 0.04, 0.32);        // shield face
+    G.add(GEO.sphLo, 0xffd36a, 0, 1.0, -0.33, 0, 0, 0, 0.09, 0.09, 0.02);              // shield boss
+    const h = hm.hands[1];
+    B.limb([h[0], 0.1, h[2]], [h[0], 1.05, h[2]], 0.028, 0x6a4a2a);                    // hammer haft (head down)
+    B.add(GEO.box, 0x9aa3ad, h[0], 0.12, h[2], 0, 0, 0, 0.26, 0.15, 0.15);
+    const hd = head(H, { skin: SKIN.warm, headR: 0.235, eye: 0x3a3a4a, brows: 0xeeeae0, browTilt: 0.1, closedEyes: true });
+    hair(H, hd.R, hd.cy, 'short', 0xeeeae0);
+    H.add(GEO.cone, 0xf2efe6, 0, hd.cy - hd.R * 0.9, hd.R * 0.6, Math.PI + 0.2, 0, 0, hd.R * 0.6, hd.R * 1.2, hd.R * 0.42); // beard
+    H.add(GEO.sph, 0xf2efe6, 0, hd.cy - hd.R * 0.4, hd.R * 0.7, 0, 0, 0, hd.R * 0.6, hd.R * 0.32, hd.R * 0.38);
+    return { top: 1.34 + hd.R * 2 + 0.05, merged: true };
+  },
+  // 정령술사 스승 세리아 — dreamy: flowing teal robe, flower crown, totem staff with charms, a little glowing bird
+  spiritMentor(B, H, G) {
+    const o = { skin: SKIN.light, torso: 0x3a8a7a, sleeve: 0x4aa08a, robe: { color: 0x2f7a6a, len: 0.82, flare: 0.44, hem: 0xc8f06a },
+      torsoTop: 0.18, torsoBot: 0.19, belt: 0xc8f06a, armPose: 'staffR', collar: 0xe9f0c0 };
+    const hm = humanoid(B, o);
+    const h = hm.hands[1];
+    B.limb([h[0], 0.0, h[2]], [h[0] + 0.02, 1.7, h[2]], 0.03, 0x8a6a3a);              // totem staff
+    B.add(GEO.cyl, 0x6a4a2a, h[0] + 0.02, 1.75, h[2], 0, 0, 0, 0.08, 0.16, 0.08);
+    for (let i = 0; i < 3; i++) G.add(GEO.sphLo, [0x9be86a, 0x6fc8ff, 0xffe08a][i], h[0] + 0.02 + Math.cos(i * 2.1) * 0.12, 1.62 - i * 0.05, h[2] + Math.sin(i * 2.1) * 0.12, 0, 0, 0, 0.035);
+    G.add(GEO.sph, 0xc8f06a, -0.3, 1.32, 0.02, 0, 0, 0, 0.06, 0.05, 0.08);             // bird on the shoulder
+    const hd = head(H, { skin: SKIN.light, headR: 0.235, eye: 0x2f6a5a, closedEyes: true, mouth: true });
+    hair(H, hd.R, hd.cy, 'long', 0x3a5a8a);
+    for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; H.add(GEO.sphLo, i % 2 ? 0xffb8d8 : 0xfff2a8, Math.sin(a) * hd.R * 0.95, hd.cy + hd.R * 0.62, Math.cos(a) * hd.R * 0.92, 0, 0, 0, hd.R * 0.14); }
+    return { top: 1.32 + hd.R * 2 + 0.08, merged: true };
+  },
+  // 암살자 스승 카이렌 — wry ex-thief: dark violet leathers, hood up, scarf mask, twin daggers on the hips
+  shadowMentor(B, H, G) {
+    const o = { skin: SKIN.tan, torso: 0x2e2340, sleeve: 0x3a2a52, forearm: 0x2a2030, legs: 0x241c30, shoes: 0x1a1420,
+      belt: 0x5a3a6a, armPose: 'crossed', shoulderW: 0.29, gloves: 0x1a1420 };
+    humanoid(B, o);
+    B.add(GEO.cone, 0x2a1f3a, 0, 0.9, -0.12, -0.08, 0, 0, 0.32, 0.8, 0.12);            // cape
+    for (const s of [-1, 1]) {
+      B.add(GEO.box, 0x3a2a20, s * 0.24, 0.62, 0.05, 0, 0, s * 0.3, 0.05, 0.16, 0.05);  // dagger grips
+      B.add(GEO.box, 0xcfd6de, s * 0.27, 0.46, 0.05, 0, 0, s * 0.3, 0.03, 0.22, 0.012);
+    }
+    G.add(GEO.box, 0xb14bff, 0, 0.72, 0.19, 0, 0, 0, 0.18, 0.02, 0.01);                // belt rune
+    const hd = head(H, { skin: SKIN.tan, headR: 0.23, eye: 0x6a3aa8, brows: 0x1a1420, browTilt: -0.3, cheeks: false });
+    hair(H, hd.R, hd.cy, 'swept', 0x1a1420);
+    H.add(GEO.cap, 0x2a1f3a, 0, hd.cy + hd.R * 0.05, -hd.R * 0.05, -0.2, 0, 0, hd.R * 1.18, hd.R * 1.15, hd.R * 1.18); // hood
+    H.add(GEO.sph, 0x3a2a52, 0, hd.cy - hd.R * 0.42, hd.R * 0.58, 0, 0, 0, hd.R * 0.9, hd.R * 0.4, hd.R * 0.5); // scarf mask
+    return { top: 1.3 + hd.R * 2 + 0.08, merged: true };
+  },
+  // 기록관 이솔데 — scholar: lavender robe, silver braid, round spectacles, a glowing book in hand
+  sage(B, H, G) {
+    const o = { skin: SKIN.light, torso: 0x6a5a9a, sleeve: 0x7a6aaa, robe: { color: 0x5a4a8a, len: 0.86, flare: 0.4, hem: 0xe6d2ff },
+      torsoTop: 0.18, torsoBot: 0.2, belt: 0xe6d2ff, armPose: 'front', collar: 0xe6d2ff };
+    const hm = humanoid(B, o);
+    const h = hm.hands[0];
+    B.add(GEO.box, 0x6a3a2a, h[0] + 0.12, h[1] + 0.06, h[2] + 0.06, 0.4, 0.2, 0, 0.26, 0.04, 0.2);  // book
+    G.add(GEO.box, 0xffe9a8, h[0] + 0.12, h[1] + 0.09, h[2] + 0.06, 0.4, 0.2, 0, 0.22, 0.01, 0.16); // glowing pages
+    const hd = head(H, { skin: SKIN.light, headR: 0.235, eye: 0x4a3a7a, brows: 0xd8d8e8 });
+    hair(H, hd.R, hd.cy, 'long', 0xd8d8e8);
+    for (const s of [-1, 1]) H.add(GEO.torus, 0xc8a050, s * hd.R * 0.36, hd.cy + hd.R * 0.02, hd.R * 0.95, 0, 0, 0, hd.R * 0.17, hd.R * 0.17, hd.R * 0.17); // spectacles
+    return { top: 1.32 + hd.R * 2 + 0.05, merged: true };
+  },
+  // 미르웬 호수지기 나엘 — old fisher spirit-folk: blue oilskin coat, wide straw hat, fin-ears, a long rod
+  lakeKeeper(B, H, G) {
+    const o = { skin: 0xb8d8d0, torso: 0x2f5f8a, sleeve: 0x2f5f8a, robe: { color: 0x2a5478, len: 0.62, flare: 0.33 }, belt: 0x5a3a22, armPose: 'rodR', torsoY1: 1.14 };
+    const hm = humanoid(B, o);
+    const h = hm.hands[1];
+    B.limb([h[0] - 0.05, h[1] - 0.15, h[2] - 0.2], [h[0] + 0.1, h[1] + 1.4, h[2] + 1.0], 0.018, 0x8a6a3a, 0.008);
+    B.add(GEO.cyl, 0x6a7a82, -0.32, 0.14, 0.18, 0, 0, 0, 0.13, 0.26, 0.13);           // creel
+    const hd = head(H, { skin: 0xb8d8d0, headR: 0.24, closedEyes: true, brows: 0xe8f0f0 });
+    H.add(GEO.sph, 0xe8f0f0, 0, hd.cy - hd.R * 0.5, hd.R * 0.7, 0, 0, 0, hd.R * 0.55, hd.R * 0.32, hd.R * 0.3); // whiskers
+    for (const s of [-1, 1]) G.add(GEO.cone, 0x6fc8ff, s * hd.R * 1.05, hd.cy + hd.R * 0.1, -hd.R * 0.1, 0, 0, s * -1.2, hd.R * 0.16, hd.R * 0.45, hd.R * 0.05); // fin ears
+    H.add(GEO.cyl, 0xd8c070, 0, hd.cy + hd.R * 0.7, 0, -0.08, 0, 0, hd.R * 2.3, hd.R * 0.05, hd.R * 2.3);  // straw hat
+    H.add(GEO.cone, 0xc8b060, 0, hd.cy + hd.R * 1.0, 0, -0.08, 0, 0, hd.R * 0.95, hd.R * 0.6, hd.R * 0.95);
+    return { lean: 0.1, top: 1.14 + 0.1 + hd.R * 2 + 0.15, merged: true };
+  },
+  // 숲정령 아이 모모 — Korok-like: round leafy body, twig limbs, a big leaf mask with a sprout
+  forestChild(B, H, G) {
+    for (const s of [-1, 1]) { B.limb([s * 0.06, 0.0, 0], [s * 0.07, 0.24, 0], 0.025, 0x7a5a32); B.add(GEO.sph, 0x5a3a22, s * 0.06, 0.02, 0.03, 0, 0, 0, 0.04, 0.03, 0.06); }
+    B.add(GEO.sph, 0x6aa84a, 0, 0.38, 0, 0, 0, 0, 0.17, 0.18, 0.15);                  // body
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; B.add(GEO.sph, 0x8fd05a, Math.sin(a) * 0.15, 0.3, Math.cos(a) * 0.13, 0.4 * Math.cos(a), 0, -0.4 * Math.sin(a), 0.07, 0.12, 0.03); } // leaf skirt
+    for (const s of [-1, 1]) B.limb([s * 0.14, 0.44, 0], [s * 0.26, 0.32, 0.06], 0.018, 0x7a5a32);
+    lastNeck = 0.52;
+    H.add(GEO.sph, 0x4a8a3a, 0, 0.14, 0, 0, 0, 0, 0.17, 0.17, 0.16);                  // head
+    H.add(GEO.sph, 0xa8d86a, 0, 0.16, 0.13, 0, 0, 0, 0.21, 0.24, 0.04);                // leaf mask
+    H.add(GEO.box, 0x6a9a3a, 0, 0.16, 0.17, 0, 0, 0, 0.012, 0.36, 0.01);               // mask vein
+    for (const s of [-1, 1]) H.add(GEO.sphLo, 0x1a2a10, s * 0.07, 0.2, 0.17, 0, 0, 0, 0.035, 0.045, 0.02); // eye holes
+    H.limb([0, 0.3, 0], [0.02, 0.44, -0.02], 0.012, 0x7a5a32);                        // sprout
+    G.add(GEO.sph, 0xc8f06a, 0.03, 0.5, -0.02, 0, 0, 0.6, 0.05, 0.02, 0.035);
+    return { top: 0.95, hop: true, merged: true };
+  },
+  // 반응 수련장 관리인 하람 — sturdy: orange work vest, headband, rolled sleeves, arms crossed
+  trainer(B, H, G) {
+    const o = { skin: SKIN.tan, torso: 0xd8782a, sleeve: 0xf2e6c8, forearm: SKIN.tan, legs: 0x5a4a3a, shoes: 0x3a2a20,
+      torsoTop: 0.25, torsoBot: 0.23, belt: 0x3a2a1a, armPose: 'crossed', shoulderW: 0.31, armR: 0.07, torsoDepth: 0.86 };
+    humanoid(B, o);
+    for (let i = 0; i < 4; i++) G.add(GEO.sphLo, [0xff6a1f, 0x7fe3ff, 0xc9a4ff, 0x9be86a][i], -0.12 + i * 0.08, 0.76, 0.2, 0, 0, 0, 0.025); // element beads
+    const hd = head(H, { skin: SKIN.tan, headR: 0.235, eye: 0x2a1a10, brows: 0x2a1a10, browTilt: -0.2, mouth: true });
+    hair(H, hd.R, hd.cy, 'spiky', 0x2a1a10);
+    H.add(GEO.cyl, 0xd83a2a, 0, hd.cy + hd.R * 0.45, 0, -0.1, 0, 0, hd.R * 1.06, hd.R * 0.14, hd.R * 1.06); // headband
+    return { top: 1.32 + hd.R * 2 + 0.12, merged: true };
+  },
+  // 물의 정령 운디나 — a translucent blue maiden with a fish tail, flowing hair, droplets
+  undina(B, H, G) {
+    const body = 0x5fb8f0, deep = 0x2f7ad0;
+    for (let i = 0; i < 6; i++) { const k = i / 5; B.add(GEO.sph, i % 2 ? body : deep, Math.sin(k * 2.2) * 0.18, 0.18 + k * 0.62, -0.12 + Math.cos(k * 2) * 0.1, 0, 0, 0, 0.2 - k * 0.04, 0.16, 0.18 - k * 0.03); } // tail coil
+    B.add(GEO.cone, 0x9fe8ff, 0.3, 0.12, -0.05, 0, 0, -1.2, 0.16, 0.34, 0.04);          // tail fin
+    const o = { skin: 0x9fd8ff, torso: body, sleeve: 0x7fd3ff, torsoY0: 0.78, torsoY1: 1.26, torsoTop: 0.17, torsoBot: 0.16, armPose: 'front', collar: 0xffffff, legs: body, shoes: body };
+    const g = new THREE.CylinderGeometry(o.torsoTop, o.torsoBot, o.torsoY1 - o.torsoY0, 12); g.deleteAttribute('uv');
+    _m.compose(_p.set(0, (o.torsoY0 + o.torsoY1) / 2, 0), _q.identity(), _s.set(1, 1, 0.78)); B.addM(g, body, _m); g.dispose();
+    for (const s of [-1, 1]) { B.limb([s * 0.22, 1.2, 0], [s * 0.32, 0.98, 0.12], 0.05, 0x9fd8ff); B.limb([s * 0.32, 0.98, 0.12], [s * 0.12, 1.02, 0.28], 0.042, 0x9fd8ff); }
+    lastNeck = 1.32;
+    const hd = head(H, { skin: 0x9fd8ff, headR: 0.23, eye: 0x1f4f9a, closedEyes: true });
+    hair(H, hd.R, hd.cy, 'long', 0x2f8ad8);
+    H.add(GEO.sph, 0x4fa8f0, 0, hd.cy - hd.R * 1.4, -hd.R * 0.9, 0.5, 0, 0, hd.R * 0.8, hd.R * 2.2, hd.R * 0.4);   // flowing hair
+    for (let i = 0; i < 6; i++) G.add(GEO.sphLo, 0xbff0ff, Math.cos(i * 1.3) * 0.5, 0.5 + i * 0.25, Math.sin(i * 1.3) * 0.5, 0, 0, 0, 0.045);  // droplets
+    G.add(GEO.torus, 0x9fe8ff, 0, 1.75, 0, Math.PI / 2, 0, 0, 0.2, 0.2, 0.2);           // water crown
+    return { top: 2.0, merged: true, spirit: true, scale: 1.25 };
+  },
+  // 자연의 정령 실바니아 — an antlered deer wreathed in flowering vines (quadruped; head built into the body)
+  sylvania(B, H, G) {
+    const fur = 0xd8c8a0, fur2 = 0xb89a6a;
+    B.add(GEO.sph, fur, 0, 1.0, 0, 0, 0, 0, 0.32, 0.3, 0.62);                          // barrel
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      B.limb([sx * 0.16, 0.9, sz * 0.4], [sx * 0.15, 0.45, sz * 0.42], 0.06, fur2, 0.07);
+      B.limb([sx * 0.15, 0.45, sz * 0.42], [sx * 0.15, 0.04, sz * 0.4], 0.035, fur2, 0.05);
+      B.add(GEO.sph, 0x4a3a2a, sx * 0.15, 0.03, sz * 0.4 + 0.02, 0, 0, 0, 0.045, 0.035, 0.055);
+    }
+    B.limb([0, 1.1, 0.45], [0, 1.55, 0.62], 0.12, fur, 0.15);                          // neck
+    B.add(GEO.sph, fur, 0, 1.66, 0.72, 0.3, 0, 0, 0.14, 0.15, 0.22);                   // head
+    B.add(GEO.sph, 0x3a2a20, 0, 1.6, 0.92, 0, 0, 0, 0.04);                             // nose
+    for (const s of [-1, 1]) {
+      B.add(GEO.sphLo, 0x1a1410, s * 0.1, 1.72, 0.82, 0, 0, 0, 0.03, 0.035, 0.02);
+      B.add(GEO.cone, fur, s * 0.15, 1.82, 0.66, 0, 0, s * -1.0, 0.04, 0.16, 0.03);   // ears
+      // antlers: two-tier branches
+      B.limb([s * 0.07, 1.8, 0.66], [s * 0.25, 2.2, 0.58], 0.022, 0xe8dcc0, 0.014);
+      B.limb([s * 0.25, 2.2, 0.58], [s * 0.42, 2.45, 0.5], 0.014, 0xe8dcc0, 0.008);
+      B.limb([s * 0.18, 2.08, 0.6], [s * 0.12, 2.35, 0.7], 0.012, 0xe8dcc0, 0.007);
+      for (let i = 0; i < 3; i++) G.add(GEO.sphLo, i % 2 ? 0xffb8d8 : 0xfff2a8, s * (0.2 + i * 0.1), 2.15 + i * 0.12, 0.6 - i * 0.03, 0, 0, 0, 0.045);
+    }
+    for (let i = 0; i < 8; i++) { const a = i * 0.8; B.add(GEO.sph, 0x5a9a3a, Math.sin(a) * 0.3, 1.0 + Math.cos(a * 1.3) * 0.2, -0.5 + i * 0.13, 0, a, 0, 0.06, 0.04, 0.09); } // vines
+    B.add(GEO.cone, fur2, 0, 1.08, -0.62, -2.2, 0, 0, 0.06, 0.16, 0.04);               // tail
+    lastNeck = 1.6;
+    return { top: 2.6, merged: true, spirit: true, scale: 1.2 };
+  },
+  // 그림자의 정령 녹스 — raven-winged shadow knight: dark plate, folded raven wings, a violet visor slit
+  nox(B, H, G) {
+    const o = { skin: 0x2a2236, torso: 0x241c30, sleeve: 0x2e2440, forearm: 0x3a3048, legs: 0x1e1828, shoes: 0x141018,
+      torsoTop: 0.27, torsoBot: 0.22, torsoY1: 1.28, belt: 0x5a3a7a, armPose: 'staffR', shoulderW: 0.33, armR: 0.075, gloves: 0x1a1420, torsoDepth: 0.82 };
+    const hm = humanoid(B, o);
+    for (const s of [-1, 1]) {
+      B.add(GEO.sph, 0x3a3048, s * 0.34, 1.24, 0, 0, 0, s * 0.4, 0.17, 0.1, 0.17);
+      for (let i = 0; i < 4; i++) B.add(GEO.cone, i % 2 ? 0x1a1424 : 0x2a2038, s * (0.25 + i * 0.12), 1.1 - i * 0.12, -0.28, 0.2, 0, s * (1.9 + i * 0.25), 0.1, 0.7 - i * 0.08, 0.03); // wing feathers
+    }
+    const h = hm.hands[1];
+    B.limb([h[0], 0.05, h[2]], [h[0], 1.5, h[2]], 0.02, 0x2a2038);                     // blade (planted)
+    G.add(GEO.box, 0xb14bff, h[0], 0.8, h[2] + 0.02, 0, 0, 0, 0.012, 1.2, 0.01);
+    const hd = head(H, { skin: 0x2a2236, headR: 0.24, eye: 0x2a2236, cheeks: false, closedEyes: true });
+    H.add(GEO.sph, 0x2e2440, 0, hd.cy + hd.R * 0.1, 0, 0, 0, 0, hd.R * 1.12, hd.R * 1.08, hd.R * 1.1);          // helm
+    H.add(GEO.cone, 0x1a1424, 0, hd.cy + hd.R * 1.2, -hd.R * 0.4, -0.7, 0, 0, hd.R * 0.3, hd.R * 0.9, hd.R * 0.2); // crest
+    G.add(GEO.box, 0xc98bff, 0, hd.cy + hd.R * 0.05, hd.R * 1.05, 0, 0, 0, hd.R * 0.9, hd.R * 0.08, hd.R * 0.05); // visor glow
+    return { top: 1.38 + hd.R * 2 + 0.2, merged: true, spirit: true, scale: 1.15, glowOnHead: true };
+  },
+  // 빛의 정령 루미엘 — six golden wings, white-gold robe, a halo
+  lumiel(B, H, G) {
+    const o = { skin: 0xfff0d8, torso: 0xfff6e0, sleeve: 0xfff0d0, robe: { color: 0xfff2d8, len: 0.9, flare: 0.46, hem: 0xffd36a },
+      torsoTop: 0.17, torsoBot: 0.18, belt: 0xffd36a, armPose: 'front', collar: 0xffd36a };
+    humanoid(B, o);
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+      const a = 0.5 + i * 0.55;
+      B.add(GEO.cone, i === 1 ? 0xffe8a8 : 0xfff2c8, s * (0.3 + Math.cos(a) * 0.35), 1.15 + Math.sin(a) * 0.4 - i * 0.18, -0.25, 0.15, 0, s * (2.2 - i * 0.5), 0.12, 0.9 - i * 0.12, 0.03); // 6 wings
+    }
+    const hd = head(H, { skin: 0xfff0d8, headR: 0.23, eye: 0xc89a3a, closedEyes: true });
+    hair(H, hd.R, hd.cy, 'long', 0xfff2b0);
+    G.add(GEO.torus, 0xffe08a, 0, hd.cy + hd.R * 1.35, -hd.R * 0.2, Math.PI / 2 - 0.25, 0, 0, hd.R * 0.75, hd.R * 0.75, hd.R * 0.75); // halo
+    return { top: 1.32 + hd.R * 2 + 0.35, merged: true, spirit: true, scale: 1.2, glowOnHead: true };
+  },
+});
+
 /**
  * Build an NPC model. Returns {root, body, headPivot, headMesh, glow, outlines[], info}.
  * root: Group at feet; bodyPivot: breathing/sway; headPivot at the neck.
@@ -386,21 +588,38 @@ export function buildNpcModel(kind) {
   const neckY = lastNeck;
   const root = new THREE.Group(); root.name = 'npc_' + kind;
   const bodyPivot = new THREE.Group(); root.add(bodyPivot);
-  const body = new THREE.Mesh(B.build(), mat); body.castShadow = true; body.receiveShadow = false;
-  bodyPivot.add(body);
-  const headPivot = new THREE.Group(); headPivot.position.set(0, neckY, info.lean ? info.lean * 0.5 : 0);
+  const headZ = info.lean ? info.lean * 0.5 : 0;
+  const headPivot = new THREE.Group(); headPivot.position.set(0, neckY, headZ);
   bodyPivot.add(headPivot);
-  const headMesh = new THREE.Mesh(H.build(), mat); headMesh.castShadow = false;
-  headPivot.add(headMesh);
-  const outlines = [addOutline(body, 0.018), addOutline(headMesh, 0.016)];
+  let body, headMesh, outlines;
+  if (info.merged) {
+    // merged pipeline: head geometry baked into the body (one mesh + one outline); the head pivot stays (empty)
+    const bg = B.build(), hg = H.build();
+    if (hg) hg.translate(0, neckY, headZ);
+    const geo = hg ? mergeGeometries([bg, hg], false) : bg;
+    if (hg) { bg.dispose(); hg.dispose(); geo.computeBoundingSphere(); }
+    body = new THREE.Mesh(geo, mat); body.castShadow = !info.spirit; body.receiveShadow = false;
+    bodyPivot.add(body);
+    headMesh = body;
+    outlines = [addOutline(body, 0.018)];
+  } else {
+    body = new THREE.Mesh(B.build(), mat); body.castShadow = true; body.receiveShadow = false;
+    bodyPivot.add(body);
+    headMesh = new THREE.Mesh(H.build(), mat); headMesh.castShadow = false;
+    headPivot.add(headMesh);
+    outlines = [addOutline(body, 0.018), addOutline(headMesh, 0.016)];
+  }
   let glow = null;
   const gg = G.build();
   if (gg) {
+    if (info.merged && info.glowOnHead) gg.translate(0, neckY, headZ);
     glow = new THREE.Mesh(gg, gmat); glow.castShadow = false;
     if (info.orb) glow.position.set(0.5, 1.25, 0.25);
-    (info.glowOnHead ? headPivot : bodyPivot).add(glow);
+    (info.glowOnHead && !info.merged ? headPivot : bodyPivot).add(glow);
   }
+  if (info.scale) root.scale.setScalar(info.scale);
   if (info.lean) bodyPivot.rotation.x = info.lean * 0.5;
   for (const m of [body, headMesh, glow, ...outlines]) if (m) m.frustumCulled = true;
+  if (!info.top) { body.geometry.computeBoundingBox(); info.top = body.geometry.boundingBox.max.y; }
   return { root, bodyPivot, body, headPivot, headMesh, glow, outlines, info, neckY };
 }

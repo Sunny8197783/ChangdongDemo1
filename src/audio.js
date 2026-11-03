@@ -1,12 +1,21 @@
-// Audio module: every sound is synthesized with WebAudio (no files).
+// Audio module v3: every sound is synthesized with WebAudio (no files).
 // play(name, {position, volume, pitch, exactPitch, force}), loop(name, opts) -> {stop, setVolume, setPitch, setPosition, alive},
-// resume(), setMusic(theme|null), setVolume('master'|'music'|'sfx', v), setMuted(m), toggleMute().
+// resume(), setMusic(theme|null), setVolume('master'|'music'|'sfx', v), setMuted(m), toggleMute(), duck(v, s), silence(s).
+// v3 (CONTRACT §20): 9-element recipes (audio/sfx3.js), rx_<id> map lookup with a family fallback, class weapon sfx, UI cues,
+// boss voices; zone music via world.getZoneAt().music, the final_boss layer by bossPhase, the fanfare on bossDefeated{final}.
 import { Engine } from './audio/synth.js';
 import { SOUNDS as BASE_SOUNDS } from './audio/sounds.js';
 import { SFX2 } from './audio/sfx2.js';
+import { SFX3, RX_CUES, RX_FAMILY } from './audio/sfx3.js';
+import { THEMES3 } from './audio/themes3.js';
 import { Music, Ambience } from './audio/music.js';
+import { ELEMENT_DEFS, ALL_ELEMENTS } from './core/elements.js';
+import { CLASS_DEFS, familyOf, styleOf } from './core/classes.js';
 
-const SOUNDS = Object.assign(BASE_SOUNDS, SFX2);
+const SOUNDS = Object.assign(BASE_SOUNDS, SFX2, SFX3);
+const CHARGE_K = 0.5;           // charge loop base = ELEMENT_DEFS[el].sfxBase × CHARGE_K (rises ×2 while charging)
+const WEAPON_SFX = { bow: 'bow_release', hammer: 'hammer_swing', daggers: 'dagger_swish', totem: 'totem_rattle' };
+const CUE_LOG_N = 64;
 const DEDUPE = 0.045;         // same sound name within this window is skipped (events + direct calls overlap)
 const DEDUPE_BY = { dialogue_blip: 0.028, footstep: 0.06 };
 const MAX_VOICES = 44;
@@ -16,9 +25,10 @@ const PER_NAME = {
   footstep: 3, dialogue_blip: 3, sword_swing: 4, sword_swing_heavy: 3, sword_hit: 5, sword_hit_heavy: 3, hit: 5,
   parry: 2, perfect_dodge: 1, finisher_charge: 1, finisher_impact: 2, blessing: 2, spirit_chime: 4, quest_complete: 1,
   quest_start: 1, awakening_ready: 1, cinematic_whoosh: 3, grass_ignite: 3, enemy_hurt: 3, ui_select: 3, ui_click: 3,
+  victory: 1, level_up: 1, break_gong: 2, resonance: 2, wyrm_roar: 1, hydra_roar: 1, treant_groan: 1, xp_tick: 2, firework: 4,
 };
 const MUSIC_BASE = 0.26, SFX_BASE = 0.95, AMB_BASE = 0.4;
-const THEMES = ['title', 'intro', 'village', 'field', 'battle', 'boss', 'ending'];
+const THEMES = ['title', 'intro', 'village', 'field', 'battle', 'boss', 'ending', ...Object.keys(THEMES3)];
 const REF_DIST = 6, ROLLOFF = 14, CULL_GAIN = 0.05;
 
 export function createAudio(game) {
@@ -104,8 +114,12 @@ export function createAudio(game) {
   }
 
   // ---------- play ----------
+  // every requested cue is logged (even when silent / headless) so tests can assert which cues fired
+  const cueLog = []; const cueCount = Object.create(null);
+  function logCue(name) { cueCount[name] = (cueCount[name] || 0) + 1; if (cueLog.length >= CUE_LOG_N) cueLog.shift(); cueLog.push(name); }
   function play(name, opts) {
     try {
+      logCue(name);
       if (!E || ctx.state !== 'running' || muted) return;
       const recipe = SOUNDS[name];
       if (!recipe) return;
@@ -158,7 +172,7 @@ export function createAudio(game) {
   // ---------- loops ----------
   function makeCharge(o) {
     const now = ctx.currentTime;
-    const base = { fire: 98, ice: 130.8, lightning: 116.5, wind: 110, earth: 82.4 }[o.element] || 110;
+    const base = (ELEMENT_DEFS[o.element]?.sfxBase || 220) * CHARGE_K;
     const out = ctx.createGain(); out.gain.value = 0;
     const vol = o.volume ?? 0.55;
     out.gain.setTargetAtTime(vol, now, 0.06);
@@ -389,12 +403,25 @@ export function createAudio(game) {
     const st = game.state;
     if (now < victoryUntil) return 'victory';
     if (st === 'title') return 'title';
-    if (st === 'victory') return 'ending';
+    if (st === 'victory') return 'ending_v3';
     const boss = game.enemies?.boss;
     const pp = game.player?.object?.position;
-    if (boss && boss.alive && (!pp || boss.object.position.distanceTo(pp) < 75)) return 'boss';
+    if (boss && boss.alive !== false && !boss.defeated && (!pp || !boss.object || boss.object.position.distanceTo(pp) < (boss.isFinalBoss ? 140 : 75))) {
+      const bid = boss.bossId || boss.id;
+      return bid === 'nidhoggra' || boss.isFinalBoss || boss.music === 'final_boss' ? 'final_boss' : 'boss';
+    }
     if (st === 'playing' || st === 'paused' || st === 'dead') { if (game.enemies?.inCombat) return 'battle'; }
-    const vil = game.world?.village;
+    // zone music (world v3): village / field / mirwen / elderwood / sky; the plateau is 'sky' until the wyrm is up
+    const W = game.world;
+    if (pp && W?.getZoneAt) {
+      let z = null; try { z = W.getZoneAt(pp.x, pp.z); } catch (_) { z = null; }
+      let m = z?.music;
+      if (m === 'final_boss') m = 'sky';
+      if (m === 'village') { inVillage = true; return 'village'; }
+      if (m && m !== 'field' && THEMES.includes(m)) return m;
+      if (m === 'field') { inVillage = false; return 'field'; }
+    }
+    const vil = W?.village;
     if (vil?.center && pp) {
       const dx = pp.x - vil.center.x, dz = pp.z - vil.center.z, r = vil.radius || 40;
       const d2 = dx * dx + dz * dz;
@@ -402,6 +429,14 @@ export function createAudio(game) {
       return inVillage ? 'village' : 'field';
     }
     return 'field';
+  }
+  /** Cut the music bus for `seconds` (ultimate hitstop, the finale's 0.4 s of silence). */
+  let silenceUntil = 0;
+  function silence(seconds = 0.4) {
+    if (!E) return;
+    const now = ctx.currentTime; silenceUntil = now + seconds;
+    for (const b of [E.music.gain, E.musicSend.gain]) { b.cancelScheduledValues(now); b.setTargetAtTime(0.0001, now, 0.015); }
+    musicDuck = -1;
   }
   function setMusic(theme) {
     if (theme === 'explore') theme = 'field';
@@ -426,7 +461,16 @@ export function createAudio(game) {
     sounds: Object.keys(SOUNDS),
     loops: Object.keys(LOOPS),
     themes: THEMES.slice(),
-    resume, play, loop, setMuted, setMusic, setVolume,
+    resume, play, loop, setMuted, setMusic, setVolume, silence,
+    duck(v = 0.5, seconds = 1) { duck(v, seconds); },
+    unsilence() { silenceUntil = 0; musicDuck = -1; },
+    /** Test hooks: how often a cue was requested (logged even when silent), the last cues, the fanfare count. */
+    cueCount(name) { return cueCount[name] || 0; },
+    get lastCues() { return cueLog.slice(); },
+    fanfareCount: 0,
+    get musicLayer() { return music?.bossPhase || 1; },
+    /** The mode pickMode() would choose now (works headless). */
+    wantedMode() { try { return pickMode(); } catch (_) { return null; } },
     toggleMute() { setMuted(!muted); },
 
     init() {
@@ -437,6 +481,7 @@ export function createAudio(game) {
         if (p.kind === 'heavy') play('cast_heavy', { position: pos, volume: 0.8 });
         if (p.kind === 'ultimate') {
           play('ultimate', { position: pos, volume: 1 });
+          duck(0.63, 0.3); silence(0.04);
           if (p.element === 'fire' || p.element === 'earth') play('meteor_fall', { position: pos, volume: 0.6 });
           if (p.element === 'lightning') setTimeout(() => play('thunder', { volume: 0.8 }), 400);
         }
@@ -451,7 +496,7 @@ export function createAudio(game) {
         const amt = Math.min(1.3, 0.6 + (p.amount || 10) / 60);
         play('hit', { position: pos, volume: 0.75 * amt * big, pitch: p.crit ? 0.85 : 1 });
         if (p.element && p.element !== 'physical') play('impact_' + p.element, { position: pos, volume: 0.7 * big });
-        if (p.crit) play('crit', { position: pos, volume: 0.9 });
+        if (p.crit) { play('crit', { position: pos, volume: 0.9 }); duck(0.63, 0.3); }
         if (!p.killed && !p.target?.isDummy && now - hurtT > 0.12 && Math.random() < 0.6) {
           hurtT = now;
           play(p.target?.isBoss ? 'boss_hurt' : 'enemy_hurt', { position: pos, volume: 0.6, pitch: p.target?.mass > 2 ? 0.55 : 1 });
@@ -459,16 +504,11 @@ export function createAudio(game) {
       });
       ev.on('reaction', (p) => {
         const pos = p.point;
-        play('reaction', { position: pos, volume: 1 });
-        switch (p.id) {
-          case 'shatter': play('shatter', { position: pos, volume: 1.1 }); break;
-          case 'melt': case 'evaporate': case 'steam_burst': play('steam', { position: pos }); break;
-          case 'electrocute': case 'overload': case 'superconduct': play('thunder', { position: pos, volume: p.id === 'overload' ? 0.8 : 0.5 }); break;
-          case 'magma': case 'skyslam': play('explode_earth', { position: pos, volume: 0.8 }); break;
-          case 'swirl': case 'updraft': play('explode_wind', { position: pos, volume: 0.7 }); break;
-          case 'flashfreeze': play('impact_ice', { position: pos }); break;
-          default: break;
-        }
+        const cue = RX_CUES[p.id];
+        const fam = p.family || game.combat?.REACTION_DEFS?.[p.id]?.family || null;
+        play('reaction', { position: pos, volume: 0.7 });
+        if (cue && SOUNDS[cue[0]]) play(cue[0], { position: pos, volume: 1, pitch: cue[1] });
+        else if (fam && RX_FAMILY[fam]) play(RX_FAMILY[fam], { position: pos, volume: 1 });
       });
       ev.on('zoneCombo', (p) => {
         play('combo', { position: p.point, volume: 1 });
@@ -486,14 +526,66 @@ export function createAudio(game) {
       ev.on('footstep', (p) => { stepAlt ^= 1; play('footstep', { position: p.position, volume: 0.55, pitch: stepAlt ? 1.06 : 0.92 }); });
       ev.on('glideStart', (p) => { play('glide', { position: p.position, volume: 0.8 }); glideLoop?.stop(); glideLoop = loop('glide', { volume: 0.35 }); });
       ev.on('glideEnd', () => { glideLoop?.stop(0.3); glideLoop = null; });
-      ev.on('chargeStart', (p) => { chargeLoop?.stop(); chargeLoop = loop('charge', { element: p.element, volume: 0.45 }); });
+      ev.on('chargeStart', (p) => {
+        chargeLoop?.stop(); chargeLoop = loop('charge', { element: p.element, volume: 0.45 });
+        if (styleOf(game.progression?.cls) === 'bow') play('bow_draw', { volume: 0.8 });
+      });
       ev.on('chargeEnd', () => { chargeLoop?.stop(); chargeLoop = null; });
       ev.on('elementChanged', () => play('ui_select', { volume: 0.7 }));
       ev.on('spellFail', (p) => play(p.reason === 'mana' ? 'mana_empty' : 'cooldown', { volume: 0.8 }));
-      ev.on('bossSpawn', (p) => { play('boss_roar', { position: p.boss?.object?.position, volume: 1.3 }); modeTimer = 0; });
-      ev.on('bossDefeated', (p) => { play('explode_earth', { position: p.boss?.object?.position, volume: 1.2, pitch: 0.6 }); });
+      ev.on('bossSpawn', (p) => { play('boss_roar', { position: p.boss?.object?.position, volume: 1.3 }); if (music) { music.bossPhase = 1; music.motifs.length = 0; } modeTimer = 0; });
+      ev.on('bossDefeated', (p) => {
+        play('explode_earth', { position: p.boss?.object?.position, volume: 1.2, pitch: 0.6 });
+        if (p?.final) {   // the victory fanfare plays at the final kill (DESIGN §11); `victory` itself plays nothing new
+          play('victory', { volume: 1 }); duck(0.2, 6);
+          if (ctx) victoryUntil = ctx.currentTime + 9;
+          music?.setMode('victory');
+          api.fanfareCount++;
+        }
+        modeTimer = 0;
+      });
+      ev.on('bossPhase', (p) => {
+        if (music && (p?.id === 'nidhoggra' || p?.boss?.isFinalBoss)) music.bossPhase = Math.max(1, Math.min(3, p.phase || 1));
+        play('cinematic_whoosh', { volume: 0.6, pitch: 0.7 });
+      });
+      ev.on('shardBuff', (p) => { const el = p?.element; if (music && el && !music.motifs.includes(el)) music.motifs.push(el); play('lock_strip', { volume: 0.9, pitch: 0.8 }); });
+      ev.on('lockStripped', (p) => {
+        play('lock_strip', { volume: 0.9 });
+        const el = p?.lock?.element || p?.element;
+        if (music && p?.by !== 'gift' && el && ALL_ELEMENTS.includes(el) && /shard/.test(p?.partId || '') && !music.motifs.includes(el)) music.motifs.push(el);
+      });
+      ev.on('giftUsed', () => play('gift_use', { volume: 1 }));
+      ev.on('giftReady', () => play('spirit_chime', { volume: 0.6, pitch: 1.3 }));
+      ev.on('bossCheck', (p) => {
+        if (p?.state === 'start') play('check_start', { volume: 1 });
+        else if (p?.state === 'success') { play('break_gong', { volume: 1, pitch: 1.2 }); play('spirit_chime', { volume: 0.7 }); }
+        else if (p?.state === 'fail') play('player_hurt', { volume: 1, pitch: 0.7 });
+      });
+      ev.on('break', () => play('break_gong', { volume: 1 }));
+      ev.on('resonance', (p) => play('resonance', { position: p?.target?.object?.position, volume: 1 }));
+      ev.on('voidShieldBroken', (p) => play('shatter', { position: p?.target?.object?.position, volume: 0.9, pitch: 0.8 }));
+      ev.on('levelUp', () => { play('level_up', { volume: 1 }); duck(0.5, 1.6); });
+      ev.on('skillLearned', () => play('skill_learn', { volume: 0.9 }));
+      ev.on('skillUnlearned', () => play('skill_unlearn', { volume: 0.8 }));
+      ev.on('respec', () => play('skill_unlearn', { volume: 0.9, pitch: 0.8 }));
+      ev.on('loadoutChanged', (p) => { if (p?.id) play('slot_equip', { volume: 0.8 }); });
+      ev.on('xpGained', (p) => { if ((p?.amount || 0) >= 5) play('xp_tick', { volume: 0.6 }); });
+      ev.on('reactionDiscovered', () => play('codex_new', { volume: 0.9 }));
+      ev.on('hpRegenStart', () => play('regen_start', { volume: 0.7 }));
+      ev.on('gateTravel', () => play('gate_travel', { volume: 1 }));
+      ev.on('gateReached', () => play('gate_awaken', { volume: 0.9 }));
+      ev.on('shrineFound', (p) => play(p?.kind === 'seed' ? 'shrine_seed' : 'shrine_found', { volume: 1 }));
+      ev.on('spiritFreed', () => { play('blessing', { volume: 0.8 }); play('spirit_chime', { volume: 0.8 }); });
+      ev.on('treeClosed', () => play('cinematic_whoosh', { volume: 0.3, pitch: 1.6 }));
+      ev.on('encounterCleared', () => play('camp_cleared', { volume: 0.7, pitch: 1.15 }));
+      ev.on('enemyPoiseBreak', (p) => play('guard_break', { position: p?.target?.object?.position || p?.enemy?.object?.position, volume: 0.8 }));
+      ev.on('bossSummon', () => play('wolf_howl', { volume: 0.5, pitch: 0.7 }));
+      ev.on('focusStart', () => { duck(0.6, 0.6); musicFilterDip(900, 0.8); });
+      ev.on('hardLanding', (p) => play('land', { position: p?.position, volume: 1, pitch: 0.7 }));
+      ev.on('wardBreak', () => play('shatter', { volume: 0.7, pitch: 1.3 }));
+      ev.on('decoyPop', (p) => play('blink', { position: p?.position, volume: 0.6, pitch: 1.3 }));
       ev.on('campCleared', () => play('camp_cleared', { volume: 1 }));
-      ev.on('victory', () => { play('victory', { volume: 1 }); victoryUntil = (ctx?.currentTime || 0) + 9; music?.setMode('victory'); });
+      ev.on('victory', () => { modeTimer = 0; });   // the fanfare already played on bossDefeated {final:true}
       ev.on('playerHurt', () => play('player_hurt', { volume: 0.9 }));
       ev.on('playerDeath', () => { play('player_death', { volume: 1 }); chargeLoop?.stop(); glideLoop?.stop(); stopUpdraft(0.2); });
       ev.on('playerRespawn', () => play('ui_select', { volume: 0.8, pitch: 0.7 }));
@@ -509,11 +601,15 @@ export function createAudio(game) {
       // Most of these sounds are also played directly by their owners; the same name within the dedupe
       // window collapses into one voice, so subscribing here only fills gaps (e.g. enemy-side blocks).
       ev.on('blocked', (p) => {
-        if (p.target?.team === 'player' || p.target === game.player?.entity) return; // player.js plays its own
+        if (p.target?.team === 'player' || p.target === game.player?.entity) { // player.js plays its own; add the shield clang
+          if (CLASS_DEFS[game.progression?.cls]?.defend === 'shield') play('shield_block', { position: p.point, volume: 0.9 });
+          return;
+        }
         play(p.parried ? 'parry' : 'block_hit', { position: p.point, volume: 0.8 });
       });
       ev.on('parry', (p) => {
-        play('parry', { position: p.point, volume: p.cls === 'mage' ? 0.75 : 1, pitch: p.cls === 'mage' ? 1.25 : 1 });
+        const caster = familyOf(p.cls || game.progression?.cls) === 'caster';
+        play(styleOf(p.cls || game.progression?.cls) === 'hammer' ? 'shield_block' : 'parry', { position: p.point, volume: caster ? 0.75 : 1, pitch: caster ? 1.25 : 1 });
         duck(0.45, 0.7);
       });
       ev.on('perfectDodge', (p) => {
@@ -533,7 +629,16 @@ export function createAudio(game) {
       ev.on('updraftEnter', () => { if (!updraftLoop?.alive) updraftLoop = loop('updraft', { volume: 1 }); });
       ev.on('updraftExit', () => stopUpdraft(0.8));
       ev.on('glideEnd', () => stopUpdraft(0.5));
-      ev.on('pathChosen', () => { play('spirit_chime', { volume: 0.45 }); modeTimer = 0; });
+      ev.on('classChosen', (p) => { if (!p?.loaded) play('spirit_chime', { volume: 0.45 }); modeTimer = 0; });
+      // class weapon sfx: one per cast (skillCast fires exactly once), by weapon style
+      ev.on('skillCast', (p) => {
+        const st = styleOf(p?.cls || game.progression?.cls);
+        const w = WEAPON_SFX[st];
+        if (!w) return;
+        const slot = game.skills?.defs?.get?.(p.id)?.slot || p.slot;
+        if (slot === 'basic' || slot === 'charged' || slot === 'lmb' || slot === 'rmb') play(w, { position: p.origin, volume: slot === 'charged' || slot === 'rmb' ? 1 : 0.75 });
+        if (st === 'bow' && (slot === 'charged' || slot === 'rmb')) play('arrow_whizz', { position: p.origin, volume: 0.6 });
+      });
       ev.on('finisherStart', () => duck(0.35, 4));
       ev.on('finisher', () => duck(0.35, 4));
       ev.on('settingsChanged', ({ key, settings }) => {
@@ -559,7 +664,7 @@ export function createAudio(game) {
           if (mode !== music.mode) music.setMode(mode);
         }
         if (now >= tempDuckUntil) tempDuck = 1;
-        const d = duckTarget * tempDuck * (inDialogue ? 0.7 : 1);
+        const d = now < silenceUntil ? 0.0001 : duckTarget * tempDuck * (inDialogue ? 0.7 : 1);
         if (Math.abs(d - musicDuck) > 0.001) {
           const fast = d < musicDuck;
           musicDuck = d;
@@ -570,7 +675,8 @@ export function createAudio(game) {
         music.update(realDt);
         // mage barrier hum while blocking (player exposes `blocking`; no block start/stop events)
         const P = game.player;
-        const wantBarrier = !!(P?.blocking && P.cls === 'mage' && game.state === 'playing');
+        const dk = CLASS_DEFS[P?.cls || game.progression?.cls]?.defend;
+        const wantBarrier = !!(P?.blocking && (dk === 'barrier' || dk === 'ward') && game.state === 'playing');
         if (wantBarrier && !barrierLoop?.alive) barrierLoop = loop('barrier', { volume: 0.5 });
         else if (!wantBarrier && barrierLoop) { barrierLoop.stop(0.25); barrierLoop = null; }
         if (amb) {
