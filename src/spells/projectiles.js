@@ -1,9 +1,12 @@
 // Pooled spell projectiles: movement, soft homing, terrain/entity collision, zone infusion.
 import * as THREE from 'three';
-import { ELEMENT_COLORS } from '../core/utils.js';
+import { elColor, elDef } from '../core/elements.js';
 import {
   coreMat, fresnelMat, flameGeo, flameMat, crystalGeo, iceMatSolid, crescentGeo, rockGeo, toonMat, addOutline,
 } from './assets.js';
+import { extraFactories } from './meshes2.js';
+
+const SHAPE_OF = (el) => elDef(el)?.shapes?.[0] || 'spark';
 
 const Z = new THREE.Vector3(0, 0, 1);
 
@@ -99,7 +102,9 @@ export function createProjectiles(S) {
       return g;
     },
   };
+  Object.assign(factories, extraFactories(game, glowCore));
   function takeMesh(key) {
+    if (!factories[key]) key = 'orb';
     const p = pools[key] || (pools[key] = []);
     const m = p.pop() || factories[key]();
     m.userData.key = key;
@@ -118,7 +123,7 @@ export function createProjectiles(S) {
   const objPool = [];
   function spawn(o) {
     const p = objPool.pop() || { pos: new THREE.Vector3(), vel: new THREE.Vector3(), hits: new Set(), zones: [] };
-    p.kind = o.kind; p.element = o.element; p.meshKey = o.mesh;
+    p.kind = o.kind; p.element = o.element; p.meshKey = factories[o.mesh] ? o.mesh : 'orb';
     p.pos.copy(o.pos);
     p.vel.copy(o.dir).normalize().multiplyScalar(o.speed);
     p.speed = o.speed;
@@ -142,20 +147,36 @@ export function createProjectiles(S) {
     p.ignoreGround = !!o.ignoreGround;
     p.infused = null;
     p.data = o.data || {};
+    p.hitTpl = o.hit || null;          // v3: ctx.hit() template (skillId, slot, tier, castMul…); amount/status from the opts
+    p.tier = o.tier || null;
+    p.bounces = o.bounce || 0; p.bounceRange = o.bounceRange || 9;
+    p.onExpire = o.onExpire || null;
+    p.objects = o.objects !== false;    // collide with pods/crystals/flowers/mines (combat.reactObject)
+    p.blocked = o.blockable !== false;  // world temp colliders (earth wall, ice wall) block/reflect
     p.hits.clear(); p.zones.length = 0;
     p.traveled = 0;
-    p.mesh = takeMesh(o.mesh);
+    p.mesh = takeMesh(p.meshKey);
     p.mesh.scale.setScalar(o.scale || 1);
+    tint(p.mesh, o.tint ?? (o.mesh && p.mesh.userData.elementTint !== false ? elColor(o.element, 'mid') : null), o.tint2 ?? elColor(o.element, 'edge'));
     p.mesh.position.copy(p.pos);
     orient(p);
     p.trail = null; p.emitters = [];
-    const col = o.trailColor ?? ELEMENT_COLORS[o.element];
+    const col = o.trailColor ?? elColor(o.element, 'hex');
     try { if (o.trail !== false) { const tr = game.vfx?.trail?.(p.mesh, { color: col, width: o.trailWidth || 0.35 * (o.scale || 1), length: o.trailLength || 14, fade: 0.9 }); if (tr?.stop) p.trail = tr; } } catch (_) { /* */ }
     if (o.emitter) {
       try { const em = game.vfx?.emitter?.({ follow: p.mesh, ...o.emitter }); if (em?.stop) p.emitters.push(em); } catch (_) { /* */ }
     }
     active.push(p);
     return p;
+  }
+
+  /** Per-element tint through uniforms / material colours only (never a program-key flag). */
+  function tint(m, hex, hex2) {
+    const t = m.userData.tints; if (!t || hex == null) return;
+    for (const mat of t) {
+      const c = mat.uniforms?.color?.value || mat.uniforms?.uColor?.value || mat.color;
+      if (c) c.setHex(mat.userData?.edge ? (hex2 ?? hex) : hex);
+    }
   }
 
   function orient(p) {
@@ -177,11 +198,11 @@ export function createProjectiles(S) {
     if (p.infused || el === p.element) return false;
     p.infused = el;
     const a = p.mesh.userData.aura;
-    a.visible = true; a.material.uniforms.color.value.set(ELEMENT_COLORS[el]);
-    if (p.mesh.userData.tint) p.mesh.userData.tint.color.set(el === 'fire' ? 0xffa040 : el === 'ice' ? 0xbff4ff : ELEMENT_COLORS[el]);
-    const shape = el === 'fire' ? 'ember' : el === 'ice' ? 'snow' : 'spark';
-    try { const em = game.vfx?.emitter?.({ follow: p.mesh, rate: 40, color: [ELEMENT_COLORS[el], 0xffffff], shape, speed: 1.5, spread: 1, size: 0.18, sizeEnd: 0, life: 0.5, drag: 1 }); if (em?.stop) p.emitters.push(em); } catch (_) { /* */ }
-    S.vfx('burst', p.pos, { count: 26, color: [ELEMENT_COLORS[el], 0xffffff], shape, speed: 6, spread: 1, size: 0.18, life: 0.5, drag: 2 });
+    a.visible = true; a.material.uniforms.color.value.setHex(elColor(el, 'hex'));
+    if (p.mesh.userData.tint) p.mesh.userData.tint.color.setHex(el === 'fire' ? 0xffa040 : el === 'ice' ? 0xbff4ff : elColor(el, 'mid'));
+    const shape = SHAPE_OF(el);
+    try { const em = game.vfx?.emitter?.({ follow: p.mesh, rate: 40, color: [elColor(el, 'hex'), 0xffffff], shape, speed: 1.5, spread: 1, size: 0.18, sizeEnd: 0, life: 0.5, drag: 1 }); if (em?.stop) p.emitters.push(em); } catch (_) { /* */ }
+    S.vfx('burst', p.pos, { count: 26, color: [elColor(el, 'hex'), 0xffffff], shape, speed: 6, spread: 1, size: 0.18, life: 0.5, drag: 2 });
     if (comboName) S.combo('infusion', comboName, p.pos);
     return true;
   }
@@ -191,17 +212,32 @@ export function createProjectiles(S) {
     const c = S.combat.getCenter ? S.combat.getCenter(e, tmp2) : tmp2.copy(e.object.position);
     const pt = tmp.copy(p.pos).lerp(c, 0.5).clone();
     dirV.copy(p.vel).normalize();
-    const hit = {
-      amount: p.damage, element: p.element, source: 'player', point: pt, direction: dirV.clone(),
-      knockback: p.knockback, launch: p.launch, status: p.status, heavy: p.heavy, tags: p.tags || undefined,
-    };
+    const hit = p.hitTpl ? Object.assign({}, p.hitTpl) : { source: 'player' };
+    hit.amount = p.damage; hit.element = p.element; hit.point = pt; hit.direction = dirV.clone();
+    hit.knockback = p.knockback; hit.launch = p.launch; hit.status = p.status; hit.heavy = p.heavy;
+    if (p.tags) hit.tags = p.tags; if (p.tier) hit.tier = p.tier;
+    if (!hit.source) hit.source = 'player';
     const r = S.combat.dealDamage(e, hit);
     if (p.infused && e.alive) {
       const st = S.STATUS_OF[p.infused];
-      S.combat.dealDamage(e, { amount: Math.round(p.damage * 0.6), element: p.infused, source: 'player', point: pt, status: st ? { [st]: 3 } : null, tags: ['infused'] });
+      S.combat.dealDamage(e, { amount: Math.round(p.damage * 0.6), element: p.infused, source: hit.source, point: pt, status: st ? { [st]: 3 } : null, tags: ['infused'], tier: 'light' });
     }
     p.onHitEntity?.(p, e, r, pt);
     return r;
+  }
+
+  /** Bounce to the nearest other enemy (water bubbles); returns true when redirected. */
+  function bounce(p, from) {
+    const next = S.nearestEnemy(p.pos, p.bounceRange, [...p.hits]);
+    if (!next) return false;
+    p.bounces--;
+    const c = S.combat.getCenter ? S.combat.getCenter(next, tmp) : tmp.copy(next.object.position);
+    const sp = p.vel.length();
+    p.vel.subVectors(c, p.pos).normalize().multiplyScalar(sp);
+    p.life = Math.max(p.life, 0.8);
+    S.vfx('burst', p.pos, { count: 8, shape: SHAPE_OF(p.element), color: [elColor(p.element, 'core'), elColor(p.element, 'mid')], speed: 3, spread: 1, size: 0.14, life: 0.35, drag: 2 });
+    void from;
+    return true;
   }
 
   function impact(p, groundHit, entity) {
@@ -243,24 +279,37 @@ export function createProjectiles(S) {
           const h = S.height(p.pos.x, p.pos.z);
           if (p.pos.y < h + 0.05) { p.pos.y = h + 0.05; impact(p, true, null); done = true; break; }
         }
+        // world temp colliders (earth wall, ice wall, aegis dome): block or reflect
+        if (p.blocked && S.blockAt) {
+          const res = S.blockAt(p);
+          if (res === 'block') { impact(p, false, null); done = true; break; }
+          if (res === 'reflect') { p.vel.multiplyScalar(-1); p.hits.clear(); }
+        }
+        // objects: pods / crystals / ice flowers / mines react to the element (combat.reactObject)
+        if (p.objects && S.objectHit && S.objectHit(p)) { if (!p.pierce) { impact(p, false, null); done = true; break; } }
         // entities
         S.combat.queryRadius(p.pos, p.radius, '!player', near);
         for (let j = 0; j < near.length; j++) {
           const e = near[j];
           if (p.hits.has(e)) continue;
           hitEntity(p, e);
+          if (p.bounces > 0 && bounce(p, e)) break;
           if (!p.pierce) { impact(p, false, e); done = true; break; }
         }
       }
       if (!done) {
         S.zones.checkProjectile(p);
-        if (p.life <= 0) { if (p.explodeOnExpire) impact(p, false, null); done = true; }
+        if (p.life <= 0) { if (p.explodeOnExpire) impact(p, false, null); try { p.onExpire?.(p, p.pos); } catch (_) { /* */ } done = true; }
       }
       if (done) { release(p, i); continue; }
       p.mesh.position.copy(p.pos);
       orient(p);
-      const sp = p.mesh.userData.spin;
+      const ud = p.mesh.userData, sp = ud.spin;
       if (sp) { sp.rotation.x += dt * 7; sp.rotation.y += dt * 5; }
+      if (ud.flap) { const f = Math.sin(p.age * 22 + p.radius * 9); ud.flap.scale.set(1 + f * 0.25, 1, 1); ud.flap.rotation.z = f * 0.25; }
+      if (ud.wobble) { const w = 1 + Math.sin(p.age * 18) * 0.08; ud.wobble.scale.set(w, 2 - w, w); }
+      if (ud.rings) ud.rings.rotation.z += dt * 9;
+      void 0;
     }
   }
 
@@ -271,6 +320,14 @@ export function createProjectiles(S) {
   function unwarm(group) {
     for (const m of [...group.children]) { const key = Object.keys(factories).find((k) => m.userData.key === k); group.remove(m); if (key) (pools[key] || (pools[key] = [])).push(m); }
   }
+  /** v3 prewarm: one hidden instance of every mesh (returned to the boot compile, then pooled on first spawn). */
+  function prewarmGroup() {
+    const g = new THREE.Group();
+    for (const key in factories) { const m = takeMesh(key); scene.remove(m); m.position.set(0, -800, 0); g.add(m); }
+    g.userData.release = () => unwarm(g);
+    return g;
+  }
 
-  return { spawn, update, infuse, active, hitEntity, warm, unwarm };
+  function clear() { for (let i = active.length - 1; i >= 0; i--) release(active[i], i); }
+  return { spawn, update, infuse, active, hitEntity, warm, unwarm, prewarmGroup, clear, factories };
 }

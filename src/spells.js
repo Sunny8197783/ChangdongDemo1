@@ -1,8 +1,13 @@
 // Spells: casting input, cooldowns, projectiles, zones and zone fusions.
-// v2: class/path gating (mage only, unlocked elements), master path awakened ultimate (F), cinematic
-// finisher (R) and support skill (G), terrain interaction hooks (grass fire, ice on water, wind).
+// v2: class/path gating, master path awakened ultimate (F), cinematic finisher (R) and support skill (G), terrain hooks.
+// v3 (CONTRACT §11): castById / silent setElement for the skills runtime, the element-generic `api` toolkit
+// (projectiles, zones v2+v3, pooled objects, aoe/cone/line/chain/beam with prism refraction, terrain helpers),
+// the CASTER implementations of all 24 archetypes (spells/archetypes.js) and the bespoke caster forms
+// (spells/bespoke.js), both registered in this FACTORY. Input is read only in the legacy keymap (or with skills stubbed).
 import * as THREE from 'three';
-import { ELEMENT_COLORS, ELEMENT_NAMES_KO, ELEMENTS } from './core/utils.js';
+import { ELEMENT_COLORS } from './core/utils.js';
+import { ALL_ELEMENTS, CLASSIC_ELEMENTS, ELEMENT_DEFS, elColor, elName } from './core/elements.js';
+import { familyOf } from './core/classes.js';
 import * as assets from './spells/assets.js';
 import { createProps } from './spells/props.js';
 import { createProjectiles } from './spells/projectiles.js';
@@ -10,6 +15,12 @@ import { createZones } from './spells/zones.js';
 import { SPELLS } from './spells/defs.js';
 import { AWAKENED, FINISHERS, SUPPORTS, createSupportRuntime } from './spells/master.js';
 import { createSetPieces } from './spells/setpieces.js';
+import { createObjects } from './spells/objects.js';
+import { createZones2 } from './spells/zones2.js';
+import { createApi } from './spells/api.js';
+import { createSummons, createStructures } from './spells/summons.js';
+import { createArchetypes } from './spells/archetypes.js';
+import { createBespoke } from './spells/bespoke.js';
 
 const { uTime } = assets;
 const MIN_CHARGE = 0.25;
@@ -18,16 +29,23 @@ const SLOT_DEFS = [
   { kind: 'basic', key: 'LMB' }, { kind: 'heavy', key: 'RMB' }, { kind: 'ultimate', key: 'F' },
   { kind: 'support', key: 'G' }, { kind: 'finisher', key: 'R' },
 ];
-// awakened / support / finisher defs registered alongside the 15 base spells (ids: <el>_awakened|support|finisher)
+// awakened / support / finisher defs registered alongside the 15 base spells (ids: <el>_awakened|support|finisher).
+// CLASSIC only (CONTRACT §3.1): the 4 new elements' skills come from the skills defs (archetypes / bespoke forms).
 const ALL = { ...SPELLS };
-for (const el of ELEMENTS) {
+for (const el of CLASSIC_ELEMENTS) {
   ALL[`${el}_awakened`] = { element: el, kind: 'ultimate', awakened: true, ...AWAKENED[el] };
   ALL[`${el}_support`] = { element: el, kind: 'support', ...SUPPORTS[el] };
   ALL[`${el}_finisher`] = { element: el, kind: 'finisher', mp: 0, cd: 0, ...FINISHERS[el] };
 }
 
+/** STATUS_OF from the element registry (9 elements; wind has none). */
+const STATUS_OF = {};
+for (const el of ALL_ELEMENTS) STATUS_OF[el] = ELEMENT_DEFS[el]?.status || null;
+
 export function createSpells(game) {
-  const elements = ELEMENTS.slice();
+  // legacy keymap: the 5 classic elements (Digit1–5); v3: all 9 (skills attunes any of them, silently)
+  const legacyKeymap = () => game.keymapMode === 'legacy';
+  const elements = (legacyKeymap() ? CLASSIC_ELEMENTS : ALL_ELEMENTS).slice();
   let index = 0;
   const cooldowns = {};
   for (const id in ALL) cooldowns[id] = 0;
@@ -44,7 +62,7 @@ export function createSpells(game) {
   const S = {
     game,
     get combat() { return game.combat; },
-    STATUS_OF: { fire: 'burning', ice: 'chilled', lightning: 'shocked', wind: null, earth: null },
+    STATUS_OF,
     vfx(fn, ...a) { try { return game.vfx?.[fn]?.(...a); } catch (e) { if (!S._vfxErr) { S._vfxErr = 1; console.warn('[spells] vfx.' + fn, e); } return null; } },
     sfx(name, opts) { try { game.audio?.play?.(name, opts); } catch (_) { /* */ } },
     height(x, z) { try { const h = game.world?.getHeight?.(x, z); return Number.isFinite(h) ? h : 0; } catch (_) { return 0; } },
@@ -123,6 +141,37 @@ export function createSpells(game) {
   S.zones = createZones(S);
   S.support = createSupportRuntime(S, assets);
   S.setPieces = createSetPieces(S);
+  // ---------- v3 toolkit ----------
+  S.legacyZones = S.zones;
+  const objects = createObjects(S); S.objects = objects;
+  const zones2 = createZones2(S); S.zones2 = zones2;
+  const v3api = createApi(S, { zones2, objects, legacy: S.zones }); S.api = v3api;
+  S.shield = (...a) => v3api.shield(...a);
+  S.blockAt = (p) => v3api.blockAt(p);
+  const summons = createSummons(S, v3api);
+  const structures = createStructures(S, v3api);
+  const arch = createArchetypes(S, v3api, { summons, structures });
+  const bespoke = createBespoke(S, v3api, arch, { summons, structures });
+  v3api.summons = summons; v3api.structures = structures; v3api.archetypes = arch;
+  v3api.despawnSummon = (skillId) => { summons.despawnSkill(skillId); if (skillId === 'lightning.rod' || !skillId) objects.despawnAll('rod'); if (skillId === 'lightning.mine' || !skillId) objects.despawnAll('mine'); };
+  const objNear = [];
+  /** Projectile ↔ object collision: pods / crystals / ice flowers react to the projectile's element (combat.reactObject). */
+  S.objectHit = (p) => {
+    if (!objects.count()) return false;
+    objNear.length = 0; objects.near('*', p.pos, p.radius + 0.5, objNear);
+    for (const o of objNear) {
+      if (p.hits.has(o) || (o.kind !== 'pod' && o.kind !== 'crystal' && o.kind !== 'flower')) continue;
+      if (Math.abs(p.pos.y - (o.position.y + 0.5)) > 1.8) continue;
+      p.hits.add(o);
+      const h = p.hitTpl ? Object.assign({}, p.hitTpl) : { source: 'player' };
+      h.amount = p.damage; h.element = p.element; h.point = o.position.clone();
+      if (objects.burst(o, p.element, h)) return true;
+    }
+    return false;
+  };
+  // archetypes + bespoke forms are registered in the FACTORY (CONTRACT §2: registries exist after the factory)
+  let nArch = 0, nImpl = 0;
+  try { nArch = arch.register(); nImpl = bespoke.register(); } catch (err) { console.warn('[spells] archetype registration', err); }
 
   const spellId = (el, kind) => `${el}_${kind}`;
   const player = () => game.player;
@@ -130,11 +179,14 @@ export function createSpells(game) {
   const mp = () => player()?.mp ?? 0;
   const isMaster = () => !!prog()?.isMaster?.();
 
-  /** Mage skills are live only once the mage class is chosen (no progression → legacy: always on). */
+  /** spells reads its own input only in the legacy keymap (or when skills is missing/stubbed: rule 11 fallback). */
+  const legacyInput = () => legacyKeymap() || !game.skills || !!game.skills.isStub;
+  /** Legacy-mode activity: caster-family class chosen (no progression → always on). v3: false (game.skills drives casts). */
   function isActive() {
     const p = prog();
     if (!p) return true;
-    return !!p.chosen && p.cls === 'mage';
+    if (!legacyInput()) return false;
+    return !!p.chosen && familyOf(p.cls) === 'caster';
   }
   function unlocked(el) {
     const p = prog();
@@ -156,16 +208,27 @@ export function createSpells(game) {
     return true;
   }
 
-  function setElement(i, force = false) {
+  /**
+   * setElement(i | elementId, {silent=false, force=false} | true)
+   * silent: called by skills.attune — no event, no sfx, no gating (skills already gated). Legacy `true` = force.
+   * v3 keymap, not silent: forwards to skills.attune (the single emitter of elementChanged, CONTRACT §9/E11).
+   */
+  function setElement(i, opts) {
+    const o = opts === true ? { force: true } : (opts || {});
+    const silent = !!o.silent, force = !!o.force;
+    if (typeof i === 'string') i = elements.indexOf(i);
+    if (!Number.isFinite(i) || i < 0) return;
     i = ((i % elements.length) + elements.length) % elements.length;
-    if (i === index && !force) return;
-    if (!unlocked(elements[i])) return;
+    if (!silent && !legacyInput() && game.skills?.attune) { try { game.skills.attune(elements[i]); } catch (_) { /* */ } return; }
+    if (i === index && !force && !silent) return;
+    if (!silent && !unlocked(elements[i])) return;
     if (charging) endCharge(false);
     index = i;
     api.element = elements[index]; api.index = index;
     try { player()?.setStaffElement?.(api.element); } catch (_) { /* */ }
+    if (silent) return;
     if (!force) S.sfx('ui_select');
-    game.events.emit('elementChanged', { element: api.element, index, cls: 'mage' });
+    game.events.emit('elementChanged', { element: api.element, index, cls: prog()?.cls || null });
   }
   /** Wheel: step to the next unlocked element. */
   function stepElement(d) {
@@ -188,7 +251,7 @@ export function createSpells(game) {
    */
   function cast(el, kind, opts = {}) {
     if (kind === 'finisher') return finisher(el, opts);
-    const id = kind === 'awakened' ? spellId(el, 'awakened') : defId(el, kind);
+    const id = kind === 'awakened' ? spellId(el, 'awakened') : opts.exact ? spellId(el, kind) : defId(el, kind);
     const def = ALL[id];
     if (!def) return false;
     if (kind === 'awakened') kind = 'ultimate';
@@ -221,7 +284,7 @@ export function createSpells(game) {
       // shared anticipation beat: brief slow-mo, zoom-in, sigil at the caster's feet, rising charge sound
       const col = ELEMENT_COLORS[el], aw = !!def.awakened;
       S.vfx('screenFlash', col, aw ? 0.22 : 0.12, aw ? 0.4 : 0.25); S.vfx('flash', aim.origin, { color: col, intensity: aw ? 10 : 6, distance: aw ? 16 : 10, duration: 0.4 });
-      try { game.slowmo(aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); } catch (_) { /* */ }
+      try { if (game.timeScale?.set) game.timeScale.set('ult', aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); else game.slowmo?.(aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); } catch (_) { /* */ }
       S.vfx('fovKick', aw ? -6 : -4, aw ? 0.4 : 0.3);
       try {
         const fp = S.playerPos().clone(); fp.y = S.height(fp.x, fp.z) + 0.05;
@@ -292,7 +355,7 @@ export function createSpells(game) {
     S.props.sigil(S.ground(hero).clone(), { color: ELEMENT_COLORS[el], radius: 3.2, duration: 3.5, spin: 1.5 });
     S.sfx('finisher_charge', { position: hero });
     game.events.emit('spellCast', { element: el, kind: 'finisher', spellId: id, origin: hero.clone() });
-    game.events.emit('finisherStart', { element: el, name: def.name, cls: 'mage' });
+    game.events.emit('finisherStart', { element: el, name: def.name, cls: prog()?.cls || null });
 
     const doImpact = () => {
       if (!fin || fin.impacted) return;
@@ -322,13 +385,13 @@ export function createSpells(game) {
     let usedCin = false;
     if (cinOk) {
       try {
-        cin.finisher({ cls: 'mage', element: el, name: def.name, target, center: center.clone(), onBuildup: () => {}, onImpact: doImpact, onEnd: doEnd });
+        cin.finisher({ cls: prog()?.cls || null, element: el, name: def.name, target, center: center.clone(), onBuildup: () => {}, onImpact: doImpact, onEnd: doEnd });
         usedCin = true;
       } catch (err) { console.error('[spells] cinematic.finisher', err); }
     }
     if (!usedCin) {
       // non-cinematic fallback: slow-mo power-up, then the blow
-      try { game.slowmo(0.3, 2.2); } catch (_) { /* */ }
+      try { if (game.timeScale?.set) game.timeScale.set('ult', 0.3, 2.2); else game.slowmo?.(0.3, 2.2); } catch (_) { /* */ }
       S.vfx('screenFlash', ELEMENT_COLORS[el], 0.25, 0.8);
       S.vfx('fovKick', -7, 1.6);
       S.laterReal(1.9, doImpact);
@@ -340,8 +403,23 @@ export function createSpells(game) {
     return true;
   }
 
+  /**
+   * castById(spellId, {free, charge, aim, awakened}) — the legacy defs run with gating bypassed (skills gated the cast).
+   * Ids: <el>_basic|heavy|ultimate|awakened|support|finisher for the 5 classic elements. Emits spellCast exactly once.
+   */
+  function castById(spellIdArg, opts = {}) {
+    const k = String(spellIdArg || '').lastIndexOf('_');
+    if (k <= 0) return false;
+    const el = spellIdArg.slice(0, k), kind = spellIdArg.slice(k + 1);
+    if (kind === 'finisher') return ALL[spellIdArg] ? finisher(el, { ...opts, free: true }) : false;
+    if (!ALL[spellIdArg]) return false;
+    if (elements.includes(el) && elements[index] !== el) setElement(elements.indexOf(el), { silent: true });
+    return cast(el, kind, { ...opts, free: true, exact: true });
+  }
+
   function startCharge() {
     const id = spellId(api.element, 'heavy');
+    if (!SPELLS[id]) return;
     if (cooldowns[id] > 0) { game.events.emit('spellFail', { reason: 'cooldown', spellId: id }); return; }
     if (mp() < SPELLS[id].mp) { game.events.emit('spellFail', { reason: 'mana', spellId: id }); S.sfx('mana_empty'); return; }
     charging = true; chargeFrac = 0; chargeEl = api.element;
@@ -363,7 +441,7 @@ export function createSpells(game) {
   const slots3 = slotsAll.slice(0, 3);
   const hud = {
     element: elements[0], index: 0, active: true,
-    elements: elements.map((id) => ({ id, name: ELEMENT_NAMES_KO[id], color: ELEMENT_COLORS[id], locked: false })),
+    elements: elements.map((id) => ({ id, name: elName(id), color: elColor(id, 'hex'), locked: false })),
     slots: slots3,
     charging: false, chargeFrac: 0,
     awakening: { enabled: false, value: 0, ready: false },
@@ -381,6 +459,7 @@ export function createSpells(game) {
       const s = hud.slots[i];
       const id = s.kind === 'finisher' ? spellId(el, 'finisher') : s.kind === 'support' ? spellId(el, 'support') : defId(el, s.kind);
       const d = ALL[id];
+      if (!d) { s.id = ''; s.name = ''; s.desc = ''; s.mpCost = 0; s.cooldown = 0; s.awakened = false; s.cooldownLeft = 0; s.ready = false; continue; }
       s.id = id; s.name = d.name; s.desc = d.desc; s.mpCost = d.mp || 0; s.cooldown = d.cd || 0; s.awakened = !!d.awakened;
       s.cooldownLeft = Math.max(0, cooldowns[id]);
       s.ready = s.kind === 'finisher' ? !!p?.canFinisher?.() && !fin : s.cooldownLeft <= 0 && m >= s.mpCost;
@@ -392,7 +471,9 @@ export function createSpells(game) {
   }
 
   // ---------- update ----------
+  let warmed = false;
   function update(dt, realDt) {
+    if (!warmed) { warmed = true; try { objects.update(0); zones2.afterPrewarm(); summons.afterPrewarm(); structures.afterPrewarm(); arch.afterPrewarm(); } catch (_) { /* */ } }
     // spell shaders keep animating through the finisher's frozen frame
     uTime.value += fin || S.setPieces.active ? Math.max(dt, realDt || 0) : dt;
     const cs = S.support.castSpeed;
@@ -408,23 +489,24 @@ export function createSpells(game) {
 
     // ---- input ----
     const input = game.input;
-    const live = isActive();
+    const live = isActive() && game.skills?.ownsInput !== true;
     if (game.state === 'playing' && live) {
-      for (let i = 0; i < 5; i++) if (input.pressed('Digit' + (i + 1))) setElement(i);
+      for (let i = 0; i < elements.length && i < 9; i++) if (input.pressed('Digit' + (i + 1))) setElement(i);
       if (input.wheel > 0) stepElement(1); else if (input.wheel < 0) stepElement(-1);
       const ok = canCast();
       if (!ok && charging) endCharge(false);
       if (ok) {
         if (input.mouseDown(0) && !charging) {
           const id = spellId(api.element, 'basic');
-          if (cooldowns[id] <= 0) {
+          if (!SPELLS[id]) { /* new element in legacy input: no legacy def */ }
+          else if (cooldowns[id] <= 0) {
             if (mp() >= SPELLS[id].mp) cast(api.element, 'basic');
             else if (input.mousePressed(0)) { game.events.emit('spellFail', { reason: 'mana', spellId: id }); S.sfx('mana_empty'); }
           } else if (input.mousePressed(0) && cooldowns[id] > 0.15) game.events.emit('spellFail', { reason: 'cooldown', spellId: id });
         }
         if (input.mousePressed(2)) startCharge();
         if (charging) {
-          const def = SPELLS[spellId(chargeEl, 'heavy')];
+          const def = SPELLS[spellId(chargeEl, 'heavy')] || { chargeTime: 1 };
           const before = chargeFrac;
           chargeFrac = Math.min(1, chargeFrac + dt * cs / (def.chargeTime || 1));
           if (before < 1 && chargeFrac >= 1) { S.sfx('ui_select', { pitch: 1.5 }); S.vfx('burst', game.player?.getStaffTip ? game.player.getStaffTip(tmp) : S.playerPos(), { count: 16, color: [ELEMENT_COLORS[chargeEl], 0xffffff], shape: 'spark', speed: 4, spread: 1, size: 0.1, life: 0.35, drag: 2 }); }
@@ -432,8 +514,8 @@ export function createSpells(game) {
           S.props.setCharge(true, ELEMENT_COLORS[chargeEl], chargeFrac, dt);
           if (!input.mouseDown(2)) endCharge(true);
         }
-        // F: NPC interaction takes precedence over the ultimate
-        if (input.pressed('KeyF') && !game.story?.hasPrompt?.()) cast(api.element, 'ultimate');
+        // F (legacy keymap only): the ultimate when nothing interactable is offered (F is interact, CONTRACT §3.3/§6)
+        if (input.pressed('KeyF') && legacyKeymap() && !game.interact?.current?.()) cast(api.element, 'ultimate');
         if (isMaster()) {
           const mel = prog().element;
           if (input.pressed('KeyR')) finisher(mel);
@@ -447,6 +529,20 @@ export function createSpells(game) {
     S.props.update(dt);
     S.support.update(dt, realDt || dt);
     S.setPieces.update(realDt || dt);
+    // v3 runtime
+    objects.update(dt);
+    zones2.update(dt);
+    v3api.update(dt);
+    summons.update(dt);
+    structures.update(dt);
+    arch.update(dt);
+  }
+
+  /** Boot pre-warm (main.js): every pooled v3 visual is made visible for the compile; the first update hides idle ones. */
+  function prewarm() {
+    try { objects.prewarm(); zones2.prewarm(); summons.prewarm(); structures.prewarm(); arch.prewarm(); } catch (err) { console.warn('[spells] prewarm', err); }
+    warmed = false;
+    return null;
   }
 
   // Compile all spell shaders up-front (avoids a hitch on the first cast of each spell).
@@ -464,12 +560,18 @@ export function createSpells(game) {
     try { S.projectiles.unwarm(g); S.zones.unwarm(g); S.setPieces.unwarm(g); S.support.unwarm(g); } catch (_) { /* */ }
   }
 
+  /** classChosen / (deprecated) pathChosen: reset the legacy element + cooldowns; never emits in the v3 keymap. */
   function onPath(p) {
     if (charging) endCharge(false);
-    if (p?.cls !== 'mage') { S.support.stop(true); return; }
-    const want = p.path === 'master' && p.element ? elements.indexOf(p.element) : unlocked(api.element) ? index : 0;
-    setElement(Math.max(0, want), true);
+    const cls = p?.cls ?? prog()?.cls;
+    if (familyOf(cls) !== 'caster') { S.support.stop(true); return; }
+    const pe = p?.element ?? prog()?.element;
+    const want = (p?.path ?? prog()?.path) === 'master' && pe ? elements.indexOf(pe) : unlocked(api.element) ? index : 0;
+    setElement(Math.max(0, want), legacyInput() ? true : { silent: true });
     for (const id in cooldowns) cooldowns[id] = 0;
+  }
+  function clearV3() {
+    try { objects.despawnAll(); zones2.clear(); summons.despawnSkill(null); structures.clear(); arch.clear(); } catch (err) { console.warn('[spells] clear', err); }
   }
 
   const api = {
@@ -479,9 +581,11 @@ export function createSpells(game) {
     init() {
       if (isActive()) { try { player()?.setStaffElement?.(api.element); } catch (_) { /* */ } }
       warmup();
-      game.events.on('stateChange', (p) => { if (p.state !== 'playing' && charging) endCharge(false); });
+      game.events.on('stateChange', (p) => { if (p.state !== 'playing' && charging) endCharge(false); if (p.state === 'title') clearV3(); });
       game.events.on('playerDeath', () => { endCharge(false); S.support.stop(true); });
       game.events.on('pathChosen', onPath);
+      game.events.on('classChosen', onPath);
+      game.events.on('respec', () => { summons.despawnSkill(null); });
       // 얼음 갑옷: melee attackers that hit (or are blocked by) the player get frozen
       const onHitPlayer = (p) => { if (p?.target && p.target === player()?.entity && p.source && typeof p.source === 'object') S.support.onPlayerHit(p.source); };
       game.events.on('damage', onHitPlayer);
@@ -490,10 +594,13 @@ export function createSpells(game) {
       if (pr?.chosen) onPath({ cls: pr.cls, path: pr.path, element: pr.element });
     },
     // extras (used by combat reactions, tests, other modules optionally)
-    cast, setElement, finisher: (el, opts) => finisher(el || prog()?.element || api.element, opts),
+    cast, castById, setElement, finisher: (el, opts) => finisher(el || prog()?.element || api.element, opts),
+    api: v3api, prewarm, despawnSummon: (id) => v3api.despawnSummon(id),
+    get registered() { return { archetypes: nArch, impls: nImpl }; },
+    isActive: () => isActive(),
     support: (el, opts) => cast(el || prog()?.element || api.element, 'support', opts),
     get active() { return isActive(); },
-    get finisherActive() { return !!fin; },
+    get finisherActive() { return !!fin || bespoke.finisherActive; },
     get supportActive() { return S.support.active; },
     spawnZone: (type, pos, opts) => S.zones.spawn(type, pos, opts),
     get zones() { return S.zones.zones; },
