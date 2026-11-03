@@ -1,9 +1,12 @@
 // Inline SVG icon set for the UI (elements, spell kinds, statuses, compass markers).
-import { ELEMENT_COLORS } from '../core/utils.js';
+import { ALL_ELEMENTS, PSEUDO_ELEMENTS, elColor } from '../core/elements.js';
 
 export const hex = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
-export const ELEMENT_CSS = Object.fromEntries(Object.entries(ELEMENT_COLORS).map(([k, v]) => [k, hex(v)]));
-ELEMENT_CSS.water = '#4fa8ff';
+/** css colour per element (all 9 + physical + void), from the element registry (CONTRACT §3.1). */
+export const ELEMENT_CSS = {};
+for (const el of ALL_ELEMENTS) ELEMENT_CSS[el] = elColor(el, 'css');
+for (const el of Object.keys(PSEUDO_ELEMENTS)) ELEMENT_CSS[el] = elColor(el, 'css');
+export const elCss = (el) => ELEMENT_CSS[el] || '#ffffff';
 
 // Glyph bodies on a 24x24 canvas. `currentColor` = element color.
 const GLYPHS = {
@@ -37,6 +40,24 @@ const GLYPHS = {
   water: `
     <path d="M12 2.4c3 4.4 6.4 8.2 6.4 12a6.4 6.4 0 0 1-12.8 0c0-3.8 3.4-7.6 6.4-12z" fill="currentColor" stroke="#e8f6ff" stroke-width=".8"/>
     <path d="M9 14.4a3.2 3.2 0 0 0 2.4 3.4" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round" opacity=".85"/>`,
+  nature: `
+    <path d="M12 21.6V11.2" stroke="#efffd6" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M12 12.6C7.4 12.8 4.2 9.8 4 4.6c4.9-.3 8 2.6 8 8z" fill="currentColor" stroke="#f4ffd0" stroke-width=".8" stroke-linejoin="round"/>
+    <path d="M12 15.4c.2-5 3.4-8.2 8.2-8 .1 5-3.3 8-8.2 8z" fill="currentColor" stroke="#f4ffd0" stroke-width=".8" stroke-linejoin="round" opacity=".9"/>
+    <path d="M6.4 6.8 11 11.6M17.8 9.6l-4.6 4.6" stroke="#2f7d3a" stroke-width=".8" opacity=".7"/>`,
+  light: `
+    <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <path d="M12 1.6v3.2M12 19.2v3.2M1.6 12h3.2M19.2 12h3.2M4.6 4.6l2.2 2.2M17.2 17.2l2.2 2.2M4.6 19.4l2.2-2.2M17.2 6.8l2.2-2.2"/>
+    </g>
+    <circle cx="12" cy="12" r="5.2" fill="currentColor" stroke="#fffbe8" stroke-width=".8"/>
+    <path d="M12 8.4 13 11 15.6 12 13 13 12 15.6 11 13 8.4 12 11 11z" fill="#fff"/>`,
+  shadow: `
+    <path d="M15.8 3.2A9 9 0 1 0 20.8 16 7.2 7.2 0 0 1 15.8 3.2z" fill="currentColor" stroke="#e7d4ff" stroke-width=".8" stroke-linejoin="round"/>
+    <path d="M8.6 9.2c.9-.6 2-.6 2.8 0M8.6 13.4c1.6 1.2 3.6 1.2 5.2 0" stroke="#1a0b2e" stroke-width="1.1" fill="none" stroke-linecap="round" opacity=".8"/>
+    <circle cx="18.6" cy="5.4" r=".9" fill="#fff" opacity=".85"/>`,
+  void: `
+    <circle cx="12" cy="12" r="8.6" fill="#140a24" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M12 5.4a6.6 6.6 0 0 1 0 13.2 3.3 3.3 0 0 1 0-6.6 3.3 3.3 0 0 0 0-6.6z" fill="currentColor" opacity=".8"/>`,
   physical: `<path d="M5 19 19 5M14 5h5v5M7 14l3 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>`,
 };
 
@@ -83,12 +104,13 @@ export const RETICLE_SVG = `
   <circle cx="32" cy="32" r="2" fill="currentColor"/>
 </svg>`;
 
+// v2 fallback status table (used only when combat does not export STATUS_DEFS).
 export const STATUS_COLORS = {
   burning: '#ff7a2a', frozen: '#bff4ff', wet: '#4fa8ff', shocked: '#d6b4ff',
   chilled: '#8fe0ff', airborne: '#9effcc', stunned: '#ffe27a',
 };
 export const STATUS_NAMES = {
-  burning: '화상', frozen: '빙결', wet: '젖음', shocked: '감전', chilled: '냉기', airborne: '공중', stunned: '기절',
+  burning: '화상', frozen: '빙결', wet: '젖음', shocked: '감전', chilled: '냉기', airborne: '공중', stunned: '경직',
 };
 
 export const MARKER_SVG = {
@@ -114,3 +136,39 @@ export const SHIELD_SVG = `<svg viewBox="0 0 24 24" width="22" height="22"><path
 export const DASH_SVG = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 7h7M2 12h9M3 17h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
   <path d="M12 4.5 21 12l-9 7.5 2.4-7.5z" fill="currentColor"/></svg>`;
 export const STAMINA_SVG = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M13.5 2 5.5 13.2h5.6L9.8 22l8.7-12h-5.7z" fill="#9dff7a" stroke="#efffe6" stroke-width="1" stroke-linejoin="round"/></svg>`;
+
+// v3: archetype glyphs (skill icon centre marks; drawn in currentColor on a 20×20 canvas).
+const AG = (d, fill = false) => `<svg viewBox="0 0 20 20">${fill ? `<path d="${d}" fill="currentColor"/>` : `<path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`}</svg>`;
+export const ARCH_GLYPH = {
+  projectile: AG('M3 10h10M10 6l4 4-4 4'), volley: AG('M3 6h9M3 10h12M3 14h9'), lob: AG('M3 15Q10 1 17 15'),
+  crawler: AG('M2 14q2-4 4 0t4 0 4 0 4 0'), beam: AG('M2 10h16M2 7.5h16M2 12.5h16'), cone: AG('M3 10 17 4M3 10l14 6M3 10h14'),
+  nova: AG('M10 3a7 7 0 1 0 .01 0M10 7a3 3 0 1 0 .01 0'), zone: AG('M3 13a7 3.4 0 1 0 14 0 7 3.4 0 1 0-14 0M10 4v6'),
+  wall: AG('M3 16V7h4v9M8 16V5h4v11M13 16V8h4v8'), pillar: AG('M7 17V4h6v13M5 17h10'), chain: AG('M3 15l4-5 3 3 3-6 4 5'),
+  rain: AG('M5 3l-2 5M10 3 8 8M15 3l-2 5M7 11l-2 5M13 11l-2 5'), summon: AG('M10 3a3 3 0 1 0 .01 0M5 17q5-9 10 0'),
+  blink: AG('M3 15 8 5l2 6 5-7M14 4h3v3'), dash: AG('M2 7h6M2 13h6M9 4l7 6-7 6'), leapslam: AG('M4 4q6 0 6 9M3 16h14M6 13l4 3 4-3'),
+  grapple: AG('M3 16q4-12 13-11M13 3l3 2-2 3'), buff: AG('M10 2v16M4 8l6-6 6 6'), mark: AG('M10 2l2.4 5.6L18 10l-5.6 2.4L10 18l-2.4-5.6L2 10l5.6-2.4z'),
+  chainbind: AG('M4 10a3 3 0 1 0 6 0 3 3 0 1 0-6 0M10 10a3 3 0 1 0 6 0 3 3 0 1 0-6 0'), tether: AG('M3 10q3.5-6 7 0t7 0'),
+  lane: AG('M2 16 8 4M18 16 12 4M10 15v-2M10 10V8'), mine: AG('M10 5a5 5 0 1 0 .01 0M10 1v3M10 16v3M1 10h3M16 10h3'),
+  bubble: AG('M10 3a7 7 0 1 0 .01 0M7 8a2 2 0 0 1 2-2'),
+  basic: AG('M3 15 Q9 3 17 4'), heavy: AG('M4 12 L10 6 L16 12 M4 17 L10 11 L16 17'),
+  support: AG('M10 2 L17 5 V10 C17 14 14 17 10 18 C6 17 3 14 3 10 V5 Z', true),
+  ultimate: AG('M10 1 L12.2 7.5 L19 7.6 L13.6 11.8 L15.6 18.5 L10 14.5 L4.4 18.5 L6.4 11.8 L1 7.6 L7.8 7.5 Z', true),
+  finisher: AG('M2 16 L4 6 L8 10 L10 3 L12 10 L16 6 L18 16 Z', true),
+  passive: AG('M10 3a7 7 0 1 0 .01 0M10 6v4l3 2'), keystone: AG('M10 2 17 10 10 18 3 10z', true),
+  modifier: AG('M4 10h12M10 4v12'), capstone: AG('M3 15h14L15 6l-3 4-2-6-2 6-3-4z', true),
+};
+
+/** Small class silhouettes (class cards, character sheet). Keyed by CLASS_DEFS[cls].style. */
+const SIL = (body, weapon) => `<svg viewBox="0 0 64 80" class="aw-sil"><g fill="currentColor">${body}</g><g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${weapon}</g></svg>`;
+const BODY = '<circle cx="32" cy="14" r="8"/><path d="M20 30q12-8 24 0l4 30H16z"/><path d="M22 60h8v18h-8zM34 60h8v18h-8z"/>';
+export const CLASS_SIL = {
+  staff: SIL(BODY + '<path d="M18 30 8 70h12z" opacity=".55"/>', '<path d="M50 8v66"/><circle cx="50" cy="7" r="4" fill="currentColor"/>'),
+  longsword: SIL(BODY, '<path d="M50 12v42M44 52h12M50 54v8"/>'),
+  bow: SIL(BODY, '<path d="M48 8q14 30 0 62"/><path d="M48 8v62" stroke-width="1.2"/>'),
+  hammer: SIL(BODY + '<path d="M6 34h14v20q-7 6-14 0z" opacity=".85"/>', '<path d="M52 20v46"/><path d="M44 12h16v10H44z" fill="currentColor"/>'),
+  totem: SIL(BODY, '<path d="M50 14v60"/><path d="M44 8h12v12H44z" fill="currentColor"/><path d="M42 24l-4 8M58 24l4 8"/>'),
+  daggers: SIL(BODY, '<path d="M10 36l-4 16M54 36l4 16M8 34l6 4M56 34l-6 4"/>'),
+};
+export const classSVG = (style) => CLASS_SIL[style] || CLASS_SIL.staff;
+export const CHAIN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" class="aw-chain"><g fill="none" stroke="#9a9a9a" stroke-width="2"><rect x="2" y="8" width="10" height="7" rx="3.5"/><rect x="12" y="9" width="10" height="7" rx="3.5"/></g></svg>`;
+export const SHARD_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" class="aw-shard"><path d="M8 1 12 6 9 15 4 7z" fill="#cfe8ff" stroke="#fff" stroke-width=".7"/><path d="M8 1 9 15" stroke="#7fb2ff" stroke-width=".6"/></svg>`;
