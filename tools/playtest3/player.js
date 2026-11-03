@@ -291,6 +291,12 @@ module.exports = async function player(PT) {
         }
       }
       PT.check('getDefenseHud has kit names (Korean)', /[가-힣]/.test(pl.getDefenseHud().dodgeName) && /[가-힣]/.test(pl.getDefenseHud().defendName), pl.getDefenseHud());
+      // secondary motion: spring chains animate and stay bounded while sprinting; foot IK stays sane
+      g.input.simulate({ keys: { KeyW: true, ShiftLeft: true } }); stepGame(1.0);
+      const sp = pl.debugState().springs, ik = pl.debugState().ikDrop;
+      g.input.simulate(null); stepGame(0.3);
+      PT.check('spring chains active, finite, bounded', sp.active >= 1 && sp.finite && sp.max <= 1.36 && sp.max > 0.01, sp);
+      PT.check('foot IK pelvis drop finite (≤ 0.3 m)', Number.isFinite(ik) && ik <= 0 && ik >= -0.3, ik);
       // cast kinds (all + unknown → basic) never throw
       let threw = null;
       for (const k of ['basic', 'heavy', 'ultimate', 'throw', 'slam', 'channel', 'summon', 'buff', 'beam', 'bowDraw', 'bowRelease', 'totemRaise', 'nope']) {
@@ -315,7 +321,28 @@ module.exports = async function player(PT) {
         const r = Math.hypot(pl.object.position.x, pl.object.position.z);
         PT.check('clampToBounds keeps the hero inside', r < 400, r);
         PT.tp(0, 110); stepGame(0.3);
-        if (typeof W.addPlatform !== 'function') { PT.skip('stand-on platform', 'world.addPlatform missing (world wave 1)'); return; }
+        if (typeof W.addPlatform !== 'function') {
+          PT.skip('stand-on platform (world)', 'world.addPlatform missing (world wave 1)');
+          // player-side logic with a labelled test double: getGroundHeight(x, z, yHint) + platformAt(x, z, y) → {delta}
+          const p = pl.object.position, cx = p.x, cz = p.z, top = W.getHeight(cx, cz) + 2;
+          const h = { top, delta: new T.Vector3() };
+          const origG = W.getGroundHeight, hadPA = 'platformAt' in W, origPA = W.platformAt;
+          const on = (x, z) => (x - cx) ** 2 + (z - cz) ** 2 < 4 + (h._dx || 0);
+          W.getGroundHeight = function (x, z, y) { const g0 = origG ? origG.call(W, x, z, y) : W.getHeight(x, z); return y !== undefined && y >= top - 1.2 && on(x - (h._ox || 0), z) ? Math.max(g0, top) : g0; };
+          W.platformAt = (x, z, y) => (Math.abs(y - top) < 0.05 && on(x - (h._ox || 0), z) ? h : null);
+          try {
+            pl.teleport(new T.Vector3(cx, top + 1.5, cz), false);
+            stepGame(1.0);
+            PT.check('platform (test double): lands on top via yHint', Math.abs(pl.object.position.y - top) < 0.05 && pl.grounded, { y: pl.object.position.y, top });
+            const x0 = pl.object.position.x;
+            for (let i = 0; i < 30; i++) { h.delta.set(0.04, 0, 0); h._ox = (h._ox || 0) + 0.04; g.step(1, 1 / 60); }
+            h.delta.set(0, 0, 0);
+            PT.check('platform (test double): handle.delta carries the hero', pl.object.position.x - x0 > 0.9, pl.object.position.x - x0);
+          } finally {
+            W.getGroundHeight = origG; if (hadPA) W.platformAt = origPA; else delete W.platformAt;
+          }
+          return;
+        }
         const p = pl.object.position;
         const top = W.getHeight(p.x, p.z) + 2.0;
         const h = W.addPlatform({ id: 'pt', shape: 'disc', center: new T.Vector3(p.x, top, p.z), r: 2, top, life: 30 });

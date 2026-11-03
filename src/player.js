@@ -757,7 +757,7 @@ export function createPlayer(game) {
     get superArmor() { return superArmorT > 0 || action.superArmor; },
     /** HP regen state (CONTRACT §10.3): {active, delay, delayLeft, inCombat, rate}. Reused object — read only. */
     get regen() { return regen.state; },
-    get lastHurtT() { return regen.lastHurtT; },
+    get lastHurtT() { return regen.lastHurtT; }, set lastHurtT(v) { if (Number.isFinite(v)) regen.lastHurtT = v; },
     inCombat() { return regen.inCombat(); },
     swordIdleT: 0,
     action, mods, gear, classGear: cg,
@@ -970,7 +970,7 @@ export function createPlayer(game) {
     setStaffElement,
     respawn,
     /** Test/debug: per-frame internals (read only). */
-    debugState() { return { cls, kit: kit.dodge.type + '/' + kit.defend.type, dodgeT, dodgeIframeT, blocking, counterT, focusing, decoyT, wardHp, superArmorT, platform: !!platformHandle, ikDrop: footIK.drop }; },
+    debugState() { return { cls, kit: kit.dodge.type + '/' + kit.defend.type, dodgeT, dodgeIframeT, blocking, counterT, focusing, decoyT, wardHp, superArmorT, platform: !!platformHandle, ikDrop: footIK.drop, springs: springs.stats() }; },
 
     update(dt, realDt) {
       const gameDt = dt;

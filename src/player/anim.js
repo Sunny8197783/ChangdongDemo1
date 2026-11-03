@@ -199,7 +199,8 @@ export class Animator {
       r.body.position.z += -piv * Math.sin(bodyPitch);
     }
     const sq = s.squash;
-    r.body.scale.set(1 + sq * 0.07, 1 - sq * 0.12, 1 + sq * 0.07);
+    const tuck = dp === 'roll' && du > 0 && du < 1 ? Math.sin(Math.PI * du) : 0;   // compact ball during the roll
+    r.body.scale.set(1 + sq * 0.07 + tuck * 0.06, 1 - sq * 0.12 - tuck * 0.22, 1 + sq * 0.07 + tuck * 0.06);
 
     // ---------- staff / totem: orientation expressed in body space ----------
     if (r.staff && r.staff.visible) {

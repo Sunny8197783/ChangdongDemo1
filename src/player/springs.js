@@ -21,6 +21,19 @@ export class Springs {
     }));
     this.t = 0;
   }
+  /** Debug: {active chains, max |angle|, all finite}. Allocates (tests only). */
+  stats() {
+    let active = 0, max = 0, finite = true;
+    for (const c of this.chains) {
+      if (!c.init) continue;
+      active++;
+      for (let i = 0; i < c.links.length; i++) {
+        const a = Math.max(Math.abs(c.ax[i]), Math.abs(c.az[i]));
+        if (!Number.isFinite(a)) finite = false; else if (a > max) max = a;
+      }
+    }
+    return { active, max, finite };
+  }
   /** Snap every chain to rest (teleports, respawn). */
   reset() {
     for (const c of this.chains) { c.init = false; c.ax.fill(0); c.az.fill(0); c.vx.fill(0); c.vz.fill(0); }
