@@ -365,6 +365,7 @@ export function createWorld(game) {
   function applyAct(a) {
     act = Math.max(1, Math.min(5, a | 0));
     plateau.setIslandsVisible(act >= 4);
+    plateau.setChannelVisible(act >= 2);   // the glowing void root channel the reveal follows
   }
   const bossIdOf = (p) => p?.id || p?.boss?.id || p?.boss;
   game.events?.on?.('bossSpawn', (p) => {

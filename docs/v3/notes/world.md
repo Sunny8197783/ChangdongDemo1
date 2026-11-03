@@ -75,7 +75,7 @@ gates + shrines 6 (global), updraft columns 1. No new lights. Every new material
 hidden, but compile still visits hidden objects). The program count does not grow when visiting every zone.
 
 ## Tests
-`node tools/playtest3.js world` runs 98 checks:
+`node tools/playtest3.js world` runs 100 checks:
 - zones, arenas and terraform; zone events; bounds
 - platforms; colliders and projectile blocking
 - updrafts and ascent glide reachability; ramp slopes
@@ -85,3 +85,6 @@ hidden, but compile still visits hidden objects). The program count does not gro
 - seeds (+1 point); act visibility; the altar and NPC spots
 - serialize, then deserialize in a fresh boot
 - per-zone perf and the programs check
+- walkability: a slope-limited BFS from the village reaches every zone
+
+The void root channel (arena → plateau foot) is shown from act 2, for the reveal.

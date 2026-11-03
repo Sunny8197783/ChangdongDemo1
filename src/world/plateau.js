@@ -59,7 +59,7 @@ const DRAFT_F = /* glsl */`
     float s2 = sin(vUv.x * 6.2832 * 5.0 - y * 0.8 - uTime * 4.5 + 1.7) * 0.5 + 0.5;
     float streak = pow(s1, 6.0) + pow(s2, 9.0) * 0.7;
     float fade = smoothstep(0.0, 0.08, vUv.y) * (1.0 - smoothstep(0.6, 1.0, vUv.y));
-    float a = streak * fade * 0.42;
+    float a = streak * fade * 0.3;
     gl_FragColor = vec4(vC * a * 1.6, a);
     #include <fog_fragment>
   }`;
@@ -265,6 +265,21 @@ export function buildPlateau(game, world, { uTime }) {
   const islands = mk(IP, islandGroup, 'sceneryIslandsMesh', 0.06, 0x1c1410);
   const islandsGlow = mkGlow(IG, islandGroup, 'sceneryIslandsGlow');
 
+  // ---------------- the void root channel (ruin → valley → plateau): shown from act 2 (the reveal follows it)
+  const channelGroup = new THREE.Group(); channelGroup.name = 'rootChannel'; channelGroup.visible = false;
+  game.scene.add(channelGroup);
+  {
+    const CP = [], CG = [];
+    const pts = [[0, -141], [12, -139], [24, -136], [34, -131], [44, -125], [55, -119], [64, -113], [72, -106], [77, -101]];
+    const v = pts.map(([x, z]) => new THREE.Vector3(x, H(x, z) - 0.25, z));
+    CP.push(part(tubeAlong(v, 0.95, 90), bark, null));
+    for (const side of [-1, 1]) CP.push(part(tubeAlong(v.map((p, i) => p.clone().add(new THREE.Vector3(Math.sin(i * 1.7) * 0.9 * side, -0.2, Math.cos(i * 1.3) * 0.9 * side))), 0.45, 90), bark, null));
+    glow(CG, tubeAlong(v.map((p) => p.clone().setY(p.y + 0.85)), 0.16, 90), 0xb14bff, null, 1.7);
+    for (let k = 0; k < 14; k++) { const p = new THREE.CatmullRomCurve3(v).getPoint(k / 13); glow(CG, new THREE.IcosahedronGeometry(0.28, 0), 0xd4b4ff, mat4(p.x, p.y + 1.0, p.z), 2.0); }
+    mk(CP, channelGroup, 'rootChannelMesh', 0.04, 0x1c1410);
+    mkGlow(CG, channelGroup, 'rootChannelGlow');
+  }
+
   // ---------------- ascent updraft columns
   for (const d of ASCENT_DRAFTS) world.addUpdraft?.({ id: d.id, pos: { x: d.x, y: H(d.x, d.z), z: d.z }, r: d.r, h: d.h, strength: d.strength, color: 0xc8ffe9 });
 
@@ -284,7 +299,7 @@ export function buildPlateau(game, world, { uTime }) {
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 
   const api = {
-    group, ledgeGroup, islandGroup, pillars, mirrors, door, updrafts,
+    group, ledgeGroup, islandGroup, channelGroup, pillars, mirrors, door, updrafts,
     center: new THREE.Vector3(PL.x, PL.top, PL.z), radius: PL.r + 30,
     ledgeCenter: new THREE.Vector3(LD.x, ly, LD.z), ledgeRadius: LD.r + 20,
     meshes: [main, glowMesh, ledgeMain, ledgeGlow, mirrorMesh, islands, islandsGlow, doorMesh, updrafts].filter(Boolean),
@@ -304,6 +319,7 @@ export function buildPlateau(game, world, { uTime }) {
       return true;
     },
     setIslandsVisible(v) { islandGroup.visible = !!v; },
+    setChannelVisible(v) { channelGroup.visible = !!v; },
     update(dt, realDt, t, drafts) {
       // door sinks into the ledge
       if (door.state === 'opening') {

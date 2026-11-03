@@ -136,6 +136,30 @@ module.exports = async function world(PT) {
       }
     }
     PT.check('root ramps walkable (< 53°)', maxSlope < Math.tan(53 * Math.PI / 180), maxSlope);
+    // walkability: BFS over a 2 m grid with the 53° slope limit from the village to every zone (water cells are swimmable)
+    {
+      const N = 172, X0 = -172, CS = 2, lim = Math.tan(50 * Math.PI / 180) * CS;
+      const hgt = new Float32Array(N * N);
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const x = X0 + i * CS, z = X0 + j * CS; hgt[j * N + i] = Math.max(W.getHeight(x, z), W.waterLevel - 0.3); }
+      const inWorld = (i, j) => { const p = new T.Vector3(X0 + i * CS, 0, X0 + j * CS); return !W.clampToBounds(p, 0.5); };
+      const seen = new Uint8Array(N * N), q = new Int32Array(N * N);
+      const ci = (x) => Math.round((x - X0) / CS);
+      let qh = 0, qt = 0; const s0 = ci(0) + ci(124) * N; seen[s0] = 1; q[qt++] = s0;
+      while (qh < qt) {
+        const k = q[qh++], i = k % N, j = (k - i) / N;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
+          const kk = jj * N + ii; if (seen[kk]) continue;
+          if (Math.abs(hgt[kk] - hgt[k]) > lim) continue;
+          if (!inWorld(ii, jj)) continue;
+          seen[kk] = 1; q[qt++] = kk;
+        }
+      }
+      const reach = (x, z) => seen[ci(x) + ci(z) * N] === 1;
+      const targets = { mirwenGate: [-56, -58], undinaIsland: [-96, -88], elderGate: [60, -40], glade: [64, -48], hollow: [92, -80], grove: [100, -66], arena: [0, -125], ledge: [60, -150], plateau: [108, -132], plateauFar: [126, -150] };
+      const miss = Object.keys(targets).filter((k) => !reach(...targets[k]));
+      PT.check('walk from the village to every zone (BFS, slope ≤ 50°)', miss.length === 0, miss);
+    }
     PT.check('setBossFightLOD toggles', (W.setBossFightLOD(true), W.bossFightLOD === true) && (W.setBossFightLOD(false), W.bossFightLOD === false));
   });
 
@@ -238,6 +262,9 @@ module.exports = async function world(PT) {
     PT.check('islands shown at act 4', W._v3.plateau.islandGroup.visible === true);
     W.setActVisible(1);
     PT.check('islands hidden before act 4', W._v3.plateau.islandGroup.visible === false);
+    W.setActVisible(2);
+    PT.check('root channel shown from act 2', W._v3.plateau.channelGroup.visible === true && W._v3.plateau.islandGroup.visible === false);
+    W.setActVisible(1);
     // village altar + npc spots
     const V = W.village;
     PT.check('altar crystals = ALL_ELEMENTS', V.altarCrystals.length === g.elements.list.length && W.villageObject.crystals.count === g.elements.list.length);
