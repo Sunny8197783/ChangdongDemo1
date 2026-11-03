@@ -226,8 +226,18 @@ export function createStory(game) {
   function advanceTraining() {
     if (S.stage !== 'training' || S.trainStep === 'go' || S.trainStep === 'done') return;
     if (!S.trainDone[S.trainStep]) return;
-    const next = TRAIN_STEPS.find((s) => !S.trainDone[s]);
-    setTrainStep(next || 'done');
+    setTrainStep(nextTrainStep() || 'done');
+  }
+  /** Something to press on 1~4 / X / G? A fresh class has no quick skill until the 'learn' step, so 'quick' waits for it. */
+  function quickReady() {
+    const sk = game.skills; if (!sk || sk.isStub || !sk.loadout) return true;
+    const L = sk.loadout; return !!(L.q1 || L.q2 || L.q3 || L.q4 || L.sup || L.ult);
+  }
+  function nextTrainStep() {
+    const rest = TRAIN_STEPS.filter((st) => !S.trainDone[st]);
+    if (!rest.length) return null;
+    if (rest[0] === 'quick' && rest.length > 1 && !quickReady()) return rest[1];
+    return rest[0];
   }
   function markTrain(step) {
     if (S.stage !== 'training' || S.trainDone[step]) return;
@@ -247,8 +257,12 @@ export function createStory(game) {
     S.featherActive = false; S.featherGot = true; feather.group.visible = false;
     featherFx?.stop?.(); featherFx = null;
     const Pl = game.player;
-    try { game.stats?.set?.('story:feather', { maxStaminaAdd: 20 }); } catch (_) { /* */ }
-    if (Pl && typeof Pl.maxStamina === 'number') { try { Pl.maxStamina += 20; Pl.stamina = Pl.maxStamina; } catch (_) { /* */ } }
+    // +20 max stamina: a stats source (survives statsChanged refreshes); the direct write is only the no-stats fallback
+    let viaStats = false;
+    try { if (game.stats?.set) { game.stats.set('story:feather', { maxStaminaAdd: 20 }); viaStats = true; } } catch (_) { viaStats = false; }
+    if (viaStats) { try { game.player?.refreshStats?.(); } catch (_) { /* */ } }
+    else if (Pl && typeof Pl.maxStamina === 'number') { try { Pl.maxStamina += 20; } catch (_) { /* */ } }
+    if (Pl && typeof Pl.maxStamina === 'number') { try { Pl.stamina = Pl.maxStamina; } catch (_) { /* */ } }
     if (quiet) return;
     const fp = feather.group.position;
     game.vfx?.burst?.(fp, { count: 60, color: [0x8fffc1, 0xffffff], speed: 7, spread: 1, size: 0.3, life: 1.1, shape: 'leaf', gravity: -1 });
@@ -945,8 +959,7 @@ export function createStory(game) {
       const T = W()?.village?.trainingGround || W()?.trainingArea;
       if (S.trainStep === 'go') {
         if (!T || Math.hypot(Pp.x - T.x, Pp.z - T.z) < (W()?.trainingRadius || 8.5) + 5) {
-          const next = TRAIN_STEPS.find((s) => !S.trainDone[s]);
-          setTrainStep(next || 'done', false);
+          setTrainStep(nextTrainStep() || 'done', false);
         }
       } else if (S.trainStep === 'defend' && !S.trainDone.defend) {
         const Pl = game.player;
@@ -1025,7 +1038,21 @@ export function createStory(game) {
     };
     for (const ev of ['blocked', 'parry', 'counterStance', 'counter', 'focusStart', 'wardBreak', 'wardHit']) events.on(ev, onDefend);
     for (const ev of ['dodge', 'blink', 'dash', 'perfectDodge']) events.on(ev, () => markTrain('dodge'));
-    events.on('skillLearned', () => { if (S.stage === 'training') { S.flags.learnedNode = true; if (!game.skills || game.skills.isStub) markTrain('learn'); } });
+    // learn + slot: skills auto-equips a fresh active into an empty slot (often before this listener runs), so a learned
+    // node whose skill is already in the loadout completes the step too
+    const slotted = (nodeId) => {
+      const L = game.skills?.loadout; if (!L) return false;
+      const g = P()?.node?.(nodeId)?.grants || [];
+      for (const k in L) if (L[k] && g.includes(L[k])) return true;
+      return false;
+    };
+    events.on('skillLearned', (p) => {
+      if (S.stage !== 'training') return;
+      S.flags.learnedNode = true;
+      if (!game.skills || game.skills.isStub) { markTrain('learn'); return; }
+      if (slotted(p?.id)) markTrain('learn');
+      else after(0.05, () => { if (slotted(p?.id)) markTrain('learn'); });
+    });
     events.on('loadoutChanged', (p) => { if (S.stage === 'training' && S.flags.learnedNode && p?.id) markTrain('learn'); });
     events.on('updraftEnter', () => {
       if (S.stage === 'updraft' && S.featherActive && !S.flags.updraftBark) { S.flags.updraftBark = true; bark('child', '지금이에요! {스페이스를 꾹} 눌러서 활공해요! 슈우웅!'); }
@@ -1078,6 +1105,7 @@ export function createStory(game) {
   function resetAll() {
     for (const k of Object.keys(S.flags)) delete S.flags[k];
     S.temp = {}; S.trainStep = null; S.trainDone = {}; S.hits = 0; S.timoTalked = false; S.featherGot = false;
+    try { game.stats?.clear?.('story:feather'); } catch (_) { /* */ }
     if (S.introHandle) { const h = S.introHandle; S.introHandle = null; try { h.stop(); } catch (_) { /* */ } }
     S.noBoss = {};
     S.regionOrder.length = 0; S.ascentStep = 0; S.escort = false; S.bossStarting = null; S.victoryEmitted = false; S.sawSkillCast = false;
