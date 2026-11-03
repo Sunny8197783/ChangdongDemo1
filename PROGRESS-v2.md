@@ -1,0 +1,29 @@
+# v2 expansion — progress / resume notes (for the orchestrating session)
+
+Request (user, Korean): grass-density graphics option; swordsman class (element-enchanted blade, hitstop 타격감 #1);
+real terrain interaction (fire burns grass, updraft over fire lifts glider); block & dash per class; sword
+basic/charged/ultimate per element; class+path choice (all elements vs master one element with awakened F +
+cinematic finisher + support skill); story, quest NPCs, starting village, setting; beautiful lore intro cutscene;
+keep it lag-free (optimize).
+
+Plan: core done by orchestrator (commit "v2 core"). Then Workflow `arcane-wilds-v2`:
+Build (8 agents: world, melee, magic, enemies, story, cinematic, ui, audio) → Integrate → Review (4 lenses) → Fix.
+Then orchestrator: verify (tools/playtest.js + screenshots), commit, republish artifact
+https://claude.ai/artifact/7LwzvnUbMZoR78eALTV69d (publish file
+/tmp/claude-0/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/scratchpad/pub/arcane-wilds.html — regenerate the
+files map from src/** + needed vendor files; see previous publish).
+
+If interrupted (usage limit): re-invoke Workflow with scriptPath + resumeFromRunId (both logged below) — finished
+agents replay from cache.
+
+## Log
+- Workflow launched: run id `wf_bea88fb9-d61`, task id `wwcwmz62d`.
+  scriptPath: /root/.claude/projects/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/workflows/scripts/arcane-wilds-v2-wf_bea88fb9-d61.js
+  Resume: Workflow({scriptPath: <above>, resumeFromRunId: "wf_bea88fb9-d61"})
+  Journal: /root/.claude/projects/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/subagents/workflows/wf_bea88fb9-d61/journal.jsonl
+- Auto-resume scheduled task: trig_01PPiYrGbyLYVh3JXZBHsa9X (every 3h at :56). Delete when everything is done.
+
+## 완료 (2026-11-02)
+- 워크플로 wf_bea88fb9-d61 완료 (14 agents, 0 errors). 검증: playtest.js / playtest2.js / bootcheck 6종 모두 PASS, 콘솔 에러 0.
+- 아티팩트 v2 재배포: https://claude.ai/artifact/7LwzvnUbMZoR78eALTV69d
+- 자동 재개 예약 작업 삭제됨.
