@@ -450,7 +450,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     for (let b = 0; b < n; b++) {
       const spreadA = n > 1 ? ((b / (n - 1)) - 0.5) * 0.5 : 0;
       api.beam({
-        origin: o, dir: dir.clone().applyAxisAngle(UP, spreadA), len: p.len || 20, width: (p.width || 1.2) * rMul(ctx), dur: p.dur ?? 0, tick: p.tick || 0.1, hitSpec: hit, prism: !!p.prism, element: el,
+        origin: o, dir: dir.clone().applyAxisAngle(UP, spreadA), len: p.len || 20, width: (p.width || 1.2) * rMul(ctx), dur: p.dur ?? 0, tick: p.tick || 0.1, hitSpec: hit, prism: !!p.prism || (el === 'light' && !!game.stats?.get?.('lightRefract')), element: el,
         follow: p.dur > 0 ? (org, d) => {
           const P2 = pl(); if (!P2?.entity?.alive) return false;
           try { P2.getWeaponTip ? P2.getWeaponTip('main', org) : org.copy(ppos()).setY(ppos().y + 1.5); } catch (_) { /* */ }

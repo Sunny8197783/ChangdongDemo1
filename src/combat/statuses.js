@@ -95,6 +95,13 @@ export function createStatuses(game, C) {
     return Math.max(2, n);
   }
 
+  const sk = (k, d) => { try { const v = stats()?.get?.(k); return v === undefined || v === null ? d : v; } catch (_) { return d; } };
+  function playerDur(name, sec) {
+    if (name === 'burning') return sec + (sk('burnDurAdd', 0) || 0);
+    if (name === 'wet') return sec + (sk('wetDurAdd', 0) || 0);
+    if (name === 'frozen') return (sec + (sk('frozenDurAdd', 0) || 0)) * (sk('frozenDurMul', 1) || 1);
+    return sec;
+  }
   /** CONTRACT §8.1 signature: applyStatus(t, name, seconds, extra={stacks, source, power, el}). */
   function applyStatus(t, name, seconds, extra) {
     if (!t || !t.alive || !name) return false;
@@ -110,6 +117,9 @@ export function createStatuses(game, C) {
       return false;
     }
     if (t.isBoss && d?.bossMul) seconds *= d.bossMul;
+    // tree passives (player sources only): 불씨의 숨결 / 서리 손길 / 영구동토 / 물의 인도
+    if (!isPl && fromPlayer(src)) seconds = playerDur(name, seconds);
+    if (isPl && name === 'shocked') { try { if (stats()?.get?.('selfElectroImmune')) return false; } catch (_) { /* */ } }
     if (isPl && name === 'burning') { try { if (stats()?.get?.('burnImmune')) return false; } catch (_) { /* */ } }
     if (isPl && name === 'blight') { try { if (stats()?.get?.('blightImmune')) return false; } catch (_) { /* */ } }
     const now = game.time;
@@ -191,7 +201,7 @@ export function createStatuses(game, C) {
     const s = e?.statuses; if (!s) return 1;
     if (s.frozen || s.stunned || s.asleep || s.rooted) return 0;
     let m = 1;
-    if (s.chilled) m *= 0.6;
+    if (s.chilled) m *= fromPlayer(s.chilled.source) ? Math.max(0.2, 0.6 - (sk('chillSlowAdd', 0) || 0)) : 0.6;
     if (s.wet) m *= 0.92;
     if (s.encrusted) m *= 0.9;
     if (s.muddy) m *= e.isBoss ? 0.8 : 0.55;
@@ -206,6 +216,7 @@ export function createStatuses(game, C) {
     if (s.broken) m *= 1.5;
     if (s.corroded) m *= 1 + STATUS_DEFS.corroded.dmgTakenPerStack * (s.corroded.stacks || 1);
     if (s.radiant && el === 'light') m *= 1 + STATUS_DEFS.radiant.elDmgTaken.light * (s.radiant.stacks || 1);
+    if (s.shocked && fromPlayer(s.shocked.source)) m *= 1 + (sk('shockedTakenAdd', 0) || 0);   // 정전기
     return m;
   }
   function flatBonus(t, el) {
@@ -221,6 +232,12 @@ export function createStatuses(game, C) {
     return m;
   }
 
+  /** shadow.rx 침식의 지식: inside a curse mist / necroflame the corroded stacks do not fade. */
+  function inCurse(e) {
+    if (e.statuses?.cursedMist || e.statuses?.necroflame) return true;
+    const Z = game.spells?.api?.zones;
+    try { return !!(Z?.isInside?.('miasma', e.object.position) || game.world?.surface2?.isCursed?.(e.object.position)); } catch (_) { return false; }
+  }
   // ---------------- per-frame tick ----------------
   const near = [];
   function tickDot(e, k, st, d) {
@@ -233,6 +250,10 @@ export function createStatuses(game, C) {
     if (dot.perStack) amt *= (st.stacks || 1);
     if (k === 'burning' && st.holy) amt *= 1.5;
     const isPl = e.team === 'player';
+    if (!isPl && fromPlayer(st.source ?? 'player')) {
+      if (k === 'burning') amt *= sk('burnTickMul', 1) || 1;
+      else if (k === 'seeded') amt *= sk('seededDotMul', 1) || 1;
+    }
     dotHit.amount = amt;
     dotHit.element = dot.element || d.element || 'physical';
     dotHit.source = isPl ? (st.source && typeof st.source === 'object' ? st.source : 'env') : (st.source || 'player');
@@ -282,6 +303,7 @@ export function createStatuses(game, C) {
         } else if (k === 'frozen') {
           if (e.velocity) { const kd = Math.pow(0.8, dt * 60); e.velocity.x *= kd; e.velocity.z *= kd; }
         }
+        if (k === 'corroded' && st.time < 0.25 && fromPlayer(st.source) && sk('corrodeNoFadeInCurse', false) && inCurse(e)) st.time = 0.25;
         if (st.time <= 0 && s[k] === st) removeStatus(e, k, 'expire');
       }
     }

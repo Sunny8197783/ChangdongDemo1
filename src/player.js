@@ -86,7 +86,7 @@ export function createPlayer(game) {
   let facing = Math.PI, prevFacing = Math.PI, bank = 0, turnRate = 0;
   let yaw = 0, pitch = -0.12;
   let gliding = false, sprinting = false;
-  let invulT = 0, ghostTimer = 0;
+  let invulT = 0, ghostTimer = 0, shieldT = 0;
   let castKind = null, castT = 0, castRecent = 0, gemFlare = 0;
   let charging = false, chargeFrac = 0, chargeEl = null;
   let hurt = 0, squash = 0, deadW = 0, dying = false, deadTime = 0, respawnTimer = null;
@@ -546,9 +546,9 @@ export function createPlayer(game) {
     R.spendStamina(DG.cost, true);
     if (DG.charges) {
       const maxC = DG.charges + (statGet('extraDash', 0) || 0);
-      if (dodgeCharges === maxC) dodgeRecharge = DG.recharge;
+      if (dodgeCharges === maxC) dodgeRecharge = DG.recharge * (statGet('dodgeCdMul', 1) || 1);
       dodgeCharges--;
-    } else dodgeCd = DG.cd;
+    } else dodgeCd = DG.cd * (statGet('dodgeCdMul', 1) || 1);   // wind.cap 순풍의 가호 −25%
     const type = DG.type;
     dodgeType = type;
     // direction: input, else backwards from the camera view (backflip: always away from the facing / aim)
@@ -732,6 +732,8 @@ export function createPlayer(game) {
     get maxResolve() { return R.maxResolve; }, set maxResolve(v) { R.setMax('resolve', v); },
     get stamina() { return R.stamina; }, set stamina(v) { R.stamina = clamp(v, 0, R.maxStamina); },
     get maxStamina() { return R.maxStamina; }, set maxStamina(v) { R.setMax('stamina', v); },
+    /** Re-read maxima from game.stats now (keeps fill fractions) instead of waiting for the next statsChanged. */
+    refreshStats() { R.refresh(true); },
     /** 'mp' | 'resolve' */
     get resource() { return R.kind; },
     get family() { return familyOf(cls); },
@@ -790,6 +792,17 @@ export function createPlayer(game) {
     getSwordTip(out = new THREE.Vector3()) {
       if (isMelee() && style() !== 'longsword') return api.getWeaponTip('main', out);
       return (swordDrawn ? gear.tip : gear.sheathed).getWorldPosition(out);
+    },
+    /** Weapon grip in world space. which 'off' = the left dagger / shield / buckler grip (trail roots). */
+    getWeaponBase(which = 'main', out) {
+      if (which && which.isVector3) { out = which; which = 'main'; }
+      out = out || new THREE.Vector3();
+      if (which !== 'off') return api.getSwordBase(out);
+      const S = cg.sockets, st = style();
+      if (st === 'daggers' && swordDrawn && S.daggers?.L) return S.daggers.L.getWorldPosition(out);
+      if (st === 'hammer' && S.shield) return S.shield.getWorldPosition(out);
+      if (st === 'bow' && S.bow?.grip) return S.bow.grip.getWorldPosition(out);
+      return api.getWeaponTip('off', out);
     },
     getSwordBase(out = new THREE.Vector3()) {
       const S = cg.sockets, st = style();
@@ -903,6 +916,37 @@ export function createPlayer(game) {
     spendResolve(n) { return R.spendResolve(n); },
     /** Stamina (dodge, block, glide, sprint). */
     spendStamina(n) { return R.spendStamina(n); },
+    /** +n 투지 (soul orbs, procs). No-op for MP classes. */
+    addResolve(n) { R.addResolve(+n || 0); },
+    restoreMp(n) { R.mp = clamp(R.mp + (+n || 0), 0, R.maxMp); },
+    /** Invulnerability for `seconds` (blink / dash / leap skills), merged with the respawn i-frames. */
+    grantIframes(seconds) {
+      const s = +seconds || 0; if (s <= 0) return;
+      invulT = Math.max(invulT, s); entity.invulnerable = true;
+    },
+    /** Absorb shield (crystal pickups, light.aegis, crystallize): combat subtracts entity.shieldHp before HP. */
+    addShield(amount, seconds = 6, opts = {}) {
+      const a = +amount || 0; if (a <= 0) return false;
+      entity.shieldHp = Math.max(entity.shieldHp || 0, a); shieldT = Math.max(shieldT, +seconds || 6);
+      const c = opts?.element ? elColor(opts.element) : 0xfff1b8;
+      vfxCall('burst', v1.copy(pos).setY(pos.y + 1.1), { count: 14, shape: 'shard', color: [c, 0xffffff], speed: 3, spread: 1, size: 0.12, life: 0.4, drag: 2 });
+      ev('playerShield', { amount: a, seconds: shieldT });
+      return true;
+    },
+    get shield() { return entity.shieldHp || 0; },
+    /** wind.step: give back n dash pips (charge-based dodges only). */
+    refundDash(n = 1) {
+      const DG = kit.dodge; if (!DG.charges) { dodgeCd = 0; return; }
+      const maxC = DG.charges + (statGet('extraDash', 0) || 0);
+      dodgeCharges = Math.min(maxC, dodgeCharges + (n | 0 || 1));
+    },
+    /** Start gliding right away when airborne (wind.m3b). The glide continues while Space is held, as usual. */
+    startGlide() {
+      if (grounded || gliding || statGet('noGlide', false)) return false;
+      airTime = Math.max(airTime, 0.3); vy = Math.min(vy, 0.4);
+      gliding = true; ev('glideStart', { position: pos.clone() });
+      return true;
+    },
 
     getStaffTip(out = new THREE.Vector3()) {
       if (rig.staff?.visible || !cls) return rig.gemPivot.getWorldPosition(out);
@@ -997,6 +1041,7 @@ export function createPlayer(game) {
       // ---------- timers ----------
       if (dodgeCd > 0) dodgeCd = Math.max(0, dodgeCd - dt);
       if (invulT > 0) { invulT -= dt; if (invulT <= 0) entity.invulnerable = false; }
+      if (shieldT > 0) { shieldT -= dt; if (shieldT <= 0 || !(entity.shieldHp > 0)) { shieldT = 0; entity.shieldHp = 0; } }
       if (dodgeIframeT > 0) dodgeIframeT -= dt;
       if (superArmorT > 0) superArmorT -= dt;
       castRecent = Math.max(0, castRecent - dt);
@@ -1276,7 +1321,7 @@ export function createPlayer(game) {
         }
 
         // ---------- stamina ----------
-        if (sprinting) { R.drainStamina(SPRINT_STAM, dt); staminaBusy = true; }
+        if (sprinting) { if (!(statGet('freeSprintOOC', false) && !regen.inCombat())) { R.drainStamina(SPRINT_STAM, dt); staminaBusy = true; } }
         else if (gliding) { if (!infGlide) R.drainStamina((inUpdraft ? GLIDE_STAM_UPDRAFT : GLIDE_STAM) * (statGet('glideStamMul', 1) || 1), dt); staminaBusy = true; }
         else if (blocking && (D.type === 'guard' || D.type === 'shield')) { R.lastStamUse = t; staminaBusy = true; }
         else if (focusing) staminaBusy = true;

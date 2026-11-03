@@ -259,6 +259,8 @@ export const BY_OBJECT = {};
 }
 
 // ---------------------------------------------------------------- engine
+const SWIRL_EL = { burning: 'fire', chilled: 'ice', shocked: 'lightning', wet: 'water', seeded: 'nature', radiant: 'light', corroded: 'shadow' };
+const EMPTY_A = [];
 const RX_CD = 1.0;
 const MAX_CASCADE_PER_FRAME = 3;
 
@@ -270,6 +272,7 @@ export function createReactions(game, C) {
   const fx = (name, ...a) => { try { return game.vfx?.[name]?.(...a); } catch (_) { return null; } };
   const isPl = (src) => src === 'player' || src?.team === 'player';
   const stats = () => game.stats;
+  const pstat = (k, d) => { try { const v = stats()?.get?.(k); return v === undefined || v === null ? d : v; } catch (_) { return d; } };
   const playerEnt = () => game.player?.entity || null;
   const S = () => game.spells?.api || null;
 
@@ -389,7 +392,7 @@ export function createReactions(game, C) {
     fx('preset', 'rx_bloom', point, { scale: 0.8 });
     aoe(point, 3, team, null, (e) => C.dealDamage(e, rxHit(30, 'nature', src, null, { rxId: 'bloom' })));
     const pe = playerEnt();
-    if (pe?.alive && pe.object.position.distanceTo(point) < 6) C.healPlayer(maxHp() * 0.03, 'bloom');
+    if (pe?.alive && pe.object.position.distanceTo(point) < 6) C.healPlayer(maxHp() * (0.03 + (isPl(src) ? (pstat('podHealAdd', 0) || 0) : 0)), 'bloom');
   }
   function updateFields(dt) {
     for (let i = fields.length - 1; i >= 0; i--) {
@@ -447,12 +450,15 @@ export function createReactions(game, C) {
       const list = near2.filter((e) => e !== t && e.alive && !e.isProp);
       for (let i = 0; i < 6 && list.length; i++) { const e = list[i % list.length]; C.dealDamage(e, rxHit(8, 'ice', c.source, null, { rxId: 'shatter' })); n++; }
       if (t.statuses?.cracked) soulOrb(c.point);
+      // ice.prison: shatter +50% on that target while marked
+      if (t.shatterMul > 1 && (t.shatterMulUntil || 0) > game.time) return { shards: n, mult: (c.entry.mult ?? 1) * t.shatterMul };
       return { shards: n };
     },
     electrocute(c) {
       const isFusion = c.hit.tags && c.hit.tags.includes('fusion');
       if (isFusion || !c.t) return null;
-      C.queryRadius(c.point, 9, c.team, near2);
+      const wr = isPl(c.source) && pstat('chainThroughWater', false) ? (pstat('chainWaterRange', 0) || 12) : 9;   // lightning.rx 과전류
+      C.queryRadius(c.point, wr, c.team, near2);
       const others = near2.filter((e) => e !== c.t && e.statuses?.wet && !onCd(e, 'electrocute')).slice(0, 4);
       let depth = 1;
       const from = c.point.clone();
@@ -496,13 +502,23 @@ export function createReactions(game, C) {
       // spread the touched aura (frozen spreads as chilled)
       const key = c.auraKey === 'frozen' ? 'chilled' : c.auraKey;
       if (c.t) C.removeStatus(c.t, key);
-      const sel = { burning: 'fire', chilled: 'ice', shocked: 'lightning', wet: 'water', seeded: 'nature', radiant: 'light', corroded: 'shadow' }[key] || 'wind';
+      const sel = SWIRL_EL[key] || 'wind';
       const col = elColor(sel);
       const dmgEl = sel === 'water' ? 'wind' : sel;
-      aoe(c.point, 7, c.team, c.t, (e) => {
+      const pl = isPl(c.source);
+      // wind.rx 바람의 인도: +3 m and the second-newest aura spreads too
+      let key2 = null;
+      if (pl && c.t && pstat('swirlTwoAuras', false)) {
+        const ring = c.t.auraOrder || EMPTY_A;
+        for (let i = 0; i < ring.length; i++) { const k = ring[i]; if (k !== key && SWIRL_EL[k] && c.t.statuses?.[k]) { key2 = k; break; } }
+        if (key2) C.removeStatus(c.t, key2);
+      }
+      const R = 7 + (pl ? (pstat('swirlRadiusAdd', 0) || 0) : 0);
+      aoe(c.point, R, c.team, c.t, (e) => {
         const p = C.getCenter(e, tv[3]);
         fx('beam', c.point, p, { color: col, width: 0.08, duration: 0.3, jagged: 0.15, segments: 6 });
         const st = {}; st[key] = key === 'seeded' || key === 'radiant' ? { stacks: 2 } : 3;
+        if (key2) st[key2] = key2 === 'seeded' || key2 === 'radiant' ? { stacks: 2 } : 3;
         C.dealDamage(e, rxHit(c.amount * 0.5 + 4, dmgEl, c.source, p.clone(), { rxId: c.entry.id, status: st }));
       });
       c.nameOverride = c.entry.swirlVariant ? null : elName(sel) + ' 확산';
@@ -570,7 +586,7 @@ export function createReactions(game, C) {
       if (!o && isPl(c.source)) {
         // fallback (no crystal objects yet): grant the pickup reward directly
         try { stats()?.set?.('rx:crystal', { [auraEl + 'Dmg']: 1.2 }, { duration: 6 }); } catch (_) { /* */ }
-        try { game.player?.addShield?.(maxHp() * 0.12, 6); } catch (_) { /* */ }
+        try { game.player?.addShield?.(maxHp() * 0.12 * (pstat('crystalShieldMul', 1) || 1), 6, { element: auraEl }); } catch (_) { /* */ }
       }
       c.colorEl = auraEl;
       return null;
@@ -683,6 +699,12 @@ export function createReactions(game, C) {
       C.applyStatus(t, 'dazzled', 2, { source: c.source });
       setCd(t, 'judgment!', t.isBoss ? c.entry.cdBoss : c.entry.cdTarget);
       enqueue(0.12, () => { if (t.alive) C.dealDamage(t, rxHit(Math.round(amt), 'light', c.source, c.point, { rxId: 'judgment', fixed: true, tier: 'heavy' })); }, 1);
+      // light.rx 찬란한 지혜: the judgment splashes 50% within 5 m
+      const splash = isPl(c.source) ? (pstat('judgmentSplash', 0) || 0) : 0;
+      if (splash > 0) {
+        const sp = c.point.clone(), src = c.source, team = c.team;
+        enqueue(0.2, () => aoe(sp, 5, team, t, (e) => C.dealDamage(e, rxHit(Math.round(amt * splash), 'light', src, null, { rxId: 'judgment', fixed: true }))), 2);
+      }
       fx('runeCircle', ground(c.point, tv[3]), { element: 'light', r: 2.4, dur: 1.2, rotSpeed: 1.5 });
       return { judgmentDmg: amt };
     },
@@ -816,7 +838,10 @@ export function createReactions(game, C) {
     }
     // judgment (physical/light triggers, or the fallback for any element)
     const st = s.radiant;
-    if (st && (st.stacks || 0) >= threshold() && !onCd(t, 'judgment') && !onCd(t, 'judgment!')) {
+    // paladin Lv25b 심판관: heavy hammer slams judge at 3 stacks
+    let th = threshold();
+    if (st && th > 3 && hit.tags && hit.tags.includes('hammer') && isHeavy(hit)) { try { if (stats()?.get?.('slamJudgment')) th = 3; } catch (_) { /* */ } }
+    if (st && (st.stacks || 0) >= th && !onCd(t, 'judgment') && !onCd(t, 'judgment!')) {
       let anyLight = false; try { anyLight = el === 'light' && !!stats()?.get?.('judgmentAnyLight'); } catch (_) { /* */ }
       if (isHeavy(hit) || anyLight) { if (outInfo) outInfo.key = 'radiant'; return JUDGMENT; }
     }

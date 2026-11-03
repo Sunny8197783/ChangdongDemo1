@@ -99,7 +99,9 @@ export function registerMeleeArchetypes(game, E) {
   }
   /** i-frames for melee movement skills (only when nothing else made the hero invulnerable). */
   function iframes(t) {
-    const e = P()?.entity; if (!e || !(t > 0) || e.invulnerable) return;
+    const pl = P(); if (!(t > 0)) return;
+    if (typeof pl?.grantIframes === 'function') { try { pl.grantIframes(t); return; } catch (_) { /* fall back */ } }
+    const e = pl?.entity; if (!e || e.invulnerable) return;
     e.invulnerable = true;
     E.after(t, () => { e.invulnerable = false; });
   }

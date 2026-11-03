@@ -12,6 +12,7 @@ const EMPTY = [];
 const TIER_RANK = { light: 0, heavy: 1, crit: 2, reaction: 3, ult: 4, break: 5 };
 const RANK_TIER = ['light', 'heavy', 'crit', 'reaction', 'ult', 'break'];
 
+const NATURE_HEAL = new Set(['regen', 'bloom', 'photosynthesis', 'pod', 'nature', 'treant']);
 export function createPipeline(game, C) {
   const NONE = Object.freeze({ damage: 0, reaction: null, crit: false, killed: false });
   const tvA = new THREE.Vector3(), tvB = new THREE.Vector3(), tvF = new THREE.Vector3(), tvS = new THREE.Vector3();
@@ -23,6 +24,7 @@ export function createPipeline(game, C) {
   const statusSpec = { stacks: 0, source: null, power: 1, el: null };
   const healEv = { target: null, amount: 0, source: '' };   // reused payload for HoT heals (fires per frame during regen)
   let hotTokens = 0;
+  let lethalSaveReadyT = -1e9;   // light.cap 여명 cooldown (game time)
   const lastFormula = { base: 0, power: 1, mastery: 1, atkMul: 1, elementDmg: 1, castMul: 1, conditional: 1, flat: 0, reaction: 1, resist: 1, crit: 1, final: 0 };
 
   function sget(k, d) { try { const v = stats()?.get?.(k); return v === undefined || v === null ? d : v; } catch (_) { return d; } }
@@ -117,6 +119,13 @@ export function createPipeline(game, C) {
       let cond = C.st.takenMul(t, el);
       const bs = !isDot && vsFoe && backstab(t, hit);
       if (bs) { cond *= Math.max(1, sget('backstabMul', 1)); hit.backstab = true; }
+      // tree / talent conditionals (feature keys; 1 when unset)
+      if (el === 'ice' && !t.statuses.frozen) cond *= sget('iceUnfrozenMul', 1);                        // ice.key 영구동토
+      if (t.statuses.airborne || (vsFoe && game.player && game.player.grounded === false)) cond *= sget('airDmgMul', 1);   // wind.p2 공중전
+      if (hit.headshot == null && !isTick && hit.point && t.object && game.player?.style === 'bow' && !tags.includes('melee')) {
+        hit.headshot = hit.point.y - t.object.position.y > (t.height || 1.6) * 0.78;    // arrows striking the head
+      }
+      if (hit.headshot) cond *= sget('headshotMul', 1);                                                  // ranger Lv10
       F.power = power; F.mastery = mastery; F.atkMul = atk; F.elementDmg = edmg; F.castMul = cast; F.conditional = cond;
       amount = amount * power * mastery * atk * edmg * cast * cond;
       const flat = C.st.flatBonus(t, el);
@@ -152,10 +161,23 @@ export function createPipeline(game, C) {
     if (dmg <= 0 && !rx) return NONE;
     dmg = Math.max(1, dmg);
 
+    // 6b. player absorb shield (player.addShield: crystal pickups, aegis, crystallize)
+    if (isPlayerT && t.shieldHp > 0) {
+      const a = Math.min(t.shieldHp, dmg); t.shieldHp -= a; dmg -= a;
+      if (dmg <= 0) { dmg = 0; F.final = 0; }
+    }
     // 7. HP
     let killed = false;
     if (t.isDummy) { t.hp = Math.max(1, t.hp - dmg); t._dummyRefill = 3; }
     else { t.hp -= dmg; if (t.hp <= 0) { t.hp = 0; killed = true; } }
+    // light.cap 여명: once per lethalSaveCd (120 s) a lethal hit leaves the player at 1 HP with 3 s of invulnerability
+    if (killed && isPlayerT && sget('lethalSave', false) && game.time >= lethalSaveReadyT) {
+      lethalSaveReadyT = game.time + (sget('lethalSaveCd', 0) || 120);
+      killed = false; t.hp = 1;
+      try { if (game.player?.grantIframes) game.player.grantIframes(3); else t.invulnerable = true; } catch (_) { /* */ }
+      try { game.vfx?.preset?.('impact_light', t.object?.position); } catch (_) { /* */ }
+      game.events.emit('lethalSave', { target: t, cd: sget('lethalSaveCd', 0) || 120 });
+    }
 
     // 8. lifesteal (player hits on foes)
     if (vsFoe && !isProp) {
@@ -222,7 +244,8 @@ export function createPipeline(game, C) {
     }
 
     const result = { damage: dmg, reaction: rx?.id || null, crit, killed, blocked: blockMul < 1, tier, backstab: !!hit.backstab };
-    game.events.emit('damage', { target: t, amount: dmg, element: el, point, crit, reaction: result.reaction, killed, isPlayer: isPlayerT || t.team === 'player', isProp, source: hit.source, dot: isTick && !rx && !killed, melee: isMelee, tier, skillId: hit.skillId || null });
+    game.events.emit('damage', { target: t, amount: dmg, element: el, point, crit, reaction: result.reaction, killed, isPlayer: isPlayerT || t.team === 'player', isProp, source: hit.source, dot: isTick && !rx && !killed, melee: isMelee, tier, skillId: hit.skillId || null,
+      backstab: !!hit.backstab, charged: !!(hit.charged || hit.heavy), slot: hit.slot || null, headshot: !!hit.headshot });
     if (isPlayerT) game.events.emit('playerHurt', { amount: dmg, element: el });
 
     // 14. onHit / onDeath
@@ -260,6 +283,7 @@ export function createPipeline(game, C) {
     const pl = game.player, pe = pl?.entity;
     if (!pe || !pe.alive || !(amount > 0)) return 0;
     let amt = amount * sget('healMul', 1);
+    if (!NATURE_HEAL.has(source)) amt *= sget('nonNatureHealMul', 1);   // nature.key: non-nature heals −50% (regen exempt)
     if (opts?.hot && bossFight()) { amt = Math.min(amt, Math.max(0, hotTokens)); hotTokens -= amt; }
     const max = pl.maxHp ?? pe.maxHp ?? 100;
     const cur = pl.hp ?? pe.hp;

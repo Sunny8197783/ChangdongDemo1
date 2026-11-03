@@ -270,6 +270,16 @@ export function createWorld(game) {
     return h;
   }
 
+  /** The stand-on platform the feet at (x, yHint, z) rest on (same rule as getGroundHeight), or null. */
+  function platformAt(x, z, yHint) {
+    if (yHint === undefined || !Number.isFinite(yHint)) return null;
+    getGroundHeight(x, z, yHint);
+    return world.groundPlatform;
+  }
+  /** Shadowblade stealth: dense unburnt meadow grass. */
+  const _tg = { x: 0, y: 0, z: 0 };
+  function isTallGrass(x, z) { _tg.x = x; _tg.z = z; return !!surface?.isTallGrass?.(_tg); }
+
   const v3 = (x, z, dy = 0) => new THREE.Vector3(x, getHeight(x, z) + dy, z);
   const camps = LAYOUT.camps.map((c) => ({
     id: c.id, name: c.name, position: v3(c.x, c.z), radius: c.r,
@@ -283,7 +293,7 @@ export function createWorld(game) {
   const paths = Object.fromEntries(Object.entries(LAYOUT.paths).map(([k, pts]) => [k, pts.filter((_, i) => i % 2 === 0).map((p) => v3(p[0], p[1]))]));
 
   Object.assign(world, {
-    raycast, resolveCollision, queryColliders, isInWater, waterDepth, getGroundHeight, waterLevelAt, clampToBounds, groundPlatform: null,
+    raycast, resolveCollision, queryColliders, isInWater, waterDepth, getGroundHeight, platformAt, isTallGrass, waterLevelAt, clampToBounds, groundPlatform: null,
     _isInWaterRaw: isInWaterRaw,
     village: village.data,
     worldTree: worldTree.data,

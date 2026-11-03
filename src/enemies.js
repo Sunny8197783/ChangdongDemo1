@@ -479,6 +479,14 @@ export function createEnemies(game) {
     remove(e) { removeEnemy(e); },
     // ---- threat (CONTRACT §14)
     setTauntTarget: (ent, dur, range) => threat.setTauntTarget(ent, dur, range),
+    /** Reflect enemy orbs inside a cone (wind.gust reflect:true). */
+    reflectProjectiles(origin, dir, len = 8, angDeg = 70) { try { return ctx.projectiles?.reflectCone?.(origin, dir, len, angDeg) || 0; } catch (_) { return 0; } },
+    /** Per-enemy sight loss (shadow raven swarm): sight radius × mul for dur seconds; an aggroed enemy with mul ≈ 0 loses track. */
+    setSightMul(e, mul, dur = 3) {
+      if (!e) return;
+      e.sightMul = Math.max(0, +mul || 0); e.sightMulUntil = (game.time || 0) + (+dur || 3);
+      if (e.sightMul <= 0.05 && e.aggro && !e.isBoss) { e.aggro = false; e.giveUpT = Math.min(+dur || 3, 3); }
+    },
     clearTauntTarget: () => threat.clearTauntTarget(),
     getThreatTarget: (e) => threat.getThreatTarget(e),
     setPlayerStealth: (mul, dur) => threat.setPlayerStealth(mul, dur),

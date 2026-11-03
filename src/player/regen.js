@@ -37,7 +37,15 @@ export class Regen {
     const before = this.hpBefore;
     this.hpBefore = NaN;
     if (!Number.isFinite(before)) return false;
-    if (this.entity.hp < before - 1e-6) { this.markHurt(); return true; }
+    if (this.entity.hp < before - 1e-6) {
+      // water.key 조수의 맹세: in water the regen never pauses (core flag noRegenPause: never)
+      if (this.stat('noRegenPause', false)) return false;
+      if (this.stat('noRegenPauseInWater', false)) {
+        let wet = false; try { wet = !!this.game.world?.isInWater?.(this.pos.x, this.pos.z); } catch (_) { wet = false; }
+        if (wet) return false;
+      }
+      this.markHurt(); return true;
+    }
     return false;
   }
   markHurt() {

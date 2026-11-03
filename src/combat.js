@@ -153,6 +153,8 @@ export function createCombat(game) {
     statusInfo: (id) => STATUS_DEFS[id] || null,
     queryRadius, raycastEntities, getCenter: center, discover: rx.discover,
     previewReaction: rx.previewReaction, reactObject: rx.reactObject, debugReact: rx.debugReact,
+    /** The staggered cascade queue (CONTRACT §8.2): enqueue(delaySec, fn, depth). Depth > 3 is dropped. */
+    enqueue: (delay, fn, depth = 1) => rx.enqueue(delay, fn, depth),
     registerObject: rx.registerObject, unregisterObject: rx.unregisterObject,
     addBreak: (t, n) => breakFx.addBreak(t, n), isBroken: breakFx.isBroken, drainShield: breakFx.drainShield,
     resonance, FOES, isPlayerSource: pipe.isPlayerSource,

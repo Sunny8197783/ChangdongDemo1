@@ -110,7 +110,8 @@ function perceive(ctx, e, dt = 0.016) {
   if (safe && e.aggro && !e.summoned) e.giveUp = true;
   if (!e.aggro) {
     if (e.giveUpT > 0 || safe) return;
-    const sight = (e.state === 'return' ? e.sight * 0.55 : (e.sitting ? e.sight * 0.75 : e.sight)) * (ctx.threat ? ctx.threat.stealthMul : 1);
+    let sight = (e.state === 'return' ? e.sight * 0.55 : (e.sitting ? e.sight * 0.75 : e.sight)) * (ctx.threat ? ctx.threat.stealthMul : 1);
+    if (e.sightMul != null && (e.sightMulUntil || 0) > (ctx.game.time || 0)) sight *= e.sightMul;   // raven swarm etc. (enemies.setSightMul)
     if (pAlive && e.distP < sight && Math.abs(pp.y - e.object.position.y) < 14) alert(ctx, e);
   } else {
     const leashD = Math.hypot(pp.x - e.home.x, pp.z - e.home.z);

@@ -219,6 +219,8 @@ const GRADES = {
   finale:  { tint: [0.9, 0.84, 1.1], sat: 0.72, contrast: 1.16 },
   dawn:    { tint: [1.08, 1.0, 0.92], sat: 1.1, contrast: 1.02 },
   break:   { tint: [1.0, 1.0, 1.0], sat: 0.35, contrast: 1.2 },
+  dusk:    { tint: [0.92, 0.95, 1.1], sat: 0.82, contrast: 1.04 },   // Elderwood (world zones)
+  golden:  { tint: [1.08, 1.02, 0.88], sat: 1.06, contrast: 1.02 },  // Mirwen / ending light
 };
 {
   const U = sanitizePass.uniforms;
@@ -368,9 +370,7 @@ async function applyTestParams() {
   if (params.has('path')) {
     P.choose(cls, params.get('path') || 'all', params.get('el') || 'fire');   // legacy: sets ungate
   } else {
-    P.setClass(cls);
-    // deprecated compatibility event for v2 listeners (player/spells/sword/ui still switch on it until wave 1)
-    game.events.emit('pathChosen', { cls, path: P.path, element: P.element });
+    P.setClass(cls);   // emits classChosen (every module listens to it; the v2 pathChosen bridge is gone)
   }
   if (level) P.setLevel(level);
   try { game.story?.debugSkip?.(params.get('quest') || 'camps'); } catch (err) { console.error('[boot] debugSkip', err); }

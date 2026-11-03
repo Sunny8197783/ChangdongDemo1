@@ -533,7 +533,7 @@ export function createUI(game) {
       <div class="aw-victory-sub">${VICTORY_KO.sub}</div>
       <div class="aw-victory-build"></div>
       <div class="aw-stats"></div>
-      <div class="aw-menu aw-menu-row"><button class="aw-btn aw-btn-primary" data-act="restart">새로운 모험</button></div>
+      <div class="aw-menu aw-menu-row"><button class="aw-btn aw-btn-primary" data-act="epilogue">에필로그 계속</button><button class="aw-btn" data-act="restart">새로운 모험</button></div>
     </div>`));
   const statsBox = victory.querySelector('.aw-stats'), victoryPre = victory.querySelector('.aw-victory-pre'), victoryBuild = victory.querySelector('.aw-victory-build');
 
@@ -620,6 +620,7 @@ export function createUI(game) {
     else if (act === 'settings') { settingsMenu.open(); syncModalLock(); }
     else if (act === 'resume') { closeControls(); settingsMenu.close(); game.resume(); }
     else if (act === 'restart') game.restart();
+    else if (act === 'epilogue') { victory.classList.remove('show'); if (!game.story?.continueEpilogue?.()) game.setState?.('playing'); }
     else if (act === 'respawn') doRespawn();
     else if (act === 'grimoire') api.openCodex();
     else if (act === 'tree') api.openSkillTree();
@@ -666,7 +667,7 @@ export function createUI(game) {
     }
     syncModalLock();
     if (s === 'dead') { death.classList.add('show', 'final'); deadT = 2.0; }
-    if (s === 'playing') death.classList.remove('show', 'final');
+    if (s === 'playing') { death.classList.remove('show', 'final'); victory.classList.remove('show'); }
     if (s === 'victory') showVictory();
     if (s === 'playing' && !tutStarted) {
       tutStarted = true;
@@ -1419,6 +1420,7 @@ export function createUI(game) {
     openSkillTree(el) {
       if (!canOpenMenus()) return false;
       openMenu('tree', () => tree.open(el));
+      try { game.audio?.play?.('tree_open', { volume: 0.7 }); } catch (_) { /* */ }
       if (!tour.hasSeen('treeTour') && (!game.isTest || /[?&]tour=1/.test(location.search))) { tour.start(); syncModalLock(); }
       return true;
     },

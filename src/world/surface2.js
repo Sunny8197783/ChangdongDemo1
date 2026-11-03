@@ -75,6 +75,7 @@ export function createSurface2(game, field) {
     isCursed: (pos) => val('cursed', pos) > 0,
     isMud: (pos) => val('mud', pos) > 0,
     isOvergrown: (pos) => val('overgrowth', pos) > 0,
+    isOvergrowth: (pos) => val('overgrowth', pos) > 0,   // alias (skills/procs reads this name)
     isRubble: (pos) => val('rubble', pos) > 0,
     /** Remaining seconds of a channel at pos (0 when inactive). */
     timeLeft: (name, pos) => (ch[name] ? val(name, pos) : 0),

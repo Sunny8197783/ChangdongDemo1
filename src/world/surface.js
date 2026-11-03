@@ -621,6 +621,34 @@ export function buildSurface(game, world, terrain, field, grass) {
       game.events?.emit?.('waterFrozen', { position: new THREE.Vector3(pos.x, level, pos.z), radius: r });
       return true;
     },
+    /** Melt ice discs whose centre lies within r (fire dashes / melt reactions): they fade out over ~1 s. */
+    meltIce(pos, r = 3) {
+      if (!pos) return 0;
+      let c = 0;
+      for (const d of discs) {
+        if (d.t > d.life) continue;
+        const dx = d.x - pos.x, dz = d.z - pos.z, rr = r + d.r * 0.5;
+        if (dx * dx + dz * dz > rr * rr) continue;
+        if (d.life - d.t > 1.0) { d.life = d.t + 1.0; c++; }
+      }
+      return c;
+    },
+    /** Regrow scorched grass within r right away (nature ultimates): the burn mask fades over the next seconds. */
+    regrow(pos, r = 6) {
+      if (!pos) return 0;
+      const r2 = (r + cs * 0.5) ** 2; let c = 0;
+      for (let q = 0; q < scorched.length; q++) {
+        const k = scorched[q]; if (state[k] === 1) continue;
+        const cx = x0 + ((k % n) + 0.5) * cs - pos.x, cz = z0 + (Math.floor(k / n) + 0.5) * cs - pos.z;
+        if (cx * cx + cz * cz > r2) continue;
+        regrowAt[k] = simTime; burnt[k] = Math.min(burnt[k], 0.2); writeTex(k); c++;
+      }
+      return c;
+    },
+    /** Unburnt meadow grass at a point (fuel map; the village lawn counts as no grass). */
+    isGrass(pos) { const k = pos ? cellOf(pos.x, pos.z) : -1; return k >= 0 && fuel[k] > 0.12 && state[k] !== 1 && burnt[k] < 0.35; },
+    /** Dense, unburnt grass (shadowblade stealth). */
+    isTallGrass(pos) { const k = pos ? cellOf(pos.x, pos.z) : -1; return k >= 0 && fuel[k] > 0.45 && state[k] === 0 && burnt[k] < 0.1; },
     /** Top of the ice at (x,z) or null. */
     iceHeight(x, z) { const d = onIce(x, z); return d ? d.level + 0.14 : null; },
     onIce(x, z) { return !!onIce(x, z); },

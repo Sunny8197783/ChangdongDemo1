@@ -122,6 +122,20 @@ export class EnemyProjectiles {
     }
   }
 
+  /** wind.gust: reflect every live orb inside the cone (origin, dir, len, full angle in degrees). Returns the count. */
+  reflectCone(origin, dir, len, angDeg) {
+    const cosH = Math.cos((angDeg || 60) * Math.PI / 360);
+    let n = 0;
+    for (const o of this.orbs) {
+      if (!o.active || o.reflected) continue;
+      const p = o.g.position;
+      const dx = p.x - origin.x, dz = p.z - origin.z, d = Math.hypot(dx, dz);
+      if (d > len || (d > 0.5 && (dx * dir.x + dz * dir.z) / (d * (Math.hypot(dir.x, dir.z) || 1)) < cosH)) continue;
+      this._reflect(o, 'player'); n++;
+    }
+    return n;
+  }
+
   _reflect(o, by) {
     if (!o.active || o.reflected) return;
     o.reflected = true; o.t = 0; o.team = 'player';

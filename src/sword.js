@@ -847,9 +847,9 @@ export function createSword(game) {
     fx.trail.update(dt, on, baseW, tipW);
     // twin daggers: the left blade gets its own ribbon (grip → left tip)
     if (weapon.id === 'daggers' && pl.swordDrawn) {
-      const L = pl.classGear?.sockets?.daggers?.L;
       S.getWeaponPoint('off', tip2);
-      if (L?.getWorldPosition) L.getWorldPosition(base2); else base2.copy(baseW);
+      if (pl.getWeaponBase) pl.getWeaponBase('off', base2);
+      else { const L = pl.classGear?.sockets?.daggers?.L; if (L?.getWorldPosition) L.getWorldPosition(base2); else base2.copy(baseW); }
       fx.trail2.update(dt, on, base2, tip2);
     } else fx.trail2.update(dt, false, baseW, tipW);
   }

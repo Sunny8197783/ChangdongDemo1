@@ -12,7 +12,7 @@ const MUL_KEYS = ['atkMul', 'dmgTakenMul', 'moveMul', 'atkSpeed', 'castSpeed', '
   'regenRateMul', 'poiseMul', 'glideStamMul', 'dashDistMul', 'nextMul',
   'rxAll'];   // rxAll: global reaction-damage multiplier (e.g. the 방랑자 breadth source: 1 + 0.04 × trees)
 const ADD_KEYS = ['critChance', 'critMul', 'regenDelayAdd', 'regenRateAdd', 'lifesteal', 'chainBonus', 'extraDash', 'extraJumps',
-  'parryWindowAdd', 'chillToFreezeAdd', 'seededMaxAdd', 'corrodedMaxAdd', 'podCapAdd', 'resolveRegenAdd'];
+  'parryWindowAdd', 'maxStaminaAdd', 'chillToFreezeAdd', 'seededMaxAdd', 'corrodedMaxAdd', 'podCapAdd', 'resolveRegenAdd'];
 const FLAG_KEYS = ['noKnockback', 'noGlide', 'regenDisabled', 'burnImmune', 'infiniteGlide', 'noRegenPause', 'freeNext', 'blightImmune'];
 
 const KIND = new Map();
@@ -159,7 +159,7 @@ export function createStats(game) {
       const resMul = (1 + 0.02 * g) * S.get('maxResMul');
       DER.maxMp = Math.round((b.mp || 0) * resMul);
       DER.maxResolve = Math.round((b.resolve || 0) * resMul);
-      DER.maxStamina = Math.round((b.stamina || 100) * (1 + 0.02 * g));
+      DER.maxStamina = Math.round((b.stamina || 100) * (1 + 0.02 * g) * S.get('maxStaminaMul') + S.get('maxStaminaAdd'));
       DER.power = (b.power || 1) * (1 + 0.04 * g);
       DER.defense = b.defense || 0;
       DER.crit = b.crit ?? 0.1;
