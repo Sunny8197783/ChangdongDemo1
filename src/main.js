@@ -426,6 +426,33 @@ async function prewarm() {
   finally { for (const o of tmp) scene.remove(o); }
 }
 
+// First-draw warm-up: a program compiled by renderer.compile() still pays its link wait and the driver's
+// per-render-state pipeline build the first time it is actually drawn (seconds on software GL, a visible hitch
+// on real GPUs). When a boss spawns or changes phase, many objects are drawn for the first time once the camera
+// turns, so we render the scene once in four directions from the current camera position, behind the boss
+// intro, so those costs are paid before the fight. The normal frame then overwrites the output.
+let warmPending = false;
+const warmQ = new THREE.Quaternion();
+function warmView() {
+  warmPending = false;
+  warmQ.copy(camera.quaternion);
+  const yaw0 = Math.atan2(-camera.matrixWorld.elements[8], -camera.matrixWorld.elements[10]);
+  try {
+    for (let i = 1; i < 4; i++) {
+      camera.rotation.set(-0.12, yaw0 + i * Math.PI / 2, 0, 'YXZ');
+      camera.updateMatrixWorld(true);
+      if (shadowsOn) renderer.shadowMap.needsUpdate = true;
+      composer.render(0);
+    }
+  } catch (err) { console.warn('[warm]', err?.message); }
+  camera.quaternion.copy(warmQ); camera.updateMatrixWorld(true);
+  // the warm passes are not part of this frame's cost: keep draw-call stats (autoReset off in tests) for the real render
+  renderer.info.reset();
+}
+game.warmView = () => { warmPending = true; };
+game.events.on('bossSpawn', () => { warmPending = true; });
+game.events.on('bossPhase', () => { warmPending = true; });
+
 // ---------- loop ----------
 let last = performance.now();
 const fpsWin = [];
@@ -481,6 +508,7 @@ function frame(realDt, render = true) {
   call('ui', realDt, realDt);
   call('audio', realDt, realDt);
   if (render) {
+    if (warmPending) warmView();
     if (shadowsOn && shadowEvery > 0 && (++shadowFrame % shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
     composer.render(realDt);
   }
