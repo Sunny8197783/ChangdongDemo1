@@ -97,17 +97,20 @@ export function buildSurface(game, world, terrain, field, grass) {
     transparent: true, depthWrite: false, blending: THREE.NormalBlending,
     vertexShader: /* glsl */`
       attribute vec4 aCenter; attribute vec4 aPar; uniform float uTime;
-      varying vec2 vUv; varying float vSeed; varying float vHeat;
+      varying vec2 vUv; varying float vSeed; varying float vHeat; varying float vNear;
       void main(){
         vUv = position.xy; vSeed = aCenter.w; vHeat = aPar.z;
         float fl = 1.0 + 0.16 * sin(uTime * 12.0 + aCenter.w * 7.0) + 0.1 * sin(uTime * 21.0 + aCenter.w * 3.0);
         vec4 mv = modelViewMatrix * vec4(aCenter.xyz, 1.0);
+        // flames between the camera and the hero (a self-centred igniteRing puts the camera boom inside the fire)
+        // fade out instead of filling the screen
+        vNear = smoothstep(2.0, 5.5, -mv.z);
         float sz = aPar.x * (0.45 + 0.55 * aPar.z);
         mv.xy += vec2(position.x * sz * 0.55, position.y * sz * aPar.y * fl);
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */`
-      uniform float uTime; varying vec2 vUv; varying float vSeed; varying float vHeat;
+      uniform float uTime; varying vec2 vUv; varying float vSeed; varying float vHeat; varying float vNear;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float noise(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);
         return mix(mix(hash(i),hash(i+vec2(1,0)),u.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x), u.y); }
@@ -122,7 +125,8 @@ export function buildSurface(game, world, terrain, field, grass) {
         vec3 c = mix(vec3(0.55, 0.05, 0.01), vec3(0.98, 0.32, 0.03), smoothstep(0.0, 0.8, shape));
         c = mix(c, vec3(1.0, 0.66, 0.22), core * 0.8);
         c = mix(c, vec3(0.45, 0.04, 0.01), smoothstep(0.55, 0.95, uv.y) * 0.6);
-        gl_FragColor = vec4(c * (0.8 + 0.2 * vHeat), clamp(shape * 1.4, 0.0, 0.92) * (0.5 + 0.5 * vHeat));
+        gl_FragColor = vec4(c * (0.8 + 0.2 * vHeat), clamp(shape * 1.4, 0.0, 0.92) * (0.5 + 0.5 * vHeat) * vNear);
+        if (gl_FragColor.a < 0.004) discard;
       }`,
   });
   const flames = new THREE.Mesh(flameGeo, flameMat);
@@ -151,7 +155,7 @@ export function buildSurface(game, world, terrain, field, grass) {
         mv.xy += q * sz;
         gl_Position = projectionMatrix * mv;
         vUv = position.xy; vL = life;
-        vA = smoothstep(0.0, 0.15, life) * (1.0 - life) * aPar.z;
+        vA = smoothstep(0.0, 0.15, life) * (1.0 - life) * aPar.z * smoothstep(2.0, 6.0, -mv.z);   // camera-near fade
       }`,
     fragmentShader: /* glsl */`
       varying vec2 vUv; varying float vA; varying float vL;

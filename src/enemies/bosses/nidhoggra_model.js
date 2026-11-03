@@ -101,7 +101,7 @@ export function buildNidhoggra() {
   shards.instanceColor.needsUpdate = true;
   const rods = mkInst(g.rod, M.rod, 4, 'nid-rods');
   for (let i = 0; i < 4; i++) rods.setColorAt(i, _c.setHex(0x8a7aa8));
-  rods.instanceColor.needsUpdate = true; rods.count = 0;
+  rods.instanceColor.needsUpdate = true; rods.count = 0; rods.visible = false;
 
   const head = new THREE.Group(); head.scale.setScalar(1.9); root.add(head);
   const headMesh = new THREE.Mesh(g.head, vcMat()); headMesh.castShadow = true; addOutline(headMesh, 0.09); head.add(headMesh);

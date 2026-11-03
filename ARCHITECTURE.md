@@ -1513,3 +1513,19 @@ bootcheck (640×360, medium):
 - The 2 sage / lake-keeper side requests in the act-4 XP budget are not built. The ascent pays its 5 × 900 XP.
 - The feather's +20 stamina is the `story:feather {maxStaminaAdd: 20}` stats source (core reads `maxStaminaAdd` since integration);
   the direct `player.maxStamina += 20` remains only as the no-stats fallback.
+
+#### v3 review fixes (integration)
+- Perf: `src/vfx/budget.js` (`FXB`) caps the SUM of active ground / beam / trail pool entries per quality (high 64 /
+  medium 38 / low 24, × `game.perfScale`); pools recycle their own oldest entry past it. Ring / decal pools are
+  frustum-culled (their grid keeps a bounding sphere). `game.perfScale` (main.js governor: frame-time EMA > 18 ms for 2 s
+  → 0.7, back to 1 after 4 s < 14 ms) also scales particle counts; runtime only, never persisted.
+- Player rig (`skinMerge`): one mesh per material (shadow + non-shadow parts merged); merged meshes whose bones are all
+  hidden (other classes' gear) are not drawn. Afterimages pack only the visible parts' triangles.
+- Enemies: `removeEnemy` disposes per-instance `THREE.Skeleton`s (bone textures). Elderwood arena fights (Nox, treant)
+  use `world.setBossFightLOD` like the finale.
+- Skills: the legacy v2 paths run only where they match the v3 tree text — caster legacy spells only for the staff
+  style; melee ultimates / supports always use the archetype (meteor, fire spirit, …).
+- Boss framework: a forwarding part takes no HP while its pool ignores damage (transition / invulnerable).
+  Nidhoggra's heart opens on `onPhaseStart`, and emits `bossParts {id, phase, parts}` per phase (the boss bar listens).
+- Story: post-game 정령 시련 (`src/story/trials.js`, `game.story.trials`): F at a freed spirit's arena rim in stage
+  'done' re-fights that mid-boss at +30 % HP (`game.bossTrialHpMul`) for quest XP (first clear full, repeats 35 %).

@@ -102,9 +102,14 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     canDie: () => e.phase >= 2,
     onPhase: (i) => onPhase(i),
     onPartBreak: (part) => onPartBreak(part),
+    onPhaseStart: (i) => { if (i === 2) heart.invulnerable = !st.heartOpen; },
     onLockStripped: (part, by) => onStrip(part, by),
     onDebugPhase: (k) => { if (k === 1) st.rods.done = true; if (k === 2) { for (const s of shards) if (s.part.alive) { s.part.alive = false; s.broken = true; } st.tide.done = true; } },
-    onRespawnPhase: () => { st.rods.active = false; st.tide.active = false; clearTele(); if (e.phase === 1) for (const s of shards) if (!s.broken) { s.part.hp = s.part.maxHp; s.part.alive = true; } },
+    onRespawnPhase: () => {
+      st.rods.active = false; st.tide.active = false; clearTele();
+      if (e.phase === 1) for (const s of shards) if (!s.broken) { s.part.hp = s.part.maxHp; s.part.alive = true; }
+      if (e.phase === 2) { reviveHeart(); heart.invulnerable = !st.heartOpen; }
+    },
     finale: (done) => {
       const C = game.cinematic;
       if (C?.playFinale) { try { C.playFinale(() => done()); return; } catch (err) { console.error('[nidhoggra] playFinale', err); } }
@@ -169,6 +174,18 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     plate.lock.id = L.id; plate.name = L.nameKo;
     model.lock.material.color.setHex(elColor(L.element, 'hex'));
     offerGift(L.element, 'lock');
+    if (e.phase === 0) sendParts(0);
+  }
+  /** Boss-bar part list per phase: 1 → the head plate (its current lock + counters), 2 → the oath shards, 3 → the heart. */
+  function partsFor(phase) {
+    if (phase === 0) return [{ id: 'headPlate', name: `${D.ui.plate} · ${plate.lock.id ? plate.name : ''}`.replace(/ · $/, ''), gauge: 'lock', counters: (plate.lock.counters || []).slice() }];
+    if (phase === 1) return shards.filter((q) => !q.broken).map((q) => ({ id: q.part.partId, name: q.part.name, counters: q.L.counters.slice() }));
+    return [{ id: 'heart', name: D.ui.heart }];
+  }
+  function sendParts(phase) {
+    const list = partsFor(phase);
+    e.partList.length = 0; for (const x of list) e.partList.push(x);
+    try { game.events.emit('bossParts', { id: 'nidhoggra', boss: e, phase: phase + 1, parts: list }); } catch (_) { /* */ }
   }
   function offerGift(element, purpose, charges = 1) {
     const G = st.gift;
@@ -226,7 +243,23 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     try { game.ui?.tip?.('shard_' + el, B.nameKo); } catch (_) { /* */ }
     game.events.emit('shardBuff', { element: el, nameKo: B.nameKo });
   }
+  /** The heart holds the last third of the pool: keep its HP in step with the pool so it can never die before the boss. */
+  function reviveHeart() {
+    if (heart.alive || e.defeated || !(e.hp > 0)) return;
+    e.reviveParts((p) => p === heart);
+    heart.hp = Math.max(1, Math.min(heart.maxHp, Math.ceil(e.hp / heart.fwd)));
+  }
   function onPartBreak(part) {
+    if (part === heart) {
+      // safety net: if the heart broke while the pool still has HP (damage lost to a transition, rounding), finish the pool
+      if (!e.defeated && e.alive && e.hp > 0) {
+        if (e.phase >= 2 && !e.transitioning) {
+          e.invulnerable = false;
+          game.combat.dealDamage(e, { amount: e.hp + 1, fixed: true, source: 'player', noReaction: true, ignoreShield: true, noCrit: true, tags: ['bossPart'] });
+        } else reviveHeart();
+      }
+      return;
+    }
     const s = shards.find((q) => q.part === part);
     if (!s) return;
     s.broken = true;
@@ -246,18 +279,22 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       st.rods.active = false; hideRods();
       plate.lock.gauge = 0; plate.alive = false; plate.invulnerable = true;
       st.shardT = 4; st.shardIdx = -1; st.gift.ready = false;
+      sendParts(1);
       vfx.preset?.('rx_break', st.headPos, { scale: 2.5 });
       ctx.audio('boss_roar', { position: st.headPos, volume: 1, pitch: 0.55 });
     } else if (i === 2) {
       st.tide.active = false;
-      heart.invulnerable = false; st.heartOpen = true; st.heartT = D.heartWindow;
+      // the heart stays sealed until the 3.2 s transition ends (bossbase discards forwarded damage while
+      // transitioning); onPhaseStart opens it
+      heart.invulnerable = true; st.heartOpen = true; st.heartT = D.heartWindow;
+      sendParts(2);
       offerGift('light', 'spear', D.spear.charges);
       vfx.preset?.('explosion_light', _v.copy(C0).setY(top + 2), { scale: 3.5 });
       try { game.post?.grade?.('golden', 0.35); } catch (_) { /* */ }
       ctx.audio('boss_roar', { position: st.headPos, volume: 1, pitch: 0.45 });
     }
   }
-  function hideRods() { for (const r of rods) { if (r.alive) { r.alive = false; try { game.combat.unregister(r); } catch (_) { /* */ } } } model.rods.count = 0; }
+  function hideRods() { for (const r of rods) { if (r.alive) { r.alive = false; try { game.combat.unregister(r); } catch (_) { /* */ } } } model.rods.count = 0; model.rods.visible = false; }
   function startRods() {
     st.rods.active = true; st.rods.t = 0; st.rods.lit = [false, false, false];
     for (const r of rods) { r.alive = true; try { game.combat.register(r); } catch (_) { /* */ } }
@@ -461,7 +498,8 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       }
     }
     // phase-3 (cut line): heart windows
-    if (e.phase === 2) {
+    if (e.phase === 2 && !e.transitioning) {
+      if (!heart.alive && !e.defeated && e.hp > 0) onPartBreak(heart);
       st.heartT -= dt;
       if (st.heartT <= 0) { st.heartOpen = !st.heartOpen; st.heartT = st.heartOpen ? D.heartWindow : D.heartClosed; heart.invulnerable = !st.heartOpen; }
     }
@@ -602,7 +640,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     if (st.rods.active) {
       let n = 0;
       for (const r of rods) { const s = Math.min(1, st.rods.t * 1.5); _m.compose(r.object.position, _q.identity(), _s.set(1, s, 1)); model.rods.setMatrixAt(n++, _m); }
-      model.rods.count = n; model.rods.instanceMatrix.needsUpdate = true;
+      model.rods.count = n; model.rods.visible = n > 0; model.rods.instanceMatrix.needsUpdate = true;
     }
   };
   const baseClean = e.cleanupParts;
@@ -616,10 +654,9 @@ export function createNidhoggra(ctx, arena, opts = {}) {
   e.locks.length = 0;
   for (const L of NIDHOGGRA_LOCKS.phase1) e.locks.push({ partId: 'headPlate', lock: L.element, counters: L.counters.slice(), phase: 1 });
   for (const s of shards) e.locks.push({ partId: s.part.partId, lock: s.L.element, counters: s.L.counters.slice(), phase: 2 });
-  // ui part list: plate + 5 shards + heart (the plate bar is the lock gauge stand-in)
+  // ui part list for phase 1 (the head plate's lock gauge); phases 2 / 3 re-send theirs through 'bossParts'
   e.partList.length = 0;
-  for (const s of shards) e.partList.push({ id: s.part.partId, name: s.part.name });
-  e.partList.push({ id: 'heart', name: D.ui.heart });
+  for (const x of partsFor(0)) e.partList.push(x);
   e.st = st; e.shards = shards; e.heartPart = heart; e.plate = plate; e.rodsList = rods; e.lightRod = lightRod;
   return e;
 }

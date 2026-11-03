@@ -34,7 +34,7 @@ export function createCharacter(game, ui, parent) {
     let stats = stat('maxHp', Math.round(pl.maxHp ?? d.maxHp ?? 0))
       + `<div class="aw-cstat"><span>${RES_KO[res] || ''}</span><b>${Math.round(maxRes ?? 0)}</b></div>`
       + stat('maxStamina', Math.round(pl.maxStamina ?? d.maxStamina ?? 0))
-      + stat('power', fmtNum(Math.round((d.power ?? 1) * 100) / 100))
+      + stat('power', '×' + (d.power ?? 1).toFixed(2))
       + stat('defense', pct(d.defense ?? 0) + '%')
       + stat('crit', pct((d.crit ?? 0) + (St?.get?.('critChance') || 0)) + '%')
       + stat('move', pct(d.move ?? 1) + '%')

@@ -237,15 +237,27 @@ export function skinMerge(root) {
   const skeleton = new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4()));
   // zero the matrices of effectively hidden parts (visibility chain up to the root)
   const baseUpdate = skeleton.update.bind(skeleton);
+  const boneVis = new Uint8Array(bones.length);
+  const meshBones = [];   // [mesh, Uint16Array bone indices]: a merged mesh whose bones are ALL hidden is not drawn
   skeleton.update = function () {
     baseUpdate();
     const bm = this.boneMatrices;
     for (let i = 0; i < bones.length; i++) {
       let vis = true;
       for (let p = bones[i]; p && p !== root; p = p.parent) if (!p.visible) { vis = false; break; }
+      boneVis[i] = vis ? 1 : 0;
       if (!vis) bm.fill(0, i * 16, i * 16 + 16);
     }
     if (this.boneTexture) this.boneTexture.needsUpdate = true;
+    // the other classes' gear stays merged in (zero-matrix collapse) but must not cost a draw call each
+    let any = false;
+    for (let k = 0; k < meshBones.length; k++) {
+      const mb = meshBones[k], ids = mb[1];
+      let v = false;
+      for (let j = 0; j < ids.length; j++) if (boneVis[ids[j]]) { v = true; break; }
+      mb[2] = v; if (v) any = true;
+    }
+    for (let k = 0; k < meshBones.length; k++) meshBones[k][0].visible = !any || meshBones[k][2];
   };
   const prep = (o, bi) => {
     let g = o.geometry.clone();
@@ -273,9 +285,11 @@ export function skinMerge(root) {
   const byMat = new Map(), byOutline = new Map();
   parts.forEach((o, bi) => {
     const g = prep(o, bi);
-    const key = o.material.uuid + '|' + (o.castShadow ? 1 : 0) + '|' + (o.renderOrder || 0);
-    if (!byMat.has(key)) byMat.set(key, { mat: o.material, shadow: o.castShadow, ro: o.renderOrder || 0, geos: [] });
-    byMat.get(key).geos.push(g);
+    // one draw per material: shadow casters and non-casters of the same material merge (the merged mesh casts),
+    // which halves the rig's main-pass calls for parts split only by castShadow
+    const key = o.material.uuid + '|' + (o.renderOrder || 0);
+    if (!byMat.has(key)) byMat.set(key, { mat: o.material, shadow: false, ro: o.renderOrder || 0, geos: [], bones: [] });
+    const B = byMat.get(key); B.geos.push(g); B.bones.push(bi); if (o.castShadow) B.shadow = true;
     const ol = o.children.find((c) => c.name === 'outline');
     if (ol) {
       o.geometry.boundingSphere || o.geometry.computeBoundingSphere();
@@ -285,8 +299,8 @@ export function skinMerge(root) {
       const col = ol.material.uniforms?.color?.value;
       if (big && th && col) {
         const ok = th.toFixed(4) + col.getHexString();
-        if (!byOutline.has(ok)) byOutline.set(ok, { th, col, geos: [] });
-        byOutline.get(ok).geos.push(g);
+        if (!byOutline.has(ok)) byOutline.set(ok, { th, col, geos: [], bones: [] });
+        byOutline.get(ok).geos.push(g); byOutline.get(ok).bones.push(bi);
       }
       ol.layers.set(HIDDEN_LAYER);
     }
@@ -296,12 +310,12 @@ export function skinMerge(root) {
   for (const b of byMat.values()) {
     const geo = mergeGeometries(b.geos, false); if (!geo) continue;
     const m = mkSkinned(geo, b.mat); m.castShadow = b.shadow; m.receiveShadow = false; m.renderOrder = b.ro;
-    meshes.push(m);
+    meshes.push(m); meshBones.push([m, Uint16Array.from(b.bones), true]);
   }
   for (const b of byOutline.values()) {
     const geo = mergeGeometries(b.geos, false); if (!geo) continue;
     const m = mkSkinned(geo, skinOutlineMat(b.th, b.col)); m.name = 'outline'; m.castShadow = false; m.receiveShadow = false;
-    meshes.push(m);
+    meshes.push(m); meshBones.push([m, Uint16Array.from(b.bones), true]);
   }
   return { skeleton, meshes, parts };
 }

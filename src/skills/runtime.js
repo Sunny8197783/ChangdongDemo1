@@ -316,7 +316,12 @@ export function installRuntime(game, K) {
     let fn = A?.getImpl?.(id, fam) || (def.custom && def.custom !== id ? A?.getImpl?.(def.custom, fam) : null);
     if (fn) { anim(def.anim, el); fn(ctx); return 'impl'; }
     // 2. legacy adapters
-    if (def.legacy && K.adapters.tryLegacy(def, fam, el, { charge: opts.charge, aim: ctx.aim, skillId: id, awakened: ctx.awakened })) return 'legacy';
+    // The v2 legacy moves only match the v3 tree text for the staff (caster) and for the melee combo / charged /
+    // finisher: a bow or totem caster must fire its own archetype (arrows, totems), and melee ultimates / supports
+    // must play the skill the tree describes (meteor, fire spirit, ...), not the old v2 sword move list.
+    const legacyOk = def.legacy && (fam === 'caster' ? ctx.style === 'staff' || !ctx.style
+      : fam === 'melee' ? def.slot !== 'ultimate' && def.slot !== 'support' : true);
+    if (legacyOk && K.adapters.tryLegacy(def, fam, el, { charge: opts.charge, aim: ctx.aim, skillId: id, awakened: ctx.awakened })) return 'legacy';
     // finisher without legacy: cinematic path (works for all 9 elements, §16)
     if (def.slot === 'finisher' && game.cinematic?.finisher && !game.cinematic.isStub) {
       const target = ctx.aim?.target;

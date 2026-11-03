@@ -1,5 +1,6 @@
 // Terrain-conforming shockwave rings, spherical domes and ground decals (pooled).
 import * as THREE from 'three';
+import { FXB } from './budget.js';
 
 const GRID = 18;
 
@@ -145,7 +146,7 @@ export class GroundFX {
         side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
       });
       const m = new THREE.Mesh(gridGeometry(), mat);
-      m.visible = false; m.renderOrder = 8; m.frustumCulled = false; m.name = 'vfx-ring';
+      m.visible = false; m.renderOrder = 8; m.name = 'vfx-ring';   // culled: conform()/flatten() keep the bounding sphere
       game.scene.add(m);
       this.rings.push({ mesh: m, t: 0, dur: 1, active: false, follow: null });
     }
@@ -169,24 +170,26 @@ export class GroundFX {
         vertexShader: RING_VERT, fragmentShader: DECAL_FRAG, transparent: true, depthWrite: false, fog: true,
         polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
       });
-      const m = new THREE.Mesh(gridGeometry(), mat); m.visible = false; m.renderOrder = 2; m.frustumCulled = false; m.name = 'vfx-decal';
+      const m = new THREE.Mesh(gridGeometry(), mat); m.visible = false; m.renderOrder = 2; m.name = 'vfx-decal';
       game.scene.add(m);
       this.decals.push({ mesh: m, t: 0, dur: 1, active: false, born: 0, opacity: 1, glowDur: 1 });
     }
     this._serial = 0;
+    FXB.register(this.rings); FXB.register(this.domes); FXB.register(this.decals);
   }
 
   /** Effective pool size by settings.effectQuality (CONTRACT §23: features adding > 10 calls are quality-gated). */
   _budget(pool) {
     const q = this.game.settings?.values?.effectQuality || 'medium';
     const full = pool.length;
-    const B = q === 'high' ? 1 : q === 'low' ? 0.3 : 0.6;
+    // decals are long-lived (craters, scorch marks): a smaller medium share keeps a busy fight's ground FX bounded
+    const B = q === 'high' ? 1 : q === 'low' ? 0.3 : pool === this.decals ? 0.42 : 0.6;
     return Math.max(2, Math.round(full * B));
   }
   _grab(pool) {
     let best = null, active = 0, freeR = null;
     for (const r of pool) { if (r.active) { active++; if (!best || r.born < best.born) best = r; } else if (!freeR) freeR = r; }
-    if (freeR && active < this._budget(pool)) return freeR;
+    if (freeR && active < this._budget(pool) && (!best || FXB.room(this.game))) return freeR;
     if (best) { best.active = false; best.mesh.visible = false; return best; }   // recycle the oldest
     return freeR || pool[0];
   }

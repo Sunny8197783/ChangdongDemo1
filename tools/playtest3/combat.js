@@ -509,6 +509,40 @@ module.exports = async function combat(PT) {
   }
   await pgs.close();
 
+  // ------------------------------------------------------------ check 11 with REAL casts (CONTRACT §21 / DESIGN §12):
+  // the endgame loadout cast through skills.cast (projectiles, zones, summons, beams, decals, domes) on 12 enemies,
+  // 8 skills in 2 s, in the village and on the plains; the worst frame must stay under the hard ceiling
+  const pgc = await PT.boot('&cls=mage&skills=preset:endgame_mage&level=30');
+  if (pgc.ready) {
+    await pgc.run('real-cast stress perf', () => {
+      const g = game, S = g.skills;
+      const spots = { village: [[-6, 128], 290], plains: [[-6, 20], 300] };
+      for (const k in spots) {
+        const [[x, z], target] = spots[k];
+        g.debug.tp({ x, z }); PT.step(1);
+        const ring = PT.dummyRing(12, 7, { aggro: true, hp: 1e6 });
+        const ids = g.progression.learnedSkills().filter((i) => !['finisher', 'basic'].includes(S.defs.get(i)?.slot)).slice(0, 8);
+        let worst = { calls: 0, tris: 0 }, n = 0;
+        for (const id of ids) {
+          S.resetCooldowns(); PT.heal();
+          const pp = g.player.object.position, o = pp.clone(); o.y += 1.5;
+          const d = ring[n++ % ring.length], t = d.object.position.clone();
+          try { S.cast(id, { free: true, aim: { origin: o, dir: t.clone().sub(o).normalize(), point: t, target: d } }); } catch (_) { /* */ }
+          PT.step(0.25);
+          const st = PT.frameStats(); if (st.calls > worst.calls) worst = { ...st, after: id };
+          if (st.tris > (worst.trisMax || 0)) worst.trisMax = st.tris;
+        }
+        PT.note(`${k} real-cast stress: worst ${worst.calls} calls (after ${worst.after}; scene target ${target}), max ${worst.trisMax} tris`);
+        PT.check(`${k} real-cast stress: draw calls ≤ 350`, worst.calls <= 350, worst);
+        PT.check(`${k} real-cast stress: triangles ≤ 900k`, (worst.trisMax || 0) <= 900000, worst.trisMax);
+        for (const d of ring) { d.alive = false; try { g.combat.unregister(d); } catch (_) { /* */ } d.object?.removeFromParent?.(); }
+        PT.step(3);
+      }
+    });
+    PT.check('real-cast stress page: no console errors', pgc.errors().length === 0, pgc.errors().slice(0, 6));
+  }
+  await pgc.close();
+
 
   // ------------------------------------------------------------ boot with skills stubbed / legacy path (combat must not care)
   const pg2 = await PT.boot('&cls=sword&path=all');

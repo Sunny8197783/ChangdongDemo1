@@ -4,6 +4,7 @@
 // NPC talk goes through game.interact (F); the class choice through ui.openClassPanel (story/classSelect.js).
 import * as THREE from 'three';
 import { buildNpcModel } from './story/npcs.js';
+import { createTrials } from './story/trials.js';
 import { createStoryUI } from './story/ui.js';
 import * as SC from './story/script.js';
 import * as S3 from './story/script3.js';
@@ -136,6 +137,7 @@ export function createStory(game) {
     startEscort() { S.flags.momoTalked = true; S.escort = true; retireCollider(npcs.forestChild || {}); dirty = true; },
   };
   let dirty = true, silent = false;
+  const trials = createTrials(game, { S, P, toast: (t) => { try { game.ui?.toast?.(t); } catch (_) { /* */ } }, isDone: () => S.stage === 'done' });
   // story cinematics (rite, reveal, spirit freed, boss intro, ending) play by themselves in normal play; in ?test runs only when
   // a test opts in (story.autoCinematics = true, or &cine=1), so other owners' playtests never stall in a cutscene
   let autoCine = !game.isTest;
@@ -343,6 +345,7 @@ export function createStory(game) {
   function onBossDefeated(p) {
     const id = p?.id || p?.boss?.bossId;
     if (!id) return;
+    if (trials.onBossDefeated(id)) return;   // a post-game 정령 시련 re-fight: XP only, the story is already done
     // only the current stage's boss advances the story (debug spawns of other bosses never corrupt it). A real golem
     // always moves the story to 'boss' first through bossSpawn {id:'golem'}.
     if (BOSS_OF_STAGE[S.stage] !== id) return;
@@ -391,7 +394,7 @@ export function createStory(game) {
   }
   /** After the victory screen: free roam epilogue (stage done). */
   function continueEpilogue() {
-    if (S.stage === 'ending') { completeQuest('ending'); enterStage('done'); }
+    if (S.stage === 'ending') { completeQuest('ending'); enterStage('done'); if (!silent) after(6, () => trials.announce()); }
     if (game.state === 'victory') game.setState('playing');
     return S.stage === 'done';
   }
@@ -1012,6 +1015,7 @@ export function createStory(game) {
   // ------------------------------------------------------------------------------------------- events
   function init() {
     offersOk = registerOffers();
+    try { trials.register(); } catch (err) { warnOnce('trials', '[story] trials', err); }
     // training: one skillCast per cast (spellCast only while skills is stubbed)
     events.on('skillCast', (p) => {
       if (S.stage !== 'training') return;
@@ -1276,6 +1280,8 @@ export function createStory(game) {
     pickRegion,
     continueEpilogue,
     currentBossId() { const q = QUEST_BY_ID[S.stage]; return q?.kind === 'boss' ? q.boss : null; },
+    /** Post-game 정령 시련 (story/trials.js): start(id), cleared(), active. */
+    trials,
     serialize() {
       const flags = {};
       for (const k in S.flags) if (typeof S.flags[k] !== 'function' && k !== 'endingPlaying') flags[k] = S.flags[k];

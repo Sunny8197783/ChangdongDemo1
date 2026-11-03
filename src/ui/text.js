@@ -7,7 +7,7 @@ export const TIER_GATE = { 1: 0, 2: 2, 3: 5, 4: 9, 5: 14 };
 export const SLOT_KO = { basic: '기본 공격', charged: '충전 공격', quick: '빠른 슬롯', ultimate: '궁극기', support: '보조', finisher: '필살기' };
 export const ACCESS_KO = { primary: '주속성', secondary: '부속성' };
 export const MASTERY_KO = { none: '미숙', 입문: '입문', 숙련: '숙련', 전문: '전문', 대가: '대가' };
-export const RES_KO = { mp: 'MP', resolve: '투지', stamina: '스태미나' };
+export const RES_KO = { mp: '마나', resolve: '투지', stamina: '스태미나' };
 
 /** canLearn / canUnlearn / canEquip reasons → Korean. */
 export const REASON_KO = {
@@ -56,7 +56,7 @@ export const FAMILY_BLURB = {
 export const HUD_KO = {
   points: (n) => `스킬 포인트 ${n}`, level: (n) => `Lv ${n}`, nextHit: (n) => `다음 타격: ${n}`,
   levelUpPre: '레벨 업!', levelUpTitle: (L) => `Lv ${L}`, levelUpSub: (p) => (p > 0 ? `스킬 포인트 +${p} · K 스킬 트리` : '능력치가 올랐습니다'),
-  xp: (n) => `+${n} XP`, attuneHint: 'Z · 휠', giftPrompt: '정령의 선물', resolve: '투지', mp: 'MP',
+  xp: (n) => `+${n} 경험치`, combo: '연격', attuneHint: 'Z · 휠', giftPrompt: '정령의 선물', resolve: '투지', mp: '마나',
   sig: { attunement: '원소 연쇄', enchant: '인챈트', focus: '집중', seal: '수호의 맹세', familiars: '정령 동료', marks: '표식' },
   regen: '회복 중', regenWait: '회복 대기', broken: '붕괴!', voidShield: '공허 장막', weak: '약점',
   check: { stagger: '경직 체크', rods: '피뢰침 체크', tide: '해일 체크' }, checkOk: '성공!', checkFail: '실패',
@@ -65,6 +65,7 @@ export const HUD_KO = {
 };
 /** Boss cards (payload-driven; these are only the fallbacks and the frame lines). */
 export const BOSS_KO = {
+  counters: '이 원소로 공격하면 장막이 벗겨집니다',
   spawnPre: '강적 출현', fallbackName: '강력한 적', defeatPre: '격파', defeatSub: '봉인의 한 조각이 풀렸다',
   finalSub: '세계수에 새벽이 밝아온다', phase: (n) => `${n}단계`,
 };

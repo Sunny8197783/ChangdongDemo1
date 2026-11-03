@@ -668,6 +668,14 @@ export function createPlayer(game) {
     if (checkpoint) {
       // face the objective (north) from the checkpoint
       yaw = 0; facing = prevFacing = Math.PI; root.rotation.set(0, facing, 0);
+      const A = checkpoint.bossId && checkpoint.bossId !== 'golem' ? W()?.bossArenas?.[checkpoint.bossId] : null;
+      if (A?.position) {
+        // boss checkpoint: face the arena and get a short grace window to re-engage
+        const dx = A.position.x - pos.x, dz = A.position.z - pos.z;
+        facing = prevFacing = Math.atan2(dx, dz); yaw = Math.atan2(-dx, -dz);
+        root.rotation.set(0, facing, 0);
+        invulT = Math.max(invulT, 3);
+      }
     }
     ev('playerRespawn', {});
     vfxCall('burst', v1.copy(pos).setY(pos.y + 0.9), { count: 40, color: [elHex(), 0xffffff], speed: 3.5, spread: 1, size: 0.12, life: 0.8, shape: 'spark', drag: 2 });
@@ -888,9 +896,21 @@ export function createPlayer(game) {
         const c = (W()?.camps || []).find((k) => k.id === p?.campId) || W()?.camps?.[p?.index];
         if (c?.position && !checkpoint?.boss) checkpoint = { x: c.position.x, z: c.position.z };
       });
-      events.on('bossSpawn', () => {
-        const r = W()?.bossArena?.rampStart;
-        if (r) checkpoint = { x: r.x, z: r.z, boss: true };
+      events.on('bossSpawn', (p) => {
+        const w = W();
+        const id = p?.id || p?.boss?.bossId || 'golem';
+        const A = id !== 'golem' ? w?.bossArenas?.[id] : null;
+        if (A?.position && A.radius > 0) {
+          // per-boss checkpoint: just outside the arena rim (the boss waits at its phase checkpoint), on the side the player came in from
+          let dx = pos.x - A.position.x, dz = pos.z - A.position.z;
+          const L = Math.hypot(dx, dz);
+          if (L < 1e-3) { dx = 0; dz = 1; } else { dx /= L; dz /= L; }
+          const d = A.radius + 4;
+          checkpoint = { x: A.position.x + dx * d, z: A.position.z + dz * d, boss: true, bossId: id };
+          return;
+        }
+        const r = w?.bossArena?.rampStart;
+        if (r) checkpoint = { x: r.x, z: r.z, boss: true, bossId: 'golem' };
       });
       events.on('gateTravel', () => { camSnap = true; springs.reset(); cape.reset(); });
       events.on('stateChange', (p) => { if (p?.state === 'playing' && (p.prev === 'title' || p.prev === 'cutscene')) camSnap = true; });

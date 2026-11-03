@@ -146,7 +146,7 @@ export class Afterimages {
       if (o.isLight || o.isSprite || o.name === 'outline' || o.userData.noGhost) return;
       if (o.isMesh && o.geometry?.attributes?.position && o.geometry.attributes.normal) {
         const g = o.geometry; g.boundingSphere || g.computeBoundingSphere();
-        if (g.boundingSphere.radius >= 0.035) {
+        if (g.boundingSphere.radius >= 0.06) {   // small trinkets add triangles, not silhouette
           const c = g.attributes.position.count;
           const ic = g.index ? g.index.count : c;
           this.parts.push({ mesh: o, start: nv, count: c, istart: ni, icount: ic });
@@ -163,8 +163,11 @@ export class Afterimages {
       if (g.index) for (let i = 0; i < p.icount; i++) idx[p.istart + i] = g.index.array[i] + p.start;
       else for (let i = 0; i < p.icount; i++) idx[p.istart + i] = i + p.start;
     }
-    const index = new THREE.BufferAttribute(idx, 1);
+    this.masterIdx = idx;
     for (let k = 0; k < count; k++) {
+      // per-ghost index buffer: each bake packs only the visible parts' triangles (the rig carries every class's
+      // gear, so drawing the full topology cost ~17k mostly degenerate triangles per after-image)
+      const index = new THREE.BufferAttribute(new idx.constructor(ni), 1).setUsage(THREE.DynamicDrawUsage);
       const mat = new THREE.ShaderMaterial({
         uniforms: { color: { value: new THREE.Color(1, 1, 1) }, opacity: { value: 0 } },
         vertexShader: ghostVS, fragmentShader: ghostFS, transparent: true, depthWrite: false,
@@ -189,9 +192,12 @@ export class Afterimages {
     const lr = this.liveRoot;
     lr.updateMatrixWorld(true);
     _gInv.copy(lr.matrixWorld).invert();
+    const ix = geo.index.array, mi = this.masterIdx;
+    let ni = 0;
     for (const p of this.parts) {
       const o = p.mesh, o3 = p.start * 3, n3 = p.count * 3;
-      if (!this._visible(o)) { pa.fill(0, o3, o3 + n3); continue; }   // degenerate: collapses to a point
+      if (!this._visible(o)) continue;   // left out of this ghost's index buffer
+      ix.set(mi.subarray(p.istart, p.istart + p.icount), ni); ni += p.icount;
       _gm.multiplyMatrices(_gInv, o.matrixWorld);
       _gn.getNormalMatrix(_gm);
       const sp = o.geometry.attributes.position.array, sn = o.geometry.attributes.normal.array;
@@ -209,6 +215,8 @@ export class Afterimages {
     }
     geo.attributes.position.needsUpdate = true;
     geo.attributes.normal.needsUpdate = true;
+    geo.index.needsUpdate = true;
+    geo.setDrawRange(0, ni);
   }
   spawn(position, rotationY, color, life = 0.42, opacity = 0.9) {
     let it = this.items[0];
@@ -227,7 +235,7 @@ export class Afterimages {
       const f = Math.max(0, it.life / it.max);
       it.mat.uniforms.opacity.value = f * f * it.op;
       it.root.scale.setScalar(1 + (1 - f) * 0.06);
-      if (it.life <= 0) it.root.visible = false;
+      if (it.life <= 0 || f * f * it.op < 0.09) { it.root.visible = false; it.life = 0; }   // the faint tail is invisible anyway
     }
   }
 }

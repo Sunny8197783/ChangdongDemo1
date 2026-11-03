@@ -1,5 +1,6 @@
 // Jagged lightning bolts / straight beams built as camera-facing quad strips (pooled).
 import * as THREE from 'three';
+import { FXB } from './budget.js';
 
 const MAXP = 120;     // max points per bolt (main path + branches)
 const MAXSTRIPS = 10;
@@ -62,6 +63,7 @@ export class Beams {
     this.pool = [];
     for (let i = 0; i < 18; i++) this.pool.push(new Bolt(game.scene));
     this.serial = 0;
+    FXB.register(this.pool);
   }
 
   beam(from, to, opts = {}) {
@@ -70,7 +72,7 @@ export class Beams {
     const budget = q === 'high' ? 18 : q === 'low' ? 6 : 11;
     let b = null, oldest = null, active = 0;
     for (const x of this.pool) { if (x.active) { active++; if (!oldest || x.born < oldest.born) oldest = x; } else if (!b) b = x; }
-    if (!b || active >= budget) b = oldest || b || this.pool[0];
+    if (!b || active >= budget || (oldest && !FXB.room(this.game))) b = oldest || b || this.pool[0];
     b.born = ++this.serial;
     b.from.copy(from); b.to.copy(to);
     b.width = opts.width ?? 0.35;

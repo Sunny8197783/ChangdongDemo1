@@ -377,13 +377,16 @@ export function createWorld(game) {
     plateau.setIslandsVisible(act >= 4);
     plateau.setChannelVisible(act >= 2);   // the glowing void root channel the reveal follows
   }
-  const bossIdOf = (p) => p?.id || p?.boss?.id || p?.boss;
+  const bossIdOf = (p) => p?.id || p?.boss?.bossId || p?.boss?.id || p?.boss;
+  const LOD_BOSSES = new Set(['nidhoggra', 'nox', 'treant']);
   game.events?.on?.('bossSpawn', (p) => {
     const id = bossIdOf(p);
     if (!actExplicit && (id === 'kalis' || id === 'nidhoggra')) applyAct(Math.max(act, 4));
-    if (id === 'nidhoggra') world.setBossFightLOD?.(true);   // idempotent; enemies also call it (CONTRACT §13)
+    // idempotent; enemies also call it (CONTRACT §13). The Elderwood arenas (Nox, the treant) sit in the densest
+    // flora of the map, so their fights use the same flora / grass LOD as the finale (perf §23)
+    if (LOD_BOSSES.has(id)) world.setBossFightLOD?.(true);
   });
-  game.events?.on?.('bossDefeated', (p) => { if (bossIdOf(p) === 'nidhoggra') world.setBossFightLOD?.(false); });
+  game.events?.on?.('bossDefeated', (p) => { if (LOD_BOSSES.has(bossIdOf(p))) world.setBossFightLOD?.(false); });
   // ---------------- zone colour grade + twilight fog
   {
     const G = game.post?.GRADES;

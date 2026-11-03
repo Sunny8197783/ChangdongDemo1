@@ -29,7 +29,10 @@ export function createBoss(ctx, cfg) {
   const game = ctx.game;
   const arena = cfg.arena || { position: cfg.position || new THREE.Vector3(), radius: 24 };
   const sc = bossScaling(game, cfg.zoneId || 'plains');
-  const hp = Math.round((cfg.baseHp || 4000) * (cfg.noScale ? 1 : sc.hpMul));
+  // game.bossTrialHpMul: the post-game 정령 시련 (story/trials.js) re-fights a mid-boss at +30 % HP; parts are sized
+  // from e.maxHp, so they scale with it
+  const trialMul = Number.isFinite(game.bossTrialHpMul) && game.bossTrialHpMul > 0 ? game.bossTrialHpMul : 1;
+  const hp = Math.round((cfg.baseHp || 4000) * (cfg.noScale ? 1 : sc.hpMul) * trialMul);
   let bodyMul = 1;
   const pos = (cfg.position || arena.position).clone();
   const e = makeEnemy(ctx, {
@@ -90,7 +93,7 @@ export function createBoss(ctx, cfg) {
       weakness: o.weakness || null, data: o.data || null,
       getCenter(out = new THREE.Vector3()) { return out.copy(obj.position).setY(obj.position.y + part.height * 0.5); },
       onHit(result, hit) { partHit(part, result, hit); },
-      onDeath(result, hit) { partHit(part, result, hit); partBreak(part, hit); },
+      onDeath(result, hit) { partHit(part, result, hit); if (part.hp > 0) { part.alive = true; if (!game.entities?.includes?.(part)) { try { game.combat.register(part); } catch (_) { /* */ } } return; } partBreak(part, hit); },
       onParried(by) { e.onParried?.(by); },
     };
     part.resist = scaledResist(o.resist, (k) => partMul(part, k));
@@ -145,7 +148,12 @@ export function createBoss(ctx, cfg) {
     try { part.onPartHit?.(part, result, hit); } catch (err) { console.error('[boss] onPartHit', err); }
     try { cfg.onPartHit?.(part, result, hit); } catch (err) { console.error('[boss] cfg.onPartHit', err); }
     // forward to the parent pool (never below the current phase floor; the kill goes through combat for XP)
-    if (dmg > 0 && part.fwd > 0) forward(dmg * part.fwd, hit);
+    if (dmg > 0 && part.fwd > 0) {
+      // while the pool ignores damage (transition / invulnerable), the part must not lose HP either, or a
+      // forwarding part could die with the pool still standing (softlock)
+      if (e.invulnerable || e.transitioning) { part.hp = Math.min(part.maxHp, part.hp + dmg); if (part.hp > 0) part.alive = true; return; }
+      forward(dmg * part.fwd, hit);
+    }
   }
   function partBreak(part, hit) {
     if (!part.alive && part._broken) return;

@@ -54,7 +54,7 @@ export function createVFX(game) {
     // live-particle budget: past ~900 live particles every new burst is thinned (finisher peaks stay smooth)
     const live = (add?.count || 0) + (alpha?.count || 0);
     const budget = live > 900 ? Math.max(0.25, 1 - (live - 900) / 900) : 1;
-    const sc = pScale * budget;
+    const sc = pScale * budget * (game.perfScale ?? 1);
     if (sc === 1) return n;
     const x = n * sc, f = Math.floor(x);
     return f + (Math.random() < x - f ? 1 : 0);
@@ -144,7 +144,7 @@ export function createVFX(game) {
       }
       if (!e.alive) { e.handle.alive = false; emitters.splice(i, 1); continue; }
       if (e.follow) { e.follow.getWorldPosition(e.pos); e.pos.add(e.offset); }
-      e.acc += e.rate * pScale * dt;
+      e.acc += e.rate * pScale * (game.perfScale ?? 1) * dt;
       const n = Math.floor(e.acc);
       if (n > 0) { e.acc -= n; e.opts.count = n; burst(e.pos, e.opts, true); }
     }

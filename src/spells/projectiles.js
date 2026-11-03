@@ -26,21 +26,29 @@ export function createProjectiles(S) {
   const near = [];
   const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), dirV = new THREE.Vector3();
 
+  // shared geometries: every pooled mesh of a key reuses the same buffers (materials stay per mesh: they are tinted)
+  const geoCache = new Map();
+  function sharedGeo(type, ...a) {
+    const k = type + ':' + a.join(',');
+    let g = geoCache.get(k);
+    if (!g) { g = new THREE[type](...a); geoCache.set(k, g); }
+    return g;
+  }
   // ---------- mesh factories ----------
   const factories = {
     fireball() {
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 10), glowCore(game, 0xff8a2a, 2.6)));
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), fresnelMat(0xff5a10, { power: 1.4, intensity: 1.8, core: 0.15 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.26, 14, 10), glowCore(game, 0xff8a2a, 2.6)));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.5, 16, 12), fresnelMat(0xff5a10, { power: 1.4, intensity: 1.8, core: 0.15 })));
       const fl = new THREE.Mesh(flameGeo(), flameMat()); fl.rotation.x = -Math.PI / 2; fl.scale.set(0.9, 0.9, 0.9); fl.position.z = -0.1;
       g.add(fl); g.userData.spin = g.children[1];
       return g;
     },
     inferno() {
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 14), glowCore(game, 0xff7a1a, 2.8)));
-      const s1 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.95, 2), fresnelMat(0xff4a08, { power: 1.2, intensity: 2.2, core: 0.12 }));
-      const s2 = new THREE.Mesh(new THREE.SphereGeometry(1.35, 20, 14), fresnelMat(0xffb040, { power: 2.6, intensity: 1.4, core: 0.0 }));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.55, 20, 14), glowCore(game, 0xff7a1a, 2.8)));
+      const s1 = new THREE.Mesh(sharedGeo('IcosahedronGeometry', 0.95, 2), fresnelMat(0xff4a08, { power: 1.2, intensity: 2.2, core: 0.12 }));
+      const s2 = new THREE.Mesh(sharedGeo('SphereGeometry', 1.35, 20, 14), fresnelMat(0xffb040, { power: 2.6, intensity: 1.4, core: 0.0 }));
       g.add(s1, s2);
       const fg = flameGeo(), fm = flameMat();
       const ring = new THREE.Group();
@@ -60,7 +68,7 @@ export function createProjectiles(S) {
       c.rotation.x = Math.PI / 2; c.position.z = -0.6; c.scale.set(0.45, 0.75, 0.45);
       addOutline(c, 0.05, 0x1d4a66);
       g.add(c);
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), fresnelMat(0x7fe3ff, { power: 1.5, intensity: 1.6 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.3, 12, 8), fresnelMat(0x7fe3ff, { power: 1.5, intensity: 1.6 })));
       return g;
     },
     lance() {
@@ -69,9 +77,9 @@ export function createProjectiles(S) {
       c.rotation.x = Math.PI / 2; c.position.z = -1.6; c.scale.set(0.55, 2.1, 0.55);
       addOutline(c, 0.04, 0x1d4a66);
       g.add(c);
-      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.42, 3.6, 10, 1, true), fresnelMat(0xaef4ff, { power: 1.2, intensity: 2 }));
+      const glow = new THREE.Mesh(sharedGeo('CylinderGeometry', 0.05, 0.42, 3.6, 10, 1, true), fresnelMat(0xaef4ff, { power: 1.2, intensity: 2 }));
       glow.rotation.x = Math.PI / 2; glow.position.z = -0.2; g.add(glow);
-      const tipM = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), glowCore(game, 0xdffaff, 3)); tipM.position.z = 1.6; g.add(tipM);
+      const tipM = new THREE.Mesh(sharedGeo('SphereGeometry', 0.22, 10, 8), glowCore(game, 0xdffaff, 3)); tipM.position.z = 1.6; g.add(tipM);
       return g;
     },
     blade() {
@@ -96,8 +104,8 @@ export function createProjectiles(S) {
       const r = new THREE.Mesh(rockGeo(), toonMat(0x5a2c1c, { flatShading: true, emissive: 0xff3a00, emissiveIntensity: 0.35 }));
       r.scale.setScalar(5); addOutline(r, 0.025);
       g.add(r); g.userData.spin = r;
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(3.4, 20, 14), fresnelMat(0xff6a1f, { power: 1.2, intensity: 2.4, core: 0.1 })));
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(4.6, 20, 14), fresnelMat(0xffc060, { power: 2.5, intensity: 1.4 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 3.4, 20, 14), fresnelMat(0xff6a1f, { power: 1.2, intensity: 2.4, core: 0.1 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 4.6, 20, 14), fresnelMat(0xffc060, { power: 2.5, intensity: 1.4 })));
       const fl = new THREE.Mesh(flameGeo(), flameMat()); fl.scale.set(9, 9, 9); fl.position.y = 1; g.add(fl);
       return g;
     },
@@ -109,7 +117,7 @@ export function createProjectiles(S) {
     const m = p.pop() || factories[key]();
     m.userData.key = key;
     if (!m.userData.aura) {
-      const aura = new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10), fresnelMat(0xffffff, { power: 1.3, intensity: 2 }));
+      const aura = new THREE.Mesh(sharedGeo('SphereGeometry', 0.75, 14, 10), fresnelMat(0xffffff, { power: 1.3, intensity: 2 }));
       aura.visible = false; m.add(aura); m.userData.aura = aura;
     }
     m.userData.aura.visible = false;

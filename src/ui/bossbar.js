@@ -28,6 +28,8 @@ export function createBossBar(game, ui, parent) {
     parts.push({ el: p, lock: p.firstChild, name: p.querySelector('.aw-bpart-name'), fill: p.querySelector('i'), id: null, f: -1, lockEl: '', shown: false });
   }
 
+  const rect = { l: 0, t: 0, r: 0, b: 0 }, scrP = { x: 0, y: 0 };
+  let rectT = 0, dim = false;
   let info = null;          // the last bossSpawn payload
   let boss = null, shown = false, lagV = 1, lastF = -1, lastVoid = -1, lastBreak = -1, broken = null, phaseIdx = -1;
 
@@ -49,16 +51,22 @@ export function createBossBar(game, ui, parent) {
     const ph = p?.phases || [];
     pipBox.innerHTML = ph.map((x) => `<i style="left:${(clamp(x.at ?? 0.5, 0, 1) * 100).toFixed(1)}%" title="${esc(x.name || '')}"></i>`).join('');
     phaseIdx = -1; setPhase(0, '');
-    const list = p?.parts || [];
+    setParts(p?.parts || []);
+    lastF = lastVoid = lastBreak = -1; broken = null; lagV = 1;
+  }
+  /** Part sub-bars. An entry may carry gauge:'lock' (the bar shows the lock gauge, not HP) and counters:[el…]. */
+  function setParts(list) {
     for (let i = 0; i < PART_POOL; i++) {
       const o = parts[i];
       const d = list[i];
-      o.id = d ? d.id : null; o.f = -1; o.lockEl = '';
+      o.id = d ? d.id : null; o.f = -1; o.lockEl = ''; o.gauge = d?.gauge || null;
       o.shown = !!d; o.el.style.display = d ? '' : 'none';
-      if (d) { o.name.textContent = d.name || ''; o.lock.innerHTML = ''; o.el.className = 'aw-bpart'; }
+      if (d) {
+        o.name.innerHTML = esc(d.name || '') + (d.counters?.length ? ` <span class="aw-bpart-ctr" title="${esc(BOSS_KO.counters || '')}">${d.counters.map((c) => elementSVG(c, 12)).join('')}</span>` : '');
+        o.lock.innerHTML = ''; o.el.className = 'aw-bpart';
+      }
     }
     root.classList.toggle('has-parts', !!list.length);
-    lastF = lastVoid = lastBreak = -1; broken = null; lagV = 1;
   }
   function setPhase(i, name) {
     if (i === phaseIdx && !name) return;
@@ -75,6 +83,12 @@ export function createBossBar(game, ui, parent) {
     if (info && p?.id && info.id && p.id !== info.id) return;
     const n = Math.max(0, (p?.phase ?? 1) - 1);
     setPhase(n, p?.name || info?.phases?.[n - 1]?.name || '');
+  });
+  // per-phase part lists (a boss re-sends them when its targets change: lock rotation, new phase)
+  ev.on('bossParts', (p) => {
+    if (info && p?.id && info.id && p.id !== info.id) return;
+    if (info) info.parts = p?.parts || [];
+    setParts(p?.parts || []);
   });
   ev.on('lockStripped', (p) => {
     for (const o of parts) if (o.id && o.id === p?.partId) { ui.anim?.(o.el, 'strip'); o.lockEl = ''; }
@@ -117,13 +131,21 @@ export function createBossBar(game, ui, parent) {
       let br = false; try { br = !!(game.combat?.isBroken?.(b) || b.statuses?.broken); } catch (_) { br = false; }
       if (br !== broken) { broken = br; root.classList.toggle('broken', br); stateEl.textContent = br ? HUD_KO.broken : qv > 0 ? HUD_KO.voidShield : ''; }
       else if (!br) { const t = qv > 0 ? HUD_KO.voidShield : ''; if (stateEl.textContent !== t) stateEl.textContent = t; }
+      // a tall boss rearing its head behind the panel: fade the panel so the face stays readable
+      if ((rectT -= dt * 20) <= 0) { rectT = 10; try { const r = root.getBoundingClientRect(); rect.l = r.left; rect.t = r.top; rect.r = r.right; rect.b = r.bottom; } catch (_) { /* */ } }
+      let behind = false;
+      try {
+        const hp = b.st?.headPos || b.getAimPoint?.() || null;
+        if (hp && ui.project?.(hp, scrP)) behind = scrP.x > rect.l - 20 && scrP.x < rect.r + 20 && scrP.y > rect.t - 10 && scrP.y < rect.b + 30;
+      } catch (_) { behind = false; }
+      if (behind !== dim) { dim = behind; root.classList.toggle('dim', behind); }
       // part sub-bars
       for (const o of parts) {
         if (!o.shown) continue;
         const p = partOf(b, o.id);
-        const pf = p ? clamp((p.hp ?? p.value ?? 1) / (p.maxHp || p.max || 1), 0, 1) : 1;
+        const pf = !p ? 1 : o.gauge === 'lock' ? clamp((p.lock?.gauge ?? 0) / 100, 0, 1) : clamp((p.hp ?? p.value ?? 1) / (p.maxHp || p.max || 1), 0, 1);
         const q = Math.round(pf * 100) / 100;
-        if (q !== o.f) { o.f = q; o.fill.style.transform = `scaleX(${q})`; o.el.classList.toggle('dead', q <= 0 || p?.alive === false); }
+        if (q !== o.f) { o.f = q; o.fill.style.transform = `scaleX(${q})`; o.el.classList.toggle('dead', o.gauge !== 'lock' && (q <= 0 || p?.alive === false)); }
         const lk = p?.lock?.element || '';
         if (lk !== o.lockEl) { o.lockEl = lk; o.lock.innerHTML = lk ? elementSVG(lk, 13) : ''; o.el.classList.toggle('locked', !!lk); }
       }

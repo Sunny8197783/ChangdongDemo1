@@ -284,6 +284,7 @@
 
 /* ---------------------------------------------------------------- enemy bars */
 .aw-ebar { position: absolute; left: 0; top: 0; width: 110px; text-align: center; will-change: transform, opacity; transform-origin: 50% 100%; }
+.aw-ebar.noname .aw-ebar-name { visibility: hidden; }   /* declutter: only the focused plate keeps its name in a crowd */
 .aw-ebar-name { font: 700 12px/1.1 var(--serif); color: #fff; margin-bottom: 3px; white-space: nowrap; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
 .aw-ebar-track { position: relative; height: 7px; border-radius: 4px; overflow: hidden; background: rgba(8,6,14,.78);
   border: 1px solid rgba(255, 220, 170, .55); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
@@ -837,9 +838,12 @@
 .aw-boss.broken .aw-boss-bar { box-shadow: 0 0 18px #ffb84a; }
 .aw-boss.phase .aw-boss-name { animation: aw-bossphase .9s ease-out; }
 @keyframes aw-bossphase { 0% { transform: scale(1.25); filter: brightness(2.2); } }
-.aw-boss-parts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 10px; margin-top: 6px; }
-.aw-bpart { display: flex; align-items: center; gap: 4px; font: 600 10.5px/1 var(--serif); color: #fff; }
-.aw-bpart-bar { position: relative; width: 70px; height: 5px; border-radius: 2px; overflow: hidden; background: rgba(8,6,14,.8); border: 1px solid rgba(233,201,135,.5); }
+.aw-boss-parts { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px 8px; margin-top: 4px; }
+.aw-bpart { display: flex; align-items: center; gap: 3px; font: 600 10px/1 var(--serif); color: #fff; white-space: nowrap; }
+.aw-bpart-bar { position: relative; width: 52px; height: 4px; border-radius: 2px; overflow: hidden; background: rgba(8,6,14,.8); border: 1px solid rgba(233,201,135,.5); }
+.aw-bpart-ctr { display: inline-flex; gap: 1px; vertical-align: middle; margin-left: 3px; opacity: .95; }
+.aw-bpart-ctr svg { width: 12px; height: 12px; }
+.aw-boss.show.dim { opacity: .5; }
 .aw-bpart-bar i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(#ffb56a, #c7441e); }
 .aw-bpart.locked .aw-bpart-bar { border-color: #b98bff; }
 .aw-bpart.dead { opacity: .35; }
@@ -928,9 +932,9 @@
   background: rgba(10,10,20,.92); border: 1px solid rgba(233,201,135,.4); opacity: 0; transition: opacity .2s; pointer-events: none; }
 .aw-sig-tip:empty { display: none; }
 .aw-sig:hover .aw-sig-tip { opacity: 1; }
-.aw-tree-consts { position: absolute; inset: 0; }
-.aw-const { position: absolute; inset: 0; display: none; padding: 6px 26px 4px; }
-.aw-const.on { display: flex; flex-direction: column; animation: aw-constin .55s cubic-bezier(.2,1,.3,1); }
+.aw-tree-consts { position: absolute; inset: 0; pointer-events: none; }
+.aw-const { position: absolute; inset: 0; display: none; pointer-events: none; padding: 6px 26px 4px; }
+.aw-const.on { display: flex; pointer-events: auto; flex-direction: column; animation: aw-constin .55s cubic-bezier(.2,1,.3,1); }
 @keyframes aw-constin { from { opacity: 0; transform: scale(.7); } }
 .aw-const-head { display: flex; align-items: center; gap: 12px; color: #fff; margin-left: 100px; }
 .aw-const-name { font: 900 22px/1 var(--serif); letter-spacing: .3em; text-shadow: 0 0 12px var(--ec); }

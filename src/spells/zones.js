@@ -25,12 +25,15 @@ export function createZones(S) {
   const UP = new THREE.Vector3(0, 1, 0);
 
   // ---------- visuals ----------
+  // geometries shared by every pooled visual of a type (built once, never per pooled visual)
+  const _geo = new Map();
+  const sgeo = (k, fn) => { let g = _geo.get(k); if (!g) { g = fn(); _geo.set(k, g); } return g; };
   function makeVisual(type) {
     const g = new THREE.Group();
     const parts = { group: g };
     if (type !== 'tornado') {
       const kind = type === 'storm' ? 'water' : type;
-      const disc = new THREE.Mesh(makeGroundDisc(type === 'storm' ? 20 : 18), groundMat(kind));
+      const disc = new THREE.Mesh(makeGroundDisc(type === 'storm' ? 20 : 18), groundMat(kind));   // per visual: conformed to the terrain in place
       disc.renderOrder = 2; disc.frustumCulled = false;
       g.add(disc); parts.disc = disc;
     }
@@ -51,11 +54,14 @@ export function createZones(S) {
     }
     if (type === 'storm') {
       const n = 18;
-      const puffGeo = new THREE.IcosahedronGeometry(1, 3);
-      // lighter top, violet-charged underside (vertex colors)
-      { const pos = puffGeo.attributes.position, col = new Float32Array(pos.count * 3), top = new THREE.Color(0x9aa0c4), bot = new THREE.Color(0x585a86), tc = new THREE.Color();
+      const puffGeo = sgeo('puff', () => {
+        const pg = new THREE.IcosahedronGeometry(1, 3);
+        // lighter top, violet-charged underside (vertex colors)
+        const pos = pg.attributes.position, col = new Float32Array(pos.count * 3), top = new THREE.Color(0x9aa0c4), bot = new THREE.Color(0x585a86), tc = new THREE.Color();
         for (let i = 0; i < pos.count; i++) { tc.copy(bot).lerp(top, THREE.MathUtils.smoothstep(pos.getY(i), -0.7, 0.8)); col[i * 3] = tc.r; col[i * 3 + 1] = tc.g; col[i * 3 + 2] = tc.b; }
-        puffGeo.setAttribute('color', new THREE.BufferAttribute(col, 3)); }
+        pg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        return pg;
+      });
       const cloudMat = toonMat(0xffffff, { vertexColors: true, emissive: 0x4a2a80, emissiveIntensity: 0.25 });
       const cloud = new THREE.InstancedMesh(puffGeo, cloudMat, n);
       parts.cloudMat = cloudMat; parts.flick = 0;
@@ -65,7 +71,7 @@ export function createZones(S) {
       cloud.frustumCulled = ol.frustumCulled = false;
       parts.cloudData = Array.from({ length: n }, (_, i) => { const a = (i / n) * 6.28 + Math.random(); const r = Math.sqrt(Math.random()); return { a, r, s: 1.6 + Math.random() * 1.8, y: (Math.random() - 0.5) * 1.4, ph: Math.random() * 6 }; });
       const drops = 280;
-      const rain = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.9, 0.03), rainMat(), drops);
+      const rain = new THREE.InstancedMesh(sgeo('rain', () => new THREE.BoxGeometry(0.03, 0.9, 0.03)), rainMat(), drops);
       rain.frustumCulled = false;
       for (let i = 0; i < drops; i++) {
         const a = Math.random() * 6.28, r = Math.sqrt(Math.random());
@@ -81,7 +87,7 @@ export function createZones(S) {
       const inner = new THREE.Mesh(tornadoGeo(), mat2);
       inner.scale.set(0.62, 0.95, 0.62);
       mat2.uniforms.speed.value = 1.6;
-      const base = new THREE.Mesh(new THREE.TorusGeometry(1, 0.35, 8, 32), tornadoMat());
+      const base = new THREE.Mesh(sgeo('torus', () => new THREE.TorusGeometry(1, 0.35, 8, 32)), tornadoMat());
       base.rotation.x = Math.PI / 2; base.position.y = 0.3; base.scale.set(2.2, 2.2, 1);
       outer.renderOrder = inner.renderOrder = 6;
       // opaque toon-shaded core gives the funnel a readable body against the sky

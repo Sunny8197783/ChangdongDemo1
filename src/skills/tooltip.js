@@ -76,7 +76,7 @@ export function formatSkillTooltip(game, api, id) {
   if (mods.length) lines.push('수정자: ' + mods.join(', '));
   if (d.twist) lines.push('지형 상호작용');
   const cost = d.cost ? Math.round(d.cost * (melee ? 0.8 : 1)) : 0;
-  const out = { title: d.nameKo, slot: d.slot, slotKo: SLOT_KO[d.slot] || '', cost, resource: melee ? '투지' : 'MP', cd: d.cd || 0, desc: d.desc || '', lines,
+  const out = { title: d.nameKo, slot: d.slot, slotKo: SLOT_KO[d.slot] || '', cost, resource: melee ? '투지' : '마나', cd: d.cd || 0, desc: d.desc || '', lines,
     power: game.stats?.derived?.().power ?? 1 };
   out.text = [d.nameKo, `${out.slotKo}${cost ? ` · ${out.resource} ${cost}` : ''}${d.cd ? ` · 재사용 ${fmt(d.cd)}초` : ''}`, d.desc, ...lines].filter(Boolean).join('\n');
   return out;

@@ -493,7 +493,26 @@ function loop(now) {
   if (game.frozen) return;
   fpsWin.push(realDt); if (fpsWin.length > 60) fpsWin.shift();
   game.fps = fpsWin.length / fpsWin.reduce((a, b) => a + b, 0);
+  governor(realDt);
   frame(realDt);
+}
+// ---------- dynamic quality governor (DESIGN §12) ----------
+// frame-time EMA above 18 ms for 2 s → game.perfScale 0.7 (vfx particle counts and the global VFX draw budget
+// scale by it; distant procedural animation runs at half rate); restored after 4 s under 14 ms. Runtime only:
+// never written into the persisted settings.
+game.perfScale = 1;
+var ftEma = 1 / 60, slowT = 0, fastT = 0;   // var: the rAF loop may start before this line runs
+function governor(realDt) {
+  if (!(ftEma > 0)) { ftEma = 1 / 60; slowT = 0; fastT = 0; }
+  if (game.perfScale == null) game.perfScale = 1;
+  ftEma += (realDt - ftEma) * 0.08;
+  if (game.perfScale >= 1) {
+    slowT = ftEma > 0.018 ? slowT + realDt : 0;
+    if (slowT >= 2) { game.perfScale = 0.7; slowT = 0; fastT = 0; game.events?.emit?.('perfScale', { scale: 0.7 }); }
+  } else {
+    fastT = ftEma < 0.014 ? fastT + realDt : 0;
+    if (fastT >= 4) { game.perfScale = 1; fastT = 0; slowT = 0; game.events?.emit?.('perfScale', { scale: 1 }); }
+  }
 }
 // ---------- test hooks ----------
 // game.freeze(true) stops the rAF loop; game.step(n, dt) advances n frames deterministically without

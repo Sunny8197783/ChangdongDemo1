@@ -74,6 +74,14 @@ export const SPELLS = {
         // start in front of / above the target so the rock streaks down across the sky, in view
         const sd = new THREE.Vector3(-fd.z, 0, fd.x);
         const start = new THREE.Vector3(pt.x + fd.x * 30 + sd.x * 8, pt.y + 26, pt.z + fd.z * 30 + sd.z * 8);
+        // keep the streak clear of the terrain: raise the start until every sample on the path is above ground
+        // (rising ground beyond the target used to stop the rock at its spawn point, harmlessly)
+        for (let k = 0; k < 12; k++) {
+          const t = k / 12, x = start.x + (pt.x - start.x) * t, z = start.z + (pt.z - start.z) * t;
+          const need = (S.height(x, z) + 4 - pt.y * t) / (1 - t);
+          if (need > start.y) start.y = need;
+        }
+        if (start.y > pt.y + 70) start.set(pt.x + sd.x * 4, pt.y + 40, pt.z + sd.z * 4);   // walled in: drop it from above
         S.vfx('flash', start, { color: 0xffc070, intensity: 6, distance: 60, duration: 0.35 });
         S.vfx('burst', start, { count: 24, color: [0xfff0c0, 0xff8a30], shape: 'spark', speed: 6, spread: 1, size: 0.5, life: 0.35, drag: 2 });
         const dir = new THREE.Vector3().subVectors(pt, start); const dist = dir.length();

@@ -205,15 +205,26 @@ export function createEnemies(game) {
     return e;
   }
 
+  /** Per-instance THREE.Skeleton bone textures (one float DataTexture each) are not freed by removeFromParent:
+   *  dispose each unique skeleton (geometries / materials are shared caches and stay). */
+  const _skels = new Set();
+  function disposeSkeletons(root) {
+    if (!root?.traverse) return;
+    _skels.clear();
+    root.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) _skels.add(o.skeleton); });
+    for (const sk of _skels) { try { sk.dispose(); } catch (_) { /* */ } }
+    _skels.clear();
+  }
   function removeEnemy(e) {
     if (e.removed) return;
     e.removed = true;
     e.object.removeFromParent();
+    disposeSkeletons(e.object);
     game.combat.unregister(e);
     ctx.releaseToken(e);
     if (e.isBoss && !e._partsCleaned) { e._partsCleaned = true; try { e.cleanupParts?.(); } catch (_) { /* */ } }
     const i = all.indexOf(e); if (i >= 0) all.splice(i, 1);
-    if (e === boss) { if (e.bossId === 'nidhoggra') { try { game.world?.setBossFightLOD?.(false); } catch (_) { /* */ } } boss = null; }
+    if (e === boss) { if (e.bossId === 'nidhoggra' || e.bossId === 'nox' || e.bossId === 'treant') { try { game.world?.setBossFightLOD?.(false); } catch (_) { /* */ } } boss = null; }
   }
 
   function onDied(e) {
@@ -341,7 +352,7 @@ export function createEnemies(game) {
     boss = e;
     phase = 'boss';
     if (id === 'golem') { for (const c of camps) c.cleared = true; campsCleared = camps.length; bossSpawnT = -1; game.world.setArenaGlow?.(0.55); }
-    if (id === 'nidhoggra') { try { game.world?.setBossFightLOD?.(true); } catch (_) { /* */ } }
+    if (id === 'nidhoggra' || id === 'nox' || id === 'treant') { try { game.world?.setBossFightLOD?.(true); } catch (_) { /* */ } }
     game.events.emit('bossSpawn', e.spawnPayload ? e.spawnPayload() : { boss: e, id, name: e.name });
     game.vfx.shake?.(0.35);
     return e;

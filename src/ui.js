@@ -224,7 +224,7 @@ export function createUI(game) {
       on: false, vis: false, target: null, dim: null, _d: -1, _x: 0, _px: 0 });
   }
   const visMarks = [];
-  const bossBar = createBossBar(game, { anim: restartAnim }, hud);
+  const bossBar = createBossBar(game, { anim: restartAnim, project: (pt, out) => project(pt, out) }, hud);
   const hint = hud.appendChild(h('div', 'aw-hint'));
 
   // ------------------------------------------------------------------ banners, flashes & combo
@@ -235,7 +235,7 @@ export function createUI(game) {
   const flashEl = fxLayer.appendChild(h('div', 'aw-flash', '<div class="aw-flash-rays"></div><div class="aw-flash-text"></div><div class="aw-flash-sub"></div>'));
   const flashText = flashEl.querySelector('.aw-flash-text'), flashSub = flashEl.querySelector('.aw-flash-sub');
   const edgeFlash = fxLayer.appendChild(h('div', 'aw-edge'));
-  const combo = fxLayer.appendChild(h('div', 'aw-combo', '<div class="aw-combo-num">0</div><div class="aw-combo-lbl">COMBO</div><div class="aw-combo-timer"><i></i></div>'));
+  const combo = fxLayer.appendChild(h('div', 'aw-combo', '<div class="aw-combo-num">0</div><div class="aw-combo-lbl">' + (HUD_KO.combo || '연격') + '</div><div class="aw-combo-timer"><i></i></div>'));
   const comboNum = combo.querySelector('.aw-combo-num'), comboTimer = combo.querySelector('.aw-combo-timer i');
   const lvBurst = fxLayer.appendChild(h('div', 'aw-lvburst', '<i></i><i></i><i></i>'));
 
@@ -250,7 +250,7 @@ export function createUI(game) {
   const nums = [];
   for (let i = 0; i < DMG_POOL; i++) {
     const e = worldLayer.appendChild(h('div', 'aw-num'));
-    nums.push({ el: e, alive: false, pos: new THREE.Vector3(), age: 0, life: 1, ox: 0, sx: 0, oy: 0, spx: -1e4, spy: -1e4, vy: 0, scale: 1, hidden: true });
+    nums.push({ el: e, alive: false, pos: new THREE.Vector3(), age: 0, life: 1, ox: 0, sx: 0, oy: 0, spx: -1e4, spy: -1e4, vy: 0, scale: 1, hidden: true, lx: null, ly: 0, w: 40, hh: 24, big: false });
   }
   let numCursor = 0;
   const numScr = { x: 0, y: 0 };
@@ -265,16 +265,35 @@ export function createUI(game) {
     n.ox = (Math.random() - 0.5) * (opts.spread ?? 40); n.vy = opts.vy ?? 1.4;
     n.sx = 0; n.oy = 0; n.spx = n.spy = -1e4;
     if (point) n.pos.copy(point);
-    if (point && project(point, numScr)) {
-      let stack = 0;
-      for (let i = 0; i < DMG_POOL; i++) {
-        const o = nums[i];
-        if (o === n || !o.alive || o.age > 0.25) continue;
-        if (Math.abs(o.spx - numScr.x) < 48 && Math.abs(o.spy - numScr.y) < 48) stack++;
-      }
-      n.spx = numScr.x; n.spy = numScr.y;
-      if (stack > 0) { n.oy = -26 * Math.min(stack, 6); n.sx = (stack % 2 ? 30 : -30); n.ox *= 0.3; }
+    // big numbers are capped: with 4+ big / crit / reaction numbers on screen, further ones are drawn normal size
+    if (cls && /aw-num-(big|crit|rx)/.test(cls)) {
+      let big = 0;
+      for (let i = 0; i < DMG_POOL; i++) { const o = nums[i]; if (o !== n && o.alive && o.big) big++; }
+      if (big >= 4) { cls = cls.replace(/aw-num-big/, '').trim(); n.scale *= big >= 6 ? 0.8 : 0.9; }
     }
+    n.big = !!(cls && /aw-num-(big|crit|rx)/.test(cls));
+    // estimated box (no reflow): ~0.6 em per glyph
+    const fpx = !cls ? 22 : /aw-num-(big|crit)/.test(cls) ? 30 : /aw-num-(rx|player)/.test(cls) ? 26 : /aw-num-dot/.test(cls) ? 16 : 22;
+    n.w = Math.max(fpx, String(text).length * fpx * 0.6) * n.scale + 6; n.hh = fpx * n.scale + 4;
+    if (point && project(point, numScr)) {
+      n.spx = numScr.x; n.spy = numScr.y;
+      // collision against the live numbers' real boxes: try the spot, then rows above, alternating sides
+      n.ox *= 0.4;
+      let placed = false;
+      for (let t = 0; t < 10 && !placed; t++) {
+        const row = (t + 1) >> 1, side = t === 0 ? 0 : (t % 2 ? 1 : -1);
+        const cx = numScr.x + side * n.w * 0.55, cy = numScr.y - row * n.hh * 0.9;
+        let hit = false;
+        for (let i = 0; i < DMG_POOL && !hit; i++) {
+          const o = nums[i];
+          if (o === n || !o.alive || o.hidden || o.age > 0.7 || o.lx == null) continue;
+          if (Math.abs(o.lx - cx) < (o.w + n.w) * 0.5 && Math.abs(o.ly - cy) < (o.hh + n.hh) * 0.5) hit = true;
+        }
+        if (!hit) { n.sx = cx - numScr.x; n.oy = cy - numScr.y; placed = true; }
+      }
+      if (!placed) { n.oy = -n.hh * 3; n.sx = 0; }
+      n.lx = numScr.x + n.sx; n.ly = numScr.y + n.oy; n.hidden = false;
+    } else { n.lx = null; }
     n.el.className = 'aw-num ' + (cls || '');
     n.el.style.setProperty('--nc', color || '#fff');
     n.el.textContent = text;
@@ -330,12 +349,28 @@ export function createUI(game) {
   }
 
   // ------------------------------------------------------------------ toasts (+ queued tutorial toasts)
+  // anchored just above the real vitals panel (3-bar resolve classes, the XP row and the large-screen scale make it
+  // taller than the fixed CSS offset assumed), re-measured when a toast appears and twice a second
+  let toastPlaceT = 0;
+  function placeToasts() {
+    try {
+      const rr = root.getBoundingClientRect(), vr = vitals.getBoundingClientRect();
+      if (!(vr.height > 0) || !(rr.height > 0)) return;
+      toastBox.style.bottom = Math.round(rr.bottom - vr.top + 14) + 'px';
+      toastBox.style.left = Math.max(12, Math.round(vr.left - rr.left - 4)) + 'px';
+    } catch (_) { /* */ }
+  }
   function toast(text, opts = {}) {
     const dur = opts.duration ?? 4.5;
     const t = h('div', 'aw-toast ' + (opts.kind ? 'aw-toast-' + opts.kind : ''), `<span class="aw-toast-orn"></span><span class="aw-toast-text"></span>`);
     t.querySelector('.aw-toast-text').innerHTML = formatKeys(text);
     toastBox.appendChild(t);
+    if (opts.kind === 'discover') {   // at most 2 reaction-discovery toasts at once
+      const ds = toastBox.querySelectorAll('.aw-toast-discover');
+      for (let i = 0; i < ds.length - 2; i++) ds[i].remove();
+    }
     while (toastBox.children.length > 3) toastBox.firstChild.remove();
+    placeToasts();
     setTimeout(() => t.classList.add('out'), dur * 1000);
     setTimeout(() => t.remove(), dur * 1000 + 600);
     return t;
@@ -867,14 +902,16 @@ export function createUI(game) {
   ev.on('lockStripped', (p) => showHint(HUD_KO.lockStripped + (p?.lock?.element || p?.lock ? ` — ${elName(p.lock?.element || p.lock)}` : '')));
   ev.on('break', (p) => { if (p?.target?.team !== 'player') { showFlash(HUD_KO.broken, HUD_KO.breakSub, 'break', 1.0, 2); } });
   ev.on('resonance', () => { showFlash(HUD_KO.resonance, HUD_KO.resonanceSub, 'awaken', 1.3, 3); edge('awaken'); });
-  ev.on('giftReady', () => toast(`V: ${HUD_KO.giftPrompt}`, { duration: 4, kind: 'tut' }));
+  // the hotbar's gift gem is the persistent prompt; the toast only introduces the key once (no duplicate prompt)
+  let giftToasted = false;
+  ev.on('giftReady', () => { if (giftToasted || document.querySelector('.aw-hb3-gift')) { giftToasted = true; return; } giftToasted = true; toast(`V: ${HUD_KO.giftPrompt}`, { duration: 4, kind: 'tut' }); });
   ev.on('victory', (p) => { victoryStats = p?.stats || null; if (game.state === 'victory') showVictory(); });
   ev.on('pickup', (p) => {
     const pp = game.player?.object?.position;
     if (!pp) return;
     v2.copy(pp).setY(pp.y + 2);
     if (p?.kind === 'heart') spawnNumber(`+${p.amount ?? ''} 생명력`, v2, 'aw-num-pick', '#ff8aa0', { life: 1.2, scale: 0.85 });
-    else if (p?.kind === 'mana') spawnNumber(`+${p.amount ?? ''} MP`, v2, 'aw-num-pick', '#7cc4ff', { life: 1.2, scale: 0.85 });
+    else if (p?.kind === 'mana') spawnNumber(`+${p.amount ?? ''} 마나`, v2, 'aw-num-pick', '#7cc4ff', { life: 1.2, scale: 0.85 });
   });
   ev.on('elementChanged', () => restartAnim(elNameEl, 'pop'));
   ev.on('hpRegenStart', () => restartAnim(vHp.el, 'regenstart'));
@@ -1285,10 +1322,43 @@ export function createUI(game) {
       const s = n.scale * pop;
       const a = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
       n.el.style.opacity = a.toFixed(2);
-      n.el.style.transform = `translate(${(scr.x + n.sx + n.ox * k).toFixed(1)}px,${(scr.y + n.oy).toFixed(1)}px) translate(-50%,-50%) scale(${s.toFixed(3)})`;
+      n.lx = scr.x + n.sx + n.ox * k; n.ly = scr.y + n.oy;
+      n.el.style.transform = `translate(${n.lx.toFixed(1)}px,${n.ly.toFixed(1)}px) translate(-50%,-50%) scale(${s.toFixed(3)})`;
     }
   }
 
+  /** Declutter (no allocation): nearest / focused plates keep their spot, the others are nudged up in 14 px steps;
+   *  a plate that still overlaps, or sits beside another plate while not focused, drops its name row. */
+  const barOrder = [];
+  function declutterBars(n) {
+    barOrder.length = 0;
+    for (let i = 0; i < n; i++) {
+      const b = bars[i]; b.prio = (b.focus ? -1000 : 0) + b.dist;
+      let k = barOrder.length; barOrder.push(b);
+      while (k > 0 && barOrder[k - 1].prio > b.prio) { barOrder[k] = barOrder[k - 1]; k--; }
+      barOrder[k] = b;
+    }
+    for (let i = 0; i < barOrder.length; i++) {
+      const b = barOrder[i];
+      const w = 110 * b.sc, hh = 34 * b.sc;
+      let y = b.py, crowd = false, ok = false;
+      for (let step = 0; step <= 4 && !ok; step++) {
+        ok = true;
+        for (let j = 0; j < i; j++) {
+          const o = barOrder[j];
+          const ow = 110 * o.sc, oh = 34 * o.sc;
+          const dx = Math.abs(o.px - b.px);
+          if (dx < (w + ow) * 0.5 + 8 && Math.abs(o.py - y) < (hh + oh) * 0.5 + 24) crowd = true;
+          if (dx < (w + ow) * 0.5 && Math.abs(o.py - y) < (hh + oh) * 0.5) { ok = false; break; }
+        }
+        if (!ok) y -= 14;
+      }
+      b.py = y;
+      const hideName = !b.focus && (crowd || !ok);
+      if (hideName !== b.noName) { b.noName = hideName; b.el.classList.toggle('noname', hideName); }
+      b.el.style.transform = `translate(${b.px.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-100%) scale(${b.sc.toFixed(3)})`;
+    }
+  }
   function updateBars(dt, full) {
     let bi = 0;
     const now = game.realTime;
@@ -1361,10 +1431,12 @@ export function createUI(game) {
         const sc = clamp(1.25 - dist / 45, 0.62, 1.1);
         const fade = recent ? 1 : 0.85;
         b.el.style.opacity = (fade * clamp((35 - dist) / 5, 0, 1)).toFixed(2);
-        b.el.style.transform = `translate(${scr.x.toFixed(1)}px,${scr.y.toFixed(1)}px) translate(-50%,-100%) scale(${sc.toFixed(3)})`;
+        b.px = scr.x; b.py = scr.y; b.sc = sc; b.dist = dist;
+        b.focus = e === nextHit.target || (lh !== undefined && now - lh < 1.5);
         if (!b.shown) { b.shown = true; b.el.style.display = ''; }
       }
     }
+    declutterBars(bi);
     for (; bi < BAR_POOL; bi++) {
       const b = bars[bi];
       if (b.shown) { b.shown = false; b.el.style.display = 'none'; b.ent = null; }
@@ -1461,6 +1533,7 @@ export function createUI(game) {
     update(dt, realDt) {
       dt = realDt || dt || 0;
       AQ.tick();
+      if ((toastPlaceT -= dt) <= 0) { toastPlaceT = 0.5; if (toastBox.children.length) placeToasts(); }
       if (laterT.length) tickLater(dt);
       const s = game.state;
       const R = raw();

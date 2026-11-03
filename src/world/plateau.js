@@ -294,7 +294,7 @@ export function buildPlateau(game, world, { uTime }) {
   const updrafts = new THREE.InstancedMesh(udGeo, udMat, UD_MAX);
   for (let i = 0; i < UD_MAX; i++) updrafts.setColorAt(i, C(0xc8ffe9));   // instanceColor from construction
   updrafts.instanceColor.needsUpdate = true;
-  updrafts.count = 0; updrafts.frustumCulled = false; updrafts.name = 'updraftColumns'; updrafts.renderOrder = 6;
+  updrafts.count = 0; updrafts.visible = false; updrafts.frustumCulled = false; updrafts.name = 'updraftColumns'; updrafts.renderOrder = 6;
   game.scene.add(updrafts);
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 

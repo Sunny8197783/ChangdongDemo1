@@ -1,5 +1,6 @@
 // Ribbon trails following an Object3D: camera-facing, tapering width, fading alpha, additive.
 import * as THREE from 'three';
+import { FXB } from './budget.js';
 
 const MAXP = 48;
 
@@ -51,12 +52,16 @@ export class Trails {
     this.game = game; this.pool = [];
     for (let i = 0; i < 20; i++) this.pool.push(new Ribbon(game.scene));
     this.serial = 0;
+    FXB.register(this.pool);
   }
 
   trail(object3D, opts = {}) {
-    let r = null, oldest = this.pool[0];
-    for (const x of this.pool) { if (!x.active) { r = x; break; } if (x.born < oldest.born) oldest = x; }
-    if (!r) r = oldest;
+    // quality budget (high 20 / medium 12 / low 7) and the global VFX budget: beyond them, recycle the oldest ribbon
+    const q = this.game.settings?.values?.effectQuality || 'medium';
+    const budget = q === 'high' ? 20 : q === 'low' ? 7 : 12;
+    let r = null, oldest = null, active = 0;
+    for (const x of this.pool) { if (x.active) { active++; if (!oldest || x.born < oldest.born) oldest = x; } else if (!r) r = x; }
+    if (!r || (oldest && (active >= budget || !FXB.room(this.game)))) r = oldest || r || this.pool[0];
     r.born = ++this.serial;
     r.follow = object3D; r.active = true; r.stopped = false; r.n = 0;
     r.width = opts.width ?? 0.4;
@@ -66,7 +71,7 @@ export class Trails {
     r.material.uniforms.uColor.value.setHex(opts.color ?? 0xffffff);
     r.material.uniforms.uOpacity.value = r.opacity;
     r.mesh.visible = false;
-    const h = { stop: () => { r.stopped = true; }, get alive() { return r.active && !r.stopped; } };
+    const h = { stop: () => { if (r.handle === h) r.stopped = true; }, get alive() { return r.handle === h && r.active && !r.stopped; } };   // a recycled ribbon ignores its old owner
     r.handle = h;
     return h;
   }

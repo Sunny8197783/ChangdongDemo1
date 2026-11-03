@@ -14,10 +14,11 @@ const C = (h) => new THREE.Color(h);
 const E = TF.elderwood;
 export const ROT_TEXT = {
   name: '썩은 덩굴',
-  hint: '썩은 덩굴 — 불로 태우거나, 빛으로 정화하거나, 대지의 힘으로 부수세요',
+  hint: '썩은 덩굴 — 불로 태우거나, 빛으로 정화하거나, 어둠·자연의 강공으로 시들게 하거나, 강한 일격으로 부수세요',
   burned: '썩은 덩굴이 불타 사라졌다',
   purified: '빛이 썩은 덩굴을 정화했다',
   smashed: '썩은 덩굴을 부숴 길을 열었다',
+  withered: '썩은 덩굴이 시들어 무너졌다',
 };
 
 function mushroomGeo() {
@@ -287,7 +288,7 @@ export function buildElderwood(game, world, { uTime }) {
       id: 'rotwall_' + w.id, team: 'prop', isProp: true, name: ROT_TEXT.name, alive: true, object: obj, radius: w.span * 0.45, height: 4,
       hp: 1e9, maxHp: 1e9, mass: 1e9, xpValue: 0, velocity: new THREE.Vector3(), grounded: true, statuses: {}, resist: {}, immovable: true, noKnockback: true,
       getCenter(out) { return out.copy(obj.position).setY(obj.position.y + 1.8); },
-      onHit(result, hit) { api.hitWall(w, hit); },
+      onHit(result, hit) { api.hitWall(w, hit, result); },
     };
     try { game.combat?.register?.(w.prop); } catch (_) { /* */ }
     game.interact?.offer?.('rotwall:' + w.id, { pos: w.position, r: w.span * 0.5 + 1.5, label: ROT_TEXT.name, priority: 0, enabled: () => w.state === 'intact', onUse: () => { try { game.ui?.tip?.('rotwall', ROT_TEXT.hint) ?? game.ui?.toast?.(ROT_TEXT.hint); } catch (_) { /* */ } return true; } });
@@ -323,13 +324,24 @@ export function buildElderwood(game, world, { uTime }) {
     smash: (id) => clearWall(rotWalls.find((w) => w.id === id), 'smashed'),
     clearWall,
     /** A combat hit on a wall: fire burns, light purifies, a heavy earth hit (or 대지의 거신) smashes. */
-    hitWall(w, hit) {
+    hitWall(w, hit, result) {
       if (!hit || w.state !== 'intact') return;
       const el = hit.element; const tags = hit.tags || [];
+      const tier = result?.tier || hit.tier;
+      const strong = !!(hit.heavy || hit.charged || tier === 'heavy' || tier === 'ult' || tags.includes('ultimate') || tags.includes('finisher'));
       if (el === 'fire') clearWall(w, 'burned');
       else if (el === 'light') clearWall(w, 'purified');
-      else if (el === 'earth' && (hit.heavy || (hit.tier || 0) >= 2 || tags.includes('colossus') || tags.includes('smash') || /colossus/.test(hit.skillId || hit.id || ''))) clearWall(w, 'smashed');
-      else { w.shiver = 1; try { game.audio?.play?.('vine_hit', { position: w.position, volume: 0.5 }); } catch (_) { /* */ } }
+      else if (el === 'earth' && (strong || tags.includes('colossus') || tags.includes('smash') || /colossus/.test(hit.skillId || hit.id || ''))) clearWall(w, 'smashed');
+      // every class has a way through (shadow / nature builds have no fire or light): shadow corrodes and nature
+      // un-grows the rot on a strong hit or a reaction; any ultimate smashes; enough plain hits tear it down
+      else if ((el === 'shadow' || el === 'nature') && (strong || result?.reaction)) clearWall(w, 'withered');
+      else if (tier === 'ult' || tags.includes('ultimate')) clearWall(w, 'smashed');
+      else {
+        w.shiver = 1; w.hits = (w.hits || 0) + (strong ? 3 : 1);
+        if (w.hits >= 14) { clearWall(w, 'smashed'); return; }
+        if (w.hits === 4) { try { game.ui?.tip?.('rotwall', ROT_TEXT.hint); } catch (_) { /* */ } }
+        try { game.audio?.play?.('vine_hit', { position: w.position, volume: 0.5 }); } catch (_) { /* */ }
+      }
     },
     setStates(o) {
       for (const w of rotWalls) {
@@ -340,6 +352,17 @@ export function buildElderwood(game, world, { uTime }) {
     serialize() { return Object.fromEntries(rotWalls.map((w) => [w.id, w.state])); },
     update(dt, realDt, t) {
       sporeU.uScale.value = game.renderer.domElement.height / 720;
+      // distance LOD: from the village (≈160 m past the forest edge, deep in the fog) the glow layers, spores and
+      // mushroom caps are sub-pixel but cost ~50k triangles; the main forest silhouette stays
+      {
+        const cp = game.camera?.position;
+        if (cp) {
+          const d = Math.hypot(cp.x - api.center.x, cp.z - api.center.z) - api.radius;
+          const near = d < 115, mid = d < 140;
+          glowMesh.visible = near; mushGlow.visible = near; wallGlow.visible = near; spores.visible = near;
+          mush.visible = mid; walls.visible = mid;
+        }
+      }
       let dirty = false;
       for (let i = 0; i < rotWalls.length; i++) {
         const w = rotWalls[i];

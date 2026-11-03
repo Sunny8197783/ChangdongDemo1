@@ -390,7 +390,7 @@ export function createSkillTree(game, ui, parent) {
     let tt = null;
     try { tt = sk?.tooltip?.(id, { rank: r }) || null; } catch (_) { tt = null; }
     const fam = CLASS_DEFS[pr?.cls]?.family || 'caster';
-    const res = fam === 'melee' ? '투지' : 'MP';
+    const res = fam === 'melee' ? '투지' : '마나';
     let html = `<div class="aw-dt-head" style="--ec:${elCss(n.element)}">${elementSVG(n.element, 22)}<div><div class="aw-dt-name">${esc(n.nameKo || d?.nameKo || id)}</div>
       <div class="aw-dt-badges"><span class="aw-badge t-${n.type}">${TYPE_KO[n.type] || n.type}</span><span class="aw-badge">${TIER_KO[n.tier] || ''}</span>
       <span class="aw-badge">${TREE_KO.rank(r, max)}</span><span class="aw-badge">${TREE_KO.cost(n.cost ?? 1, max > 1)}</span></div></div></div>`;

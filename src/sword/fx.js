@@ -266,7 +266,7 @@ export class Spikes {
       this._col = new THREE.Color();
     }
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.frustumCulled = false; this.mesh.castShadow = !ice; this.mesh.count = 0;
+    this.mesh.frustumCulled = false; this.mesh.castShadow = !ice; this.mesh.count = 0; this.mesh.visible = false;
     scene.add(this.mesh);
     this.items = Array.from({ length: n }, () => ({ alive: false, pos: new THREE.Vector3(), h: 1, w: 1, t: 0, delay: 0, life: 1, yaw: 0, tiltX: 0, tiltZ: 0, color: 0xffffff }));
     this.ice = ice;
@@ -298,7 +298,7 @@ export class Spikes {
       if (this.crystal) this.mesh.setColorAt(c, this._col.setHex(it.color));
       this.mesh.setMatrixAt(c++, _m);
     }
-    this.mesh.count = c;
+    this.mesh.count = c; this.mesh.visible = c > 0;
     if (c) { this.mesh.instanceMatrix.needsUpdate = true; if (this.crystal) this.mesh.instanceColor.needsUpdate = true; }
   }
 }
@@ -356,7 +356,7 @@ export class OrbitBlades {
     const geo = new THREE.ConeGeometry(0.14, 1.5, 4, 1); geo.rotateX(Math.PI / 2); geo.scale(1, 0.35, 1);
     this.mat = new THREE.MeshBasicMaterial({ color: 0xa8ffd6, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     this.mesh = new THREE.InstancedMesh(geo, this.mat, n);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.mesh.frustumCulled = false; this.mesh.count = 0;
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.mesh.frustumCulled = false; this.mesh.count = 0; this.mesh.visible = false;
     scene.add(this.mesh);
     this.n = n; this.active = 0; this.t = 0; this.time = 0; this.radius = 2.4; this.spin = 0; this.center = new THREE.Vector3();
     this.pos = Array.from({ length: n }, () => new THREE.Vector3());
@@ -364,7 +364,7 @@ export class OrbitBlades {
   start(count, duration, radius) { this.active = Math.min(this.n, count); this.t = duration; this.dur = duration; this.radius = radius; this.time = 0; }
   stop() { this.t = 0; }
   update(dt, center) {
-    if (this.t <= 0) { this.mesh.count = 0; this.active = 0; return; }
+    if (this.t <= 0) { this.mesh.count = 0; this.mesh.visible = false; this.active = 0; return; }
     this.t -= dt; this.time += dt;
     this.center.copy(center);
     const n = this.active, intro = Math.min(1, this.time / 0.3), outro = Math.min(1, this.t / 0.3);
@@ -380,7 +380,7 @@ export class OrbitBlades {
       _m.compose(this.pos[i], _q, _s);
       this.mesh.setMatrixAt(i, _m);
     }
-    this.mesh.count = n;
+    this.mesh.count = n; this.mesh.visible = n > 0;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.mat.opacity = 0.85 * outro;
   }
@@ -393,8 +393,8 @@ export class Dragon {
     const geo = new THREE.IcosahedronGeometry(1, 1);
     this.mat = new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     this.core = new THREE.MeshBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    this.mesh = new THREE.InstancedMesh(geo, this.mat, n); this.mesh.frustumCulled = false; this.mesh.count = 0;
-    this.coreMesh = new THREE.InstancedMesh(geo, this.core, n); this.coreMesh.frustumCulled = false; this.coreMesh.count = 0;
+    this.mesh = new THREE.InstancedMesh(geo, this.mat, n); this.mesh.frustumCulled = false; this.mesh.count = 0; this.mesh.visible = false;
+    this.coreMesh = new THREE.InstancedMesh(geo, this.core, n); this.coreMesh.frustumCulled = false; this.coreMesh.count = 0; this.coreMesh.visible = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.coreMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(this.mesh, this.coreMesh);
     this.n = n; this.t = 0; this.dur = 0; this.from = new THREE.Vector3(); this.to = new THREE.Vector3(); this.scale = 1;
@@ -411,7 +411,7 @@ export class Dragon {
     return out.set(x - dz / l * sw, y, z + dx / l * sw);
   }
   update(dt) {
-    if (!this.active) { this.mesh.count = 0; this.coreMesh.count = 0; return; }
+    if (!this.active) { this.mesh.count = 0; this.coreMesh.count = 0; this.mesh.visible = this.coreMesh.visible = false; return; }
     this.t += dt;
     const k = Math.min(1, this.t / this.dur);
     for (let i = 0; i < this.n; i++) {
@@ -423,9 +423,9 @@ export class Dragon {
       _s.setScalar(s * 0.55); _m.compose(this.path[i], _q, _s); this.coreMesh.setMatrixAt(i, _m);
     }
     this.head.copy(this.path[0]);
-    this.mesh.count = this.n; this.coreMesh.count = this.n;
+    this.mesh.count = this.n; this.coreMesh.count = this.n; this.mesh.visible = this.coreMesh.visible = this.n > 0;
     this.mesh.instanceMatrix.needsUpdate = true; this.coreMesh.instanceMatrix.needsUpdate = true;
-    if (k >= 1) { this.active = false; this.mesh.count = 0; this.coreMesh.count = 0; }
+    if (k >= 1) { this.active = false; this.mesh.count = 0; this.coreMesh.count = 0; this.mesh.visible = this.coreMesh.visible = false; }
   }
 }
 
