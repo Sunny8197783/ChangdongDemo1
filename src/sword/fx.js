@@ -126,18 +126,27 @@ export class SlashArcs {
 }
 
 // ------------------------------------------------------------------ blade ribbon trail
-const TR_N = 14, TR_SUB = 4, TR_P = (TR_N - 1) * TR_SUB + 1;
+// DESIGN §9 A1: 16 samples from hilt and tip, Catmull-Rom to 31 points, a scrolling two-layer noise mask and a
+// gradient-mapped element ramp (uColor saturated → uColB hot core near the edge). Per-weapon width / life / noise.
+const TR_N = 16, TR_SUB = 2, TR_P = (TR_N - 1) * TR_SUB + 1;
 const TRAIL_VS = /* glsl */`
   attribute vec2 aT; varying vec2 vT;
   void main() { vT = aT; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const TRAIL_FS = /* glsl */`
-  uniform vec3 uColor; uniform float uOpacity;
+  uniform vec3 uColor, uColB; uniform float uOpacity, uTime, uNoise, uEdge;
   varying vec2 vT; // x: 0 newest..1 oldest, y: 0 base..1 tip
+  float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), f.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), f.x), f.y); }
   void main() {
     float age = vT.x;
-    float a = pow(1.0 - age, 1.4) * smoothstep(0.0, 0.45, vT.y) * uOpacity * 0.85;
-    float hot = smoothstep(0.75, 1.0, vT.y) * (1.0 - age);
-    vec3 col = mix(uColor * 1.6, vec3(2.0), hot);
+    float n1 = vn(vec2(age * 7.0 - uTime * 8.0, vT.y * 3.0));
+    float n2 = vn(vec2(age * 15.0 + uTime * 3.0, vT.y * 8.0 + 3.1));
+    float mask = mix(1.0, clamp(0.25 + n1 * 0.9 + n2 * 0.55, 0.0, 1.4), uNoise);
+    float a = pow(1.0 - age, 1.4) * smoothstep(0.0, 0.45, vT.y) * uOpacity * 0.85 * mask;
+    float hot = smoothstep(0.75, 1.0, vT.y) * (1.0 - age) * uEdge;
+    vec3 ramp = mix(uColor * 1.6, uColB * 1.7, smoothstep(0.35, 0.98, vT.y) * (1.0 - age * 0.7));
+    vec3 col = mix(ramp, vec3(2.0), clamp(hot * 0.8, 0.0, 1.0));
     gl_FragColor = vec4(col, clamp(a + hot * 0.3, 0.0, 1.0));
   }`;
 function cr(p0, p1, p2, p3, t, out) {
@@ -164,7 +173,8 @@ export class BladeTrail {
     g.setIndex(idx);
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color(0xff6a1f) }, uOpacity: { value: 1 } },
+      uniforms: { uColor: { value: new THREE.Color(0xff6a1f) }, uColB: { value: new THREE.Color(0xffe08a) }, uOpacity: { value: 1 },
+        uTime: { value: 0 }, uNoise: { value: 0.55 }, uEdge: { value: 1 } },
       vertexShader: TRAIL_VS, fragmentShader: TRAIL_FS, transparent: true, depthWrite: false,
       blending: THREE.NormalBlending, side: THREE.DoubleSide, toneMapped: false,
     });
@@ -172,11 +182,20 @@ export class BladeTrail {
     this.mesh.frustumCulled = false; this.mesh.visible = false; this.mesh.renderOrder = 10;
     scene.add(this.mesh);
     this.geo = g;
-    this.maxAge = 0.16;
+    this.maxAge = 0.16; this.width = 1; this.time = 0;
+    this._b = new THREE.Vector3();
   }
-  setColor(hex) { this.mat.uniforms.uColor.value.setHex(hex); }
+  setColor(hex, hexB) { this.mat.uniforms.uColor.value.setHex(hex); if (hexB != null) this.mat.uniforms.uColB.value.setHex(hexB); }
+  /** Per-weapon look: {width (×hilt→tip span; >1 reaches past the hilt), life (s), noise (0..1), edge (white-hot rim)}. */
+  setProfile(o) {
+    if (!o) return;
+    this.width = o.width ?? 1; this.maxAge = o.life ?? 0.16;
+    this.mat.uniforms.uNoise.value = o.noise ?? 0.55; this.mat.uniforms.uEdge.value = o.edge ?? 1;
+  }
   /** active: emit samples this frame. */
   update(dt, active, basePos, tipPos) {
+    this.time += dt; this.mat.uniforms.uTime.value = this.time;
+    if (this.width !== 1 && basePos && tipPos) basePos = this._b.copy(basePos).sub(tipPos).multiplyScalar(this.width).add(tipPos);
     for (let i = 0; i < this.n; i++) this.age[i] += dt;
     while (this.n > 0 && this.age[this.n - 1] > this.maxAge) this.n--;
     if (active && dt > 0) {
@@ -224,26 +243,39 @@ export class BladeTrail {
 
 // ------------------------------------------------------------------ instanced ground spikes
 export class Spikes {
+  /** kind: 'ice' | 'rock' | 'crystal' (tinted per instance: thorns, light crystals, shadow spikes; one draw call). */
   constructor(scene, kind, n = 48) {
     const ice = kind === 'ice';
+    const crystal = kind === 'crystal';
     const geo = ice ? new THREE.ConeGeometry(0.35, 1, 5, 1) : new THREE.ConeGeometry(0.45, 1, 6, 1);
     geo.translate(0, 0.5, 0);
     if (!ice) { const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { p.setX(i, p.getX(i) * (0.8 + 0.4 * Math.abs(Math.sin(i * 12.9)))); } geo.computeVertexNormals(); }
     const mat = ice
       ? new THREE.MeshToonMaterial({ color: 0xbff4ff, emissive: 0x2a8cc0, emissiveIntensity: 0.9, transparent: true, opacity: 0.88 })
-      : new THREE.MeshToonMaterial({ color: 0xb88a5a, emissive: 0x3a2412, emissiveIntensity: 0.4 });
+      : crystal ? new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0x2a2a2a, emissiveIntensity: 0.6 })
+        : new THREE.MeshToonMaterial({ color: 0xb88a5a, emissive: 0x3a2412, emissiveIntensity: 0.4 });
     mat.flatShading = true;
     this.mesh = new THREE.InstancedMesh(geo, mat, n);
+    this.crystal = crystal;
+    if (crystal) {
+      // CONTRACT §23: tinted instanced meshes set an instance colour at construction (no recompile on the first tint)
+      const c = new THREE.Color(0xffffff);
+      for (let i = 0; i < n; i++) this.mesh.setColorAt(i, c);
+      this.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      this.mesh.instanceColor.needsUpdate = true;
+      this._col = new THREE.Color();
+    }
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false; this.mesh.castShadow = !ice; this.mesh.count = 0;
     scene.add(this.mesh);
-    this.items = Array.from({ length: n }, () => ({ alive: false, pos: new THREE.Vector3(), h: 1, w: 1, t: 0, delay: 0, life: 1, yaw: 0, tiltX: 0, tiltZ: 0 }));
+    this.items = Array.from({ length: n }, () => ({ alive: false, pos: new THREE.Vector3(), h: 1, w: 1, t: 0, delay: 0, life: 1, yaw: 0, tiltX: 0, tiltZ: 0, color: 0xffffff }));
     this.ice = ice;
   }
-  spawn(pos, h, w, delay = 0, life = 1.6, tilt = 0.25) {
-    let it = this.items.find((x) => !x.alive);
+  spawn(pos, h, w, delay = 0, life = 1.6, tilt = 0.25, color = 0xffffff) {
+    let it = null;
+    for (const x of this.items) if (!x.alive) { it = x; break; }
     if (!it) { it = this.items[0]; for (const x of this.items) if (x.t > it.t) it = x; }
-    it.alive = true; it.pos.copy(pos); it.h = h; it.w = w; it.t = -delay; it.life = life;
+    it.alive = true; it.pos.copy(pos); it.h = h; it.w = w; it.t = -delay; it.life = life; it.color = color;
     it.yaw = Math.random() * 6.28; it.tiltX = (Math.random() - 0.5) * tilt * 2; it.tiltZ = (Math.random() - 0.5) * tilt * 2;
     return it;
   }
@@ -263,10 +295,11 @@ export class Spikes {
       _s.set(it.w, Math.max(0.01, sy), it.w);
       _v.copy(it.pos); _v.y -= sink * it.h * 0.3;
       _m.compose(_v, _q, _s);
+      if (this.crystal) this.mesh.setColorAt(c, this._col.setHex(it.color));
       this.mesh.setMatrixAt(c++, _m);
     }
     this.mesh.count = c;
-    if (c) this.mesh.instanceMatrix.needsUpdate = true;
+    if (c) { this.mesh.instanceMatrix.needsUpdate = true; if (this.crystal) this.mesh.instanceColor.needsUpdate = true; }
   }
 }
 

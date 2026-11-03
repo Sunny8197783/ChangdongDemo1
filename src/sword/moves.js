@@ -5,14 +5,12 @@
 import * as THREE from 'three';
 import { clamp, rand } from '../core/utils.js';
 import { TPL, sampleTpl } from './anim.js';
+import { PAL, palOf, statusOf } from './weapons.js';
+import { buildElMoves2 } from './elmoves2.js';
+import { ALL_ELEMENTS } from '../core/elements.js';
 
-export const PAL = {
-  fire: { a: 0xff4a10, b: 0xffe08a, noise: 0.7 },
-  ice: { a: 0x3fb8ff, b: 0xeaffff, noise: 0.35 },
-  lightning: { a: 0x9a6bff, b: 0xf6eeff, noise: 0.8 },
-  wind: { a: 0x2fe39a, b: 0xeafff4, noise: 0.6 },
-  earth: { a: 0xd0802a, b: 0xfff0c0, noise: 0.55 },
-};
+export { PAL };
+/** Legacy (v2 keymap) kind cooldowns. In v3 cooldowns are per skill id, owned by game.skills. */
 export const CD = { heavy: 4, ultimate: 14, support: 30 };
 
 const NAMES = {
@@ -24,7 +22,13 @@ const NAMES = {
 };
 
 const TWO_PI = Math.PI * 2;
-const STATUS3 = { fire: { burning: 3 }, ice: { chilled: 3 }, lightning: { shocked: 2 }, wind: null, earth: null };
+// 3rd combo hit status per element, from ELEMENT_DEFS[el].status (classic: v2 seconds; stack auras: +1 stack)
+const STACK_AURAS = new Set(['seeded', 'radiant', 'corroded']);
+const STATUS3 = {};
+for (const el of ALL_ELEMENTS) {
+  const st = statusOf(el);
+  STATUS3[el] = !st || st === 'encrusted' ? null : STACK_AURAS.has(st) ? { [st]: { stacks: 1 } } : { [st]: st === 'shocked' ? 2 : 3 };
+}
 
 export function buildMoves(S) {
   const game = S.game;
@@ -33,7 +37,7 @@ export function buildMoves(S) {
   const ground = (p) => { p.y = S.groundAt(p.x, p.z); return p; };
   const front = (dist, yaw = P().facing, from = S.pos()) => ground(V(from.x + Math.sin(yaw) * dist, 0, from.z + Math.cos(yaw) * dist));
   const vfx = (n, ...a) => S.vcall(n, ...a);
-  const col = (el) => PAL[el];
+  const col = (el) => palOf(el);
   const _t = V(), _u = V();
 
   // ------------------------------------------------------------ per-hit element flourish
@@ -44,7 +48,12 @@ export function buildMoves(S) {
     else if (el === 'lightning') { for (let i = 0; i < (big ? 3 : 1); i++) { _t.set(p.x + rand(-1, 1), p.y + rand(-0.5, 1), p.z + rand(-1, 1)); vfx('beam', p, _t, { color: c.a, width: 0.06, duration: 0.09, jagged: 0.5, segments: 6 }); } }
     else if (el === 'wind') vfx('burst', p, { count: Math.round(6 * s), shape: 'soft', color: [0xeafff4, 0x7fffc0], speed: 4 * s, spread: 1, size: 0.3, sizeEnd: 0.8, life: 0.3, drag: 3, alpha: 0.6 });
     else if (el === 'earth') vfx('burst', p, { count: Math.round(6 * s), shape: 'smoke', additive: false, color: [0xd9c094, 0x9a8460], speed: 3 * s, spread: 0.8, size: 0.3, sizeEnd: 0.9, life: 0.5, drag: 3 });
+    else if (el === 'water') vfx('burst', p, { count: Math.round(9 * s), shape: 'droplet', color: [0xffffff, 0x4fb4ff], speed: 5 * s, spread: 0.9, size: 0.12, sizeEnd: 0.04, life: 0.5, gravity: 10, drag: 1.5 });
+    else if (el === 'nature') vfx('burst', p, { count: Math.round(6 * s), shape: 'leaf', additive: false, color: [0xc8f080, 0x4f9a2a], speed: 4 * s, spread: 1, size: 0.14, sizeEnd: 0.07, life: 0.7, gravity: 2, drag: 1.5 });
+    else if (el === 'light') { vfx('burst', p, { count: Math.round(8 * s), shape: 'mote', color: [0xffffff, 0xffd36a], speed: 4 * s, spread: 1, size: 0.1, sizeEnd: 0, life: 0.45, gravity: -1, drag: 2 }); if (big) vfx('flashSprite', p, 0xffe9a8, 1.6, 0.08); }
+    else if (el === 'shadow') vfx('burst', p, { count: Math.round(6 * s), shape: 'wisp', color: [0xe2c8ff, 0x5b2a8a], speed: 3 * s, spread: 1, size: 0.24, sizeEnd: 0.5, life: 0.45, gravity: -1, drag: 2.5 });
   }
+  const E2 = buildElMoves2(S, { V, ground, front, flourish, col });
 
   // ------------------------------------------------------------ combo
   function comboSpec(el, step, ctx) {
@@ -65,7 +74,10 @@ export function buildMoves(S) {
         arc: { tilt: Math.PI / 2, h: 0.9, a0: 2.0, a1: -1.3, rin: 1.0 }, a0: 2.0, a1: -1.3, onOpen }],
       events: [[0.55, () => { const p = front(1.9); vfx('burst', p, { count: 8, shape: 'smoke', additive: false, color: [0xe6dbc0, 0xb8a98a], speed: 2.5, spread: 0.5, dir: S.UP, size: 0.3, sizeEnd: 0.9, life: 0.5, drag: 3 }); }]],
     };
-    return FOURTH[el](ctx);
+    const f4 = FOURTH[el] || E2.fourth[el];
+    if (f4) return f4(ctx);
+    // unknown element: a plain heavy slash + the physical payload
+    return { ...FOURTH.lightning(ctx), name: 'c4_' + el, events: [[0.52, (a) => E2.payload(el, front(1.8, a.yaw0), { r: 2.6, dmg: 20 })]] };
   }
 
   const FOURTH = {
@@ -146,25 +158,37 @@ export function buildMoves(S) {
   };
 
   // ------------------------------------------------------------ 반격 flurry (after perfect dodge / parry)
-  function flurry(el, tgt) {
-    const seg = 0.12, n = 6;
+  // per-weapon 반격 variants (P1): longsword 6-slash rush, hammer 3 crushing blows + slam, daggers 8 razor cuts
+  const FLURRY = {
+    longsword: { n: 6, seg: 0.12, a: 'slashR', b: 'slashL', amt: 11, last: 22, reach: 2.8 },
+    hammer: { n: 3, seg: 0.26, a: 'hammerR', b: 'hammerL', amt: 20, last: 34, reach: 2.6, slam: true },
+    daggers: { n: 8, seg: 0.075, a: 'daggerR', b: 'daggerL', amt: 7, last: 16, reach: 2.4 },
+  };
+  function flurry(el, tgt, weaponId = 'longsword') {
+    const F = FLURRY[weaponId] || FLURRY.longsword;
+    let extra = 0, heal = 0;
+    try { extra = Math.round(game.stats?.get?.('counterExtraHits') || 0); heal = game.stats?.get?.('counterHealPct') || 0; } catch (_) { /* */ }
+    const seg = F.seg, n = F.n + Math.max(0, Math.min(4, extra));
+    const total = 0.12 + n * seg + 0.3;
     const hits = [];
     for (let i = 0; i < n; i++) {
       const last = i === n - 1;
-      hits.push({ t0: (0.12 + i * seg + seg * 0.25) / (0.12 + n * seg + 0.3), t1: (0.12 + i * seg + seg * 0.7) / (0.12 + n * seg + 0.3), shape: 'arc', reach: 2.8, follow: true,
+      hits.push({ t0: (0.12 + i * seg + seg * 0.25) / total, t1: (0.12 + i * seg + seg * 0.7) / total, shape: 'arc', reach: F.reach, follow: true,
         a0: i % 2 ? 1.6 : -1.6, a1: i % 2 ? -1.6 : 1.6, pitch: 1.15,
-        spec: { amount: last ? 22 : 11, kb: last ? 9 : 1, hs: last ? 0.15 : 0.055, shake: last ? 0.4 : 0.12, heavy: last, fov: last ? 4 : 1, onHit: (e, p) => flourish(el, p, last) },
+        spec: { amount: last ? F.last : F.amt, kb: last ? 9 : 1, heavy: last, onHit: (e, p) => flourish(el, p, last) },
         arc: { tilt: (i % 2 ? -0.5 : 0.35) + rand(-0.2, 0.2), h: 1.0 + rand(-0.2, 0.2), life: 0.22 } });
     }
-    const dur = 0.12 + n * seg + 0.3;
+    const evs = [[0.0, () => { S.sfx('perfect_dodge', { volume: 0.6, pitch: 1.3 }); vfx('fovKick', 5, 0.4); }]];
+    if (F.slam) evs.push([(0.12 + n * seg) / total, () => { const p = front(1.6); E2.payload(el, p, { r: 3, dmg: 24, kb: 8, launch: 3, big: true }); vfx('shockwave', p, { color: 0xfff0c8, radius: 3.5, duration: 0.4, opacity: 0.85 }); }]);
     return {
-      name: 'flurry', kind: 'combo', tpl: 'slashR', dur, cancel: dur * 0.92, lunge: 6, lungeT: [0, 0.1], target: tgt || null, trail: [0.05, 0.92], superArmor: true,
+      name: 'flurry', kind: 'combo', tpl: F.a, keepTpl: true, dur: total, cancel: total * 0.92, lunge: 6, lungeT: [0, 0.1], target: tgt || null, trail: [0.05, 0.92], superArmor: true,
       poseFn: (out, t) => {
         const k = Math.max(0, t - 0.12) / seg, i = Math.floor(k);
-        sampleTpl(i % 2 ? TPL.slashL : TPL.slashR, i >= n ? 1 : 0.28 + (k - i) * 0.5, out);
+        sampleTpl(i % 2 ? TPL[F.b] : TPL[F.a], i >= n ? 1 : 0.28 + (k - i) * 0.5, out);
       },
-      onUpdate: (dt, a) => { if (Math.random() < 0.35) P().spawnGhost(_ghostCol.setHex(PAL[el].b), 0.25, 0.5); },
-      events: [[0.0, () => { S.sfx('perfect_dodge', { volume: 0.6, pitch: 1.3 }); vfx('fovKick', 5, 0.4); }]],
+      onUpdate: (dt, a) => { if (Math.random() < 0.35) P().spawnGhost(_ghostCol.setHex(palOf(el).b), 0.25, 0.5); },
+      onEnd: (a, interrupted) => { if (heal > 0 && !interrupted) { try { const pl = P(); game.combat?.healPlayer?.(pl.maxHp * heal, 'counter'); } catch (_) { /* */ } } },
+      events: evs,
       hits,
     };
   }
@@ -537,13 +561,13 @@ export function buildMoves(S) {
       tick(S2, dt, b) { b.tick -= dt; if (b.tick > 0) return; b.tick = 1; for (const e of S.foesNear(S.pos(), 3.2, _near)) { try { game.combat?.applyStatus?.(e, 'burning', 2); } catch (_) { /* */ } } } },
     ice: { duration: 12, mods: { dmgTakenMul: 0.5 }, shape: 'snow', gravity: 0.5 },
     lightning: { duration: 12, mods: { moveMul: 1.35, atkSpeed: 1.3 }, shape: 'spark', gravity: 0 },
-    wind: { duration: 14, mods: { doubleJump: true, extraDash: 1 }, shape: 'soft', gravity: -1 },
+    wind: { duration: 14, mods: { extraJumps: 1, extraDash: 1 }, shape: 'soft', gravity: -1 },
     earth: { duration: 12, mods: { dmgTakenMul: 0.6, noKnockback: true }, shape: 'shard', gravity: 3 },
   };
   function supportAction(el) {
     return { name: 'support', kind: 'support', tpl: 'raise', dur: 0.7, cancel: 0.45, move: 0.2, target: null,
       events: [[0.3, () => {
-        const p = S.pos(), c = PAL[el];
+        const p = S.pos(), c = palOf(el);
         vfx('burst', V(p.x, p.y + 1, p.z), { count: 36, color: [c.a, c.b], speed: 5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, shape: 'spark', drag: 2.5 });
         vfx('shockwave', ground(p.clone()), { color: c.a, radius: 3.5, duration: 0.5, opacity: 0.8 });
         vfx('flash', V(p.x, p.y + 1.5, p.z), { color: c.a, intensity: 4, distance: 8, duration: 0.5 });
@@ -634,7 +658,7 @@ export function buildMoves(S) {
     S.hitCircle(V(c.x, c.y + 0.8, c.z), r, { amount, kb: 16, launch, status: status || undefined, hs, shake: 1, heavy: true, impact: 2.4, tags: ['finisher'] }, null, 8);
   }
   function auraBuild(el, t) {
-    const p = S.pos(), c = PAL[el];
+    const p = S.pos(), c = palOf(el);
     for (let i = 0; i < 2; i++) {
       const an = Math.random() * TWO_PI, r = 1.2 + Math.random() * 1.5;
       vfx('burst', V(p.x + Math.sin(an) * r, p.y + Math.random() * 0.4, p.z + Math.cos(an) * r), { count: 1, color: [c.a, c.b], speed: 3 + t * 2, spread: 0.2, dir: S.UP, size: 0.12, sizeEnd: 0, life: 0.6, shape: 'spark', drag: 0.5 });
@@ -647,17 +671,20 @@ export function buildMoves(S) {
   return {
     combo: comboSpec,
     flurry,
-    heavy: (el, f) => HEAVY[el]?.(clamp(f, 0, 1)),
+    heavy: (el, f) => (HEAVY[el] || E2.heavy[el])?.(clamp(f, 0, 1)),
     ultimate: (el, ctx) => {
       const s = ULT[el]?.(!!ctx.awakened);
       if (s && ctx.awakened) { s.name += '_awakened'; }
       return s;
     },
+    hasUltimate: (el) => !!ULT[el],
     support: (el) => SUPPORT[el],
     supportAction,
-    finisher: (el) => ({ name: NAMES[el].finisher[0], ...FINISHER[el] }),
+    finisher: (el) => (FINISHER[el] ? { name: (NAMES[el] || E2.NAMES2[el])?.finisher?.[0] || '', ...FINISHER[el] } : null),
+    payload: E2.payload, vineLash: E2.vineLash, dashThrough: E2.dashThrough, flourish,
+    payloadFx: (el, p, r = 3, big = false) => { try { (E2.FX[el] || E2.FX.wind)(p, r, big); } catch (_) { /* presentation only */ } },
     info(el, ctx) {
-      const n = NAMES[el];
+      const n = NAMES[el] || E2.NAMES2[el] || NAMES.fire;
       const aw = !!ctx?.awakened;
       out.basic.name = n.basic[0]; out.basic.desc = n.basic[1];
       out.heavy.name = n.heavy[0]; out.heavy.desc = n.heavy[1] + ' (우클릭 길게 눌러 충전)';
@@ -666,7 +693,7 @@ export function buildMoves(S) {
       out.support.name = n.support[0]; out.support.desc = n.support[1];
       return out;
     },
-    NAMES,
+    NAMES: { ...NAMES, ...E2.NAMES2 },
   };
 }
 const out = { basic: {}, heavy: {}, ultimate: {}, finisher: {}, support: {} };
