@@ -77,13 +77,14 @@ function installHelpers() {
 
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+  const p = await b.newPage({ viewport: { width: 640, height: 360 } });
   const logs = [];
   p.on('console', (m) => { if (['error', 'warning'].includes(m.type())) logs.push(`[${m.type()}] ${m.text()}`); });
   p.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`));
   const t0 = Date.now();
   const stamp = () => ((Date.now() - t0) / 1000).toFixed(0) + 's';
-  await p.goto(`http://localhost:${port}/?test=1${opt('--url', '')}`);
+  const u = opt('--url', '');   // v3: the legacy flow runs on the legacy keymap (path=all implies unlock=all, CONTRACT §21)
+  await p.goto(`http://localhost:${port}/?test=1${/path=|cls=none/.test(u) ? '' : '&path=all'}${u}`);
   await p.waitForFunction(() => window.game && window.game.ready, null, { timeout: 90000 });
   await p.waitForTimeout(1500);
   await p.evaluate(installHelpers);

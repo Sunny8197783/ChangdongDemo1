@@ -1,11 +1,22 @@
 import * as THREE from 'three';
+import { ELEMENT_DEFS, PSEUDO_ELEMENTS } from './elements.js';
 
-export const ELEMENT_COLORS = {
-  fire: 0xff6a1f, ice: 0x7fe3ff, lightning: 0xc9a4ff, wind: 0x8fffc1, earth: 0xe0a85a, physical: 0xffffff,
-};
-export const ELEMENT_NAMES_KO = {
-  fire: '화염', ice: '냉기', lightning: '번개', wind: '바람', earth: '대지', physical: '물리',
-};
+// Legacy element maps (v1/v2 code). Values of the 5 classic elements are frozen; the new elements and the pseudo
+// elements are explicit keys, and any unknown key falls back to 'physical' (white / '물리') instead of undefined.
+// New code uses elColor / elName from elements.js (ELEMENT_NAMES_KO.ice stays '냉기' for legacy strings).
+const withFallback = (obj) => new Proxy(obj, {
+  get(t, k) { return (typeof k === 'string' && !(k in t)) ? t.physical : t[k]; },
+});
+export const ELEMENT_COLORS = withFallback({
+  fire: 0xff6a1f, ice: 0x7fe3ff, lightning: 0xc9a4ff, wind: 0x8fffc1, earth: 0xe0a85a,
+  water: ELEMENT_DEFS.water.colors.hex, nature: ELEMENT_DEFS.nature.colors.hex, light: ELEMENT_DEFS.light.colors.hex,
+  shadow: ELEMENT_DEFS.shadow.colors.hex, physical: 0xffffff, void: PSEUDO_ELEMENTS.void.hex,
+});
+export const ELEMENT_NAMES_KO = withFallback({
+  fire: '화염', ice: '냉기', lightning: '번개', wind: '바람', earth: '대지',
+  water: '물', nature: '자연', light: '빛', shadow: '그림자', physical: '물리', void: '공허',
+});
+/** LEGACY: the 5 classic elements (never 9). v3 code iterates ALL_ELEMENTS from elements.js. */
 export const ELEMENTS = ['fire', 'ice', 'lightning', 'wind', 'earth'];
 
 const gradientMaps = new Map();
@@ -43,14 +54,52 @@ export function toonMat(color = 0xffffff, opts = {}) {
   if (opts.rim !== false) { m.onBeforeCompile = toonRim; m.customProgramCacheKey = toonRimKey; }
   return m;
 }
-// Cheap fresnel rim for the bright BotW-style silhouette edge (keeps the surface's own hue).
+
+// ---- toon dissolve chunk (CONTRACT §3.3). Every toon material (toonRim) carries `uDissolve` (−1 = off, a uniform
+// branch only) and `uDissolveColor` from boot, so dissolving never compiles. vfx.dissolve clones a material once
+// (same program key) and animates the CLONE's uniforms via dissolveUniforms(clone). Shared materials are never dissolved.
+const DIS_PARS_V = 'varying vec3 vDisW;';
+const DIS_V = `{ vec4 disP = vec4(transformed, 1.0);
+  #ifdef USE_INSTANCING
+    disP = instanceMatrix * disP;
+  #endif
+  vDisW = (modelMatrix * disP).xyz; }`;
+const DIS_PARS_F = `varying vec3 vDisW; uniform float uDissolve; uniform vec3 uDissolveColor;
+  float disHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float disNoise(vec3 x) { vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(disHash(i), disHash(i + vec3(1,0,0)), f.x), mix(disHash(i + vec3(0,1,0)), disHash(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(disHash(i + vec3(0,0,1)), disHash(i + vec3(1,0,1)), f.x), mix(disHash(i + vec3(0,1,1)), disHash(i + vec3(1,1,1)), f.x), f.y), f.z); }`;
+const DIS_F = `float disEdge = 0.0;
+  if (uDissolve >= 0.0) {
+    float dn = disNoise(vDisW * 2.3) * 0.65 + disNoise(vDisW * 6.1) * 0.35;
+    if (dn < uDissolve) discard;
+    disEdge = 1.0 - smoothstep(0.0, 0.07, dn - uDissolve);
+  }`;
+/** Per-material dissolve uniforms (created lazily, shared with the compiled program of THIS material). */
+export function dissolveUniforms(mat) {
+  if (!mat) return null;
+  if (!mat._dis) mat._dis = { uDissolve: { value: -1 }, uDissolveColor: { value: new THREE.Color(0x9a5cff) } };
+  return mat._dis;
+}
+// Cheap fresnel rim for the bright BotW-style silhouette edge (keeps the surface's own hue) + the dissolve chunk.
 function toonRim(sh) {
-  sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+  const u = dissolveUniforms(this);
+  if (u) { sh.uniforms.uDissolve = u.uDissolve; sh.uniforms.uDissolveColor = u.uDissolveColor; }
+  else { sh.uniforms.uDissolve = { value: -1 }; sh.uniforms.uDissolveColor = { value: new THREE.Color() }; }
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\n' + DIS_PARS_V)
+    .replace('#include <project_vertex>', DIS_V + '\n#include <project_vertex>');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', '#include <common>\n' + DIS_PARS_F)
+    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DIS_F)
+    .replace('#include <opaque_fragment>', `
     { float rimK = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
-      outgoingLight += rimK * 0.3 * diffuseColor.rgb * vec3(1.0, 0.96, 0.88); }
+      outgoingLight += rimK * 0.3 * diffuseColor.rgb * vec3(1.0, 0.96, 0.88);
+      outgoingLight += uDissolveColor * disEdge * 4.0; }
     #include <opaque_fragment>`);
 }
-function toonRimKey() { return 'toonRim1'; }
+function toonRimKey() { return 'toonRim+dis'; }
+export { toonRim as toonRimCompile, toonRimKey };
 
 const outlineMats = new Map();
 function outlineMaterial(thickness, color) {

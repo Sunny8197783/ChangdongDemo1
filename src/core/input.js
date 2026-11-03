@@ -1,3 +1,5 @@
+import { KEYS } from './keymap.js';
+
 export class Input {
   constructor(canvas) {
     this.canvas = canvas;
@@ -91,6 +93,16 @@ export class Input {
   mouseDown(b) { return !this.gameLocked && this.buttons.has(b); }
   mousePressed(b) { return !this.gameLocked && this.btnPressed.has(b); }
   mouseReleased(b) { return !this.gameLocked && this.btnReleased.has(b); }
+
+  // Key-map actions (CONTRACT §6): name from KEYS (e.g. 'ult' → KeyX, 'basic' → Mouse0). Gameplay-locked like the raw queries.
+  _act(name, keyFn, btnFn) {
+    const code = KEYS[name] || name;
+    if (code.startsWith('Mouse')) return btnFn.call(this, +code.slice(5));
+    return keyFn.call(this, code);
+  }
+  actionDown(name) { return this._act(name, this.down, this.mouseDown); }
+  actionPressed(name) { return this._act(name, this.pressed, this.mousePressed); }
+  actionReleased(name) { return this._act(name, this.released, this.mouseReleased); }
 
   /** Lock gameplay input under a reason key (e.g. 'cinematic', 'dialogue'); unlock with the same key. */
   lock(reason = 'default') { this._locks.add(reason); }
