@@ -428,7 +428,9 @@ module.exports = async function narrative(PT) {
       PT.check('4 casts → not yet', S.trainStep === 'basic');
       cast('basic');
       PT.check('5th cast → charged', S.trainStep === 'charged', S.trainStep);
-      cast('charged'); PT.check('→ quick', S.trainStep === 'quick', S.trainStep);
+      // integration: with nothing slotted yet (a fresh class), 'quick' is deferred until after 'learn'
+      const L = g.skills?.loadout || {}, slotted = !!(L.q1 || L.q2 || L.q3 || L.q4 || L.sup || L.ult);
+      cast('charged'); PT.check(slotted ? '→ quick' : '→ quick deferred (nothing slotted) → defend', S.trainStep === (slotted ? 'quick' : 'defend'), S.trainStep);
       cast('q1'); PT.check('→ defend', S.trainStep === 'defend', S.trainStep);
       g.events.emit('focusStart', {}); PT.check('ranger focus counts as defend → dodge', S.trainStep === 'dodge', S.trainStep);
       g.events.emit('dodge', { type: 'backflip' }); PT.check('→ learn', S.trainStep === 'learn', S.trainStep);

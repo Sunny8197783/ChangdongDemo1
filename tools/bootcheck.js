@@ -52,7 +52,7 @@ process.on('exit', restore);
       game.freeze(true); game.step(240, 1 / 60);
       const ds = game.debug?.drawStats?.() || {};
       return { state: game.state, stubbed: game.stubbed, cls: game.progression.cls, level: game.progression.level, stage: game.story?.stage,
-        boss: game.enemies?.boss?.id || game.enemies?.boss?.type || null, calls: ds.calls, tris: ds.tris, programs: ds.programs };
+        boss: game.enemies?.boss?.bossId || game.enemies?.boss?.id || game.enemies?.boss?.type || null, calls: ds.calls, tris: ds.tris, programs: ds.programs };
     }).catch((e) => ({ err: e.message }));
     const okStates = /intro=1|cls=none/.test(url) ? ['playing', 'cutscene', 'dialogue'] : ['playing'];
     const ok = okStates.includes(info.state) && !pageErrors.length;

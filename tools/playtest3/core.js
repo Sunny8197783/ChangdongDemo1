@@ -323,7 +323,9 @@ module.exports = async function core(PT) {
     let procHits = 0; S.registerProc('buff:proc', 'testProc', () => procHits++);
     g.events.emit('testProc', {}); S.clear('buff:proc'); g.events.emit('testProc', {});
     PT.check('registerProc removed on clear', procHits === 1);
-    PT.check('rx keys default 1', S.reactionDmg('melt', 'blessing') === 1 && S.elementDmg('shadow') === 1);
+    // the skills breadth source (DESIGN §5.7: rxAll 1.04 per tree with ≥ 5 points) is legitimately present once a preset is learned
+    const hadBreadth = S.has('breadth'); if (hadBreadth) S.clear('breadth');
+    PT.check('rx keys default 1', S.reactionDmg('melt', 'blessing') === 1 && S.elementDmg('shadow') === 1, { melt: S.reactionDmg('melt', 'blessing'), shadow: S.elementDmg('shadow'), hadBreadth });
   });
 
   // ------------------------------------------------------------ core services: timeScale, interact, post, dissolve, archetypes, save
@@ -391,4 +393,57 @@ module.exports = async function core(PT) {
   });
   PT.check('mage page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 6));
   await pg.close();
+
+  // ------------------------------------------------------------ check 11 [core + all]: per-scene perf + frame-time stats
+  // Draw calls / triangles / programs per scene (DESIGN §12 caps) and CPU frame time: `updateMs` = game.step without
+  // rendering (the simulation cost), `frameMs` = one full step + render (SwiftShader: the render part is CPU-emulated
+  // and only comparable between runs on the same machine). Final scene: nidhoggra phase 1 and phase 2 on the plateau.
+  const pf = await PT.boot('&cls=paladin&skills=preset:endgame_paladin&level=30');
+  if (pf.ready) {
+    await pf.eval(() => {
+      const g = game;
+      const time = (fn, n) => { const t = performance.now(); for (let i = 0; i < n; i++) fn(); return (performance.now() - t) / n; };
+      window.PF = { out: {}, prog0: 0 };
+      PF.measure = (label, cap) => {
+        let worst = { calls: 0, tris: 0, programs: 0 };
+        for (let a = 0; a < 4; a++) { g.player.setLook?.(a * Math.PI / 2, -0.15); PT.step(0.1); const st = PT.frameStats(); if (st.calls > worst.calls) worst = st; }
+        const updateMs = time(() => g.step(1, 1 / 60), 60);
+        const frames = []; for (let i = 0; i < 8; i++) { const t = performance.now(); g.step(1, 1 / 60, true); frames.push(performance.now() - t); }
+        frames.sort((a, b) => a - b);
+        const r = { calls: worst.calls, tris: worst.tris, programs: worst.programs, updateMs: +updateMs.toFixed(2), frameMsMedian: +frames[4].toFixed(1), frameMsMax: +frames[7].toFixed(1) };
+        PT.check(`${label}: calls ≤ ${cap}, tris ≤ 900k`, r.calls <= cap && r.tris <= 900000, r);
+        PT.check(`${label}: simulation update ≤ 8 ms/frame`, r.updateMs <= 8, r.updateMs);
+        return r;
+      };
+      PF.skipCine = () => { for (let i = 0; i < 20 && g.cinematic?.active; i++) { g.cinematic.skip?.(); PT.step(0.5); } };
+    });
+    await pf.run('perf (check 11) zones', () => {
+      const g = game;
+      PT.step(5);   // the "first 5 s of boot" window of check 11
+      PF.prog0 = PT.frameStats().programs;
+      const views = { village: [[-6, 128], 290], plains: [[-6, 20], 300], mirwen: [[-56, -60], 310], elderwood: [[70, -50], 310] };
+      for (const k in views) { const [[x, z], cap] = views[k]; g.debug.tp({ x, z }); PT.step(0.5); PF.out[k] = PF.measure(k, cap); }
+      g.story?.debugSkip?.('final'); PT.step(0.5); PF.skipCine();
+    });
+    // the bosses folder is a dynamic import: give it real time to resolve before the boss scene
+    for (let i = 0; i < 20 && !(await pf.eval(() => !!game.enemies?.boss)); i++) {
+      await new Promise((r) => setTimeout(r, 300));
+      await pf.eval(() => { if (!game.enemies?.boss) { game.story?.debugComplete?.(); PT.step(0.3); } });
+    }
+    const stats = await pf.run('perf (check 11) final boss', () => {
+      const g = game, nb = g.enemies?.boss;
+      if (!nb) { PT.check('final boss spawned for the plateau perf scene', false); return PF.out; }
+      const bp = nb.object.position; g.debug.tp({ x: bp.x + 4, z: bp.z + 18 }); PT.step(1);
+      PF.out.plateau_nidhoggra_p1 = PF.measure('plateau + nidhoggra phase 1', 330);
+      g.debug.bossPhase(2); PT.step(1); PF.skipCine(); PT.step(2);
+      PF.out.plateau_nidhoggra_p2 = PF.measure('plateau + nidhoggra phase 2', 330);
+      const prog1 = PT.frameStats().programs;
+      PT.check('programs do not grow after the boss spawn + phase change', prog1 <= PF.prog0, [PF.prog0, prog1]);
+      PT.note('frame stats ' + JSON.stringify(PF.out));
+      return PF.out;
+    });
+    PT.check('perf page: no console errors', pf.errors().length === 0, pf.errors().slice(0, 6));
+    void stats;
+  } else PT.check('perf page boots', false);
+  await pf.close();
 };

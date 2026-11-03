@@ -186,6 +186,10 @@ module.exports = async function combat(PT) {
   // ------------------------------------------------------------ check 6c: the DESIGN §4.5 priority worked example
   await pg.run('priority worked example', () => {
     const g = game, C = g.combat, T = g.THREE;
+    // integration: the natural-trigger sweep leaves live zones/fields (electrified water, steam, thorns…) around the start
+    // point once magic's zones exist; run the worked example on clean ground 40 m away so nothing else touches the dummy
+    const home = g.player.object.position.clone();
+    PT.tp(home.x, home.z - 40); PT.step(0.3);
     const pp = g.player.object.position;
     const d = g.debug.spawnDummy(new T.Vector3(pp.x - 5, pp.y, pp.z - 5), { hp: 1e6 });
     C.clearStatus(d); d._rxT = {};
@@ -207,6 +211,7 @@ module.exports = async function combat(PT) {
     const r2 = C.dealDamage(d, { amount: 10, element: 'lightning', source: 'player', point: at() });
     PT.check('hit 2 fires 촉진', r2.reaction === 'quicken', r2.reaction);
     PT.check('previewReaction has no side effects', !!d.statuses.wet);
+    PT.tp(home.x, home.z); PT.step(0.3);   // back to the start point for the following checks
   });
 
   // ------------------------------------------------------------ check 6d: judgment cooldown + consumption

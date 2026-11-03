@@ -1,5 +1,6 @@
-// v2 automated play-test: story (wake → choose sword/master/lightning → blessing → training → updraft → camps →
-// boss + cinematic finisher → ending → victory), sword combat per element, settings, performance.
+// v2/v3 automated play-test: story (wake → class panel pick (검사) → 각인 의식 → training (v3 steps) → updraft → camps →
+// golem boss + cinematic finisher → golem defeated → reveal stage (v3: not victory)), sword combat per element (legacy
+// keymap), settings, performance.
 // Usage: node tools/playtest2.js [--only story,sword,settings,perf] [--out dir] [--noshots]
 // Same harness approach as tools/playtest.js: freeze the rAF loop and drive everything with game.step().
 const { chromium } = require('playwright');
@@ -110,7 +111,7 @@ function installHelpers() {
   }
   // =============================================================== STORY
   if (only.includes('story')) {
-    const { run, shot, finish } = await openPage('&cls=none');
+    const { run, shot, finish } = await openPage('&cls=none&cine=1');   // cine=1: story cinematics play in test mode
     await run('boot', () => ({ stubbed: game.stubbed, state: game.state, stage: game.story.stage, cls: game.progression.cls }));
     await run('wake: talk to 노아', () => {
       PT.step(1);
@@ -124,73 +125,103 @@ function installHelpers() {
       return { okStart, picks, obj: game.story.getObjective()?.desc };
     });
     await shot('01_story_choose');
-    await run('choose: sword / master / lightning', () => {
+    await run('choose: class panel → 검사', () => {
       const v = game.world.village; const m = game.story.npcs?.swordMentor;
       const mp = m?.pos || v.npcSpots.swordMentor.position;
       PT.tp(mp.x + 2, mp.z + 2);
-      const want = [/검술/, /원소의 대가/, /번개/, /네, 이 길로/];
       game.story.talkTo('swordMentor'); PT.step(0.3);
-      const picks = PT.runDialogue((cs) => { for (const re of want) { const k = cs.findIndex((c) => re.test(c)); if (k >= 0) return k; } return 0; });
+      // v3: the mentor's pitch ends by opening the class panel (ui); without ui, a 6-option dialogue ask
+      const picks = PT.runDialogue((cs) => { const k = cs.findIndex((c) => /검사/.test(c)); return k >= 0 ? k : 0; });
+      PT.step(0.3);
+      const panel = game.ui?._parts?.classPanel;
+      const panelOpen = !!(panel && (panel.isOpen || game.ui.classPanelOpen));
+      if (panelOpen) panel.pick('sword', { noConfirm: true });
+      PT.step(0.3);
       const pr = game.progression;
-      PT.check('progression sword/master/lightning', pr.cls === 'sword' && pr.path === 'master' && pr.element === 'lightning', { cls: pr.cls, path: pr.path, el: pr.element });
+      PT.check('class panel opened after the mentor talk', panelOpen || game.stubbed?.includes('ui'), { panelOpen });
+      PT.check('progression class sword', pr.cls === 'sword', { cls: pr.cls });
       PT.check('player class sword', game.player.cls === 'sword');
-      return { picks, state: game.state, cin: game.cinematic.active };
+      return { picks, panelOpen, state: game.state, cin: game.cinematic.active };
     });
-    await run('blessing cutscene', () => {
+    await run('class rite cutscene (각인 의식)', () => {
       let sawCut = game.state === 'cutscene' || game.cinematic.active; let t = 0;
-      for (; t < 30 && !(game.story.stage === 'training' && game.state === 'playing' && !game.cinematic.active); t += 0.25) {
+      for (; t < 40 && !(game.story.stage === 'training' && game.state === 'playing' && !game.cinematic.active); t += 0.25) {
         PT.step(0.25); if (game.state === 'cutscene' || game.cinematic.active) sawCut = true;
         if (t > 3 && t < 3.3) window.__blessMid = true;
       }
-      PT.check('blessing played', sawCut);
-      PT.check('training started after blessing', game.story.stage === 'training', { stage: game.story.stage, t });
-      PT.check('input unlocked after blessing', !game.input.gameLocked, [...(game.input._locks || [])]);
+      PT.check('class rite played', sawCut);
+      PT.check('training started after the rite', game.story.stage === 'training', { stage: game.story.stage, t });
+      PT.check('input unlocked after the rite', !game.input.gameLocked, [...(game.input._locks || [])]);
       return { t, trainStep: game.story.trainStep, state: game.state };
     });
-    await run('training', () => {
+    await run('training (v3 steps)', () => {
       const T = game.world.village.trainingGround; const steps = [];
       PT.tp(T.x, T.z + 4); PT.step(1.0); steps.push(game.story.trainStep);
       const d = game.enemies.list.filter((e) => e.isDummy && e.alive).sort((a, b) => a.object.position.distanceTo(game.player.object.position) - b.object.position.distanceTo(game.player.object.position))[0];
       const dp = d.object.position;
       const approach = () => { PT.tp(dp.x + 1.8, dp.z + 1.8, 0.1); PT.face(PT.center(d)); };
+      const S = game.story, sk = game.skills, P = game.progression;
       approach();
       // basic: real LMB combo clicks
       const dmg0 = PT.counts.damage || 0;
       PT.probe = true; PT.hitstops.length = 0;
-      for (let i = 0; i < 10 && game.story.trainStep === 'basic'; i++) { PT.click(0, 0.05, 0.35); }
+      for (let i = 0; i < 12 && S.trainStep === 'basic'; i++) { PT.click(0, 0.05, 0.35); }
       PT.probe = false;
-      PT.check('training basic (5 hits)', !!game.story.S?.trainDone?.basic || game.story.trainStep !== 'basic', { step: game.story.trainStep, dmg: (PT.counts.damage || 0) - dmg0 });
+      PT.check('training basic (5 hits)', !!S.S?.trainDone?.basic || S.trainStep !== 'basic', { step: S.trainStep, dmg: (PT.counts.damage || 0) - dmg0 });
       PT.check('every melee hit had hitstop', PT.hitstops.length > 0 && PT.hitstops.every((h) => +h.slice(1) >= 0.03), PT.hitstops.slice(0, 12));
-      steps.push(game.story.trainStep);
-      // heavy: hold RMB
-      approach(); PT.heal(); PT.click(2, 1.0, 1.2);
-      steps.push(game.story.trainStep);
-      // ultimate: F (well away from the mentor's talk prompt)
-      PT.heal(); game.sword.cooldowns.ultimate = 0;
-      PT.check('no F prompt at dummy', !game.story.hasPrompt());
-      PT.press({ KeyF: true }, 0.05, 3.0);
-      steps.push(game.story.trainStep);
-      // block: hold E while the story triggers dummy practice attacks
+      steps.push(S.trainStep);
+      // charged: hold RMB
+      for (let i = 0; i < 3 && S.trainStep === 'charged'; i++) { approach(); PT.heal(); PT.click(2, 1.0, 1.2); }
+      steps.push(S.trainStep);
+      // (v3: a fresh class has no quick skill yet, so the story defers 'quick' until after 'learn')
+      const pressQuick = () => {
+        for (let i = 0; i < 3 && S.trainStep === 'quick'; i++) { approach(); PT.heal(); game.player.lastHurtT = -1e9; sk?.resetCooldowns?.(); PT.press({ Digit1: true }, 0.05, 1.2); }
+      };
+      pressQuick();
+      steps.push(S.trainStep);
+      // defend: hold E while the story triggers dummy practice attacks
       approach(); PT.heal();
       game.input.simulate({ keys: { KeyE: true } });
-      for (let i = 0; i < 40 && game.story.trainStep === 'block'; i++) PT.step(0.25);
+      for (let i = 0; i < 40 && S.trainStep === 'defend'; i++) PT.step(0.25);
       game.input.simulate({}); PT.step(0.3);
-      steps.push(game.story.trainStep);
-      // dash
+      steps.push(S.trainStep);
+      // dodge
       PT.heal(); PT.press({ KeyW: true, KeyQ: true }, 0.08, 0.6);
       PT.step(2);
-      steps.push(game.story.trainStep);
+      steps.push(S.trainStep);
+      // learn: learn a quick-slot active (as the tree would) and put it in slot 1
+      if (S.trainStep === 'learn') {
+        if (!(P.points > 0)) { P.addXp?.(400, { kind: 'debug' }); PT.step(0.2); }
+        let learned = null, sid = null;
+        for (const el of game.classes.classElements(P.cls)) {
+          for (const n of P.nodesOf(el)) {
+            const q = (n.grants || []).find((id) => sk?.defs?.get?.(id)?.slot === 'quick');
+            if (q && P.rank(n.id) === 0 && P.canLearn(n.id).ok && P.learn(n.id)) { learned = n; sid = q; break; }
+          }
+          if (learned) break;
+        }
+        PT.step(0.2);
+        game.player.lastHurtT = -1e9;
+        const eq = !!(sid && sk.equip('q1', sid));
+        PT.step(0.5);
+        PT.check('training learn: quick active learned + equipped in slot 1', !!learned && eq, { learned: learned?.id, sid, eq, step: S.trainStep });
+      }
+      steps.push(S.trainStep);
+      // quick (deferred until a skill is slotted): press 1
+      pressQuick();
+      PT.check('training quick: slot 1 cast', !!S.S?.trainDone?.quick || (S.trainStep !== 'quick' && S.trainStep !== 'learn'), { step: S.trainStep });
+      steps.push(S.trainStep);
       // report back to the mentor
-      if (game.story.trainStep === 'done') {
-        const mn = game.story.npcs.swordMentor; PT.tp(mn.pos.x + 1.5, mn.pos.z + 1.5, 0.3);
-        PT.check('F prompt near mentor', game.story.hasPrompt());
+      if (S.trainStep === 'done') {
+        const mn = S.npcs.swordMentor; PT.tp(mn.pos.x + 1.5, mn.pos.z + 1.5, 0.3);
+        PT.check('F prompt near mentor', S.hasPrompt());
         const ult0 = PT.counts.spellCast || 0;
         PT.press({ KeyF: true }, 0.05, 0.3); // F must talk, not cast the ultimate
         PT.check('F talks (no ultimate cast)', game.state === 'dialogue' && (PT.counts.spellCast || 0) === ult0, { state: game.state });
         PT.runDialogue(); PT.step(1);
       }
-      PT.check('training complete → updraft', game.story.stage === 'updraft', { stage: game.story.stage, steps });
-      return { steps, stage: game.story.stage, blocked: PT.counts.blocked || 0, parry: PT.counts.parry || 0, dash: PT.counts.dash || 0 };
+      PT.check('training complete → updraft', S.stage === 'updraft', { stage: S.stage, steps });
+      return { steps, stage: S.stage, blocked: PT.counts.blocked || 0, parry: PT.counts.parry || 0, dash: PT.counts.dash || 0 };
     });
     await shot('02_training_done');
     await run('updraft quest', () => {
@@ -275,8 +306,11 @@ function installHelpers() {
       return { realKills, camps: E.getObjective().campsCleared };
     });
     await run('boss + finisher', () => {
+      for (let i = 0; i < 30 && (game.cinematic.active || game.state === 'cutscene'); i++) { game.cinematic.skip?.(); PT.step(0.5); }   // boss intro
       const A = game.world.bossArena, b = game.enemies.boss; if (!b) return { boss: false };
       PT.tp(A.position.x, A.position.z + 14); PT.heal(); PT.step(6);
+      // v3: the R finisher comes from a capstone; take the sword/lightning capstone like the v2 'master' path did
+      game.skills?.applyPreset?.('legacy_master_lightning'); PT.step(0.2);
       PT.face(PT.center(b));
       // a few real sword combos
       const hp0 = b.hp;
@@ -299,16 +333,24 @@ function installHelpers() {
       return { comboDmg: Math.round(comboDmg), finisherDmg: Math.round(hpF - b.hp), finT: +t.toFixed(1), state: game.state };
     });
     await shot('04_after_finisher');
-    await run('boss kill → ending → victory', () => {
+    await run('golem kill → reveal (v3: not victory)', () => {
       const b = game.enemies.boss; if (!b) return { boss: false };
+      let sawDefeat = null; const off = game.events.on('bossDefeated', (p) => { sawDefeat = { id: p?.id, final: !!p?.final }; });
       for (let i = 0; i < 40 && b.alive; i++) { if (!b.invulnerable) game.combat.dealDamage(b, { amount: 500, element: 'earth', source: 'player', point: PT.center(b), noReaction: true }); PT.step(0.5); }
-      let sawEnding = false, t = 0;
-      for (; t < 90 && game.state !== 'victory'; t += 0.5) { PT.step(0.5); if (game.state === 'cutscene' && game.cinematic.active) sawEnding = true; if (t > 20 && t < 20.6) window.__endMid = true; }
-      PT.check('ending cutscene played', sawEnding && game.story.stage === 'ending');
-      PT.check('victory state', game.state === 'victory', { state: game.state, t });
+      let t = 0;
+      for (; t < 40 && game.story.stage !== 'reveal'; t += 0.5) PT.step(0.5);
+      // the reveal cinematic follows; it is skippable
+      let skipped = false;
+      for (let i = 0; i < 40 && (game.cinematic.active || game.state === 'cutscene'); i++) { if (game.cinematic.skip) { game.cinematic.skip(); skipped = true; } PT.step(0.5); }
+      PT.step(1);
+      off();
+      PT.check('bossDefeated golem (final:false)', sawDefeat?.id === 'golem' && !sawDefeat.final, sawDefeat);
+      PT.check('stage reveal after the golem', game.story.stage === 'reveal', { stage: game.story.stage, t });
+      PT.check('no victory after the golem', game.state !== 'victory' && !(PT.counts.victory > 0), { state: game.state, victory: PT.counts.victory || 0 });
+      PT.check('playing after the reveal cinematic', game.state === 'playing' && !game.input.gameLocked, { state: game.state, skipped });
       return { t, state: game.state, quests: { start: PT.counts.questStart, done: PT.counts.questComplete } };
     });
-    await shot('05_victory');
+    await shot('05_reveal');
     await finish('story');
   }
 

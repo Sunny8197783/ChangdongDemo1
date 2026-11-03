@@ -1,15 +1,16 @@
 // Automated end-to-end play-test.
-// Usage: node tools/playtest.js [--out dir] [--quick]
+// Usage: node tools/playtest.js [--out dir] [--quick] [--noshots]   (--quick = no screenshots; exit code 1 on a legacy-check failure)
 // Boots ?test=1 in headless Chromium, freezes the rAF loop and drives the game with game.step() (fixed 60 Hz,
 // no rendering except for screenshots), so it runs at CPU speed even on SwiftShader.
 // Flow: walk → cycle 5 elements → basic/heavy/ultimate of each at dummies (real input path) → deliberate
-// reactions & zone fusions → camp0 fight → clear camps → boss → victory. Logs event counts, reaction ids and errors.
+// reactions & zone fusions → camp0 fight → clear camps → boss → golem defeated → reveal (v3: the golem is not the
+// final boss, so no victory). Logs event counts, reaction ids and errors.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const args = process.argv.slice(2); const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const root = path.resolve(__dirname, '..');
 const outDir = opt('--out', '/tmp/claude-0/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/scratchpad');
-const noShots = args.includes('--noshots');
+const noShots = args.includes('--noshots') || args.includes('--quick');
 const port = 8000 + Math.floor(Math.random() * 900);
 const types = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
@@ -297,19 +298,21 @@ function installHelpers() {
     return { hp0, hp: Math.round(b.hp), maxHp: b.maxHp, phase2: b.phase ?? null, playerHp: Math.round(game.player.hp), playerHurt: PT.counts.playerHurt || 0 };
   });
   await shot('07_boss_fight');
-  await run('boss kill → victory', () => {
+  const golem = await run('boss kill → reveal', () => {
     const b = game.enemies.boss; if (!b) return { boss: false };
     for (let i = 0; i < 30 && b.alive; i++) {
       if (!b.invulnerable) game.combat.dealDamage(b, { amount: 500, element: 'earth', source: 'player', point: PT.center(b), noReaction: true });
       PT.step(0.5);
     }
-    // v2: the story plays the ending cutscene (~42 s) before the victory screen
-    let endingCut = false;
-    for (let i = 0; i < 140 && game.state !== 'victory'; i++) { if (game.state === 'cutscene') endingCut = true; PT.step(0.5); }
-    return { bossAlive: b.alive, state: game.state, endingCutscene: endingCut, bossDefeated: PT.counts.bossDefeated || 0, victory: PT.counts.victory || 0 };
+    // v3: the golem is the act-1 boss → story stage 'reveal' (cinematic, skippable), never 'victory'
+    let revealCut = false;
+    for (let i = 0; i < 80 && game.story.stage !== 'reveal'; i++) PT.step(0.5);
+    for (let i = 0; i < 40 && (game.cinematic.active || game.state === 'cutscene'); i++) { revealCut = true; game.cinematic.skip?.(); PT.step(0.5); }
+    PT.step(1);
+    return { bossAlive: b.alive, state: game.state, stage: game.story.stage, revealCutscene: revealCut, bossDefeated: PT.counts.bossDefeated || 0, victory: PT.counts.victory || 0 };
   });
   await p.waitForTimeout(300);
-  await shot('08_victory');
+  await shot('08_reveal');
 
   const summary = await run('summary', () => ({
     counts: PT.counts, reactions: PT.reactions, combos: PT.combos, notes: PT.log, fails: PT.fails,
@@ -321,7 +324,21 @@ function installHelpers() {
   if (summary) {
     const seen = new Set([...Object.keys(summary.reactions), ...Object.keys(summary.combos)]);
     const never = summary.allReactionIds.filter((id) => !seen.has(id));
-    console.log('\nREACTIONS NEVER TRIGGERED:', never.length ? never.join(', ') : 'none');
+    // the 19 classic reactions + 9 fusions trigger through the legacy spells; the 30 v3 ids need v3 elements/objects
+    // (covered by tools/playtest3.js combat), so they are listed separately and are expected here
+    const CLASSIC = new Set(['melt', 'shatter', 'electrocute', 'superconduct', 'overload', 'swirl', 'magma', 'flashfreeze', 'evaporate', 'skyslam',
+      'updraft', 'fire_tornado', 'blizzard', 'storm_tornado', 'steam_burst', 'electro_water', 'freeze_water', 'fire_wave', 'infusion']);
+    const neverClassic = never.filter((id) => CLASSIC.has(id)), neverV3 = never.filter((id) => !CLASSIC.has(id));
+    console.log('\nCLASSIC REACTIONS NEVER TRIGGERED:', neverClassic.length ? neverClassic.join(', ') : 'none');
+    console.log('v3-only reactions not triggered in legacy mode (expected; playtest3 combat covers them):', neverV3.length);
+    const checks = [
+      ['all 19 classic reactions/fusions triggered', neverClassic.length === 0],
+      ['golem defeated → stage reveal', !!golem && golem.stage === 'reveal' && golem.bossAlive === false],
+      ['no victory after the golem', !!golem && golem.victory === 0 && golem.state !== 'victory'],
+      ['no page errors', !logs.some((l) => l.startsWith('[pageerror]') || l.startsWith('[error]'))],
+    ];
+    console.log('\nLEGACY CHECKS:'); for (const [n, ok] of checks) console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}`);
+    process.exitCode = checks.every((c) => c[1]) ? 0 : 1;
   }
   console.log('\nCONSOLE:', logs.length ? '\n' + logs.slice(0, 60).join('\n') : 'no errors/warnings');
   await b.close(); server.close();
