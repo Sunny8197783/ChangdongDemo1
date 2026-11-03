@@ -66,10 +66,34 @@ Files: `src/main.js`, `src/core/{elements,classes,stats,progression,archetypes,i
 ## Test URL params (main.js `applyTestParams`)
 `cls` (default mage; `none`), `level`, `skills=all|primary|<ids>|preset:<name>`, `equip`, `difficulty`, `attune`, `unlock=all`, `points=inf`, `quest` (default camps),
 `zone`, `boss`, `phase`, `save=1`, legacy `path`/`el`, plus `stub=all|<modules>` (force core stubs) and `intro=1`.
-In v3 mode a deprecated `pathChosen` is still emitted after `setClass` so v2 listeners keep switching class until their owners move to `classChosen`.
+The deprecated `pathChosen` bridge emit after `setClass` was removed at integration (every listener also handles `classChosen`); the v2 `progression.choose` shim still emits it.
 
 ## Tools
 - `node tools/playtest3.js [owner…]` — runs `tools/playtest3/<owner>.js` sections through `tools/playtest3/harness.js` (`PT.boot`, `pg.run`, in-page `PT.check/skip/step/dummyRing/frameStats/countEvents/fixture`).
   Checks that need a later-wave module are SKIPped. 404s for module files that do not exist yet are not counted as console errors.
 - `node tools/bootcheck.js` — 15 configs incl. one per class with `starter_<cls>`, the final boss, legacy configs, and the two boot-safety configs (`@noSkills`, `@noBosses`).
 - `tools/playtest.js` / `playtest2.js` add `&path=all` (legacy keymap) unless the URL already has `path=` or `cls=none`; viewport 640×360.
+  `playtest.js --quick` skips screenshots and exits 1 on a LEGACY CHECKS failure (19 classic reactions/fusions, golem → `reveal`, no victory).
+  `playtest2.js` story: `&cls=none&cine=1`, class panel pick (`ui._parts.classPanel.pick('sword', {noConfirm:true})`), the v3 training steps,
+  the `legacy_master_lightning` preset before the R finisher, golem → `reveal` (not victory).
+- `tools/playtest3/core.js` check 11: village / plains / Mirwen / Elderwood and the plateau with nidhoggra phase 1 and 2 — calls, tris, programs,
+  and frame time (`updateMs` = simulation step without rendering, `frameMs` = step + SwiftShader render).
+
+## Integration (wave 4) — resolved requests
+- core: `stats` add key `maxStaminaAdd` (+ `maxStaminaMul`) in `derived().maxStamina`; `game.post.GRADES` has `dusk` / `golden`; `pathChosen` bridge dropped;
+  playtest3 core clears the skills `breadth` source before the "rx keys default 1" assertion.
+- player: `grantIframes(s)`, `addShield(amount, s, {element})` (combat subtracts `entity.shieldHp` before HP), `refundDash(n)`, `startGlide()`, `addResolve(n)`,
+  `restoreMp(n)`, `refreshStats()`, `getWeaponBase('main'|'off', out)`; reads `dodgeCdMul`, `freeSprintOOC`, `noRegenPause` / `noRegenPauseInWater`.
+- combat: `combat.enqueue(delay, fn, depth)`; `damage` carries `backstab`, `charged`, `slot`, `headshot`; reads `burnDurAdd`, `burnTickMul`, `wetDurAdd`,
+  `frozenDurAdd`, `frozenDurMul`, `chillSlowAdd`, `shockedTakenAdd`, `seededDotMul`, `iceUnfrozenMul`, `airDmgMul`, `headshotMul` (bow hits above 78 % height),
+  `nonNatureHealMul` (regen / nature heals exempt), `selfElectroImmune`, `corrodeNoFadeInCurse`, `swirlTwoAuras`, `swirlRadiusAdd`, `chainThroughWater` +
+  `chainWaterRange`, `judgmentSplash`, `crystalShieldMul`, `podHealAdd`, `slamJudgment` (hammer heavy → judgment at 3), `lethalSave` + `lethalSaveCd`;
+  `ice.prison`'s `shatterMul` is honoured by the shatter handler.
+- world: `world.platformAt(x, z, yHint)`, `world.isTallGrass(x, z)`, `surface.isGrass/isTallGrass/meltIce/regrow`, `surface2.isOvergrowth` alias.
+- enemies: `setSightMul(e, mul, dur)` + per-enemy `sightMul`/`sightMulUntil` in the sight check; `reflectProjectiles(origin, dir, len, deg)`.
+- magic: light beams refract with `lightRefract`. melee: i-frames through `player.grantIframes`; the left dagger trail uses `getWeaponBase('off')`.
+- ui: victory screen "에필로그 계속" → `story.continueEpilogue()`; `tree_open` cue on opening the tree.
+- story: the 바람 깃털 bonus is the `story:feather {maxStaminaAdd: 20}` source (cleared on a new game); training defers `quick` until something is slotted
+  (a fresh class has no quick skill before the `learn` step).
+- Not done (optional / no consumer yet): enemy lightning bolts striking lightning rods first; `revealedUntil` (no stealthed enemy type exists);
+  a skills recast hook (`opts.recast`); a dedicated water-walk flag (magic keeps its platform discs).

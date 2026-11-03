@@ -571,4 +571,945 @@ The v3 expansion (classes, 9 elements, skill trees, the extended story to 공허
 (CONTRACT §24). The integration step appends the owners' module notes below.
 
 ### v3 module notes
-(filled at integration from `docs/v3/notes/*.md`)
+Concatenated at integration from `docs/v3/notes/<owner>.md` (those files stay the per-owner source; headings are nested one level below this one).
+
+#### core — module notes (v3, wave 0) — `docs/v3/notes/core.md`
+
+Files: `src/main.js`, `src/core/{elements,classes,stats,progression,archetypes,interact,timescale,keymap,save,debug,settings,stubs,utils,input,events}.js`,
+`tools/{bootcheck,playtest3,playtest,playtest2}.js`, `tools/playtest3/{harness,core}.js`, `tools/playtest3/fixtures/tree_fire.js`.
+
+##### Boot
+- main.js creates, **before any module factory**: `game.KEYS`, `game.keymapMode` (`'v3'` | `'legacy'` when the test URL has `path=`),
+  `game.elements`, `game.classes`, `game.timeScale`, `game.settings`, `game.stats`, `game.progression`, `game.archetypes`,
+  `game.interact`, `game.save`, `game.debug`, `game.post`, `game.difficulty`.
+- `ORDER = world → vfx → combat → audio → player → spells → sword → skills → enemies → story → cinematic → ui`; `FILES.skills = ['./skills.js','createSkills']`.
+  A missing/broken file or a throwing factory is replaced by its stub from `core/stubs.js` (the skills stub is the full CONTRACT §2 shape, `isStub:true`).
+- Frame: `timeScale.update(realDt)` (every state) → input → [playing: F → `interact.use()` → player → `stats.update(dt)` → spells → sword → skills → enemies → combat → story → cinematic]
+  → `stats.flush()` when not playing → `interact.update` (10 Hz) → `save.update` (debounce) → `post.update` → world, vfx, ui, audio.
+- Game dt = `min(realDt, 1/20) × timeScale.value() × hitstop × cinematic.timeScale`. `game.slowmo(s, t)` is a shim to `timeScale.set('legacy', …)`;
+  `game._slowScale` / `game._slowTime` are read-only getters over the stack (v2 `player.timeComp` keeps working).
+- `game.activeSkills()` = `game.skills` unless it is the stub, else the v2 switch via `familyOf(cls)`.
+- `game.continueGame()` = 이어하기 (save.load, spawn at gate/village, full HP). `game.newGame({skipIntro, clearSave})` (`clearSave` for 새 게임).
+
+##### Registries
+- `elements.js`: `ELEMENT_DEFS` (9; earth status `encrusted`), `ALL_ELEMENTS`, `CLASSIC_ELEMENTS`, `PSEUDO_ELEMENTS` (physical, void), `elDef`, `elColor(id, part)`, `elName(id)` — never undefined.
+  `utils.js` keeps `ELEMENTS` = 5 classic; `ELEMENT_COLORS` / `ELEMENT_NAMES_KO` are Proxies (unknown key → physical) with explicit new keys; `ELEMENT_NAMES_KO.ice` stays `'냉기'`.
+- `classes.js`: `CLASS_DEFS` (6; access table of DESIGN §2.1, 4 classes per element), `access`, `familyOf` (unknown → caster, warns once), `styleOf`,
+  `classElements`, `classesForElement`, `TALENTS` (Korean, DESIGN §2.2), `talentsFor(cls, level, choice)`. Extra Korean fields: `weaponKo`, `signatureKo`, `fantasyKo`.
+- `archetypes.js`: `registerArchetype(name, 'caster'|'melee', fn)`, `getArchetype`, `registerImpl(skillId, family, fn)`, `getImpl`, `list()`, `NAMES` (the 24).
+
+##### Stats (`game.stats`)
+- Pooled source records; `set(id, mods, {duration})` copies into the record (no allocation); `get(key)` lazily recomputes; `update(dt)` (game time) expires
+  timed sources and emits **at most one** `statsChanged` per frame; `flush()` does the same without expiry (used outside `playing`).
+- Key kinds: the CONTRACT §5 lists, plus the convention for unknown keys: `*Mul` / `*Dmg` / `rx_*` / `rxFamily_*` multiply, booleans OR, the rest add.
+  `reactionDmg(id, family?)` = `rx_<id> × rxAll × rxFamily_<family>` (`rxAll` is a multiplicative key, e.g. breadth `1 + 0.04 × trees`) (family looked up in `combat.REACTION_DEFS` when omitted).
+- `consume(key)` clears every source contributing that key; `clearPrefix('buff:')`; `registerProc(sourceId, event, fn)` (removed by `clear(sourceId)`); `dump()` for tests.
+- `derived()` (reused object): class base × level growth (DESIGN §5.3) × `maxHpMul`/`maxResMul`/`moveMul`; `critMul = 1.5 + critMul`; regen 5 s/3 s, 1.5 %/8 % (hard: in-combat ×0.8).
+- **progression owns the `node:<id>` sources** (`node.mods(rank)`), refreshed on learn/unlearn/setRanks/respec/class change/load. Skills must not set them.
+
+##### Progression (`game.progression`)
+- Everything of CONTRACT §4. Points are derived: `levelPoints(L)` (+1 class, L2–20, even 22–30) + act bosses (`bossesDefeated` ∩ golem/hydra/nox/treant/kalis) +
+  seed shrines + `bonusPoints` − spent (granted nodes cost 0). 38 at cap with everything found.
+- `canLearn` order: unknown → maxRank → class → tier (secondary T4+) → story (capstones only) → gate (pointsIn ≥ 0/2/5/9/14) → prereq → exclusive → points.
+  `debug.ungate` skips class/tier/story/gate; `debug.infPoints` skips points; `debug.strictPlace` disables the test-mode respec-anywhere bypass.
+- `canUnlearn` 'gate' is strict: after the refund, every learned node of tier t still needs ≥ gate(t) points in the tiers **below** t.
+- `canRespecHere()`: within 8 m of `world.respecSpots` / the altar (`world.altar || world.village.altar`), or test mode. `canChangeClass()` / `changeClass(to)`: altar only, never with a live boss.
+- XP listeners: `kill` (only `xpValue > 0`; `zoneLevel` default 1; falloff ×0.5 at ≥ zoneLevel+6, catch-up ×1.5 at ≤ zoneMin−3), `reactionDiscovered` (+60),
+  `shrineFound` (seed: +1 point, +300; landmark: +80), `bossDefeated` (records act bosses). `addPoints(n, bossId)` is idempotent with that listener.
+- Note: DESIGN §5.1's example column (L5 → 454, …) does not match its own formula; the formula `round(40·L^1.4+60)` is implemented (L5 → 441).
+- `mastery(el)` / `breadth()` return reused objects. `unlockedElements()` returns a cached array (do not mutate).
+- v2 shims: `choose(cls, path, el)` = setClass + `skills.applyPreset('legacy_all'|'legacy_master_<el>')` + ungate + `pathChosen`.
+  While **no trees are registered** (skills stubbed) the v2 behaviour is kept as a fallback (`_legacy`: 5 classic elements, master ×1.25, master awakening/support).
+- Extra events: `treesRegistered {count}`, `sealsBroken {}`, `talentChosen {cls, choice}`; `classChosen` gets `{loaded:true}` after a save load.
+
+##### Core services
+- `game.input.actionDown/actionPressed/actionReleased(name)` read a KEYS binding (keys or MouseN).
+- `game.timeScale`: `set(id, scale, durReal)`, `clear`, `has`, `timeLeft`, `value()` (min), `comp()` (= 1/value while `focus`), `active()`.
+- `game.interact`: `offer(id, {pos|()=>pos, r=2.5, label, onUse, priority, enabled})`, `withdraw`, `current()` (10 Hz, reused view), `use()`. Emits `interactChanged`.
+  Core calls `use()` on KeyF while playing (v3 keymap always; legacy keymap only when an offer is current).
+- `game.post`: `pulse(amount, durReal, {radial})` (chromatic split + radial blur, scaled down when `screenShake` is 0), `grade(name, blend, dur)` with
+  `GRADES` none/void/memory/holy/cold/boss/finale/dawn/break. Uniforms live in the existing sanitize pass (uniform branches; no extra pass).
+- Toon dissolve: every `toonMat` (rim on) has `uDissolve` (−1 = off) and `uDissolveColor`, key `'toonRim+dis'` (chained before prefab occlusion).
+  `dissolveUniforms(mat)` (utils.js) returns the per-material uniforms; clone the material once (copy `onBeforeCompile` + `customProgramCacheKey`), then animate the clone's uniforms — no new program.
+- `game.save`: `has/save/load/clear/request/update`; key `aw_save_v3`; autosave on `questComplete`, `treeClosed`, `altarLeave`, `classChanged` (2 s debounce, never with a live boss or a cinematic, test mode only with `&save=1`).
+  Optional hooks it calls: `skills.serialize/deserialize`, `story.serialize/deserialize/currentBossId`, `world.serialize/deserialize/lastGateSpawn`, `player.placeAt`, `enemies.prewarmBoss`.
+- `game.settings`: v3 keys `difficulty`, `screenShake`, `damageNumbers`, `effectQuality`, `holdToCast`; `aw_settings_v3` with a copy-once v2 migration; presets set `effectQuality`;
+  `effectMul()`; `set(k, v, {persist:false})`. `game.difficulty` = DESIGN §16 row (`hpMul`, `dmgMul`, `telegraphMul`, `checkAddSec`, `regenCombatMul`).
+- `game.debug`: every CONTRACT §21 function (feature-detected, never throws) + `spawnDummy(pos, {aggro, hp})`, `nearestEnemy`, `stats()`; `events.count(name)` (enabled in test mode).
+  `hurt(n, {combat:true})` marks a dummy within 30 m with `aggro = debugAggro = true`.
+
+##### Test URL params (main.js `applyTestParams`)
+`cls` (default mage; `none`), `level`, `skills=all|primary|<ids>|preset:<name>`, `equip`, `difficulty`, `attune`, `unlock=all`, `points=inf`, `quest` (default camps),
+`zone`, `boss`, `phase`, `save=1`, legacy `path`/`el`, plus `stub=all|<modules>` (force core stubs) and `intro=1`.
+The deprecated `pathChosen` bridge emit after `setClass` was removed at integration (every listener also handles `classChosen`); the v2 `progression.choose` shim still emits it.
+
+##### Tools
+- `node tools/playtest3.js [owner…]` — runs `tools/playtest3/<owner>.js` sections through `tools/playtest3/harness.js` (`PT.boot`, `pg.run`, in-page `PT.check/skip/step/dummyRing/frameStats/countEvents/fixture`).
+  Checks that need a later-wave module are SKIPped. 404s for module files that do not exist yet are not counted as console errors.
+- `node tools/bootcheck.js` — 15 configs incl. one per class with `starter_<cls>`, the final boss, legacy configs, and the two boot-safety configs (`@noSkills`, `@noBosses`).
+- `tools/playtest.js` / `playtest2.js` add `&path=all` (legacy keymap) unless the URL already has `path=` or `cls=none`; viewport 640×360.
+  `playtest.js --quick` skips screenshots and exits 1 on a LEGACY CHECKS failure (19 classic reactions/fusions, golem → `reveal`, no victory).
+  `playtest2.js` story: `&cls=none&cine=1`, class panel pick (`ui._parts.classPanel.pick('sword', {noConfirm:true})`), the v3 training steps,
+  the `legacy_master_lightning` preset before the R finisher, golem → `reveal` (not victory).
+- `tools/playtest3/core.js` check 11: village / plains / Mirwen / Elderwood and the plateau with nidhoggra phase 1 and 2 — calls, tris, programs,
+  and frame time (`updateMs` = simulation step without rendering, `frameMs` = step + SwiftShader render).
+
+##### Integration (wave 4) — resolved requests
+- core: `stats` add key `maxStaminaAdd` (+ `maxStaminaMul`) in `derived().maxStamina`; `game.post.GRADES` has `dusk` / `golden`; `pathChosen` bridge dropped;
+  playtest3 core clears the skills `breadth` source before the "rx keys default 1" assertion.
+- player: `grantIframes(s)`, `addShield(amount, s, {element})` (combat subtracts `entity.shieldHp` before HP), `refundDash(n)`, `startGlide()`, `addResolve(n)`,
+  `restoreMp(n)`, `refreshStats()`, `getWeaponBase('main'|'off', out)`; reads `dodgeCdMul`, `freeSprintOOC`, `noRegenPause` / `noRegenPauseInWater`.
+- combat: `combat.enqueue(delay, fn, depth)`; `damage` carries `backstab`, `charged`, `slot`, `headshot`; reads `burnDurAdd`, `burnTickMul`, `wetDurAdd`,
+  `frozenDurAdd`, `frozenDurMul`, `chillSlowAdd`, `shockedTakenAdd`, `seededDotMul`, `iceUnfrozenMul`, `airDmgMul`, `headshotMul` (bow hits above 78 % height),
+  `nonNatureHealMul` (regen / nature heals exempt), `selfElectroImmune`, `corrodeNoFadeInCurse`, `swirlTwoAuras`, `swirlRadiusAdd`, `chainThroughWater` +
+  `chainWaterRange`, `judgmentSplash`, `crystalShieldMul`, `podHealAdd`, `slamJudgment` (hammer heavy → judgment at 3), `lethalSave` + `lethalSaveCd`;
+  `ice.prison`'s `shatterMul` is honoured by the shatter handler.
+- world: `world.platformAt(x, z, yHint)`, `world.isTallGrass(x, z)`, `surface.isGrass/isTallGrass/meltIce/regrow`, `surface2.isOvergrowth` alias.
+- enemies: `setSightMul(e, mul, dur)` + per-enemy `sightMul`/`sightMulUntil` in the sight check; `reflectProjectiles(origin, dir, len, deg)`.
+- magic: light beams refract with `lightRefract`. melee: i-frames through `player.grantIframes`; the left dagger trail uses `getWeaponBase('off')`.
+- ui: victory screen "에필로그 계속" → `story.continueEpilogue()`; `tree_open` cue on opening the tree.
+- story: the 바람 깃털 bonus is the `story:feather {maxStaminaAdd: 20}` source (cleared on a new game); training defers `quick` until something is slotted
+  (a fresh class has no quick skill before the `learn` step).
+- Not done (optional / no consumer yet): enemy lightning bolts striking lightning rods first; `revealedUntil` (no stealthed enemy type exists);
+  a skills recast hook (`opts.recast`); a dedicated water-walk flag (magic keeps its platform discs).
+
+#### skills — module notes (v3, wave 1) — `docs/v3/notes/skills.md`
+
+Files: `src/skills.js` (factory), `src/skills/{runtime,adapters,fallback,classkits,talents,procs,familiars,tooltip}.js`,
+`src/skills/trees/{_shape,index,fire,ice,lightning,wind,earth,water,nature,light,shadow}.js`, `tools/playtest3/skills.js`.
+Static imports: own files, `src/core/*`, `three` only (rule 7). Renaming `src/skills/` away boots on the core stub (bootcheck `@noSkills`).
+
+##### Data (`src/skills/trees/*`)
+- `_shape.js` `buildTree(el, spec)` materialises every node from the DESIGN §6.1 shape: `slotRole` → tier / cost / maxRank / type / `pos`,
+  the prerequisite rule (a3/a4/u → attune, m1 → a2, m2 → a3, m3 → t4, ult/sig → `requiresAny [a3,a4]`, rx → p1, key/p2 → rx, sup/t4/cap → ult),
+  `modifies` + `exclusive` pairs, `grants` (attune → basic+charged, actives → own id, ult/sup, cap → awakened+finisher), `primaryOnly` (tier ≥ 4).
+  Skill defs get `id`, `element`, `node`, `slotRole`, `modifiers` stamped. `RX_BY_ELEMENT` + `rxBonus(el)` turn "<el> reactions +15%" into `rx_<id>` mods.
+- 9 tree files: 175 nodes (19 classic / 20 new), 103 castable defs (30 legacy-backed via `legacy.spell`; the 4 new elements' basic/charged
+  carry `legacy.sword` so melee's `playLegacy` can present them). Params are unscaled base numbers; statuses use `{dur}` / `{stacks}` objects;
+  every quick active has a `twist` tag (DESIGN §13.1); Korean `nameKo`/`desc` everywhere; passives with ranks have `descRank(r)` for tooltips.
+  `custom` marks bespoke ultimates (water/nature/light/shadow `.ult` / `.awakened`) — magic/melee `registerImpl` under the skill id.
+- `index.js`: `TREES` (ALL_ELEMENTS order), `EXTRA_SKILLS` (`breadth.finisher` 원소 교향곡, DESIGN §5.7), `PRESETS`
+  (`legacy_all`, `legacy_master_<classic>`, `showcase_<el>`, `starter_<cls>` = 3 pts, `act2_<cls>` = 20, `endgame_<cls>` = 38 with loadouts; always the `a` modifier),
+  `presetCost(name)`. The ui fallback may `await import('./skills/trees/index.js')`.
+
+##### Factory (`src/skills.js`)
+Builds `defs` (Map, 104 incl. the breadth finisher), `nodes` (Map, 175), `trees`; calls `progression.registerTrees(TREES)` and forwards
+`registerImpl/registerArchetype` to `game.archetypes` — all inside the factory (CONTRACT §2). `init()` refreshes talents/procs/kits/attune.
+`update(dt, realDt)` = runtime → procs → class kits/familiars. `warmup()`/`prewarm()` return the familiar InstancedMesh.
+Extra API: `def(id)`, `node(id)`, `tooltip(nodeOrSkillId, {rank})` (P1: `{title, lines, current, next, text}` with "현재 → 다음"), `kits`, `procs`,
+`talents`, `familiars`, `adapters`, `lastPath` (`impl|legacy|archetype|casterArchetype|cinematic|generic`), `skillForSlot(slot)`, `lastCast`.
+
+##### Runtime (`runtime.js`) — CONTRACT §7.2
+- **Cast pipeline:** gate (hasSkill unless free/test, cooldown/charges, `combat.canAct`, finisher needs `canFinisher`) → resource
+  (`spendMp` caster / `spendResolve` melee = cost × 0.8; free via resonance `freeNext` (`nextMul` → `hit.castMul`, then `stats.consume`),
+  mage 원소 연쇄 3 stacks (+30%), ranger `focusFreeCast` during focus; lightning keystone `castHpCost`) → auto-attune (once; setters silent) →
+  resolve: `getImpl(id|custom)` → legacy adapters → finisher cinematic (`cinematic.finisher({element, cls, onImpact})`) → family archetype →
+  caster archetype from the weapon tip (melee "검기") → **generic fallback** (`fallback.js`, logged once per archetype/family).
+- **Events:** exactly one `skillCast {id, element, slot, cls, family, origin, path}`; `spellCast` is counted by a listener — if the performing
+  (legacy) code did not emit it, skills emits `{element, kind, spellId}` once (kind basic/heavy/ultimate/skill). `skillFail` + legacy `spellFail`.
+- **Cooldowns:** per id, `cd × cdrMul`, ticked in compensated time (`timeScale.comp()`); `charges`/`recharge` (lightning.mine; `lightning.m2b` gives 2).
+- **ctx** (§7.3): `{game, skillId, def, element, params (effectiveParams), family, style, cls, origin, aim, charge, slot, awakened, castMul, S, M,
+  hit(base) (adds skillId, slot, element, source = player entity, tier, castMul, charged/finisher flags, +1 stack when awakened), after(t, fn),
+  powerForDisplay, baseDamage()}`. Breadth awakening (방랑자의 각성) makes X cast the equipped ult with `awakened` (+30%, +1 stack).
+- **effectiveParams:** def params deep-merged with learned modifiers' params; cached per progression `rev`; never scaled.
+- **attune(el, {silent})**: only `unlockedElements()`; emits `attuneChanged` + legacy `elementChanged` once; v3 setters get `{silent:true}`,
+  v2 setters (which emit) run muted. `cycleAttune` on Z / wheel (0.15 s debounce).
+- **Loadout:** `equip/unequip/canEquip` (the ONE rule: out of combat, or `ui.skillTreeOpen` + paused + no damage for 5 s; reasons
+  `unlearned|slot|combat`), `autoEquip` on `skillLearned`; `skillUnlearned`/`respec`: unequip unlearned, clear `buff:<id>`, despawn summons
+  (`spells.api.despawnSummon(id)` if present), refresh familiars. X → `<el>.awakened` when its capstone is learned; R → attuned finisher
+  (or any learned, or `breadth.finisher`).
+- **Input** only when `game.keymapMode === 'v3'` (`ownsInput`): LMB (hold-to-cast), RMB hold/release (charge, `chargeSpeedMul`), 1–4, X, G, R, Z, wheel, V
+  (`useGift` → `enemies.bosses.gift.use()`). Never F. Legacy keymap reads nothing.
+- **HUD** (§7.5): one reused object; reused `elements` (pooled entries) / `slots` (9 entries) arrays; v2 `element`/`index` mirrors.
+  Slot entries add `charges`. `signature` filled by class kits.
+- `serialize()` = `{q1..q4, ult, sup, attuned}`; `deserialize` drops unlearned/mis-slotted ids. `applyPreset(name)` → `setRanks(…, {ignoreGates})`
+  + preset loadout + autoEquip + preset attune; `false` for unknown names.
+
+##### Class kits (`classkits.js`) — by `CLASS_DEFS[cls].signature`
+- `attunement` (mage 원소 연쇄): a non-basic cast of a different element within 3 s → +1 stack (max 3; `chainRefundMp` talent); at 3 the next skill is free, +30%.
+- `enchant` (sword): +4 per landed hit (+8 on reaction); full + perfect parry (`blocked{parried|perfect}` or `parry`) → 8 m cone wave, 80 + element status;
+  `player.setEnchantGlow?.(0..1)` at 10 Hz.
+- `focus` (ranger): signature = stamina/maxStamina, `extra` = focus active (player owns the slow-mo).
+- `seal` (paladin): every 4 blocks or 8 hits → `spells.api.zones.spawn('holy', …)`; fallback = `proc:seal` stats source while inside (rule 11). Emits `sealPlanted`.
+- `familiars` (spiritcaller): up to 2 (+1 `familiarSlotsAdd`) wisps for the most-invested trees with ≥ 3 points; they shoot the element's basic at 50 % every 1.6 s
+  (≤ 18 m). `familiars.js`: ONE InstancedMesh (cores + halos + 10 pooled bolts + glows), instance colours set at construction, hidden when idle,
+  sparkle trails through pooled `vfx.burst`. Emits `familiarSpawn/End`.
+- `marks` (shadowblade): every hit +1 `marked` (combat status; WeakMap fallback while combat is v2); backstab or charged hit detonates +12 %/mark as shadow
+  damage (`detonateRefund`, `markExecute` talents); tall-grass stealth via `enemies.setPlayerStealth` at 4 Hz.
+
+##### Talents / breadth / procs
+- `talents.js`: `talent:<id>` sources from `classes.talentsFor(cls, level, choice)` (numbers in `TALENT_MODS`), refreshed on classChosen/levelUp/talentChosen.
+  `breadth` source `{rxAll: 1 + 0.04 × trees≥5 (max 4), breadthAwakened}` refreshed on learn/unlearn/respec.
+- `procs.js`: node `procs:[{event, fn}]` dispatched by one listener per event to the learned nodes' procs; `tick` procs at 4 Hz; re-entry guarded
+  (proc hits never proc). Dynamic sources use `proc:<id>` (earth.cap, water.cap, nature.cap, shadow.cap, seal). Buff riders: `params.hits`
+  (서리 반격: 3 hits taken, freezes attackers) and next-hit riders (`nextCrit/nextHit/firstHit`) act on the `buff:<id>` source.
+- Node passive `mods(rank)` are applied by **progression** (`node:<id>`); skills never sets `node:` sources.
+
+##### Tests
+`node tools/playtest3.js skills` (≈ 85 s): static rule 7/8/9 + F grep; data shape (175 nodes, 103 defs, 30 legacy, tiers/costs/prereqs/exclusives,
+exact ids, v3.1 names, archetype names, status schema, twists, Korean); presets; runtime (HUD reuse, attune event counts, equip rule, cooldowns,
+charges, freeNext, effectiveParams, respec cleanup, save round trip, talents, breadth, tooltip, archetype/impl resolution); mage 원소 연쇄; v3 input
+(F casts nothing, X, 1, Z, RMB charge); legacy keymap reads nothing; **check 5** for all 6 classes (endgame + showcase: every skill has an effect,
+exactly one skillCast/spellCast, ≤ 1 elementChanged); spells+sword stubbed; spiritcaller familiars. Dummies are ringed at 4.5 m (not 6) so the
+smallest novas (r 5) reach them before the real archetypes land.
+
+#### combat — module notes (v3) — `docs/v3/notes/combat.md`
+
+Owner: **combat** (combat + all VFX). Files: `src/combat.js`, `src/combat/{statuses,reactions,pipeline,break,resonance,statusfx,fxassets}.js`,
+`src/vfx.js`, `src/vfx/{feel,presets2,telegraph,dissolve,runes}.js` (+ the existing `particles, ground, beam, trail, debris, presets, textures`),
+`tools/playtest3/combat.js`. (Smears and wind lines live in `vfx/runes.js`.)
+
+##### Combat (`game.combat`)
+- `combat.js` assembles the parts and keeps the v2 surface: `register/unregister`, `dealDamage`, `applyStatus/hasStatus/clearStatus`,
+  `canAct/speedMul`, `queryRadius/raycastEntities/getCenter`, `discover`, `REACTIONS` (codex: 49 unique ids, the old 19 first in order), `FOES`, `isFoe`, `isPlayerSource`, `_warm(group)`.
+- New: `REACTION_DEFS`, `STATUS_DEFS`, `FAMILIES`, `BY_TRIGGER`, `BY_OBJECT`, `P0_IDS`/`P1_IDS`, `statusInfo(id)`, `stacksOf(t, id)`, `canMove(e)`, `isAura(t, id)`,
+  `previewReaction(t, el)` (no side effects; returns a reused `{id, nameKo, family}`), `reactObject(obj, el, hit)`, `debugReact(id, t)`,
+  `addBreak(t, n)`, `isBroken(t)`, `drainShield(t, n)`, `healPlayer(amount, source, {hot})`, `registerAlly/unregisterAlly`, `allies`,
+  `registerObject/unregisterObject` (combat-side reactive objects when `spells.api.objects` is absent — tests and fallbacks), `resonance`, `lastFormula` (debug), `prewarm()`.
+- `init()` listens to `blocked {parried}` (+15 break on the parried attacker) and `stateChange` (title → reset queues).
+
+###### statuses.js
+- `STATUS_DEFS` = CONTRACT §8.1 table (Korean names) + reaction-owned `necroflame`, `broken`, `cursedMist`. `shocked` carries `element:'lightning'` (needed for the matrix).
+- `applyStatus(t, name, seconds, extra={stacks, source, power, el})` (signature kept). Stacks via `extra.stacks` (default 1 per hit = buildup), capped by
+  `stack.max` + `stats.get(maxStat)` for player sources. `chilled` → `frozen` at 6 stacks − `stats.chillToFreezeAdd`. `st.el` tags the element (defaults to the
+  def's element); `st.power` = power snapshot (DoT ticks use it as `hit.powerSnap`). Boss rules: `bossMul` duration, `bossImmune` (rooted → +40 break).
+  `burnImmune` / `blightImmune` flags on the player. v2 DR immunity windows kept.
+- Aura = def with `element` (or `aura:true` for `airborne`, `auraAs:'chilled'` for `frozen`) and an element-tagged `st.el`. `stunned` is `aura:false`.
+- `t.auraOrder` ring (≤ 8, newest first) is updated on apply/refresh and on removal.
+- Per-frame tick: DoTs (`burning` 6/0.5 s, holy ×1.5; `seeded` 2×stacks/1 s nature; `necroflame` 10/0.5 s, 30 % heals the player; `shocked` 3/0.9 s + micro-stun),
+  burning contact spread, dummy refill. `takenMul(t, el)` = exposed ×1.3, hexed ×1.2, broken ×1.5, corroded +5 %/stack, radiant +3 %/stack (light).
+
+###### reactions.js
+- `REACTION_DEFS`: all 49 ids of DESIGN §4.3 (variants share an id; every entry has `family`, `p`, Korean `nameKo`/`desc`, `match`, `mult`, `consume`, `apply`, `opposite`).
+  P0 = 35, P1 = 14. `BY_TRIGGER[el][auraKey]` and `BY_OBJECT[kind][el]` are built at load (no per-hit scans). Judgment is not indexed (own fallback rule).
+- `react(t, el, hit, point)`: `hit.object` → `reactObject`; else walk `auraOrder` newest first (frozen counts as chilled; the frozen cell wins), first entry not on
+  the 1 s per-target cd (`t._rxT`); then the judgment fallback (radiant ≥ `progression.judgmentThreshold()` clamped 3..5, heavy/charged/finisher tag, or any light
+  hit with `stats.judgmentAnyLight`; own cd 6 s / boss 12 s; consumes all stacks; 8 % maxHp / boss 3 % capped at 400 × power; +40 break / boss +20; dazzled 2 s).
+- On fire: consume (상극 always removes the aura incl. stacks) → apply statuses → `HANDLERS[id](ctx)` → emit `reaction {id, name, point, target, elements, variant, family}`
+  → `vfx.preset('rx_<id>')` (never `hitFeel`; the hit's tier becomes `'reaction'`) → resonance tracking.
+- Objects/zones: `reactObject(obj, el, hit)` with `obj.kind|type` ∈ pod, crystal, pillar, water, ice, tornado, lava, fire, blight, steam, rubble, or any `isZone` with
+  `element` (→ infusion). Calls `obj.onReact?.(id, el)` (pods/crystals) and `obj.convert?.(to)` (zone conversions) — the zone owner keeps the zone logic.
+  Does **not** emit `zoneCombo` (spells keeps emitting it for its own fusions).
+- Cascade queue: pooled records, stagger 0.08–0.12 s, ≤ 3 cascade items per frame (pod → pod, electrocute/blackbolt chains, hyperbloom bolts, eclipse burst, judgment pillar).
+- Fallbacks when magic's objects/zones are missing: timed **fields** (pool 16) implement fallback seed pods, sunflower turret, healing spring, sanctify HoT,
+  frost flower, thorn ring, sandstorm, cursed mist, void rift. Crystal fallback = 6 s `rx:crystal {<el>Dmg:1.2}` (+ `player.addShield?.()`).
+  Reaction-spawned zones are merged (same type within its radius in 3 s → skipped; ≤ 3 alive per type).
+
+###### pipeline.js (`dealDamage`) — the canonical formula (CONTRACT §8.3), the ONLY place player damage is scaled
+`final = base × power (DoT: hit.powerSnap) × progression.damageMul(el) × stats.atkMul × stats.elementDmg(el) × hit.castMul × takenMul(target) [× stats.backstabMul
+when hit.backstab] + quickened flat 25×power (lightning/nature) × reaction (mult × stats.reactionDmg(id, family); secondary reaction hits use hit.rxId) × resist × crit`.
+Crit chance = `derived().crit + stats.critChance`, mul = `derived().critMul`; never for DoT/zone ticks, props or `hit.noCrit`. `hit.fixed` skips scaling (judgment %HP).
+Enemy sources: `× source.zoneDmgMul × attacker dealtMul (blight/cursed mist)`, on the player also `× difficulty.dmgMul × stats.dmgTakenMul × (1 − lightningResist)`.
+Order: invulnerable → `onBeforeDamage` (also the block hook: `{cancel|mul|parried|reflect}`) → react → voidShield (×0.3) → formula → asleep wake ×1.5 → HP →
+lifesteal (`hit.lifesteal + stats.lifesteal + corroded 1 %/stack`) → break → awakening → statuses (`hit.status` = seconds or `{dur, stacks}`) → knockback →
+**hitFeel** (single caller; tier = max(hit.tier | inferred, reaction, crit); DoT/zone ticks only flash) → `damage` event (+`tier`, `skillId`) → onHit/onDeath
+(boss kill → `timeScale.set('bossDeath', 0.25, 0.8)`; `kill` gains `xp`, `zoneLevel`).
+`healPlayer(amount, source, {hot})`: × `stats.healMul`; in boss fights (boss alive within 75 m) HoT goes through a 5 % maxHp/s token bucket; burst heals uncapped;
+emits `heal {target, amount, source}` (HoT reuses one payload object).
+
+###### break.js / resonance.js
+- Break: `breakMax`/`breakValue`; hit drain `poise (default dmg×0.5) × (earth/lightning 1.5) × (reaction 3) × (encrusted 1.2) × stats.poiseMul`, parry +15, rooted-on-boss +40.
+  At 0: `broken` 4 s (mid-boss 3 s), `onBreak()`, `timeScale.set('break', 0.05, 0.25)`, hitFeel('break'), `break {target}` + `reaction {id:'break'}`; refill after 6 s → `breakRecover`.
+- Void shield: numeric `entity.voidShield`; ×0.3 while > 0; drain poise × (light 4 | reaction 2 | 1); break empties it; `voidShieldBroken {target}`; a light hit on a
+  shielded target fires 정화 (variant `shield`).
+- Resonance: 3 distinct reaction ids on one target within 6 s → `resonance {target, ids}`, `reaction {id:'resonance'}`, `stats.set('rx:resonance', {freeNext, nextMul:1.3}, {duration:8})`; ICD 10 s.
+
+###### statusfx.js (status visuals)
+Global InstancedMesh batches (≈ 1 draw call per kind regardless of enemy count): tint shell (per-instance colour, `setColorAt` at construction), flames
+(normal/holy/necro), frozen ice block + spikes (+ instanced outlines), stun/break stars, encrusted rock chips, rooted vine ring. Particles: drips, mud, frost,
+seed spores, corrosion smoke (normal-blended), dazzle sparkles, sleep bubbles, and **stack pips** (orbiting motes, count = stacks, for radiant/corroded/seeded/
+marked/chilled). Shocked arcs share a 14/s budget. `fxassets.js` holds combat's own copies of the shared shaders (no static import of `spells/*`, rule 7).
+
+##### VFX (`game.vfx`)
+- `hitFeel(tier, pos, dir, el, opts)` (`vfx/feel.js`): the DESIGN §9 S1 table (hitstop / trauma / FOV / screen flash / particle scale / entity flash), kill +0.04 s,
+  0.12 s volley rate limit (melee, kills and player hurt always freeze), `game.hitstop` keeps the 3–4 frame minimum, trauma max-per-frame × `settings.screenShake`,
+  ult/break → `game.post.pulse`, player hurt → red vignette (no shake), `target.hitPop?.(dir, tier)` hook for the S2 hit-pose pop. `feelStats` / `resetFeelStats()` for tests.
+- `preset(id, pos, {reduced, dir, scale, elements, colorEl, family})` (`vfx/presets2.js`): `impact_<el>` / `explosion_<el>` for 9 elements + void (water arcs &
+  droplets, nature petals & thorns, light pillars & rune, shadow inward pull + dark core + ravens), `rx_<id>` for all 49 = one parametric recipe per family
+  (burst, control, spread, surface, blessing, curse, universal) × the two element ramps + the trigger's signature shape, plus bespoke S6 signatures
+  (evaporate, superconduct, wildfire, sanctify, necroflame, prism, judgment, shatter, magma, eclipse, resonance, break). ≤ 4 full presets per frame, the rest reduced
+  (¼ particles, no decal). `presetStats()` / `resetPresetStats()`.
+- `telegraph({shape:'circle'|'ring'|'cone'|'line', pos, dir, r|len|width|angle|inner, dur, color:'damage'|'void'|'grab'|hex, parryable, onDone})` → `{alive, progress,
+  timeLeft, stop, setPos, setDir}`; pool 8; terrain-conforming; decal radius = hitbox radius; fill grows centre → edge; gold rim + golden glint 0.15 s before the end.
+- `dissolve(entity|mesh, {dur=0.9, color, embers, stagger, onDone})` clones toon materials once (same `'toonRim+dis'` program) and animates the clones' `uDissolve`;
+  outlines hide at 35 %, other meshes at 60 %; bosses dissolve part by part; 15 embers/s. `undissolve(entity)` restores.
+- `runeCircle(pos, {element, r, dur, rotSpeed})` pool 6; `smear('arc'|'wide'|'twin', origin, quat, scale, element)` pool 4; `groundDecal(kind, pos, r, life)` with
+  kinds crack, scorch, frost, lichtenberg, ripple, flowers, rune, violet; `windLines(on, intensity)`.
+- Atlas: 8×8 at 128 px (1024²), `FRAMES` name map only (new: rune, petal, droplet, feather, bubble, wisp, thorn, raven; `dust` aliases puff). `burst({inward:true})`
+  spawns on a shell and travels to the centre.
+- **No new lights:** `flash()` = emissive flare sprite (`flashSprite`); the 3 pooled point lights stay in the scene and only pulse on `effectQuality:'high'`.
+- Shake: 3-octave value noise on pitch/yaw (≤ 2°) and roll (≤ 2.5°), trauma², plus the directional kick.
+- Quality gating: rings/domes/decals/beams use an effective pool of 100 % (high) / 60 % (medium) / 30 % (low) of their caps (oldest recycled).
+- `prewarm()` / `warmup()` return hidden instances of the lazily used materials; telegraph/rune/smear/status meshes live hidden in the scene from boot (programs +7 vs v2, all at boot).
+- `stats()` adds `particles`, `telegraphs`, `runes`, `dissolves`.
+
+##### Tests
+`node tools/playtest3.js combat` — registry shape (49 / 35 / 14), Korean data, rule 7/8/9 greps, DESIGN §15 balance sim, `debug.react` for all 49 ids, natural
+triggers for the 35 P0 ids, the §4.5 priority worked example, the judgment cooldown, the 16-pod chain (≤ 3 cascades/frame, ≤ 4 full presets/frame), the formula
+(L1 = 100, stats crit, DoT power snapshot), hitFeel single caller, break/voidShield/resonance, stack schema/caps/상극/boss rules, healPlayer + the boss HoT cap,
+VFX (atlas, presets for 9 elements without new lights, telegraph radius, dissolve without compiles, runes/smears/decals/wind), the reaction stress spot
+(camp-0 meadow, 12 enemies, pods, puddle, tornado: calls ≤ 350, tris ≤ 900k, programs constant) and the legacy `applyStatus` signature in `path=all` mode.
+
+#### player — module notes (v3) — `docs/v3/notes/player.md`
+
+Owner: **player**. Files: `src/player.js`, `src/player/*`, `tools/playtest3/player.js`.
+
+##### Files
+
+| File | Role |
+|---|---|
+| `src/player.js` | Controller, camera, aim, combat hooks, kit behaviours (dodge Q / defend E), API. No class literals: everything class-specific comes from `KITS`, `CLASS_OUTFITS`, `familyOf` / `styleOf`. |
+| `player/kits.js` | `KITS[cls] = {stance, aim, dodge:{type, dist, iframes, cost, cd or charges, time, perfectWin…}, defend:{type, …}, idleFidget}`. The only player file allowed to name classes. Also `kitOf(cls)`, `KIT_NAMES` (Korean move names) and `NO_KIT` (before the class choice). |
+| `player/resource.js` | `Resources`: MP, 투지 (resolve) and stamina. Maxima come from `stats.derived()` and are refreshed on `statsChanged` / `classChosen`, keeping each pool's fill fraction (HP included). 투지: 6/s + `resolveRegenAdd`, +2 per landed player hit (`damage`), +4 per `reaction`. Legacy writers (`player.maxStamina += 20`, the 바람 깃털) become a flat bonus. |
+| `player/regen.js` | `Regen`: CONTRACT §10.3 exactly. `player.regen` is its reused `state` object `{active, delay, delayLeft, inCombat, rate, blessed, boss, disabled}`. |
+| `player/classes.js` | Builds every class's gear before `skinMerge`: bow (+ string handle, nock, nocked arrow, quiver, bracer, hood), hammer (hand + back), round shield, twin daggers (+ hip sheaths), totem (reuses the staff's element gem), antlers, necklace, sash, tabard, circlet, shadow hood + mask + scarf tails, braid (all). `setClassOutfit(rig, cg, cape, cls)` is the generalized `setOutfit` (visibility + robe/cloth/steel tints + per-class torso/skirt/cape canvas textures). `alignMergeKeys` keeps every new part in an existing (material, shadow) merge group. |
+| `player/poses.js` | Data: 9 new cast kinds (`throw, slam, channel, summon, buff, beam, bowDraw, bowRelease, totemRaise`) as `{antic, strike, hold, recover}` + poses; `STYLE_CAST_MAP` (the bow fires everything as arrows, the totem raises for summons); caster stance overrides (ranger bow low, spirit hover); melee stances for paladin (hammer + shield) and shadow (reverse-grip daggers) in the 16-float sword-pose layer; idle fidgets; dodge pose ids. |
+| `player/anim.js` | The 13-float upper-body Animator, now with stances, the new kinds (unknown → `basic`), backflip / shadow roll / dash lean / shield brace poses (flips pivot around the hips), a directional hurt spring (`hurtKick`), the hard-landing crouch, fidgets, breathing, head look-at and the bow orientation. |
+| `player/springs.js` | Spring-bone chains (braid, totem charms, quiver feathers, tabard front/back with leg push, scarf tails with wind). Links are ordinary rig groups, i.e. bones of the merged skinned mesh, so they cost no draw calls. |
+| `player/ik.js` | Two-bone foot IK on `world.getGroundHeight(x, z, footY)`: pelvis drop (≤ 0.3 m) + an analytic sagittal leg solve, stance-weighted, grounded only. |
+| `player/swordsman.js`, `swordpose.js`, `model.js`, `cape.js`, `fx.js`, `defense.js` | Existing (v2). `setOutfit` moved to `classes.js`. |
+
+##### API (additions, CONTRACT §10)
+
+- `setClass(cls)` (any of the 6 ids; null = villager look). Also driven by `classChosen`, `classChanged` and the legacy `pathChosen`.
+- `maxHp / maxMp / maxResolve / maxStamina` (stat-driven), `mp`, `resolve`, `stamina`, `resource` (`'mp'|'resolve'`), `family`, `style`, `kit`.
+- `spendMp(n)`, `spendResolve(n)` (casters fall through to MP), `spendStamina(n)` → boolean.
+- `getWeaponTip(which = 'main'|'off', out?)`: staff/totem gem · bow nock (off: grip) · longsword tip (off: buckler) · hammer head (off: shield face) · daggers R tip (off: L tip). Sheathed weapons report their sheath. `getSwordTip/Base` return the current melee weapon's sockets; `getStaffTip` falls back to the weapon tip when there is no staff.
+- `inCombat()`, `lastHurtT` (get/set), `regen` (read-only state), `timeComp()` (1/timeScale while `focus` is active, and in the perfect-dodge 반격 window), `focusing`, `superArmor`, `debugState()` (tests).
+- `player.mods` is a **getter view** over `game.stats` (`doubleJump` → `extraJumps > 0`). Writes from not-yet-converted legacy code are forwarded into the stats source `legacy:mods` instead of throwing.
+- `playCast(kind, el)` accepts the 12 kinds; `setCharging(active, el, frac)` drives the bow draw for the bow style.
+- `getDefenseHud()` keeps the v2 shape (`block.type` = `barrier|guard`) and adds `dodgeType, defendType, dodgeName, defendName, ward:{frac, broken}, focus, counter`.
+
+##### Kits (DESIGN §2.2)
+
+| Class | Q (dodge) | E (defend) |
+|---|---|---|
+| 마법사 | 점멸 7 m, 0.2 s i-frames, perfect → MP refund | 마법 방벽: 80 % DR, MP drain, perfect 0.2 s → parry/reflect |
+| 검사 | 대시 스텝 6 m, 2 charges, afterimages | 가드 70 % DR (stamina), perfect 0.18 s → parry + counter window |
+| 궁수 | 백덤블링 6 m back + hop, 0.3 s i-frames, full backflip pose | 집중: E held while airborne / gliding / ≤ 0.6 s after a dodge → `timeScale.set('focus', 0.35, 0.2)` every frame, 25 stamina/s (real time), focusStart/End; on the ground E aims without slow motion |
+| 성기사 | 방패 돌격 스텝 4 m, super armor 0.38 s (no flinch, no knockback) | 방패 막기: 85 % frontal block, perfect 0.2 s → parry (reflect with the Lv10 talent), Lv25a −40 % stamina |
+| 정령술사 | 정령 교대 5 m blink + a wisp decoy that absorbs one hit (offered to `enemies.setTauntTarget`) | 정령 결계: 60 % DR dome, capacity 35 % maxHp, breaks and recharges over 8 s |
+| 암살자 | 그림자 구르기, 2 charges, 0.4 s i-frames, perfect → teleport behind the attacker | 반격 자세: 0.3 s window; a hit inside it is negated, the hero teleports behind the attacker and the next hit crits (stats source `kit:counterCrit`, cleared by the next landed hit) |
+
+Parry windows add `stats.parryWindowAdd` and +0.1 s against a `dazzled` attacker. Talents used here: mage.t20 (blink rune, 30 damage after 1.5 s), ranger.t25b (+15 stamina), paladin.t10 / t25a, shadowblade.t25b (`enemies.setPlayerStealth`).
+
+##### HP regen (CONTRACT §10.3)
+
+`onBeforeDamage` snapshots HP first (for every hit, DoT included); `onHit`/`onDeath` compare after the block refunds and after the legacy `dmgTakenMul` refund (only when combat has no `healPlayer`, i.e. v2 combat; v3 combat applies `dmgTakenMul` itself). `inCombat()` = hurt within 3 s or `enemies.anyAggroWithin(pos, 30)` (plus a 10 Hz fallback scan for aggroed / `debugAggro` entities). Delay 5 / 3 s (+`regenDelayAdd`, floor 1, ×0.5 blessed), rate 1.5 % / 8 % (×`regenRateMul` + `regenRateAdd`, +1 %/s blessed, ×0.6 with a boss within 75 m), a 1 s smoothstep ramp, healing through `combat.healPlayer(…, 'regen', {hot:true})`. Disabled by death, `regenDisabled` and `blight`. The first start calls `ui.tip('regen', '피해를 받지 않으면 체력이 자동으로 회복됩니다')`.
+
+##### Platforms / bounds
+
+Movement, slope probes and the blink path use `world.getGroundHeight(x, z, yHint)` with the hero's height. When grounded, `world.platformAt(x, z, y)` (feature-detected) returns the platform handle; its `delta` is added each frame. `world.clampToBounds(pos)` replaces both radial clamps (the legacy radial clamp is the fallback). No kill plane.
+
+##### Events emitted
+
+Existing: `jump, land{height}, footstep, glideStart/End, updraftEnter/Exit, blink{kit}, dash{kit}, perfectDodge{kit}, parry{kit}, guardBreak, playerDeath, playerRespawn, blocked`.
+New: `hpRegenStart {rate}`, `hpRegenStop {reason}`, `focusStart`, `focusEnd`, `dodge {type}`, `counterStance`, `counter`, `decoyPop`, `wardBreak`, `hardLanding {height}`.
+
+##### Perf
+
+All class gear merges into the existing skinned draws: the hero rig stays at 51 skinned draw calls, 22.2k → 29.7k triangles (+7.5k, budget 18k), 118 → 246 bones. No new lights and no new rig materials (string/feathers reuse the blade material, dark cloth reuses cloth). Per-frame code uses module scratch objects; the `vfx.burst` options for regen motes are reused. Springs and IK run every frame (player only). `bootcheck`: draw calls, triangles and program counts unchanged per config (234 calls / 121 programs for mage).
+
+##### Tests
+
+`node tools/playtest3.js player` covers: the rule 8/9 grep; check 7 (regen, on `debug.regenState()`); per class: identity/family/style/resource, stat-driven maxima keep their %, `mods` getters, weapon prop visible + sockets, drawn weapons, dodge (start, cost, i-frames / super armor, distance, decoy), defend (barrier/guard/shield/ward reduction, perfect parry, counter teleport + crit, focus time scale + timeComp + drain), springs bounded, IK sane, all cast kinds; bounds; platforms (world if present, otherwise a labelled test double); legacy `mods` writers; rig perf.
+
+#### world — module notes (v3, wave 1) — `docs/v3/notes/world.md`
+
+Files: `src/world.js`, `src/world/{zones,terraform,mirwen,elderwood,plateau,gates,platforms,colliders,surface2}.js` (new),
+`src/world/{terrain,flora,structures,village}.js` (changed), `tools/playtest3/world.js`.
+
+##### Layout data — `world/zones.js` (pure data, Korean names)
+- `TF` terraform parameters (Mirwen ellipse + 8 islands + west waterfall cliff + cave slot + shore pad; Elderwood glade, hollow,
+  root ridges + gaps, giant mushroom, spore vent; ledge (60,−150) r18 top 38; plateau (108,−132) r34 top 52; 5 pillars r22 h+12;
+  ascent valley polyline; 2 root ramps; mirror alcove). `ARENA_DEFS`, `ZONE_DEFS` (getZoneAt priority order), `GATE_DEFS`,
+  `SHRINE_DEFS` (8 seeds, 4 spirit, 8 landmarks), `ZONE_SIGNS`, `ZONE_NPCS`, `STAGE_ACT`, `EXTRA_GRADES` (dusk, golden), `WATER` (= WATER_LEVEL 1.5).
+
+##### Terraform — `world/terraform.js`
+- `terraform(x, z, h, T, arenaW)` runs at the end of `terrain.fullHeight`, so the baked grid (no resize) and every
+  `getHeight` call site include it. Order: ascent valley carve (never inside the golem arena) → Mirwen basin (`smin`, floor
+  WATER−2.5) + islands + hydra ruin-pillar spikes + waterfall cliff + cave slot + shore pad → Elderwood glade/hollow flatten
+  (targets `T.glade`, `T.hollow` from `avgRaw`) + additive root ridges → plateau mesa (terraced cliff) → ledge mesa (inside its
+  rim the ledge wins; outside it only raises — the two rims touch) → alcove ring → plateau pillar spires → root ramps (max).
+- `terraformColor(...)` recolours the vertex colours (teal moss Mirwen, ash + violet rot Elderwood, bark ridges, lavender
+  ledge stone with moss, bark/moss plateau, bark ramps) and returns the grass density multiplier.
+- `floraBlocked(x, z, margin)` is called from `flora.allowed()` (arenas, plateau/ledge, ramps, gate pads, rot-wall gaps, cave, mushroom).
+  Elderwood trees are denser and ash-tinted (`elderwoodWeight`).
+- Exports `PILLARS` (5 root pillars), `HYDRA_PILLARS` (6), `RIDGE_GAPS` (= the 3 rot wall spots), `ridgeAdd`.
+
+##### Runtime API (CONTRACT §13) on `game.world`
+- `zones` (array; `{id, name, center, radius, level, grade, music, fuel, arena:{id, position, radius}, npcSpots}`), `getZoneAt(x,z)`,
+  `zoneById`. The player's zone is checked at 4 Hz (real time, every state) → `zoneEnter` / `zoneExit {zoneId, name, level}`.
+  On zoneEnter world blends `game.post.grade(zone.grade, GRADE_BLEND)` (skipped while a boss is alive) and lerps the scene fog
+  toward twilight (Mirwen) / ash (Elderwood) — never during a cutscene. `dusk`/`golden` are added to `game.post.GRADES` at runtime if core lacks them.
+- `bossArenas.{golem, hydra, nox, treant, kalis, nidhoggra}`: `{id, position (y = getHeight), radius}`; `hydra.pillars[6]`,
+  `hydra.surfaceY/waterLevel`; `kalis.mirrors[{position, yaw, normal}]`; `nidhoggra.pillars[5]{pos, top}`. `bossArena` = golem.
+- `getGroundHeight(x, z, yHint)`: max(terrain, spire top, ice discs, and **only with a yHint** the platforms/static tops with
+  `top ≤ yHint + 1.2`). `world.groundPlatform` = the handle that won the last call (read `.delta` to ride it).
+- `addPlatform({id, shape:'disc'|'box', center, r|size, top, life, yaw})` → handle `{id, top, center, velocity, delta, moveTo(x, top, z, dt), alive}`;
+  `removePlatform(h)`; `platforms` (live). 8 m buckets, ≤ 16 dynamic (oldest recycled). `addStaticTop([{id,x,z,r,top}])` for
+  permanent stand-on tops (giant mushroom caps). `delta` holds the movement of the frame it moved in and clears a frame later.
+- `addTempCollider({shape:'box'|'cyl', pos, size|r, h, yaw, life, blocksProjectiles, onProjectile, blocksMovement=true})` → handle
+  (also pushed into `world.colliders`; boxes are OBBs in `resolveCollision`); `removeCollider(h)`, `moveCollider(h, x, y, z, yaw)`;
+  `collidersBlockingProjectiles` (live); `projectileBlockAt(projOrVec3, out?)` → `'block' | 'reflect' | null` (8 m buckets;
+  `out.collider`, `out.normal`; an `onProjectile` returning `'pass'` lets it through).
+- `addUpdraft({pos, r, h, strength, life, color, visual})` / `removeUpdraft(h)` / `updraftAt(pos)`; merged into
+  `surface.getUpdraft(pos)` (max of fire and volumes). ≤ 16 volumes; one instanced additive column draws all of them.
+  Static: `ascent1..3` (valley → ledge → plateau) and `pillar0..4` (one per root pillar).
+- `clampToBounds(pos, radius)`: circle r 170 plus the plateau / ledge AABBs; `resolveCollision` uses it. `world.bounds` is now
+  222 so legacy radial clamps never cut the plateau off (`world.boundsRadius` = 170).
+- `gates` `[{id, zoneId, name, zoneName, position, exit, yaw, reached}]`, `travelTo(id, {force, instant})` (1.2 s fade, real
+  time, input lock `'gate'`, emits `gateTravel {from, to}`), `openGateMenu(id)`. Walking within 14 m reaches a gate (`gateReached {id, name}`).
+  Interact offers `gate:<id>` (label 정령의 문) → `ui.openGateMenu(list, onPick)` with `list = [{id, name, zoneId, zoneName, reached, current}]`;
+  without it F cycles to the next reached gate. `respecSpots` = altar + 5 gates. `lastGateSpawn()`.
+- `shrines` `[{id, kind, name, element, position, found}]`, `markShrine(id)`; proximity 3 m (|dy| < 2.6) at 4 Hz → `shrineFound {id, kind}`.
+  Spirit shrines also offer `shrine:<id>` (F → `shrineUse {id, element}`). `setShrineGlow(id, on)` ('altar' → altar crystals).
+- `setActVisible(act)` (explicit calls win; fallback = `STAGE_ACT[story.stage]` at 1 Hz and `bossSpawn` kalis/nidhoggra → act 4).
+  Scenery islands I1–I5 are visible from act 4.
+- Rot walls: `rotWalls [{id:'rot1'..'rot3', position, state:'intact'|'burned'|'purified'|'smashed'}]`, `setRotWalls(state|{id:state})`,
+  `burnRotWall/purifyRotWall/smashRotWall(id)`, `rotWallsCleared()`. Each wall is a combat prop (`isProp`, `xpValue 0`,
+  registered in `world.init`): a fire hit burns it, light purifies it, and earth heavy / tier ≥ 2 / tag `colossus|smash` smashes it. A grass
+  fire touching it burns it. Emits `rotWallCleared {id, how, cleared, total}`. Offers `rotwall:<id>` (a hint).
+  Walls rot1/rot2 seal the deep wood (forest heart, 실바니아's grove, the treant hollow); rot3 seals the seed pocket.
+- Mirror door on the ledge (seed shrine behind it): `mirrorDoor`, `openMirrorDoor()`; a light hit (or tag `prism`) opens it → `mirrorDoorOpen`.
+- `setBossFightLOD(on)` (grass ≤ 0.25, flora draw distance ≤ 0.3, smaller flora shadow radius); also auto-toggled on
+  `bossSpawn`/`bossDefeated` for nidhoggra. `bossFightLOD` getter.
+- `surface2`: `mud/bless/curse/overgrow/rubble(pos, r, seconds)`, `isBlessed/isCursed/isMud/isOvergrown/isRubble(pos)`,
+  `surfaceAt(pos)`, `timeLeft(name, pos)`, `clear(pos, r)`, `activeCount()`. 172² × 2 m grid, active lists, 10 Hz game time.
+  Terrain tint: burn texture B = blessed (gold sheen), A = cursed (violet veins) in the terrain shader.
+- `serialize()` → `{v, gates:{reached, found, last}, rotWalls, act, actExplicit, camps, mirrorDoor}`; `deserialize(o)` restores
+  without re-emitting `shrineFound`/`rotWallCleared`.
+- Village (`world.village`): the altar has one pillar per `ALL_ELEMENTS` entry (merged) and `InstancedMesh(crystals, ALL_ELEMENTS.length)`;
+  the four lost spirits' crystals are dim until `spiritFreed` (instance colour only). New `npcSpots`: `rangerMentor`, `paladinMentor`,
+  `spiritMentor`, `shadowMentor`, `sage`, `trainer`; `village.reactionDummy` spot. Zone NPC spots: `zones[mirwen].npcSpots.lakeKeeper`,
+  `zones[elderwood].npcSpots.forestChild`.
+
+##### Draw calls (playtest3 world perf, worst of 4 yaws, skills stubbed, no enemies)
+village 256 · plains 222 · Mirwen 233 · Elderwood 231 · plateau 213 (targets 290/300/310/310/330). Zone groups cull at
+`(150 + 250·drawDistance) × 0.6` and never cast shadows. Draw calls per zone: Mirwen 6, Elderwood 10, plateau + ledge 10, islands 3,
+gates + shrines 6 (global), updraft columns 1. No new lights. Every new material is in the scene at boot, so the boot prewarm compiles it (the islands are
+hidden, but compile still visits hidden objects). The program count does not grow when visiting every zone.
+
+##### Tests
+`node tools/playtest3.js world` runs 100 checks:
+- zones, arenas and terraform; zone events; bounds
+- platforms; colliders and projectile blocking
+- updrafts and ascent glide reachability; ramp slopes
+- the Mirwen freeze bridge; surface2
+- rot walls via real combat hits
+- gates: the interact prompt, F opens the menu and casts nothing, the 1.2 s travel, `gateTravel` emitted once
+- seeds (+1 point); act visibility; the altar and NPC spots
+- serialize, then deserialize in a fresh boot
+- per-zone perf and the programs check
+- walkability: a slope-limited BFS from the village reaches every zone
+
+The void root channel (arena → plateau foot) is shown from act 2, for the reveal.
+
+#### ui — module notes (v3, wave 1) — `docs/v3/notes/ui.md`
+
+Files: `src/ui.js` (factory `createUI(game)`), `src/ui.css`, `src/ui/*`:
+`dom.js` (h/esc/formatKeys/anim queue), `text.js` (**all Korean UI strings**: tree, tour, tips, codex families, HUD, boss/victory cards,
+controls panel rows, class/character labels), `icons.js` (9-element glyphs + void/physical, archetype glyphs `ARCH_GLYPH`, class silhouettes
+`CLASS_SIL` by style, chain/shard icons; `ELEMENT_CSS` built from `elColor`), `skillTree.js`, `treeTour.js`, `hotbar3.js`, `bossbar.js`,
+`prompt.js`, `gateMenu.js` (gate list + `createConfirm`), `classPanel.js`, `character.js`, `codex.js`, `settingsMenu.js`.
+Static imports: own files, `src/core/*`, `three` only (rule 7). The tree's data fallback is `await import('../skills/trees/index.js')` in try/catch.
+Checks: `node tools/playtest3.js ui` (≈ 35 s, 121 checks with the wave-1 modules merged; skills/combat/player-dependent checks SKIP when absent).
+
+##### Public API (`game.ui`, CONTRACT §18)
+- `openSkillTree(el?)` / `closeSkillTree()` / `skillTreeOpen` · `openCharacter()` / `closeCharacter()` / `characterOpen` ·
+  `openCodex(page?)` / `closeCodex()` / `codexOpen` (v2 `setGrimoire(on)` / `grimoireOpen` are aliases) ·
+  `openClassPanel({onPick, onCancel?, current?})` / `closeClassPanel()` / `classPanelOpen` ·
+  `openGateMenu(gates, onPick)` / `closeGateMenu()` / `gateMenuOpen` (`gates = [{id, name, zoneId, zoneName, reached, current}]`; onPick only for reached, non-current gates) ·
+  `confirm(text, onYes, onNo?)` (Enter = yes, Escape = no) · `startTreeTour()` · `tip(id, text) → boolean` (one time per id) ·
+  `serializeTips()` / `deserializeTips(arr)` (for `story.serialize`) · `anyModalOpen` · plus the v2 `toast`, `showBanner`, `showCard`,
+  `flash`, `hint`, `queueTutorial`, `openSettings`.
+- Emits `treeClosed {}` when the tree closes and `altarLeave {from:'class'|'gate'}` when the class panel / gate list closes (save.js autosave triggers).
+- Test-only introspection: `_parts` (tree, tour, charSheet, codex, classPanel, gateMenu, confirmBox, prompt, hb3, bossBar) and `_cardLog`.
+
+##### Modals
+One registry (`MODALS` in ui.js, Escape priority: confirm → tour → settings → controls → gate → class → tree → character → codex).
+`syncModalLock()` = `input.lock('menu')` while any modal is open, plus the pause panel. The pausing menus (`gate`, `class`, `tree`, `character`,
+`codex`) call `game.pause()` when opened from `playing` and `game.resume()` when the last one closes. Opened from the pause menu, they return to it.
+K / C / Tab toggle (and switch between) the three menus, read through `input.raw`. `applyState` closes the menus when the state leaves
+playing/paused. The class panel survives `dialogue`/`cutscene`, because story opens it from a talk.
+
+##### HUD
+- **Hotbar:** `activeSkills().getHudState()`. When `hs.v === 3`, `hotbar3.js` draws 9 slots (LMB RMB 1–4 X G R): archetype glyph on an element
+  frame, cooldown sweep, cost in MP/투지, low-resource tint, charges, the empty-slot state, the awakening ring on R and the V gift prompt from `hs.gift`.
+  It also draws the attune gem arc from `hs.elements` (the attuned gem is big and glowing; 0-point elements are dimmed with a lock; points
+  under each gem) and the signature widget from `hs.signature.kind` (attunement = 3 연쇄 orbs, enchant/focus = bar, seal = pips, familiars = icons,
+  marks = count). Otherwise the v2 renderer runs, with the 5 classic gems.
+- **Vitals:** HP / resource / stamina from `player.maxHp/maxMp/maxResolve/maxStamina`. `data-res="mp|resolve"` and `data-fam` sit on
+  `.aw-vitals`/`.aw-hud` (no class ids). A regen strip under HP shows the delay progress from `player.regen.delayLeft/delay`, and the HP bar
+  shimmers while `regen.active`. Level badge on the heart, a thin XP bar, the "[K] 스킬 포인트 N" pip, the level-up card with a gold ring burst
+  and the `level_up` sfx, and "+N XP" numbers at the kill position (from `kill`/`damage`).
+- **Enemy bars:** `STATUS_KEYS` come from `combat.STATUS_DEFS` (minus `playerOnly`; fallback: the old 7), plus the `voidShield` pseudo-pip.
+  Stack statuses show digits. The break gauge shows when `breakMax` is set, the broken state comes from `combat.isBroken`, and weakness icons come
+  from `entity.weakness` (string or array, optional). "다음 타격" runs at 10 Hz from `combat.previewReaction(aimTarget, skills.attuned)`; the
+  reacting aura pip is highlighted in the family colour. Pips, break and hint DOM are written at the 20 Hz tick; position and hp per frame.
+- **Boss bar** (`bossbar.js`): name, title, sub, phase pips and parts come from the `bossSpawn` payload. It follows `payload.boss`, else
+  `enemies.boss`. It shows the `bossPhase` name, the break gauge, the void overlay, part sub-bars with lock element icons (`boss.getPart(id)` or
+  `boss.parts[]`) and a `lockStripped` flash. No boss names in code; fallback text is in `text.js` (`BOSS_KO`). Boss cards: spawn = `title|name|sub`,
+  defeat = `격파|payload.name`.
+- **Prompt** (`prompt.js`): one "[F] label" from `interactChanged` / `interact.current()`, hidden in menus and cinematics. ui never reads F.
+- Flashes for `break`, `resonance` (교향!), `bossCheck` start/success/fail and `bossPhase`. Reaction banners carry the family colour.
+- Delayed cards use a UI-clock queue (`later()`, realDt) instead of `setTimeout`, so stepped tests stay deterministic.
+
+##### Menus
+- **Skill tree** (`skillTree.js`): a ring of 9 sigils around the class emblem (primary gold, secondary silver, locked grey with a chain and the
+  tooltip "◯◯·◯◯ 직업만 사용 가능" from `classesForElement`). A click zooms (CSS) into the constellation: 5 tier rows (the rune ring lights when the
+  gate is met; struck through above `tierCap`), nodes at `pos.col/row`, SVG prerequisite lines (lit/open), "택1" tags between exclusive pairs.
+  Node states: locked / avail (pulse) / nopts / learned / maxed / excl (crossed) / story (shard) / tierlock / planned.
+  The detail panel shows name, type/tier/rank/cost badges, skill slot + MP·투지/cooldown, description, current → next (`skills.tooltip` or
+  `descRank`), the modifier target, a caster/melee look note, the reactions it feeds, the gate reason, learn/unlearn and equip buttons.
+  The header shows points (+ planned cost), mastery chips, respec status + 전체 초기화 (through `ui.confirm`), 직업 변경 at the altar
+  (`canChangeClass` → class panel → `progression.changeClass`) and the planner toggle. The planner keeps a local rank map and evaluates the
+  same rules as `progression.canLearn`; it never learns or equips. Quick-slot bar: drag a node onto 1–4/X/G, click a slot with a selected node,
+  or hover + press 1–4/X/G → `skills.equip`; a rejection shows the `canEquip` reason. Learning plays a star flare + `skill_learn`.
+  With skills stubbed it imports the tree data and calls `progression.registerTrees` (only if progression has none), so learning still works;
+  if that import fails too it shows "스킬 데이터를 불러올 수 없습니다".
+- **Tour/tips** (`treeTour.js`): 3 pages on the first tree open (not automatic in `?test` unless `&tour=1`). Tips: story-gated capstone, first
+  exclusive pick, first mastery rank-up, unspent points within 30 m of a respec spot, first point after the class pick; skills' `emptySlot` tip.
+- **Character** (C), **codex** (Tab: 6 families + 보편, "N / 49", family jump chips, animated mini icons per family, silhouettes "물 + 번개 …?",
+  page 2 = learned skills by element), **class panel** (6 cards: silhouette, fantasy line, weapon, signature, gold/silver element chips, stat
+  radar; "이 길로 간다" → confirm → `onPick(cls)`), **gate list**, **confirm**.
+- **Settings:** new rows 난이도 (names from `settings.DIFFICULTY`), 화면 흔들림, 피해 숫자 표시 (`damageNumbers` off hides damage numbers), 효과 품질.
+- **Controls panel** rebuilt from `CONTROLS` (K, C, Z, X, V, 1~4; F = 상호작용); `formatKeys` wraps the new keys. Title: 이어하기 when `save.has()`;
+  모험 시작 / 새 게임 → `newGame({clearSave:true})`; the title shows all 9 element gems.
+
+##### Perf
+All DOM is built once (tree constellations lazily on the first open, ~180 nodes). Per frame: vitals, charge ring, numbers, bar positions.
+20 Hz: hotbar, defense, statuses/break/hint DOM. 10 Hz: `previewReaction`. 4 Hz: objective/markers. No layout reads in the loop (the codex
+family jump reads `offsetTop` on click only). No draw calls, no materials.
+
+#### magic — module notes (v3, wave 2) — `docs/v3/notes/magic.md`
+
+Files: `src/spells.js` (factory), `src/spells/{api,archetypes,bespoke,objects,zones2,summons,meshes2}.js` (new), and the v2 files
+`src/spells/{assets,defs,master,projectiles,props,setpieces,zones}.js` (kept; `master.js` and `projectiles.js` edited). `tools/playtest3/magic.js`.
+Static imports: own files, `src/core/*`, `three` / `three/addons/*` only (rule 7). No class literals (`familyOf`), no 5-element
+assumptions in v3 code (`ALL_ELEMENTS`); `AWAKENED/SUPPORTS/FINISHERS` and `SPELLS` stay CLASSIC-only, nothing indexes `SPELLS['water_basic']`.
+
+##### spells.js (CONTRACT §11)
+- `castById(spellId, {free, charge, aim, awakened})`: runs a legacy def (`<classic el>_basic|heavy|ultimate|awakened|support|finisher`)
+  with gating bypassed (skills gated it) and the exact id (no master remap); emits `spellCast` exactly once. Unknown ids (new elements) → `false`.
+- `setElement(i | elementId, {silent, force} | true)`: `silent` (skills.attune) = no event, no sfx, no gating. In the v3 keymap a
+  non-silent call forwards to `skills.attune` (single `elementChanged` emitter). `elements` = CLASSIC in the legacy keymap, all 9 in v3.
+- Input is read only when `legacyInput()` = legacy keymap (`path=`) **or** skills missing/stubbed (rule-11 fallback), and never when
+  `game.skills.ownsInput === true`. `isActive()` = that && caster-family class. F casts the legacy ultimate only in the legacy keymap and only
+  when `game.interact.current()` is null (the `story.hasPrompt` check is gone).
+- Time scale: ultimates and the finisher fallback use `game.timeScale.set('ult', …)` (the slowmo shim only if timeScale is missing).
+- `classChosen` (and deprecated `pathChosen`) reset the legacy element silently in v3; `respec` despawns summons; `title` clears all v3 objects.
+- `getHudState()` keeps the v2 shape (legacy); slots without a legacy def render blank.
+- Buffs (`master.js`): legacy supports write `game.stats.set('buff:<el>.sup', mods, {duration})` (doubleJump → `extraJumps`; lightning adds
+  `castSpeed 1.6` / `chainBonus 2`) and `stats.clear` on stop; the `player.mods` save/restore is deleted.
+- `prewarm()` (main.js boot compile) makes every pooled v3 mesh visible for the compile; the first `update` hides idle ones (0 draw calls idle).
+- Extra API: `api`, `despawnSummon(skillId)`, `registered {archetypes, impls}`, `isActive()`.
+
+##### game.spells.api (`spells/api.js`)
+- `projectiles.spawn(opts)`: v2 opts + `mesh` `'arrow'|'wisp'|'thorn'|'bubble'|'shadowbolt'|'raven'|'orb'|'glance'|'spear'|'lance'` (+ v2 meshes),
+  `hit` (ctx.hit template: skillId/slot/tier/castMul), `tier`, `bounce`, `tint`, `onExpire`, `objects:false`, `blockable:false`. Element tints are
+  uniform/material colours only (`meshes2.js` `userData.tints`). Infusion is generic over `ELEMENT_DEFS` (`STATUS_OF`, `elColor`, `shapes`).
+  Projectiles query `world.projectileBlockAt` (block / reflect) and collide with pods / crystals / ice flowers (→ `objects.burst`).
+- `zones.spawn(type, pos, opts)`: `fire|ice|lava|water|storm|tornado` (+ `vortex` alias) go to the v2 `zones.js` (adopted as reaction objects:
+  `isZone/kind/position/convert`); the v3 types live in `zones2.js`: `mud, holy, miasma, spore, overgrowth, flood, spring, sand, steam, whirl,
+  rain (follows), roots (instant entangle), blackhole, updraft (world.addUpdraft), lane (ice road / tailwind / frost; strip mesh), grove (thorn grove)`.
+  `isInside(type, pos)`, `list` (v2+v3, one reused array), `elementAt(point, r, el, hit)` = `touch`, `chargeWater(pos, r)`, `TYPES`.
+  Opts: `{r|radius, dur|duration, hit, params (skill params), follow, dir, len, width, laneKind, source}`.
+  Twists: fire turns spore/grove/overgrowth into a wildfire (+ a v2 fire zone, grass ignite); lightning electrifies flood/spring water; water-kind
+  zones (flood/spring/whirl) and v2 water/lava call `combat.reactObject` for ice/light/earth/water; shadow on steam → miasma (combat); holy
+  heals/dispels and is read by player regen through `isInside('holy')`; flood sets `zone:flood` rx_ multipliers (+40% lightning/ice reactions).
+- `objects` (`objects.js`): `spawn(kind, pos, opts)`, `near(kind|'*', pos, r, out)`, `burst(obj, el, hit)`, `despawnAll`, `count`, `meshes`.
+  Pools (hard caps, recycle oldest): pod 16 (cap 10 + `podCapAdd`), crystal 8, mine 6, droplet 12, soul 8, flower 4, turret 2, rod 4 — one
+  InstancedMesh per kind with instance colours set at construction. Pods: combat reactions via `reactObject` → `onReact` despawns
+  (nature.rx re-seeds a mini pod); expiry pops (30 nature r 3, heal 3%). Crystals: pickup = shield 12% maxHp 6 s (+50% with earth.rx) and
+  `buff:crystal` `<el>Dmg ×1.2`; prism relay. Souls: +15 MP/stamina/resolve, +5% HP. Droplets: ground pickup or `orbit` (water.p2, max 3).
+  Mines: arm 0.5 s, trigger r, `chainTrigger` (m1a) through combat's stagger queue, `pull` (m1b), charge puddles. Flowers: chill pulse,
+  earth/heavy hit shatters. Turrets: light bolts 12 / 0.6 s. Rods: charge water within r every 1.2 s, extend chains (+1 hop).
+- `aoe(c, r, hitSpec, opts)`, `cone(o, dir, len, angleDeg, hitSpec)`, `line(a, b, width, hitSpec, {seen})`, `chain(from, n, range, hitSpec, {wetRange})`
+  (routes through rods), `beam({origin, dir, len, width, dur, tick, hitSpec, prism, follow, onTick})` — prism refracts at registered relays
+  (ice pillars, glacier, mirror, beacon, light pillar), crystals (combat `prism` reaction) and frozen enemies, ≤ 3 segments, toward the nearest enemy.
+  `hitSpec` is a template (cloned per target) or `fn(e, d)`. Every area helper also `touch`es objects/zones with its element.
+- `terrain`: v2 `ignite/extinguish/chill/soak/wind` + `bless/curse/overgrow/rubble/mud/meltIce/regrow/apply(el, pos, r)` (world.surface2, guarded).
+- `nearestEnemy, aim, blockAt, shield(amount, dur, el)` (uses `player.addShield` if present, else an absorb refund on `damage`), `addRelay/removeRelay`,
+  `summons`, `structures`, `archetypes`, `despawnSummon`.
+
+##### Archetypes (`spells/archetypes.js`, CONTRACT §7.3 caster half)
+All 24 are registered with `game.archetypes.registerArchetype(name, 'caster', fn)` in the spells factory. Each reads `ctx.params` only, builds hits
+with `ctx.hit()` (unscaled base; `hit.tier` from skills) and performs its DESIGN §13.1 twist. Style: bow → arrows from the nock, totem → wisps,
+melee fallback (hammer r×1.2 v×0.85, daggers r×0.85 v×1.25). Highlights:
+projectile (orb zaps, spear → light pillar relay + blessed ground, `split`, `firstRadiant`) · volley (bouncing bubbles, ravens: sight loss + carried
+miasma) · lob (ballistic; ember ignites grass/rot walls/props; seed bomb plants pods) · crawler (fire line zones, spike eruptions + rubble, rolling
+boulder, fan/ring modifiers, end burst) · beam (follows the aim = sweepable, prism, multi-beam) · cone (gust reflects enemy projectiles, wave puddles,
+tailwind lane, reaper execute) · nova (multi-ring, second ring, heal per hit, frost ground, frost coat) · zone (self/aim placement, vortex +
+updraft, whirl, roots) · wall (rock wall collider + reflect / collapse, thorn grove colliders) · pillar (ice pillar platform + relay + bridge /
+shards, glacier drop platform, stepping stones, colossus fist (break, rot walls, fissure, second fist), smite, geyser) · chain · rain (ring,
+waves, scatter, sky strikes) · summon (treant/totem/clone/beacon/mirror/rod) · blink (path damage, behind-target, afterimages, shade copies,
+return knot) · dash (phoenix ignite/melt + end burst + return pass, wind step rider, water surf puddles + water platforms) · leapslam
+(electrify water, follow bolts, static field, tornado landing, stamina refund) · grapple (pull a small target / pull yourself) · buff (stats
+source + aura emitter + riders, aegis shield + dome collider, lifebloom HoT + bloom, shade/stealth) · mark (prison spikes, hex jump/heal) ·
+chainbind (tethers, yank, life chains) · tether (soul drain lifesteal + MP/s, water whip lashes/pull/freeze, extinguish) · lane · mine · bubble.
+I-frames: `player.grantIframes(t)` if present, else `entity.invulnerable` with a self-owned timer.
+
+##### Bespoke (`spells/bespoke.js`, `registerImpl(id, 'caster', fn)`)
+`water.ult` 대홍수 (flood zone + waves), `water.awakened` 대해일 (3 rolling tsunami lines, 30 s puddles), `nature.ult` 세계수의 분노 (ring of roots),
+`nature.awakened` 세계수 강림 (sapling + overgrowth zone that roots/seeds/heals), `light.ult` 새벽의 심판 (sweeping prism beam), `light.awakened`
+아스트라의 빛 (3 beams + sky lances), `shadow.ult` 어둠의 심연 / `shadow.awakened` 영겁의 밤 (black holes), `nature.treant` (summon), the redesigned
+`ice.sup` 서리 반격 (buff; skills' rider freezes attackers) and `earth.sup` 도발의 석상 (taunt totem), and the finishers `water|nature|light|shadow.finisher`
+through `game.cinematic.finisher({element, cls, name, target, center, onImpact, onEnd})` with a non-cinematic slow-mo fallback and safety nets.
+All ultimates share `ultIntro` (timeScale 'ult', FOV kick, post pulse, sigils).
+
+##### Summons & structures (`spells/summons.js`)
+Pooled models built once (treant 1, totem 1, clone 2, beacon 2, mirror 2, light pillar 2), ≤ 4 alive, no shadows. Allies register with
+`combat.registerAlly` (team 'player') and taunt via `enemies.setTauntTarget` (feature-detected). The treant walks to the nearest enemy and slams
+after a wind-up; the totem's collider blocks projectiles and it erupts on death/expiry; the clone wets its attackers and bursts; the mirror reflects
+3 enemy projectiles; the beacon reveals stealth/void, drains void shields and purifies blight; the light pillar is a relay + holy ground.
+Structures: rock/ice eruptor pillars (S.props, instanced), glacier (2) and colossus fist (2) meshes, `world.addPlatform` / `addTempCollider`
+handles cleaned up on expiry.
+
+##### Perf
+No new lights; every new material is compiled at boot (`prewarm` + the v2 warmup; programs stay at 140 through the full cast sweeps);
+per-element tints are uniforms / instance colours; a zone is 1 draw call (+ pooled particles); objects are 1 call per kind; all pools are hard
+caps. Area queries reuse arrays; hit objects are allocated per hit (event time), not per frame.
+
+##### Tests (`tools/playtest3/magic.js`)
+Class-literal grep; registration (24 archetypes + 13 impls); STATUS_OF; v3 input gating (LMB/F); silent setter; castById single emission;
+stats buff conversion; every zone type and object kind spawns and expires; pod cap; pod + fire → combat reaction; prism refraction; CONTRACT §21
+check 5 for mage/ranger/spiritcaller (endgame + showcase, one skillCast/spellCast, no generic fallback, no console errors); legacy keymap.
+
+#### melee — module notes (v3) — `docs/v3/notes/melee.md`
+
+Owner files: `src/sword.js`, `src/sword/*`, `tools/playtest3/melee.js`.
+
+##### Map
+
+| File | Role |
+|---|---|
+| `src/sword.js` | The melee engine (`game.sword`) for every class with `familyOf(cls) === 'melee'` (검사, 성기사, 암살자). Action timeline (pose templates + timed events + swept hit windows), buffering, cancel windows, soft-lock lunge (clamped to target − 0.8 m), blade sparks, smear, ribbon trails, charge presentation. Legacy keymap input (v2), v3 entry points (`api.playLegacy`, archetypes). |
+| `src/sword/pose.js` | Melee-owned copy of the 16-float torso-space pose layout (`PF`, `SP`, `STANCE` incl. hammer/dagger idle + charge). Replaces the old static import of `player/swordpose.js` (rule 7). |
+| `src/sword/anim.js` | Pose templates `TPL` (+ `hammerR/L`, `hammerSlam`, `shieldBash`, `hammerCharge`, `daggerR/L`, `daggerFlurry`, `daggerCross`, `backstab`, `daggerDash`, `reverseSlash`) and `tplFor(id, style)`: generic template ids map to the hammer / dagger poses. |
+| `src/sword/weapons.js` | `WEAPONS` profiles `longsword / hammer / daggers` (`reachMul`, `arcMul`, `speedMul`, `hitstopMul`, `poiseMul`, `trail{width, life, noise, edge}`, `smear`, `tips`, `twoHanded`), `weaponFor(style)`. Element palette `PAL`/`palOf(el)` built from `ELEMENT_DEFS` (classic five keep their v2 colours; unknown → physical), `statusOf`, blade ambience `AMB`/`ambOf`, `CAST_KIND`. |
+| `src/sword/moves.js` | Longsword movesets: 4-hit combo (4th hit per element), charged, ultimates (+awakened), supports, finishers, the 반격 flurry with per-weapon variants. Statuses via `ELEMENT_DEFS[el].status`. |
+| `src/sword/elmoves2.js` | New elements for the longsword (water/nature/light/shadow 4th hit + charged: 물결/덩굴/성광/그림자 검술, 수류 일섬, 가시 돌진, 광휘 내려치기, 그림자 일격) and the shared **element payload** `payload(el, p, {r, dmg, kb, launch, big, tier, spec})` used by every melee moveset/archetype (9 elements + safe default). Also `vineLash`, `dashThrough`, `FX[el]` (visual only). |
+| `src/sword/classmoves.js` | Paladin (3-hit hammer combo, hitstop 0.09/0.10/0.16, 3rd = ground slam r 3 + payload; RMB 방패 돌진 강타 6 m bash → slam) and shadowblade (6-hit dagger combo, 0.04 / 6th 0.10 + payload; nature 6th = vine lash; RMB 관통 일격 9 m dash-through). |
+| `src/sword/archetypes.js` | Melee implementations of all 24 archetypes, registered in the sword **factory** (`game.archetypes.registerArchetype(name, 'melee', fn)`). |
+| `src/sword/bespoke.js` | Melee forms of `water/nature/light/shadow .ult` and `.awakened` via `registerImpl(id, 'melee', fn)`. |
+| `src/sword/fx.js` | Pooled fx: slash arcs, blade ribbon (16 samples → 31 Catmull-Rom points, two-layer scrolling noise mask, gradient ramp, per-weapon width/life/noise), ice/rock spikes, **crystal spikes** (one InstancedMesh with instance colours set at construction: thorns, light crystals, shadow spikes, mines), stone swords, orbit blades, dragon. |
+
+##### API (`game.sword.api`, CONTRACT §12)
+`startAction(spec)`, `hitCircle(c, r, spec, set, yRange, el)`, `hitLine(from, dir, len, width, spec, set, el)`, `applyHit(e, spec, point, dir, el)`,
+`findTarget`, `after`, `every`, `weapon()`, `playLegacy(el, kind, {charge, skillId, awakened})`, `setElement(el, {silent})`,
+`playClassCombo(el)`, `playClassCharged(el, frac)`, `TPL`, plus `arc`, `smear`, `foesNear`, `payload`, `S` (toolkit), `act`, `mines`.
+
+- `playLegacy` kinds: `combo | heavy | ultimate | ultimateAwakened | support | finisher`. Gating is done by skills (always free here).
+  It emits **one** `spellCast` per call that returns true (kind basic/heavy/ultimate, else `'skill'`). A combo press that arrives
+  mid-swing is buffered (0.42 s) and still returns true. With `counterReady` the press becomes the 반격 flurry.
+  Paladin / shadowblade `combo`/`heavy` route to their class movesets with the element payload; all 9 elements work.
+- `setElement(el, {silent:true})` (what skills.attune uses) emits nothing and skips the unlock check. Any other v3 caller is forwarded
+  to `skills.attune` (§22). Legacy: `setElement(el)` / `setElement(el, true)` behave as v2 (`elementChanged`).
+- The v2 HUD (`getHudState`) stays for the legacy keymap and lists only the classic five.
+- Test hook: `game.sword.debugUse('combo'|'heavy'|'ultimate'|'finisher'|'support'|'counter', {step, charge})`.
+
+##### Hit rules
+- Every melee hit: `tags:['melee', weaponId]`, `hit.tier` (`light | heavy | crit | ult`; counter hits are `crit`), `hit.hitstopMul`
+  = weapon profile (longsword 1.5, hammer 1.9, daggers 1.3). `hit.hitstop` only as the rare override (`spec.hsOverride`: the DESIGN
+  §2.2 paladin / shadowblade combo values). The engine never calls `game.hitstop`, `fovKick` or `kick` per hit — combat's hitFeel does.
+- Base damage is unscaled. `pl.mods.atkMul` is gone; the counter ×2 is a moveset base value. The 검성 talent (`comboDmgMul`) goes
+  through `hit.castMul`, so the canonical formula applies it; 이중 각인 (`comboStatusTwice`) adds a stack to the 4th/3rd/6th-hit status;
+  반격의 대가 (`counterExtraHits`, `counterHealPct`) extends the flurry and heals on completion. Skill hits carry `skillId`, `slot`
+  (via `ctx.hit` for archetypes, via the action tag for legacy movesets), `charged` for heavy actions, `finisher` for finishers.
+  Hammer hits add `poise = amount × 0.5 × 1.5`.
+- Awakening: added by combat v3; the engine only adds the old melee contribution when combat is v2/stubbed.
+- Buffs (legacy supports): `game.stats.set('buff:<skillId>' | 'buff:sword_<el>_support', mods, {duration})`; the buff ends when the source
+  expires (game time). `doubleJump` became `extraJumps`. Nothing writes `player.mods`.
+- v3 input: when `game.skills.ownsInput` the engine reads no LMB/RMB/F/G/R/digits/wheel; it shows the weapon charge pose while
+  `game.skills.charging`. Legacy keymap: Digit1-5 (classic elements), wheel, LMB/RMB, F (only while `interact.current()` is null), G, R.
+
+##### Archetypes (melee forms)
+Melee-native: projectile = travelling slash wave (lightning.ball = slow spark orb), crawler = ground wave (element spikes / fire line /
+rubble), cone = wide sweep, nova = weapon-plant ring + payload, blink = dash-slash (behind target for shadow.step, next-crit rider),
+dash = lunge with path hits (ignite / puddles / next-hit rider), leapslam = plunge with telegraph, grapple = vine whip (pulls small foes,
+or the hero to the point), tether = whip channel (lashes, pull last/all, extinguish).
+"Default ok": volley, lob, beam, zone, wall, pillar, chain, rain, summon, buff, mark, chainbind, lane, mine, bubble — the strike frame
+runs magic's **caster** archetype from the weapon tip when it is registered (`ctx.origin` = weapon tip, `ctx.meleeFallback`), otherwise a
+self-contained melee form: zones through `spells.api.zones` when present (else surface `wet`/`bless`/`ignite`), `world.addTempCollider`
+(earth wall), `world.addPlatform` (ice pillar, glacier, stone steps), `world.addUpdraft`, `enemies.setTauntTarget` (totem / clone /
+treant decoy), pooled mines (≤ 6), tick damage tagged `zone` (no hitFeel). Radii × `weapon.reachMul`; speed via the engine (× `speedMul`).
+
+##### Perf
+No new lights, no per-frame allocation in the engine update (scratch vectors, reused HUD), one new InstancedMesh (`crystal`, colours
+set at construction), one extra ribbon (left dagger, only drawn while active). All meshes live hidden in the scene from boot and are
+compiled by `warmup()`; the playtest asserts `renderer.info.programs` does not grow during melee casts.
+
+##### Tests
+`node tools/playtest3.js melee`: static rule checks (7/8/9, no `game.hitstop`, no `hasPrompt`, no `player.mods` writes); per melee class:
+API + 24 archetypes + 8 impls registered, weapon profile, combo / charged / each new-element basic + charged hit a dummy with one
+`spellCast` per press, per-weapon counter flurry, `hit.tier` + `hitstopMul` + `skillId` on every hit, silent setter, §21 check 5
+(endgame + showcase casts, no generic fallback), programs stable, ≤ 350 calls; legacy keymap combo + §21 check 4 buff + F ultimate;
+paladin with `stub=spells`. `node tools/playtest2.js --only sword` (legacy) passes.
+
+#### enemies — module notes (v3, wave 2) — `docs/v3/notes/enemies.md`
+
+Files: `src/enemies.js`, `src/enemies/{base,common,models,projectiles,loot,golem,bokoblin,shaman,chuchu,dummy}.js` (changed),
+NEW `src/enemies/{scaling,threat,encounters,bossbase,models2,lizard,shroom,wolf,wraith,voidknight}.js`,
+`src/enemies/bosses/{index,kit,hydra,nox,treant,kalis,nidhoggra,nidhoggra_model}.js`, `tools/playtest3/enemies.js`.
+
+##### Module (`game.enemies`, CONTRACT §14)
+- `FACTORIES` += `lizard, shroom, wolf, wraith, voidknight`; `spawn(type, pos, {zoneId, level, element, elite, variant, …})`
+  (`element` picks the 말랑이 variant: water / nature / light / shadow, plus the classic fire / ice / lightning).
+- Renamed (nameKo only, ids unchanged): 말랑이 (chuchu), 뿔도깨비 (bokoblin), 도깨비 주술사 (shaman).
+- `scaling(zoneId)` → `{hpMul, dmgMul, level, zoneMin, row, mobXp}` (`scaling.js`, DESIGN §5.3): act1 1/1 (village 1, plains 2,
+  ruins 6), first region 1.9/1.5 (L9), second region 2.8/1.9 (L15; via `story.regionOrder`), ascent 3.4/2.2 (L21), plateau 3.6/2.4 (L25).
+  HP × `game.difficulty.hpMul`; `zoneDmgMul` is the row only (combat multiplies `difficulty.dmgMul`). `applyScaling` sets
+  `zoneId, zoneLevel, zoneMin, zoneDmgMul, xpValue` once per entity (dummies/props 0 XP, level 1).
+- XP (DESIGN §5.1): 말랑이 6 · 뿔도깨비 15 · 주술사 25 · Act 2–4 mobs = row mobXp 35/45/60 · elite 90 · golem 600 · hydra 1500 ·
+  nox 1500 · treant 2500 · kalis 3000 · nidhoggra 0 (the finale is not an XP source).
+- `encounters` (`encounters.js`): `ENCOUNTERS` table per zone (mirwen 4 groups, elderwood 5, ascent 3, plateau none).
+  `load(zoneId)` on `zoneEnter`; groups spawn lazily within 70 m, despawn beyond 120 m (respawn fresh later) and 30 s after
+  `zoneExit`; ≤ 18 regular enemies alive in total. Cleared groups emit `encounterCleared {zoneId, groupId, left}` and stay cleared
+  (`enemies.serialize()` → cleared ids). Act-1 camps stay in `populate()` (unchanged camp → golem flow).
+- Threat (`threat.js`): `setTauntTarget(entity|null, dur, range=22)` (enemies in range retarget; bosses within 2× range),
+  `clearTauntTarget()`, `getThreatTarget(e)`, `setPlayerStealth(mul|true|false, dur)` (sight × mul; ≤ 0.05 drops aggro),
+  `anyAggroWithin(pos, r)` (aggro or `debugAggro`). **Targeting:** `base.js updateEnemy` calls `ctx.retarget(e)` before think, so
+  `ctx.playerPos / playerCenter / target` are the enemy's threat target for its whole update (restored to the player after the loop;
+  `ctx.realPlayerPos` is always the player). Decoys / clones without HP absorb one hit (`onDecoyHit`).
+- `getRunStats()` → `{kills, time, timeSec, maxCombo, reactions, reactionsFound}` (combo = player hits within 2.5 s, reset on hurt).
+- `inCombat` (legacy), `getObjective()` → `{phase:'camps'|'boss'|'zone'|'done', zoneId, campsCleared, campsTotal, boss, groupsLeft, camps}`.
+- `prewarm()` returns hidden instances of the 5 new mob models + 4 new 말랑이 variants (shared vc toon materials, no new programs).
+
+##### Regular enemies (DESIGN §9 A2–A4)
+- `base.js`: poise for `poiseMax` entities (hits drain it without interrupting; at 0 a 0.8–1.2 s 붕괴 stagger + a "붕괴!" sprite
+  pop + `enemyPoiseBreak`), sight × stealth, the threat retarget hook, the death dissolve through `vfx.dissolve(e, {dur 0.9,
+  void-violet edge})` (fallback: the v2 squash), per-entity dizzy stars only for parried/dizzy when v3 combat draws instanced stun stars.
+- `common.js integrate`: `amphibious` (wades 1.1 m under the surface in deep water) and `hover` (floating height) flags.
+- Telegraphs: `ctx.tele(o)` → `vfx.telegraph` (× difficulty `telegraphMul`), fallback the v2 ring; decal radius = hitbox radius.
+- 수렁도마뱀: spear thrust (line), lunge out of the water (circle), lurks half-submerged; water ×0.5.
+- 포자 버섯병: kites, lobs spore sacs → lingering spore clouds (`projectiles.cloud`: seeded every 0.8 s inside), cap jiggle; dies in a cloud.
+- 타락 늑대: packs of 3 (`pack`/`packSlot`), wheel around the target at 6 m, dart bites (line), quadruped trot/gallop gait, howl.
+- 공허 망령: hovers, blinks away through smoke, void bolt (orb + blight); voidShield 60.
+- 공허 기사 (elite): guard stance (frontal light hits ×0.35 via `onBeforeDamage {mul}`), shield bash, 3-hit combo (cones),
+  parryable overhead slam (circle, gold rim); voidShield 100, breakMax 60, poise 120, `onBreak` → 2 s stagger.
+- `projectiles.js`: every orb / boulder / spore asks `world.projectileBlockAt(p)` while temp colliders exist (`'block'` despawns,
+  `'reflect'` flips the team and calls `onReflect`); orbs home on the caster's threat target; `opts.status` overrides the element status.
+- Golem: `bossDefeated {boss, id:'golem', name, final:false}` (no `victory`), `timeScale.set('bossDeath', 0.25, 1.2)`,
+  `bossPhase {phase:2, name:'붉은 핵'}`, extended `bossSpawn` (title 봉인의 수문장).
+
+##### Boss framework (`bossbase.js`) and registry
+- `enemies.bosses = {register(id, factory), get, has, list, gift}`; bosses come from
+  `import('./enemies/bosses/index.js').then(m => m.registerBosses(api))` in `init` (`enemies.bossesReady` is that Promise).
+  A missing bosses folder only logs one warning.
+- `prewarmBoss(id)`: idempotent Promise; builds the model once (the factory's `prewarm(ctx, arena)` caches a spare model that the next
+  spawn takes) and compiles with `renderer.compileAsync` (sync `compile` in test mode). `isPrewarmed(id)`.
+- `spawnBoss(id='golem', opts)`: returns the entity at once when prewarmed (or in test mode), otherwise a Promise (cinematic overlay
+  fade → prewarm → spawn). Emits the extended `bossSpawn {boss, id, name, title, sub, phases:[{at,name}], parts:[{id,name}], locks}`;
+  calls `world.setBossFightLOD(true/false)` for nidhoggra. `despawnBoss()`, `debugDefeat(id?)`, `debugPhase(n)`.
+- `createBoss(ctx, cfg)`: HP pool = base × arena-zone row × difficulty; named phases (`phases[i].at`); crossing a threshold sets HP
+  to it, invulnerable transition (`cinematic.playPhase` when present outside tests, else `cfg.transition` s), `bossPhase {boss, id,
+  phase (1-based), name}`; `cfg.gate(i)` holds the floor until a boss-owned check passes (hydra heads, treant plates, rods, tide).
+  `addPart({id, name, hp, bone|worldPos, offset, radius, height, mul (number | fn(el)), shield:{element, counters}, lock:{element,
+  counters}, fwd, invulnerable})` → combat-registered `isBossPart` entities forwarding `damage × fwd` to the pool (the killing blow
+  goes through `combat.dealDamage`, so `kill` XP fires). Locks: counter hit −poise×1, reaction −poise×2, `stripLock(part, n, 'gift')`;
+  `lockStripped {boss, id, partId, lock, by}`. `respawnPhase()` on `playerDeath` (phase-start HP). `canDie()` / `onZero()` route 0 HP
+  to special defeats (purify, revive). `defeat()` emits `bossDefeated {boss, id, name, final}` exactly once (`cfg.finale(done)` can
+  delay it; 25 s game-time safety net), then a staggered `vfx.dissolve` (fallback `dissolveFx`). `bossCheck {id, kind, duration, state}` via `e.emitCheck`.
+- `e.setBodyMul(n | fn(el))` scales damage on the main body (a resist proxy) — the armoured-boss pattern.
+
+##### Bosses (CONTRACT §15, DESIGN §8.5–8.6); mid-bosses ≤ 20 calls, nidhoggra ≈ 28
+- **hydra** 삼두 물뱀 레비아탄 (Mirwen): 3 heads (parts with element shields water/ice/lightning, DESIGN counters), 6-bone tapering
+  necks with a reach table for bites, bite (line), element spit volleys, tidal sweep (ring; safe on ice or a pillar top);
+  `waterFrozen` in the arena or ice on the body → a ring of 8 ice discs for 10 s (`world.surface.freezeWater`); severed heads swap the
+  survivors' elements (+20 % speed); phase 2 「심연의 몸통」 (all heads severed): the body rises, water spouts.
+- **nox** 녹스 (Elderwood glade): voidShield 100 (re-forms 12 s after it breaks), teleport-slash (raven smoke, violet parryable line;
+  a parry staggers 2 s), raven volley, shadow wave; phase 2 at 50 % spawns 녹스의 분신 (teleport-slashes only); 0 HP → 정화 (kneel,
+  gold light, a `kill` event for the XP, then `bossDefeated`). `debugDefeat` runs the fast purify.
+- **treant** 모르그로스 (hollow): 4 bark plates (fire ×1.6, else ×0.25; the body ×0.4 while any plate stands), explosive spore pods
+  (instanced, any hit ignites them → a fire burst scorching plates within 6.5 m), stomp / arm sweep / root lines; phase 2 kneel with
+  the heart (×2.5) in 8 s windows; phase 3 root storm (5-line fans, more pods, `spells.api.objects.spawn('pod')` if present).
+- **kalis** 칼리스 (ledge): mirrors the class kit (`CLASS_DEFS` family / dodge / defend) and the 2 most-invested elements
+  (`progression.pointsIn`): element bolt volleys, element burst, slash (melee kits), a dodge after 3 quick hits, guard windows
+  (`counter` kits strike back); 0 HP → revives once at 50 % (「거울은 깨지지 않는다」, `bossPhase 2`), mirror light beams, a 10 s stagger
+  check (`bossCheck stagger`) before 「거울 붕괴」 (45 % maxHp, never lethal). The model glow is tinted by the copied elements.
+- **nidhoggra** 니드호그라 (plateau; `nidhoggra_model.js`): 24 instanced spine segments on a Catmull-Rom curve (+ instanced outline and
+  crack glow), head/jaw/eye ring, 2 forelimbs (2-bone solve), void-mist wings, 5 instanced oath shards, heart, instanced rods.
+  All damage goes through parts: phase 1 head plate (5 locks rotating every 20 s, the player's counters first; stripped ×1.5),
+  claw slam (parryable; the head sags for a 2.6 s melee window), breath sweep (pillars block it), 3 wraith minions every 30 s,
+  the 66 % rods check (3 rods + a player `lightning.rod`, or a parried breath → 6 s stagger → phase 2; failure 40 % maxHp, never lethal).
+  Phase 2 coil past the 5 pillars: one shard every 15 s beside a pillar top for 10 s (ranged ×0.7 from below); a shard buff only when its
+  lock was stripped by a counter/reaction and no gift (stats sources `boss:nidhoggra_<el>`); 33 % tide check (12 s break; failure =
+  25 % knock-down + retry). Phase 3 = **cut line 3**: the heart opens on the plateau (×2.5, 20 s open / 8 s closed), V = 루미엘의 창
+  (3 charges, 5 s recharge). The final blow → `cinematic.playFinale(onDone)` (fallback: immediate) → `bossDefeated {final:true}`.
+  `NIDHOGGRA_LOCKS`, `SHARD_BUFFS`, `lockCoverage(cls, phase, primaryOnly)`, `lockCoverageTable()` are exported data.
+- Gift (`enemies.bosses.gift`): `{ready, charges, element, purpose:'lock'|'spear', use()}`; `giftReady` / `giftUsed {element, purpose}`.
+
+##### Tests
+`node tools/playtest3.js enemies` — rules 7/8/9 greps, new/renamed mobs (names, HP × row, XP, voidShield/break, variants), scaling rows +
+second region + difficulty, taunt retarget, stealth, anyAggroWithin (+ debugAggro), run stats, projectile blocking by a temp collider,
+golem (`bossDefeated` final:false, no victory), encounters (lazy spawn, ≤ 18, despawn > 120 m), the lock table (every class ≥ 4/5
+per phase, primaries ≥ 2), and per boss `&boss=<id>`: prewarm first + idempotent, Korean names, draw-call budget, `debugPhase(2)`,
+programs constant after spawn + phase change, calls/tris caps, `debugDefeat` → exactly one `bossDefeated {id, final}`, removal;
+nidhoggra mechanics (plate lock, gift 50 %, counter strip, rods success, the phase-2 shard window, tide success, heart + spear gift).
+
+##### Not done (P1 slips, each with a working fallback)
+- Nidhoggra phase 3 sky rings / eye clusters / meteors → cut line 3 (the heart opens after the phase-2 check).
+- Treant climbable arm ramps (the kneel brings the heart within reach instead); Kalis prism reflection of mirror beams (beams are
+  dodge-only; his bolts are parry-reflectable through the existing orb reflect); bespoke boss voice lines (sfx names only).
+
+#### narrative — module notes (v3, wave 3) — `docs/v3/notes/narrative.md`
+
+Files: `src/story.js`, `src/story/{quests,script3,classSelect}.js` (new), `src/story/{script,npcs,ui}.js` (changed),
+`src/cinematic.js`, `src/cinematic/{reveal,acts,finale,spirits9}.js` (new), `src/cinematic/{assets,ceremony,finisher,intro,overlay}.js` (changed),
+`src/audio.js`, `src/audio/{sfx3,themes3}.js` (new), `src/audio/{music,themes,sfx2}.js` (changed), `tools/playtest3/narrative.js`.
+Static imports: own files, `src/core/*` and `three` only (rule 7). Everything else is reached through `game.*` and feature-detected.
+
+##### Story (`game.story`, CONTRACT §17)
+- **Stage table** (`story/quests.js`):
+  - `QUESTS`: 17 stages with Korean titles, `objective(S, game, H)`, `markers(S, game, H)`, `kind`, `boss` and `xp`. `xp` is a number, or a
+    function for region quests, which pay act-2 or act-3 XP depending on the play order.
+  - Also exported: `STAGES`, `TITLES`, `REGIONS`, `REGION_OF`, `BOSS_OF_STAGE`, `SPIRIT_OF_BOSS`, `MIN_LEVEL`, `ACT_OF`, `TRAIN_STEPS`,
+    `ASCENT_STEPS` (5 points: ruins gate → 2 updrafts → ledge rim → ledge), `nextStage(id, S)` (branch-aware) and
+    `stagesBefore(stage, order)`.
+  - story.js never hard-codes the stage order.
+- **Branches:**
+  - After `reveal` (talk to 이솔데), entering Mirwen or Elderwood starts that region. Entry is detected through `zoneEnter`, `gateTravel`
+    or a 4 Hz zone check.
+  - `story.regionOrder` (a readable array) records the order.
+  - After a region's last boss, the other region starts. After both, `ascent` starts.
+- **Bosses:**
+  - `bossSpawn` and `bossDefeated` are filtered by id. Only the current stage's boss advances the stage.
+  - A boss stage starts its fight when the player walks into `world.bossArenas[id]` (radius + 8, and not far below a raised arena).
+    `cinematic.playBossIntro(id, onDone, {spawn, valid})` fades out, awaits `enemies.prewarmBoss(id)`, then calls story's spawn.
+    No intro starts for a boss that `enemies.bosses.has()` does not know, so a missing bosses folder never loops the intro.
+  - Act bosses: `addPoints(1, id)`, `freeSpirit(el)`, full HP/MP/stamina and the quest XP. Then `playSpiritFreed(el)` plays and the spirit
+    NPC appears at its shrine.
+  - Golem: `breakSeals()`, the stage becomes `reveal` at once, then `playReveal` plays.
+  - Nidhoggra (`final:true`): stage `ending` → `playEnding` → `victory {stats: enemies.getRunStats()}`, emitted **once** (`S.victoryEmitted`)
+    → `setState('victory')`. `story.continueEpilogue()`, or a victory → playing state change, moves to stage `done`.
+  - Story no longer listens to `victory`.
+- **Class choice** (`story/classSelect.js`):
+  - In the `choose` stage, talking to any of the 6 mentors at the altar plays that mentor's pitch, then opens
+    `ui.openClassPanel({current, onPick})`.
+  - Without ui (stubbed or missing), a 6-option dialogue `ask` appears instead, plus a "later" option.
+  - The pick runs `progression.setClass` → `player.setClass` → `cinematic.playClassRite(cls)` → `training`. It also shows the
+    `firstPoint` tip ("K: 스킬 트리…").
+  - After training, a mentor of another class offers **직업 변경** (`ui.confirm` → `progression.changeClass`, altar only).
+- **Training** steps: `basic ×5 → charged → quick → defend → dodge → learn`.
+  - Steps count from `skillCast` only; the slot comes from `skills.defs`. `spellCast` is the fallback, used only while skills is stubbed.
+  - defend: `blocked`, `parry`, `counterStance`, `counter`, `focusStart`, `wardBreak`, or holding defend.
+  - dodge: `dodge`, `blink`, `dash`, `perfectDodge`.
+  - learn: `skillLearned` followed by `loadoutChanged`. Without skills, `skillLearned` alone counts.
+- **NPCs** (21):
+  - The 9 v2 villagers, the 4 new mentors, 이솔데 (sage), 하람 (trainer), 나엘 (lakeKeeper) and 모모 (forestChild).
+  - The spirits 운디나, 실바니아, 녹스 and 루미엘 stay hidden until freed, then appear at their shrines.
+  - Spots come from `world.village.npcSpots`, `world.zones[].npcSpots` and `world.shrines`, else the DESIGN §8.3 coordinates.
+  - New NPCs use a **merged** model: body + head in 1 mesh, 1 outline and an optional glow.
+  - Talk goes through `game.interact.offer('npc:'+id, …)` (label "이름과 대화하기"). Without `game.interact`, the v2 F prompt is used.
+    `story.hasPrompt()` is the shim `!!interact.current()`.
+- **Elderwood escort:** talking to 모모 makes her follow the player (simple steering; she catches up after gate travel). The stage moves
+  to `nox` once the 3 rot walls are cleared (`world.rotWalls`, `rotWallCleared`) and 모모 is at 실바니아's grove.
+- **Mirwen:** the 나엘 talk is optional. Reaching 운디나's shrine (within 5 m, or `shrineFound`/`shrineUse spirit_undina`) starts `hydra`.
+- **Ascent:** each step pays 900 XP. The last step starts `kalis`.
+- **Reaction trainer (P1):**
+  - The 반응 수련 허수아비 spawns lazily at `village.reactionDummy` (0 XP) and cycles element auras every 5 s.
+  - It never spawns in `?test` unless `story.spawnReactionTrainer()` is called.
+- **Ambient lines (P1):** per-phase keys `early/training/updraft/camps/boss/act2/act3/act4/done`, with fallbacks. The epilogue lines
+  are the `done` phase.
+- **API:**
+  - Read-only: `stage`, `regionOrder`, `ascentStep`.
+  - `debugSkip(stage, {silent, order, second})` covers every stage:
+    - It sets the default class, seals, spirits, points and level (≥ 9 / 15 / 21 / 25).
+    - It teleports to the zone and prewarms the act boss behind a fade (instant in tests).
+    - It stops a running cinematic and despawns a boss that belongs to another stage.
+  - `debugComplete()` finishes the current non-boss objective; on a boss stage it spawns the boss.
+  - Flow: `startBossFight()`, `pickRegion(r)`, `continueEpilogue()`, `currentBossId()`.
+  - Save: `serialize()` / `deserialize(o)` cover the stage, branch order, flags, training, ascent step, feather and
+    `tips: ui.serializeTips()`.
+  - Dialogue and test helpers: `talkTo`, `advance`, `choose`, `getDialogueState`, `bark`, `banner`.
+- Story calls `world.setActVisible(ACT_OF[stage])` on every stage start.
+- **Test isolation:** story cinematics (rite, reveal, spirit freed, boss intro, ending) play by themselves in normal play. In `?test`
+  runs they play only with `&cine=1` or `story.autoCinematics = true`; otherwise the stages still advance, with no cutscene. This keeps
+  other owners' playtests (which emit `bossDefeated` or kill the golem) from stalling. The narrative section opts in.
+
+##### Cinematic (`game.cinematic`, CONTRACT §16)
+- `playClassRite(cls, onDone)` (ceremony.js) shows only the spirits of `CLASS_DEFS[cls]`: primaries big in front, secondaries small
+  behind. `playBlessing` is the shim.
+- `playReveal` (reveal.js, ≈ 28 s): the core rune, 테라곤's memory, then a wisp along a root-channel spline to the plateau. There, an
+  instanced wyrm silhouette (`assets.makeWyrm`, 1 draw call) carries the 5 oath shards under a greying crown.
+- acts.js holds `playSpiritFreed(el)`, `playBossIntro(id, onDone, {spawn, valid})` and `playPhase(id, phase)`:
+  - All three are parametric. `BOSS_CAM` holds the per-boss camera data: focus height, radius, sweep, fov, voice and grade.
+  - The intro freezes the game (`cutscene`) behind the fade while prewarming, then returns the camera to where it was.
+  - `playPhase` runs in gameplay mode: a slow-motion orbit with the phase name, ≤ 3.3 s.
+- `playFinale(onDone)` (finale.js) runs in gameplay mode:
+  - Time slows and the 9 colours gather into the weapon.
+  - **One input** (LMB, R, X or Space; automatic after 0.5 s in tests) lands the strike.
+  - 0.4 s of music silence, then a white flash and a light burst.
+  - `onDone` fires at the impact, so `bossDefeated` and the dissolve run under the burst.
+- `playEnding` v3: golden pollen over the plateau, the crown blooms, a time-lapse (Mirwen, Elderwood, the plateau), the festival,
+  credits (6 mentors, the new NPCs, 9 spirits), 끝. Music: `ending_v3`.
+- `finisher(o)` keeps its signature:
+  - `o.element` is any of the 9 or `'symphony'`. `o.cls` sets the tag (from `CLASS_DEFS`).
+  - The new elements and `'symphony'` get bespoke set pieces from `spirits9.js`: water leviathan, eternal forest, dawn wings, raven lord
+    and the symphony ring.
+- New API: `subtitle(text, sec, speaker)`, `burstAt(point, element)`, a `mode` getter (`'gameplay'|'world'|null`), and
+  `SPIRITS` (5) / `LOST_SPIRITS` (4) / `SPIRITS_ALL` (9). In `overlay`, `ELEMENT_GRAD` and `ELEMENT_GLYPH` cover the 9 elements plus
+  physical, symphony and void.
+- Perf:
+  - Every set piece lives in a per-cinematic Stage, disposed on end.
+  - It is built from sprite, rune, pillar, mist, motes and instanced-silhouette programs that `init()` warms (+1 program at boot).
+  - No lights.
+  - The test asserts that reveal, the intro and the ending compile no new programs.
+
+##### Audio (`game.audio`, CONTRACT §20)
+- `audio/sfx3.js`:
+  - `cast_`, `impact_` and `explode_` recipes for water, nature, light and shadow.
+  - Weapon sfx: `bow_draw`, `bow_release`, `arrow_whizz`, `hammer_swing`, `hammer_hit`, `shield_block`, `dagger_swish`,
+    `totem_rattle`. They play once per `skillCast`, chosen by `styleOf(cls)`.
+  - UI cues: `level_up`, `skill_learn`, `skill_unlearn`, `tree_open`, `slot_equip`, `xp_tick`, `codex_new`, `regen_start`,
+    `gate_travel`, `ui_deny`.
+  - Reaction cues: the family recipes `rx_burst`, `rx_control`, `rx_spread`, `rx_surface`, `rx_blessing`, `rx_curse`, plus
+    `resonance` (an arpeggio) and `break_gong`.
+  - Boss voices (P1): `hydra_roar`, `treant_groan`, `nox_voice`, `kalis_voice`, `wyrm_roar`.
+  - The misc cues other owners call: `wolf_howl`, `splash`, `throw`, `swing`, `rock_smash`, `vine_hit`, `holy_chime`, `gate_awaken`,
+    `shrine_seed`, `shrine_found`, `crystal`, `firework`.
+- `reaction` lookup order: `RX_CUES[id]` (a [recipe, pitch] pair, distinct per id) → `RX_FAMILY[payload.family]` → the generic
+  `reaction` cue. All 49 ids resolve.
+- The charge loop base is `ELEMENT_DEFS[el].sfxBase × 0.5`. Music ducks on crits and ultimates. `silence(s)` cuts the music bus.
+- **Music** (`audio/themes3.js`):
+  - New themes: `mirwen`, `elderwood`, `sky`, `final_boss` and `ending_v3`.
+  - `final_boss` layers by `music.bossPhase`. Broken shards add their leitmotifs, read from `lockStripped` and `shardBuff`.
+  - `pickMode` order:
+    1. the forced theme;
+    2. the victory sting;
+    3. a boss (`final_boss` for nidhoggra);
+    4. battle;
+    5. `world.getZoneAt(player).music` (the plateau plays `sky` until the wyrm rises);
+    6. the v2 village/field rule.
+- **Victory:** the fanfare plays on `bossDefeated {final:true}`. The `victory` event plays nothing new.
+- Test hooks: every requested cue is logged, even while silent. Hooks: `audio.cueCount(name)`, `audio.lastCues`, `audio.fanfareCount`,
+  `audio.wantedMode()`, `audio.musicLayer`.
+
+##### Measurements
+bootcheck (640×360, medium):
+- Default config: 271 calls / 830k tris / 142 programs. Before narrative v3: 257 / 775k / 141.
+- Village with all 15 village NPCs: ≤ 290 calls, asserted in playtest3.
+
+##### Tests
+`node tools/playtest3.js narrative` takes ≈ 40 s: 3 boots, 153 checks. It covers:
+- static checks: rules 7/8/9, the removed path dialogue and the removed victory listener;
+- golem → reveal, and the reveal talk with the elder line;
+- both branch orders reaching ascent;
+- the escort, the shrine, and the proximity boss intro;
+- the ascent steps;
+- debugSkip + killBoss for every boss stage (spirits, points);
+- final → finale → ending → exactly one victory, after bossDefeated{final}, with the fanfare;
+- serialize / deserialize;
+- every cinematic: skippable, state restored, no new programs;
+- the finisher for all 9 elements + symphony;
+- audio: recipes, rx coverage, cues, zone music, offline renders;
+- village draw calls and the reaction trainer;
+- the class pick, with the ui panel and with the dialogue fallback (`&stub=ui`);
+- training counted per `skillCast`.
+
+##### Not done / fallbacks
+- Bespoke per-boss intro shots (P1): every boss uses the parametric intro with its `BOSS_CAM` row.
+- The 2 sage / lake-keeper side requests in the act-4 XP budget are not built. The ascent pays its 5 × 900 XP.
+- The feather's +20 stamina is the `story:feather {maxStaminaAdd: 20}` stats source (core reads `maxStaminaAdd` since integration);
+  the direct `player.maxStamina += 20` remains only as the no-stats fallback.

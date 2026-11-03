@@ -156,5 +156,5 @@ bootcheck (640×360, medium):
 ## Not done / fallbacks
 - Bespoke per-boss intro shots (P1): every boss uses the parametric intro with its `BOSS_CAM` row.
 - The 2 sage / lake-keeper side requests in the act-4 XP budget are not built. The ascent pays its 5 × 900 XP.
-- The feather's +20 stamina uses a `story:feather` stats source with the key `maxStaminaAdd`, which needs core (see requests). It also
-  does a direct `player.maxStamina += 20`, which a later `statsChanged` refresh may overwrite.
+- The feather's +20 stamina is the `story:feather {maxStaminaAdd: 20}` stats source (core reads `maxStaminaAdd` since integration);
+  the direct `player.maxStamina += 20` remains only as the no-stats fallback.
