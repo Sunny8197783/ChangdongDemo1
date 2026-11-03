@@ -514,3 +514,61 @@ distance-based LOD/culling (honor `settings.drawDistance`); outlines only within
 lights beyond pooled ones (village lanterns are emissive, not lights; ≤ 4 extra PointLights total); fire grid
 updates only active cells at ~10 Hz; avoid shader recompiles mid-game (pre-warm materials at boot via
 `renderer.compile(scene, camera)` after building); target 60 fps on a mid laptop at 'medium'.
+
+---
+
+## v3 RPG Expansion contract (binding)
+
+The v3 expansion (classes, 9 elements, skill trees, the extended story to 공허룡 니드호그라) is specified in two files.
+**This file stays the single entry point.** The v1 and v2 sections above remain valid unless the v3 contract overrides them.
+
+- **`docs/v3/CONTRACT.md` (binding, revision v3.1)**: owners, load order, APIs, events, tests and the build-task JSON (§24).
+  On APIs, CONTRACT wins.
+- **`docs/v3/DESIGN.md`**: game design and every number. On numbers, DESIGN wins.
+
+**Owners (10, disjoint files; CONTRACT §1):**
+
+| Owner | Owns |
+|---|---|
+| core | `src/main.js`, `src/core/*`, `tools/*` harnesses, this file |
+| skills | `src/skills.js`, `src/skills/*` (trees, runtime, adapters, class kits) |
+| combat | `src/combat*`, plus all VFX (`src/vfx*`) |
+| magic | `src/spells*` (caster archetypes) |
+| melee | `src/sword*` (melee archetypes) |
+| player | `src/player*` |
+| world | `src/world*` |
+| enemies | `src/enemies*`, including `src/enemies/bosses/*` |
+| narrative | `src/story*`, `src/cinematic*`, plus all audio (`src/audio*`) |
+| ui | `src/ui*` |
+
+**Hard rules (CONTRACT, top):**
+- A file statically imports only its own owner's files, `src/core/*` and three. Everything else is reached through `game.*` or a guarded `await import()`.
+- No class literals; use `familyOf`/`styleOf`.
+- `ELEMENTS` stays the 5 classic elements; v3 code uses `ALL_ELEMENTS`.
+- No new lights.
+- Per-owner notes in `docs/v3/notes/<owner>.md`, and requests in `docs/v3/requests/<owner>.md`.
+
+**Load order:** `world → vfx → combat → audio → player → spells → sword → skills → enemies → story → cinematic → ui`.
+- Before any factory, main.js creates `game.progression`, `settings`, `stats`, `elements`, `classes`, `save`, `archetypes`, `interact`, `timeScale` and `post`.
+- **Frame:** `timeScale.update` → `player` → `stats.update` → `spells` → `sword` → `skills` → `enemies` → `combat` → `story` → `cinematic`, then world, vfx, ui and audio.
+
+**Key APIs:**
+- `game.elements` — `ELEMENT_DEFS`, `ALL_ELEMENTS`, `elColor`, `elName`.
+- `game.classes` — `CLASS_DEFS` (6 classes, each with 2 primary + 4 secondary elements), `access`, `familyOf`.
+- `game.progression` — `registerTrees`, `canLearn`/`learn`/`canUnlearn`, `tierCap`, derived `points`, `damageMul` (mastery only), `setRanks`, `breadth`.
+- `game.stats` — `set`/`clear`/`get`/`update`/`derived`. `player.mods` is a read-only getter view of it.
+- `game.skills` — `cast`, `castSlot`, `equip`/`canEquip`, `attune`, `applyPreset`, `getHudState` (v3).
+- `game.archetypes` — `registerArchetype(name, 'caster'|'melee', fn)`, `registerImpl`.
+- `game.interact` — `offer`, `current`, `use`. **F is interact only; the ultimate is X.**
+- `game.timeScale` — `set(id, scale, dur)`. `game.slowmo` is a shim.
+- `game.post.pulse`.
+- `combat` — `dealDamage`, the single place for damage scaling and for `vfx.hitFeel`; `applyStatus(t, name, seconds, {stacks, source, power, el})`; `previewReaction`; `reactObject`.
+- `enemies` — `spawnBoss`, `prewarmBoss` (idempotent), `setTauntTarget`, `getThreatTarget`, `setPlayerStealth`, `getRunStats`, `bosses.gift`.
+- `world` — `getZoneAt`, `bossArenas` (all on terrain; the finale is on the 세계수 뿌리 고원), `addPlatform`, `addTempCollider`, `addUpdraft`, `surface2`, `gates`, `serialize`.
+- **Events** (full list in CONTRACT §9) — `skillCast` (exactly once per cast), `bossDefeated {id, name, final}`, and `victory`, emitted once by story only after the ending.
+
+**Build:** wave 0 core, then skills/combat/player/world/ui, then magic/melee/enemies, then narrative, then integration
+(CONTRACT §24). The integration step appends the owners' module notes below.
+
+### v3 module notes
+(filled at integration from `docs/v3/notes/*.md`)
