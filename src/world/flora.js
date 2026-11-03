@@ -5,6 +5,7 @@ import { mulberry32, fbm, sstep, distPolyline } from './noise.js';
 import { part, merge, mat4, outlineMat, occludable, SWAY_GLSL } from './prefab.js';
 import { LAYOUT, WATER_LEVEL, pathWeight, villageMask } from './terrain.js';
 import { VILLAGE } from './villageLayout.js';
+import { floraBlocked, elderwoodWeight } from './terraform.js';
 
 const col = (hex) => new THREE.Color(hex);
 
@@ -214,6 +215,7 @@ export function buildFlora(game, world, uTime) {
     if (distPolyline(x, z, L.river) < 7 + margin) return false;
     if (pathWeight(x, z) > 0.01) return false;
     for (const k in L.paths) if (distPolyline(x, z, L.paths[k]) < 3.2 + margin) return false;
+    if (floraBlocked(x, z, margin)) return false;   // v3 arenas, ramps, plateau/ledge, gate pads, rot-wall gaps
     return true;
   }
   const forest = (x, z) => fbm(x * 0.017 + 40, z * 0.017 - 13, 3, 300);
@@ -227,7 +229,9 @@ export function buildFlora(game, world, uTime) {
     const y = getHeight(x, z) - 0.25;
     decMats[v].push(mat4(x, y, z, 0, rnd() * Math.PI * 2, 0, s, s * (0.9 + rnd() * 0.2), s));
     const golden = rnd() < 0.07;
-    if (golden) tint.setRGB(1.35, 1.05, 0.45); else tint.setRGB(0.9 + rnd() * 0.18, 0.92 + rnd() * 0.16, 0.85 + rnd() * 0.2);
+    const ew = elderwoodWeight(x, z);
+    if (ew > 0.3) tint.setRGB(0.62 + rnd() * 0.12, 0.66 + rnd() * 0.1, 0.7 + rnd() * 0.18);   // 잿빛 수림: ash-grey, violet-tinged canopies
+    else if (golden) tint.setRGB(1.35, 1.05, 0.45); else tint.setRGB(0.9 + rnd() * 0.18, 0.92 + rnd() * 0.16, 0.85 + rnd() * 0.2);
     decCols[v].push(tint.clone());
     colliders.push({ x, z, r: 0.42 * s + 0.1, kind: 'tree' });
     occupy(x, z, 2.2 * s);
@@ -238,9 +242,9 @@ export function buildFlora(game, world, uTime) {
   // a few shade trees inside the village (hand placed between houses)
   for (const [x, z, s] of [[-6, 128, 1.5], [8, 158, 1.3], [-31, 147, 1.2], [36, 131, 1.25], [-19, 154.5, 1.1], [17, 135, 1.0], [-8, 168, 1.6], [28, 157, 1.35]]) addDec(x, z, s);
   let tries = 0, placed = 0;
-  while (tries++ < 14000 && placed < 230) {
+  while (tries++ < 16000 && placed < 250) {
     const x = (rnd() - 0.5) * 330, z = (rnd() - 0.5) * 330;
-    const f = forest(x, z);
+    const f = forest(x, z) + elderwoodWeight(x, z) * 0.3;   // v3: Elderwood is a dense wood
     const p = f > 0.22 ? 0.9 : f > 0.1 ? 0.18 : 0.015;
     if (rnd() > p) continue;
     const r = Math.hypot(x, z);

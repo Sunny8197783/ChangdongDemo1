@@ -4,6 +4,7 @@
 // altar glow (GPU points), pond water. ≈10 draw calls for the whole village.
 import * as THREE from 'three';
 import { toonMat, ELEMENT_COLORS } from '../core/utils.js';
+import { ALL_ELEMENTS, ELEMENT_DEFS, elColor } from '../core/elements.js';
 import { mulberry32, sstep } from './noise.js';
 import { part, merge, mat4, staticMesh, outlineMat, occludable } from './prefab.js';
 import { VILLAGE, yawTo } from './villageLayout.js';
@@ -18,7 +19,6 @@ const ICO0 = new THREE.IcosahedronGeometry(1, 0);
 const ICO1 = new THREE.IcosahedronGeometry(1, 1);
 const PRISM = (() => { const g = new THREE.CylinderGeometry(1, 1, 1, 3); g.rotateX(-Math.PI / 2); g.rotateY(Math.PI / 2); g.translate(0, 0.5, 0); return g; })();
 const CONE8 = new THREE.ConeGeometry(1, 1, 8);
-const ELEMENTS = ['fire', 'ice', 'lightning', 'wind', 'earth'];
 
 function woodColor(base = 0x8a6239, dark = 0x5c3f24) {
   const a = C(base), b = C(dark);
@@ -265,7 +265,7 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
       const R = mat4(0, 0, 0, 0, 0, (k / 4) * Math.PI * 2);
       sp.push(part(BOX, woodDark, R.clone().multiply(mat4(0, 3.6, 0, 0, 0, 0, 0.22, 7.2, 0.18))));
       sp.push(part(BOX, 0xf3ead6, R.clone().multiply(mat4(0.62, 4.2, -0.04, 0, 0.08, 0, 1.05, 5.4, 0.04))));
-      for (let j = 0; j < 5; j++) sp.push(part(BOX, woodDark, R.clone().multiply(mat4(0.62, 1.8 + j * 1.2, 0.02, 0, 0, 0, 1.15, 0.07, 0.07))));
+      for (let j = 0, NR = 5; j < NR; j++) sp.push(part(BOX, woodDark, R.clone().multiply(mat4(0.62, 1.8 + j * 1.2, 0.02, 0, 0, 0, 1.15, 0.07, 0.07))));
     }
     sp.push(part(CYL12, woodDark, mat4(0, 0, 0.1, Math.PI / 2, 0, 0, 0.45, 0.5, 0.45)));
     const g = merge(sp);
@@ -325,22 +325,27 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
     // central star-pedestal
     add(CYL8, altarStone, L(T, 0, 1.15, 0, 0, 0, 0, 0.7, 0.5, 0.7));
     emit(new THREE.OctahedronGeometry(0.32, 0), 0xffffff, L(T, 0, 1.75, 0, 0, 0.4, 0, 1, 1.5, 1), 1.4);
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2 + Math.PI; // first pillar faces south (village side)
+    // v3: one pillar per element (ALL_ELEMENTS, 9) — iterate the registry, never a fixed count
+    const NP = ALL_ELEMENTS.length;
+    for (let i = 0; i < NP; i++) {
+      const a = (i / NP) * Math.PI * 2 + Math.PI; // first pillar faces south (village side)
       const px = Math.sin(a) * (A.r - 1.05), pz = Math.cos(a) * (A.r - 1.05);
-      const el = ELEMENTS[i]; const ec = ELEMENT_COLORS[el];
+      const el = ALL_ELEMENTS[i]; const ec = elColor(el, 'hex');
       const Pm = L(T, px, 0, pz, 0, a, 0);
-      box(L(Pm, 0, 0.75, 0, 0, 0, 0, 1.0, 0.6, 1.0), altarStone);
-      add(CYL8, altarStone, L(Pm, 0, 2.3, 0, 0, Math.PI / 8, 0, 0.38, 2.6, 0.38));
-      box(L(Pm, 0, 3.7, 0, 0, 0, 0, 0.95, 0.3, 0.95), altarStone);
-      add(CONE8, altarStone, L(Pm, 0, 4.0, 0, Math.PI, Math.PI / 8, 0, 0.5, 0.35, 0.5));
+      const lost = !!ELEMENT_DEFS[el]?.isNew;   // the four erased spirits: darker, cracked-looking stone
+      const st = lost ? stoneColor(0xb7b0c4, 0x8a8296, false) : altarStone;
+      const k = NP > 6 ? 0.82 : 1;                 // slimmer pillars so nine fit the ring
+      box(L(Pm, 0, 0.75, 0, 0, 0, 0, 1.0 * k, 0.6, 1.0 * k), st);
+      add(CYL8, st, L(Pm, 0, 2.3, 0, 0, Math.PI / 8, 0, 0.38 * k, 2.6, 0.38 * k));
+      box(L(Pm, 0, 3.7, 0, 0, 0, 0, 0.95 * k, 0.3, 0.95 * k), st);
+      add(CONE8, st, L(Pm, 0, 4.0, 0, Math.PI, Math.PI / 8, 0, 0.5 * k, 0.35, 0.5 * k));
       // element rune bands
-      emit(new THREE.TorusGeometry(0.41, 0.045, 4, 16), ec, L(Pm, 0, 1.6, 0, Math.PI / 2, 0, 0), 1.8);
-      emit(new THREE.TorusGeometry(0.41, 0.045, 4, 16), ec, L(Pm, 0, 3.2, 0, Math.PI / 2, 0, 0), 1.8);
-      emit(BOX, ec, L(Pm, 0, 2.4, 0.39, 0, 0, Math.PI / 4, 0.22, 0.22, 0.03), 1.8);
-      crystalSpots.push({ base: new THREE.Vector3().setFromMatrixPosition(L(Pm, 0, 5.0, 0)), color: ec, el });
+      emit(new THREE.TorusGeometry(0.41 * k, 0.045, 4, 16), ec, L(Pm, 0, 1.6, 0, Math.PI / 2, 0, 0), lost ? 1.2 : 1.8);
+      emit(new THREE.TorusGeometry(0.41 * k, 0.045, 4, 16), ec, L(Pm, 0, 3.2, 0, Math.PI / 2, 0, 0), lost ? 1.2 : 1.8);
+      emit(BOX, ec, L(Pm, 0, 2.4, 0.39 * k, 0, 0, Math.PI / 4, 0.22, 0.22, 0.03), 1.8);
+      crystalSpots.push({ base: new THREE.Vector3().setFromMatrixPosition(L(Pm, 0, 5.0, 0)), color: ec, el, lost });
       const wp = new THREE.Vector3().setFromMatrixPosition(Pm);
-      circleColliders(wp.x, wp.z, 0.65, 'pillar');
+      circleColliders(wp.x, wp.z, 0.6 * k, 'pillar');
     }
   }
 
@@ -542,9 +547,12 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
   // altar crystals (instanced, element-coloured, bloom) + glow points
   const crystalGeo = new THREE.OctahedronGeometry(0.42, 0); crystalGeo.scale(0.75, 1.5, 0.75);
   const crystalMat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true });
-  const crystals = new THREE.InstancedMesh(crystalGeo, crystalMat, 5);
+  const crystals = new THREE.InstancedMesh(crystalGeo, crystalMat, ALL_ELEMENTS.length);
   crystals.name = 'altarCrystals';
-  crystalSpots.forEach((c, i) => crystals.setColorAt(i, C(c.color).multiplyScalar(2.2)));
+  // the four lost spirits' crystals stay dim (grey-violet) until their spirit is freed (spiritFreed → crystalLit)
+  const freed = (el) => { try { const P = game.progression; return !!(P?.spiritsFreed?.has?.(el) ?? P?.storyGateOpen?.(el)); } catch (_) { return false; } };
+  const crystalTint = (c, lit) => (lit ? C(c.color).multiplyScalar(2.2) : C(c.color).lerp(C(0x6a6478), 0.75).multiplyScalar(0.9));
+  crystalSpots.forEach((c, i) => crystals.setColorAt(i, crystalTint(c, !c.lost || freed(c.el))));
   crystals.instanceColor.needsUpdate = true;
   crystals.frustumCulled = false;
   group.add(crystals);
@@ -556,13 +564,14 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
     return new THREE.CanvasTexture(cv);
   })();
   // glow + motes around the altar crystals and the shrine (Points, additive, GPU animated)
-  const NG = 5 + 5 * 12;
+  const NCS = crystalSpots.length;
+  const NG = NCS + NCS * 12;
   const gp = new Float32Array(NG * 3), gc = new Float32Array(NG * 3), gs = new Float32Array(NG * 2);
   crystalSpots.forEach((c, i) => {
     const col = C(c.color);
     gp.set([c.base.x, c.base.y, c.base.z], i * 3); gc.set([col.r, col.g, col.b], i * 3); gs.set([0, -1], i * 2);
     for (let k = 0; k < 12; k++) {
-      const j = 5 + i * 12 + k;
+      const j = NCS + i * 12 + k;
       gp.set([c.base.x, c.base.y - 2.5, c.base.z], j * 3); gc.set([col.r, col.g, col.b], j * 3); gs.set([rnd(), rnd()], j * 2);
     }
   });
@@ -645,7 +654,16 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
       villagerA: spot(-19.8, 141.5, Math.PI / 2),
       villagerB: spot(-27, 151.5, toPlaza(-27, 151.5)),
       villagerC: spot(29.5, 129.5, yawTo(29.5, 129.5, VILLAGE.pond.x, VILLAGE.pond.z)),
+      // v3 mentors around the altar ring + the sage (이솔데) by the library + the reaction trainer at the training ground
+      rangerMentor: spot(A.x - A.r - 1.4, A.z + 2.6, yawTo(A.x - A.r - 1.4, A.z + 2.6, A.x, A.z)),
+      paladinMentor: spot(A.x - A.r - 1.0, A.z - 3.2, yawTo(A.x - A.r - 1.0, A.z - 3.2, A.x, A.z)),
+      spiritMentor: spot(A.x + A.r + 1.3, A.z - 2.4, yawTo(A.x + A.r + 1.3, A.z - 2.4, A.x, A.z)),
+      shadowMentor: spot(A.x - 1.6, A.z - A.r - 1.5, yawTo(A.x - 1.6, A.z - A.r - 1.5, A.x, A.z)),
+      sage: spot(6.2, 147.6, toPlaza(6.2, 147.6)),
+      trainer: spot(Tg.x + 7.2, Tg.z - 1.5, yawTo(Tg.x + 7.2, Tg.z - 1.5, Tg.x, Tg.z)),
     },
+    /** The reaction-trainer dummy (DESIGN §5.6 / story trainer): its spot at the training ground. */
+    reactionDummy: spot(Tg.x + 5.2, Tg.z - 4.6, yawTo(Tg.x + 5.2, Tg.z - 4.6, VILLAGE.plaza.x, VILLAGE.plaza.z)),
     altar: V3(A.x, A.z, 0.9),
     altarRadius: A.r,
     altarCrystals: crystalSpots.map((c) => ({ element: c.el, position: c.base.clone() })),
@@ -684,5 +702,11 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
     },
     /** Brighten / dim the altar (0..2), e.g. during the blessing ceremony. */
     setAltarGlow(v) { crystals.material.color.setScalar(Math.max(0.2, v)); },
+    /** Light (or dim) one element's altar crystal (instance colour only: no recompile). */
+    setCrystalLit(el, lit = true) {
+      const i = crystalSpots.findIndex((c) => c.el === el); if (i < 0) return false;
+      crystals.setColorAt(i, crystalTint(crystalSpots[i], lit)); crystals.instanceColor.needsUpdate = true; return true;
+    },
+    refreshCrystals() { crystalSpots.forEach((c, i) => crystals.setColorAt(i, crystalTint(c, !c.lost || freed(c.el)))); crystals.instanceColor.needsUpdate = true; },
   };
 }
