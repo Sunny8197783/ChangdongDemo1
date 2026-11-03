@@ -1,4 +1,4 @@
-// 츄츄 — jelly slime. Squash & stretch hops, quivering lunge, elemental variants, goo pop on death.
+// 말랑이 (id chuchu) — jelly slime. Squash & stretch hops, quivering lunge, elemental variants, goo pop on death.
 import * as THREE from 'three';
 import { rand, clamp, damp, ELEMENT_COLORS } from '../core/utils.js';
 import { buildChuchu } from './models.js';
@@ -6,7 +6,8 @@ import { Spring } from './common.js';
 import { makeEnemy, faceTo } from './base.js';
 
 const _v = new THREE.Vector3();
-const STATUS = { fire: { burning: 3 }, ice: { chilled: 3 }, lightning: { shocked: 2.5 } };
+const STATUS = { fire: { burning: 3 }, ice: { chilled: 3 }, lightning: { shocked: 2.5 }, water: { wet: 5 }, nature: { seeded: { dur: 5, stacks: 1 } }, shadow: { blight: 2.5 } };
+const AURA_SHAPE = { fire: 'ember', ice: 'snow', water: 'droplet', nature: 'petal', light: 'spark', shadow: 'wisp' };
 
 export function createChuchu(ctx, pos, opts = {}) {
   const variant = opts.variant || 'normal';
@@ -26,8 +27,8 @@ export function createChuchu(ctx, pos, opts = {}) {
   let hopT = rand(0.5, 2), lungeCd = rand(1, 2), hit = false, touchCd = 0, aura = null, idleHopT = rand(1, 3);
   let crouch = 0, quiver = 0;
   if (el) {
-    const col = ELEMENT_COLORS[el];
-    const shape = el === 'fire' ? 'ember' : el === 'ice' ? 'snow' : 'spark';
+    const col = ELEMENT_COLORS[el] ?? 0xffffff;
+    const shape = AURA_SHAPE[el] || 'spark';
     aura = game.vfx.emitter?.({ follow: model.core, rate: el === 'fire' ? 14 : 9, color: [col, 0xffffff], speed: 0.9, spread: 1,
       size: el === 'lightning' ? 0.1 : 0.16, sizeEnd: 0, life: 0.7, shape, gravity: el === 'fire' ? -3 : el === 'ice' ? 0.6 : 0, drag: 1, offset: new THREE.Vector3(0, 0.2, 0) });
   }
@@ -65,7 +66,7 @@ export function createChuchu(ctx, pos, opts = {}) {
     // elemental aura contact
     if (el && touchCd <= 0 && d < e.radius + 0.6 && Math.abs(pp.y - p.y) < 1.2) {
       touchCd = 1.2;
-      ctx.hitPlayer(e, { amount: 6, element: el, status: STATUS[el], knockback: 4, noReaction: false });
+      ctx.hitPlayer(e, { amount: 6, element: el, status: STATUS[el] || undefined, knockback: 4, noReaction: false });
     }
     switch (e.state) {
       case 'idle': {
@@ -112,7 +113,7 @@ export function createChuchu(ctx, pos, opts = {}) {
       case 'lunge':
         if (!hit && d < e.radius + 0.75 && Math.abs(pp.y + 0.6 - (p.y + 0.4)) < 1.3) {
           hit = true;
-          ctx.hitPlayer(e, { amount: 10, element: el || 'physical', status: el ? STATUS[el] : null, knockback: 7, launch: 2 });
+          ctx.hitPlayer(e, { amount: 10, element: el || 'physical', status: el ? (STATUS[el] || null) : null, knockback: 7, launch: 2 });
           e.velocity.x *= -0.3; e.velocity.z *= -0.3;
         }
         if (e.grounded && e.stateT > 0.1) { lungeCd = rand(1.8, 3); e.setState('chase'); hopT = rand(0.5, 0.9); }

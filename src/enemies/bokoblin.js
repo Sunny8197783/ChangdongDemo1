@@ -1,4 +1,4 @@
-// 보코블린 — melee goblin with club. Camp idle (sit by bonfire), alert, chase, strafe, telegraphed swing, leap smash.
+// 뿔도깨비 (id bokoblin) — melee goblin with club. Camp idle (sit by bonfire), alert, chase, strafe, telegraphed swing, leap smash.
 import * as THREE from 'three';
 import { rand, clamp, pick } from '../core/utils.js';
 import { buildBokoblin } from './models.js';
@@ -11,7 +11,7 @@ export function createBokoblin(ctx, pos, opts = {}) {
   const model = buildBokoblin();
   model.lieY = 0.28;
   const e = makeEnemy(ctx, {
-    kind: 'bokoblin', model, name: '보코블린', hp: 140, radius: 0.55, height: 1.7, mass: 1,
+    kind: 'bokoblin', model, name: '뿔도깨비', hp: 140, radius: 0.55, height: 1.7, mass: 1,
     camp: opts.camp, facing: opts.facing, staggerDmg: 34,
   }, pos);
   const cur = newPose(HIP), tgt = newPose(HIP);

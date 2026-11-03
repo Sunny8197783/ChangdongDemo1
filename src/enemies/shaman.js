@@ -1,4 +1,4 @@
-// 보코 주술사 — ranged goblin caster. Keeps distance, casts homing elemental orbs, teleports away when crowded.
+// 도깨비 주술사 (id shaman) — ranged goblin caster. Keeps distance, casts homing elemental orbs, teleports away when crowded.
 import * as THREE from 'three';
 import { rand, clamp, pick, ELEMENT_COLORS } from '../core/utils.js';
 import { buildShaman } from './models.js';
@@ -13,7 +13,7 @@ export function createShaman(ctx, pos, opts = {}) {
   const model = buildShaman(element);
   model.lieY = 0.22;
   const e = makeEnemy(ctx, {
-    kind: 'shaman', model, name: '보코 주술사', hp: 110, radius: 0.45, height: 1.5, mass: 0.8,
+    kind: 'shaman', model, name: '도깨비 주술사', hp: 110, radius: 0.45, height: 1.5, mass: 0.8,
     camp: opts.camp, facing: opts.facing, staggerDmg: 26, sight: 24, chaseState: 'kite',
     resist: { [element]: 0.5 },
   }, pos);

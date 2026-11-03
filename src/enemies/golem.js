@@ -79,6 +79,7 @@ export function createGolem(ctx, pos, opts = {}) {
     poise += result?.damage || 0;
     if (!phase2 && e.hp <= e.maxHp * 0.5 && e.state !== 'phase2') {
       phase2 = true; mul = 1.35; e.setState('phase2'); summonDone = false; e.invulnerable = true;
+      game.events.emit('bossPhase', { boss: e, id: 'golem', phase: 2, name: e.phases?.[1]?.name || '' });
       return;
     }
     if (poise > 280 && poiseCd <= 0 && !['emerge', 'roar', 'phase2', 'stagger'].includes(e.state)) {
@@ -178,7 +179,7 @@ export function createGolem(ctx, pos, opts = {}) {
           model.fistR.getWorldPosition(_v);
           _v.y += 1.2;
           // lead the target a little
-          const pv = game.player?.entity?.velocity;
+          const pv = (ctx.target || game.player?.entity)?.velocity;
           throwTarget.copy(pp);
           if (pv) throwTarget.addScaledVector(pv, 0.3);
           throwTarget.y = world.getHeight(throwTarget.x, throwTarget.z);

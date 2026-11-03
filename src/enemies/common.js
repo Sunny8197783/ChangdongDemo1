@@ -215,7 +215,14 @@ export function textures() {
     const gr = g.createLinearGradient(0, 16, 0, 112); gr.addColorStop(0, '#fff6a8'); gr.addColorStop(1, fill);
     g.fillStyle = gr; g.fillText(ch, w / 2, h / 2 + 6);
   });
+  const word = (txt, fill) => canvasTex(256, 96, (g, w, h) => {
+    g.font = '900 64px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = 14; g.strokeStyle = '#2a1408'; g.strokeText(txt, w / 2, h / 2 + 4);
+    const gr = g.createLinearGradient(0, 10, 0, 86); gr.addColorStop(0, '#fff6c8'); gr.addColorStop(1, fill);
+    g.fillStyle = gr; g.fillText(txt, w / 2, h / 2 + 4);
+  });
   _tex = {
+    poise: word('붕괴!', '#ff9a3a'),
     alert: glyph('!', '#ff8a1a'),
     question: glyph('?', '#9fd8ff'),
     star: canvasTex(64, 64, (g) => {
@@ -318,7 +325,10 @@ export function integrate(game, e, dt) {
   } else { e._stT = 0; e._stX = p.x; e._stZ = p.z; }
   p.x += (v.x + mv.x) * dt; p.z += (v.z + mv.z) * dt;
   p.y += v.y * dt;
-  const gh = w.getGroundHeight ? w.getGroundHeight(p.x, p.z) : w.getHeight(p.x, p.z);
+  let gh = w.getGroundHeight ? w.getGroundHeight(p.x, p.z) : w.getHeight(p.x, p.z);
+  // amphibious enemies (수렁도마뱀) wade: they stand on an invisible floor 1.1 m under the surface in deep water
+  if (e.amphibious && w.waterDepth) { const dep = w.waterDepth(p.x, p.z); if (dep > 1.1) gh += dep - 1.1; }
+  if (e.hover) gh += e.hover;
   e.landed = 0;
   if (p.y <= gh || (e.grounded && v.y <= 0.01 && p.y - gh < 0.45)) {
     if (!e.grounded) e.landed = Math.max(0.01, -v.y);
@@ -333,7 +343,7 @@ export function integrate(game, e, dt) {
     const f = Math.exp(-0.3 * dt); v.x *= f; v.z *= f;
   }
   // keep out of deep water (unless flung)
-  if (e.grounded && w.waterDepth && w.waterDepth(p.x, p.z) > 0.7 && w.waterDepth(px, pz) <= 0.7) {
+  if (e.grounded && !e.amphibious && !e.hover && w.waterDepth && w.waterDepth(p.x, p.z) > 0.7 && w.waterDepth(px, pz) <= 0.7) {
     p.x = px; p.z = pz; p.y = w.getGroundHeight ? w.getGroundHeight(px, pz) : w.getHeight(px, pz);
     e.blocked = true;
     e.waterBlockT = (e.waterBlockT || 0) + dt;
