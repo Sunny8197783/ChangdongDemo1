@@ -400,6 +400,13 @@ export const FINISHERS = {
 };
 
 // ---------------------------------------------------------------- support skills (G, master)
+/** Legacy support mods → stats keys (doubleJump → extraJumps; lightning adds castSpeed/chainBonus). */
+function statMods(el, mods) {
+  const o = {};
+  if (mods) for (const k in mods) { if (k === 'doubleJump') { if (mods[k]) o.extraJumps = 1; } else o[k] = mods[k]; }
+  if (el === 'lightning') { o.castSpeed = 1.6; o.chainBonus = 2; }
+  return o;
+}
 export const SUPPORTS = {
   fire: { name: '불꽃 정령 소환', desc: '주위를 맴돌며 적에게 화염구를 쏘는 불꽃 정령을 소환 (15초)', mp: 25, cd: 24, duration: 15 },
   ice: { name: '얼음 갑옷', desc: '받는 피해 50% 감소, 공격한 적을 얼어붙게 함 (12초)', mp: 22, cd: 22, duration: 12, mods: { dmgTakenMul: 0.5 } },
@@ -452,8 +459,7 @@ export function createSupportRuntime(S, assets) {
 
   function stop(silent = false) {
     if (!cur) return;
-    const pl = game.player, m = pl?.mods;
-    if (m && cur.saved) Object.assign(m, cur.saved);
+    try { game.stats?.clear?.(cur.statId); } catch (_) { /* */ }
     for (const e of cur.emitters) { try { e.stop(); } catch (_) { /* */ } }
     game.scene.remove(cur.vis);
     if (!silent) {
@@ -469,10 +475,11 @@ export function createSupportRuntime(S, assets) {
     const def = SUPPORTS[el];
     const vis = visCache[el] || (visCache[el] = makeVis(el));
     game.scene.add(vis);
-    const pl = game.player, m = pl?.mods;
-    const saved = {};
-    if (m && def.mods) for (const k in def.mods) { saved[k] = m[k]; m[k] = def.mods[k]; }
-    cur = { el, t: 0, dur: def.duration, vis, saved, emitters: [], shootT: 0.6, hitT: 0, arcT: 0 };
+    const pl = game.player;
+    // v3: buffs are a timed game.stats source (CONTRACT §5); player.mods is a read-only getter view
+    const statId = 'buff:' + el + '.sup';
+    try { game.stats?.set?.(statId, statMods(el, def.mods), { duration: def.duration }); } catch (_) { /* */ }
+    cur = { el, t: 0, dur: def.duration, vis, statId, emitters: [], shootT: 0.6, hitT: 0, arcT: 0 };
     const follow = pl?.object;
     const shape = { fire: 'ember', ice: 'snow', lightning: 'spark', wind: 'leaf', earth: 'smoke' }[el];
     if (follow) {
