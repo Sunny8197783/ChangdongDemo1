@@ -207,7 +207,7 @@ const PAL = {
   mirMoss: C(0x58a184), mirReed: C(0x86b27a), mirStone: C(0x8fa3a8),
   ash: C(0x7a8463), ashDark: C(0x545c48), rot: C(0x6d4b7e), rotDark: C(0x4a3358), glowMoss: C(0x6fd3b0),
   bark: C(0x7a5536), barkDark: C(0x4f3622), moss: C(0x6c9c47), mossBright: C(0x8fc25a),
-  crystal: C(0xd9d5ea), crystalBlue: C(0xaebde0), valley: C(0x74a24e),
+  crystal: C(0xb9b2cc), crystalBlue: C(0x8e98bd), ledgeMoss: C(0x7ba05a), valley: C(0x74a24e),
 };
 const _t = new THREE.Color();
 /** Recolour (col) and scale grass density for the new zones. Returns the density multiplier. */
@@ -245,8 +245,9 @@ export function terraformColor(x, z, h, slope, n1, n2, n3, col) {
     if (d < LD.r + LD.cliff + 3) {
       const top = sstep(LD.r + 2, LD.r - 1, d);
       _t.copy(PAL.crystal).lerp(PAL.crystalBlue, sstep(0.4, 0.8, n2) * 0.6);
-      col.lerp(_t, Math.max(top * 0.8, slope > 0.3 ? 0.6 : 0));
-      dens *= 1 - top * 0.8;
+      _t.lerp(PAL.ledgeMoss, sstep(0.55, 0.85, n1) * 0.55);   // moss between the paving
+      col.lerp(_t, Math.max(top * 0.75, slope > 0.3 ? 0.6 : 0));
+      dens *= 1 - top * 0.5;
     }
   }
   {

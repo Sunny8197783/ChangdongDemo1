@@ -144,6 +144,14 @@ export function buildGates(game, world, { uTime, shrineY }) {
     return { id: d.id, kind: d.kind, name: d.name, element: d.element || null, position: p, found: false, glow: 1 };
   });
   const shrineById = Object.fromEntries(shrines.map((s) => [s.id, s]));
+  // spirit shrines: F shows the shrine's name and tells narrative (shrineUse) — the spirit's story beats live there
+  for (const s of shrines) {
+    if (s.kind !== 'spirit') continue;
+    game.interact?.offer?.('shrine:' + s.id, {
+      pos: s.position, r: 3.2, label: s.name, priority: 1,
+      onUse: () => { try { game.events?.emit?.('shrineUse', { id: s.id, element: s.element }); } catch (_) { /* */ } try { game.ui?.toast?.(s.name); } catch (_) { /* */ } return true; },
+    });
+  }
   const pedGeo = (() => {
     const st = (x, y, z, c) => { c.copy(C(0xd2ccbc)).lerp(C(0x9b9384), (Math.sin(x * 5 + y * 4) * 0.5 + 0.5) * 0.5); if (y < 0.25) c.lerp(C(0x6f9a48), 0.5); };
     const P = [

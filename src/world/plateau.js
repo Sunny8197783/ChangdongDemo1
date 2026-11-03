@@ -139,7 +139,7 @@ export function buildPlateau(game, world, { uTime }) {
   }
 
   // ---------------- the ledge: prism mirrors on stone plinths, crystal pillars, the mirror alcove door
-  const stone = (x, y, z, c) => c.copy(C(0xd9d5ea)).lerp(C(0x9da6c8), (Math.sin(x * 2.3 + y * 3.1) * Math.sin(z * 2.1) * 0.5 + 0.5) * 0.6);
+  const stone = (x, y, z, c) => c.copy(C(0xb8b1cc)).lerp(C(0x7f88ad), (Math.sin(x * 2.3 + y * 3.1) * Math.sin(z * 2.1) * 0.5 + 0.5) * 0.6);
   const ly = H(LD.x, LD.z);
   const mirrors = [];
   for (let k = 0; k < 6; k++) {
@@ -149,8 +149,8 @@ export function buildPlateau(game, world, { uTime }) {
     const yaw = Math.atan2(LD.x - x, LD.z - z);
     const T = mat4(x, y, z, 0, yaw, 0);
     L.push(part(new THREE.BoxGeometry(2.4, 0.6, 1.2), stone, T.clone().multiply(mat4(0, 0.3, 0)), { jitter: 0.05 }));
-    for (const s of [-1, 1]) L.push(part(new THREE.CylinderGeometry(0.16, 0.2, 3.6, 6), 0xe8e2ff, T.clone().multiply(mat4(s * 1.05, 2.3, 0))));
-    L.push(part(new THREE.TorusGeometry(1.1, 0.12, 4, 6, Math.PI), 0xe8e2ff, T.clone().multiply(mat4(0, 4.05, 0))));
+    for (const s of [-1, 1]) L.push(part(new THREE.CylinderGeometry(0.16, 0.2, 3.6, 6), 0xd9b866, T.clone().multiply(mat4(s * 1.05, 2.3, 0))));
+    L.push(part(new THREE.TorusGeometry(1.1, 0.12, 4, 6, Math.PI), 0xd9b866, T.clone().multiply(mat4(0, 4.05, 0))));
     const glass = new THREE.PlaneGeometry(1.9, 3.4); glass.translate(0, 2.3, 0.02);
     MG.push(part(glass, 0xffffff, T));
     glow(LG, new THREE.OctahedronGeometry(0.28, 0), 0xffe08a, T.clone().multiply(mat4(0, 5.3, 0, 0, 0, 0, 1, 1.6, 1)), 2.2);
@@ -171,7 +171,7 @@ export function buildPlateau(game, world, { uTime }) {
   const doorYaw = -A.gapA + Math.PI / 2;   // local X along the ring tangent at the gap
   const doorGeo = (() => {
     const D = [];
-    D.push(part(new THREE.BoxGeometry(2.6, 3.8, 0.35), (x, y, z, c) => c.copy(C(0xcfd6ff)).lerp(C(0xffffff), Math.max(0, y / 4)), mat4(0, 1.9, 0)));
+    D.push(part(new THREE.BoxGeometry(2.6, 3.8, 0.35), (x, y, z, c) => c.copy(C(0x5a6aa8)).lerp(C(0xb9c6ff), Math.max(0, y / 4) * 0.7), mat4(0, 1.9, 0)));
     D.push(part(new THREE.TorusGeometry(1.05, 0.12, 4, 6, Math.PI), 0xffe08a, mat4(0, 3.6, 0.2)));
     const GEMS = 5;
     for (let k = 0; k < GEMS; k++) D.push(part(new THREE.OctahedronGeometry(0.16, 0), 0xffe08a, mat4(-0.9 + k * 0.45, 0.4, 0.2)));
@@ -226,8 +226,9 @@ export function buildPlateau(game, world, { uTime }) {
         vec3 v = normalize(cameraPosition - vW);
         float f = pow(1.0 - abs(dot(v, normalize(vN))), 2.0);
         float sheen = smoothstep(0.92, 1.0, sin(vW.y * 0.9 + vW.x * 0.6 - uTime * 1.6) * 0.5 + 0.5);
-        vec3 sky = mix(vec3(0.78, 0.86, 1.0), vec3(1.0, 0.94, 0.8), clamp(vW.y * 0.02 - 0.5, 0.0, 1.0));
-        vec3 c = mix(sky * 0.85, vec3(1.0), f * 0.6) + vec3(1.0, 0.95, 0.8) * sheen * 0.8;
+        float band = smoothstep(0.0, 1.0, fract(vW.y * 0.35 + vW.x * 0.05));
+        vec3 deep = mix(vec3(0.22, 0.28, 0.48), vec3(0.42, 0.52, 0.78), band);
+        vec3 c = mix(deep, vec3(0.85, 0.9, 1.0), f * 0.7) + vec3(1.0, 0.92, 0.7) * sheen * 0.9;
         gl_FragColor = vec4(c, 1.0);
         #include <fog_fragment>
       }`,

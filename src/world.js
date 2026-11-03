@@ -366,7 +366,13 @@ export function createWorld(game) {
     act = Math.max(1, Math.min(5, a | 0));
     plateau.setIslandsVisible(act >= 4);
   }
-  game.events?.on?.('bossSpawn', (p) => { if (!actExplicit && (p?.id === 'kalis' || p?.id === 'nidhoggra' || p?.boss === 'kalis' || p?.boss === 'nidhoggra')) applyAct(Math.max(act, 4)); });
+  const bossIdOf = (p) => p?.id || p?.boss?.id || p?.boss;
+  game.events?.on?.('bossSpawn', (p) => {
+    const id = bossIdOf(p);
+    if (!actExplicit && (id === 'kalis' || id === 'nidhoggra')) applyAct(Math.max(act, 4));
+    if (id === 'nidhoggra') world.setBossFightLOD?.(true);   // idempotent; enemies also call it (CONTRACT §13)
+  });
+  game.events?.on?.('bossDefeated', (p) => { if (bossIdOf(p) === 'nidhoggra') world.setBossFightLOD?.(false); });
   // ---------------- zone colour grade + twilight fog
   {
     const G = game.post?.GRADES;
