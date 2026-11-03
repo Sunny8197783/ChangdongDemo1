@@ -3,13 +3,15 @@ import * as THREE from 'three';
 import { toonMat } from '../core/utils.js';
 import { fbm, vnoise, ridge, sstep, smin, distPolyline, mulberry32 } from './noise.js';
 import { VILLAGE } from './villageLayout.js';
+import { WATER } from './zones.js';
+import { terraform, terraformColor } from './terraform.js';
 
 export const SIZE = 360;
 export const SEG = 240;
 export const CELL = SIZE / SEG;
 export const ORIGIN = -SIZE / 2;
 export const NV = SEG + 1;
-export const WATER_LEVEL = 1.5;
+export const WATER_LEVEL = WATER;   // 1.5 (zones.js owns the value so the terraform can use it while baking)
 export const BOUNDS = 170;
 
 function smoothPath(pts, per = 6) {
@@ -175,6 +177,8 @@ T.training = avgRaw(LAYOUT.training[0], LAYOUT.training[1], 6);
 T.arena = avgRaw(LAYOUT.arena.x, LAYOUT.arena.z, 10) + LAYOUT.arena.rise;
 T.rampEnd = rawHeight(LAYOUT.ramp.x, LAYOUT.ramp.z1);
 T.pads = VILLAGE.pads.map((p) => rawHeight(p.x, p.z));
+T.glade = avgRaw(64, -48, 6);        // v3: 녹스's glade
+T.hollow = avgRaw(86, -74, 4) - 0.5; // v3: 모르그로스's hollow floor
 {
   const Pd = VILLAGE.pond;
   T.pond = rawHeight(Pd.x, Pd.z) - 0.35;
@@ -246,7 +250,7 @@ export function fullHeight(x, z) {
       h = smin(h, shape, 0.6);
     }
   }
-  return h;
+  return terraform(x, z, h, T, _z.arena);
 }
 
 // ---------------------------------------------------------------- build
@@ -365,6 +369,7 @@ export function buildTerrain(game) {
     // snow
     const snowW = sstep(50, 60, h + n2 * 10) * (1 - sstep(0.38, 0.6, slope));
     if (snowW > 0) { col.lerp(P.snow, snowW); dens *= 1 - snowW; }
+    dens *= terraformColor(x, z, h, slope, n1, n2, n3, col);   // v3 zones (Mirwen, Elderwood, ledge, plateau, ramps)
     if (h < WATER_LEVEL + 0.35) dens = 0;
     if (vm > 0 && h < T.pond + 0.2 && Math.hypot(x - VILLAGE.pond.x, z - VILLAGE.pond.z) < VILLAGE.pond.r * 1.3) dens = 0;
     dens *= 1 - sstep(0.4, 0.95, mf) * 0.85;
@@ -410,7 +415,15 @@ export function buildTerrain(game) {
       .replace('#include <fog_vertex>', '#include <fog_vertex>\n vTW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTN = normalize(mat3(modelMatrix) * objectNormal);');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN; uniform sampler2D uBurnTex; uniform vec4 uBurnXform; uniform float uBurnTime;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        { vec2 bt = texture2D(uBurnTex, (vTW.xz - uBurnXform.xy) * uBurnXform.zw).rg;
+        { vec4 bt4 = texture2D(uBurnTex, (vTW.xz - uBurnXform.xy) * uBurnXform.zw); vec2 bt = bt4.rg;
+          // v3 surface2: B = blessed (gold sheen, soft pulse), A = cursed (violet miasma, dark veins)
+          float blessK = bt4.b * smoothstep(0.3, 0.7, normalize(vTN).y);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.08, 0.78) + vec3(0.1, 0.08, 0.0), blessK * 0.7);
+          totalEmissiveRadiance += vec3(1.0, 0.82, 0.38) * blessK * (0.18 + 0.1 * sin(uBurnTime * 2.4 + vTW.x * 0.6 + vTW.z * 0.5));
+          float curseK = bt4.a;
+          float vein = smoothstep(0.62, 0.95, sin(vTW.x * 2.3 + sin(vTW.z * 1.7) * 2.0) * sin(vTW.z * 2.1 + sin(vTW.x * 1.3) * 2.0) * 0.5 + 0.5);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.12, 0.28) + diffuseColor.rgb * 0.25, curseK * 0.75);
+          totalEmissiveRadiance += vec3(0.62, 0.22, 1.0) * curseK * vein * (0.35 + 0.25 * sin(uBurnTime * 3.1 + vTW.z));
           float flat_ = smoothstep(0.55, 0.85, normalize(vTN).y);
           float ch = smoothstep(0.05, 0.75, bt.r) * flat_;
           float speck = fract(sin(dot(floor(vTW.xz * 3.0), vec2(12.9898, 78.233))) * 43758.5453);

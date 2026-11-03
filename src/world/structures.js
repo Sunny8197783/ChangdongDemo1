@@ -87,8 +87,9 @@ function buildCamp(game, world, camp, idx, parts, rnd) {
     const a = (i / 10) * Math.PI * 2;
     parts.push(part(new THREE.DodecahedronGeometry(0.3, 0), stoneColor(false), mat4(cx + Math.cos(a) * 1.05, fy + 0.05, cz + Math.sin(a) * 1.05, rnd(), rnd(), rnd(), 1, 0.7, 1)));
   }
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 + 0.3;
+  const STAKES = 5;
+  for (let i = 0; i < STAKES; i++) {
+    const a = (i / STAKES) * Math.PI * 2 + 0.3;
     parts.push(part(new THREE.CylinderGeometry(0.1, 0.13, 1.5, 6), woodColor(0x5a3d24, 0x2a1c12),
       mat4(cx + Math.cos(a) * 0.38, fy + 0.45, cz + Math.sin(a) * 0.38, 0, -a, 0).multiply(mat4(0, 0, 0, 0, 0, 0.62))));
   }
