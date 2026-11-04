@@ -1,9 +1,5 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { createComposer4 } from './core/post4.js';
 import { Emitter } from './core/events.js';
 import { Input } from './core/input.js';
 import { stubs } from './core/stubs.js';
@@ -20,7 +16,7 @@ import { createDebug } from './core/debug.js';
 import { KEYS, keymapMode, createKeymap } from './core/keymap.js';
 import { DIFFICULTY } from './core/settings.js';
 import { createRender } from './core/render.js';
-import { detectGpu } from './core/gpu.js';
+import { detectGpu, baseScale as gpuBaseScale } from './core/gpu.js';
 import { createQuality } from './core/quality.js';
 
 const params = new URLSearchParams(location.search);
@@ -52,7 +48,7 @@ const basePR = () => Math.min(devicePixelRatio, prCap());
 // ---------- renderer / scene ----------
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, isTest ? 1 : 1.5));
+renderer.setPixelRatio(Math.min(devicePixelRatio, isTest ? 1 : 1.0));   // v4: render scale is a viewport (post4), not the pixel ratio
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -85,51 +81,10 @@ const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 12
 camera.position.set(0, 10, 30);
 scene.add(camera);
 
-// Canvas MSAA would only cover the final OutputPass quad; anti-alias the scene target itself instead (WebGL2).
-// v4: both ping-pong targets carry a DepthTexture so the threat scene can soft-occlude against the scene (§2.4, §5.3).
-const composerRT = (samples) => new THREE.WebGLRenderTarget(innerWidth, innerHeight,
-  { type: THREE.HalfFloatType, samples, depthTexture: new THREE.DepthTexture(innerWidth, innerHeight) });
-const composer = new EffectComposer(renderer, composerRT(0));
-composer.renderTarget2.depthTexture = new THREE.DepthTexture(innerWidth, innerHeight);   // own texture (clone shares the source)
-composer.addPass(new RenderPass(scene, camera));
-// Second safety net: scrub any NaN/Inf left in the HDR scene target (e.g. normalize(0) in some shader) before
-// bloom can spread it across the frame, and cap extreme additive stacking that would overflow half floats.
-// It also carries the core-owned post hooks (CONTRACT §3.3): uChroma (chromatic split) + uRadial (radial blur) for
-// game.post.pulse, and a colour grade (tint / saturation / contrast) for game.post.grade. All are uniform branches.
-const sanitizePass = new ShaderPass({
-  uniforms: {
-    tDiffuse: { value: null }, uChroma: { value: 0 }, uRadial: { value: 0 },
-    uGradeTint: { value: new THREE.Vector3(1, 1, 1) }, uGradeSat: { value: 1 }, uGradeContrast: { value: 1 }, uGradeMix: { value: 0 },
-  },
-  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uChroma; uniform float uRadial;
-    uniform vec3 uGradeTint; uniform float uGradeSat; uniform float uGradeContrast; uniform float uGradeMix;
-    varying vec2 vUv;
-    vec4 safeTex(vec2 uv){ vec4 c = texture2D(tDiffuse, uv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); return c; }
-    void main(){
-      vec4 c;
-      if (uChroma > 0.0005 || uRadial > 0.0005) {
-        vec2 d = vUv - 0.5;
-        vec4 acc = vec4(0.0);
-        for (int i = 0; i < 6; i++) { float t = float(i) / 5.0; acc += safeTex(vUv - d * (uRadial * 0.07 * t)); }
-        c = acc / 6.0;
-        vec2 off = d * uChroma * 0.018;
-        c.r = mix(c.r, safeTex(vUv + off).r, 0.85);
-        c.b = mix(c.b, safeTex(vUv - off).b, 0.85);
-      } else c = safeTex(vUv);
-      if (uGradeMix > 0.001) {
-        float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-        vec3 g = mix(vec3(l), c.rgb, uGradeSat) * uGradeTint;
-        g = (g - 0.18) * uGradeContrast + 0.18;
-        c.rgb = mix(c.rgb, max(g, vec3(0.0)), uGradeMix);
-      }
-      gl_FragColor = clamp(c, 0.0, 512.0);
-    }`,
-});
-composer.addPass(sanitizePass);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.6, 0.86);
-composer.addPass(bloomPass);
-composer.addPass(new OutputPass());
+// v4 render path (PLAN §2.4, src/core/post4.js): scene → HalfFloat target (viewport = dynamic resolution, DepthTexture),
+// BloomPass4 (¼-area bright, 3/5 mips, texture only) and one merged FinalPass to the canvas. Created after the settings
+// (MSAA and bloom mips are boot decisions); `composer` is declared here so the closures below can reference it.
+let composer = null, bloomPass = null;
 
 // raw compile (no target binding): game.render.warm binds the right target itself
 const rawCompile = renderer.compile.bind(renderer);
@@ -150,12 +105,12 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
+  sizeComposer();
 });
 
 // ---------- game object ----------
 const game = {
-  THREE, renderer, scene, camera, composer, bloomPass,
+  THREE, renderer, scene, camera, composer: null, bloomPass: null,   // set right after the boot render decisions
   events: new Emitter(),
   input: new Input(renderer.domElement),
   state: 'title',
@@ -278,6 +233,32 @@ const SHADOW_TYPES = { basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, pcf
 const bootShadowType = SHADOW_TYPES[game.settings.values.shadowType] ? game.settings.values.shadowType : (bootPreset.shadowType || 'pcf');
 renderer.shadowMap.type = SHADOW_TYPES[bootShadowType];
 const bootPointLights = game.settings.values.quality === 'custom' ? !!game.settings.values.pointLights : !!bootPreset.pointLights;
+composer = createComposer4(renderer, scene, camera, { msaa: bootMsaa, bloomMips: bootPreset.bloomMips ?? 3 });
+bloomPass = composer.bloomPass;
+game.composer = composer; game.bloomPass = bloomPass;
+/** Allocate the composer at the maximum render size (drawing buffer × renderScale); boot, resize, renderScale only. */
+const _db = new THREE.Vector2();
+function sizeComposer() {
+  renderer.getDrawingBufferSize(_db);
+  const rs = Math.max(0.5, Math.min(1, +game.settings.values.renderScale || 1));
+  composer.setSize(_db.x, _db.y, rs);
+  renderScaleState.alloc = rs; renderScaleState.dirty = true;
+}
+/** Render scale (fraction of the drawing buffer): pixel-budget base × governor dynamic scale (§2.2, §2.3). */
+const renderScaleState = { alloc: 1, base: 1, total: 1, dirty: true };
+function updateRenderScale() {
+  const v = game.settings.values, q = game.quality;
+  renderer.getDrawingBufferSize(_db);
+  const budgetPx = testParams.budgetPx > 0 ? testParams.budgetPx : (+v.budgetPx || (PRESETS[v.quality] || PRESETS.medium).budgetPx || 1.0);
+  // the drawing buffer already carries the pixel ratio: pr = 1 here
+  const base = gpuBaseScale(_db.x, _db.y, 1, budgetPx, renderScaleState.alloc);
+  const dyn = q ? Math.max(0.25, Math.min(1, +q.scale || 1)) : 1;
+  const total = Math.max(0.25, base * dyn);
+  if (q) q.baseScale = base;
+  if (!renderScaleState.dirty && Math.abs(total - renderScaleState.total) < 1e-4) return;
+  renderScaleState.base = base; renderScaleState.total = total; renderScaleState.dirty = false;
+  composer.setScale(total / renderScaleState.alloc);
+}
 game.render = createRender(game, {
   renderer, scene, camera, rawCompile, sceneTarget: () => composer.readBuffer, gpu: gpuInfo,
   msaa: bootMsaa, pointLights: bootPointLights, shadowType: bootShadowType,
@@ -322,7 +303,7 @@ const GRADES = {
   golden:  { tint: [1.08, 1.02, 0.88], sat: 1.06, contrast: 1.02 },  // Mirwen / ending light
 };
 {
-  const U = sanitizePass.uniforms;
+  const U = composer.finalPass.uniforms;   // uChroma / uRadial / uGrade* keep their v3 names (FinalPass4)
   const pulse = { chroma: 0, radial: 0, dur: 0.2, left: 0, peakC: 0, peakR: 0 };
   const grade = { name: 'none', target: { tint: new THREE.Vector3(1, 1, 1), sat: 1, contrast: 1, mix: 0 }, rate: 4 };
   // v4 setGrade(id, strength, {priority, durReal}) entries; the legacy grade() is the cinematic priority (10)
@@ -350,7 +331,8 @@ const GRADES = {
     cameraNear: { value: camera.near }, cameraFar: { value: camera.far },
     projInv: { value: camera.projectionMatrixInverse }, camWorld: { value: camera.matrixWorld },
     bloomTex: { value: null },
-    bloomStrength(v) { if (v != null && bloomPass) bloomPass.strength = +v; return bloomPass?.strength ?? 0; },
+    /** Base bloom strength (preset bloomStrength; × 0.75 while ≥ 3 enemies are aggroed). Returns the current base. */
+    bloomStrength(v) { if (v != null && bloomPass) bloomPass.strength = Math.max(0, +v); return bloomPass?.strength ?? 0; },
     /**
      * Priority-arbitrated colour grade layer. strength 0 removes it; durReal (real s) auto-expires it. The legacy
      * post.grade(name, …) always wins (cinematic priority). GRADES[id] must exist.
@@ -410,35 +392,55 @@ applyDifficulty();
 game.events.on('settingsChanged', ({ key }) => { if (key === 'difficulty' || key === '*') applyDifficulty(); });
 
 // ---------- settings owned by main: render scale, shadows, bloom ----------
-// Shadows: never toggle renderer.shadowMap.enabled (that changes every program key → full-scene recompile).
-// 'off' = shadow camera sees nothing, map rendered once (cleared to far depth) and frozen. 'low' quality =
-// shadow map refreshed every 2nd frame (the sun is static and the shadow camera is texel-snapped).
-const SHADOW_LAYERS_ALL = 1;   // layer 0 (default); hidden source parts live on other layers
-let shadowsOn = true, shadowEvery = 1, shadowFrame = 0;
+// Shadows: never toggle renderer.shadowMap.enabled (that changes every program key → full-scene recompile). The map is
+// rendered on demand (autoUpdate off): every frame at medium, every 2nd frame at low/L3, frozen at L5. 'off' = one
+// render with no casters (clears the map to far depth, see clearShadowMap), then frozen. three r160 tests shadow casters
+// against the VIEW camera's layers, so a shadow-camera layer mask does not hide anything (world request).
+let shadowsOn = true, shadowEvery = 1, shadowFrame = 0, shadowClear = false;
+const CLEAR_LAYER = 31;
 function applyShadowMode() {
   const v = game.settings.values;
   const on = !!v.shadows;
-  const sun = game.world?.sun;
-  shadowEvery = v.shadowQuality === 'low' || v.quality === 'low' ? 2 : 1;
   renderer.shadowMap.autoUpdate = false;
+  if (shadowsOn && !on) shadowClear = true;
   shadowsOn = on;
-  if (sun) sun.shadow.camera.layers.mask = on ? SHADOW_LAYERS_ALL : 0;
-  renderer.shadowMap.needsUpdate = true;   // off: one clearing pass, then frozen
+  shadowEvery = Math.max(1, (v.shadowQuality === 'low' || v.quality === 'low') ? 2 : (+v.shadowEvery || 1));
+  renderer.shadowMap.needsUpdate = on;
+  if (!on) shadowClear = true;
+}
+/** One shadow render with no casters: the view camera sees only layer 31, on which only the sun is enabled for the call. */
+const _clearRT = new THREE.WebGLRenderTarget(1, 1);
+function clearShadowMap() {
+  shadowClear = false;
+  const sun = game.world?.sun; if (!sun || !sun.castShadow) return;
+  const mask = camera.layers.mask, sunMask = sun.layers.mask, prevRT = renderer.getRenderTarget();
+  try {
+    camera.layers.set(CLEAR_LAYER); sun.layers.enable(CLEAR_LAYER);
+    renderer.shadowMap.needsUpdate = true;
+    renderer.setRenderTarget(_clearRT); renderer.render(scene, camera);
+  } catch (err) { console.warn('[shadow clear]', err?.message); }
+  finally { camera.layers.mask = mask; sun.layers.mask = sunMask; renderer.setRenderTarget(prevRT); renderer.shadowMap.needsUpdate = false; }
+}
+/** Bloom per preset (§2.2): threshold 1.0, strength, mips; FXAA off only when MSAA 4 runs. Re-applied after module init. */
+function applyBloomPreset() {
+  const v = game.settings.values, P = PRESETS[v.quality] || PRESETS.medium;
+  bloomPass.enabled = !!v.bloom;
+  bloomPass.threshold = 1.0;
+  bloomPass.radius = 0.6;
+  bloomPass.strength = +(v.bloomStrength ?? P.bloomStrength ?? 0.4);
+  composer.setBloomMips(+(v.bloomMips ?? P.bloomMips ?? 3));
+  composer.finalPass.uniforms.uFxaa.value = (v.fxaa === false && bootMsaa > 0) ? 0 : 1;
 }
 function applyRenderSettings() {
-  const v = game.settings.values;
-  const msaa = bootMsaa;   // v4: decided at boot per preset (applies on reload only)
-  if (composer.renderTarget1.samples !== msaa) { composer.renderTarget1.samples = msaa; composer.renderTarget2.samples = msaa; composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); }
-  renderer.setPixelRatio(basePR() * (v.renderScale || 1));
-  composer.setPixelRatio?.(basePR() * (v.renderScale || 1));
+  renderer.setPixelRatio(basePR());
   renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
+  sizeComposer();
   applyShadowMode();
-  bloomPass.enabled = !!v.bloom;
+  applyBloomPreset();
 }
 applyRenderSettings();
 game.events.on('settingsChanged', ({ key }) => {
-  if (['renderScale', 'shadows', 'shadowQuality', 'quality', 'bloom', '*'].includes(key)) applyRenderSettings();
+  if (['renderScale', 'shadows', 'shadowQuality', 'shadowEvery', 'quality', 'bloom', 'bloomStrength', 'bloomMips', 'fxaa', 'budgetPx', '*'].includes(key)) applyRenderSettings();
 });
 
 // ---------- modules ----------
@@ -476,6 +478,7 @@ async function boot() {
   }
   if (game.stubbed.length) console.warn('[boot] stubbed modules:', game.stubbed.join(', '));
   applyShadowMode();
+  applyBloomPreset();
   await prewarm();
 
   let skip = false;
@@ -667,22 +670,39 @@ function frame(realDt, render = true) {
   if (render) {
     if (warmPending) warmView();
     if (game.render.warmQueue) game.render.flushWarm();
-    if (shadowsOn && shadowEvery > 0 && (++shadowFrame % shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
+    scheduleShadows();
     renderFrame(realDt);
   }
   game.input.endFrame();
 }
-// ---------- render: composer (scene → post) → threat scene over the canvas (§2.4) ----------
-const _sz = new THREE.Vector2();
-function updatePostUniforms() {
-  const P = game.post, rb = composer.readBuffer;   // the RenderPass writes the current read buffer
+// ---------- render: composer (scene → bloom → final) → threat scene over the canvas (§2.4) ----------
+function scheduleShadows() {
+  if (shadowClear) clearShadowMap();
+  if (!shadowsOn) return;
+  const B = game.quality?.budget;
+  if (B?.shadowFrozen) return;
+  const every = Math.max(shadowEvery, B?.shadowEvery || 1);
+  if ((++shadowFrame % every) === 0) renderer.shadowMap.needsUpdate = true;
+}
+let aggroT = 0, aggroMany = false;
+function updatePostUniforms(realDt) {
+  updateRenderScale();
+  const P = game.post, rb = composer.readBuffer;
   P.sceneDepth.value = rb.depthTexture;
-  P.sceneRes.value.set(rb.width, rb.height);
+  P.uvScale.value.copy(composer.uvScale);
+  P.sceneRes.value.set(composer.viewport.w, composer.viewport.h);   // live render size (px) of the scene pass
   renderer.getDrawingBufferSize(_sz); P.canvasRes.value.copy(_sz);
   P.cameraNear.value = camera.near; P.cameraFar.value = camera.far;
+  P.bloomTex.value = bloomPass.texture;
+  // bloom 0.30 (× 0.75 of the preset) while ≥ 3 enemies are aggroed; governor L4 turns it off (uniform only)
+  aggroT -= realDt || 0;
+  if (aggroT <= 0) { aggroT = 0.25; try { aggroMany = (game.enemies?.aggroCount?.() ?? 0) >= 3; } catch (_) { aggroMany = false; } }
+  composer.bloomMul = aggroMany ? 0.75 : 1;
+  composer.bloomActive = game.quality?.budget ? game.quality.budget.bloom !== false : true;
 }
+const _sz = new THREE.Vector2();
 function renderFrame(dt) {
-  updatePostUniforms();
+  updatePostUniforms(dt);
   composer.render(dt);
   game.render.drawOverlay();
 }
