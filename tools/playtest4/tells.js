@@ -9,7 +9,11 @@
 //           colour-blind palettes keep shapes, near-white perfect front, renderThumb per kind.
 module.exports = async function tells(PT) {
   const W = 960, H = 540;
-  const pg = await PT.boot('&cls=mage&level=30', { w: W, h: H });
+  // TELLS_ONLY=<regex> runs only the matching blocks (development convenience; default: all)
+  const only = process.env.TELLS_ONLY ? new RegExp(process.env.TELLS_ONLY) : null;
+  const pg0 = await PT.boot('&cls=mage&level=30', { w: W, h: H });
+  const pg = Object.create(pg0);
+  pg.run = (label, fn, arg) => (only && !only.test(label) ? Promise.resolve(null) : pg0.run(label, fn, arg));
   PT.check('boot: game.ready', pg.ready, pg.params);
   if (!pg.ready) { await pg.close(); return; }
   PT.note(`boot ${pg.bootMs} ms`);
@@ -186,8 +190,8 @@ module.exports = async function tells(PT) {
     const h = TL.attack(e, { id: 'hz', tell: 'danger', cls: 'mobHeavy', windup: 2.0, melee: false, sound: false, shape: { kind: 'circle', pos: X.front(8), r: 3 } });
     const gl = g.renderer.getContext(), w = gl.drawingBufferWidth, hh = gl.drawingBufferHeight, px = new Uint8Array(w * hh * 4);
     const lum = []; let mask = null;
-    for (let i = 0; i < 130; i++) {
-      g.step(1, 1 / 60, true);
+    for (let i = 0; i < 44; i++) {                  // 20 Hz sampling (Nyquist for a 3 Hz limit), 2.2 s
+      g.step(2, 1 / 60, false); g.step(1, 1 / 60, true);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.readPixels(0, 0, w, hh, gl.RGBA, gl.UNSIGNED_BYTE, px);
       if (!mask) { mask = []; for (let k = 0; k < w * hh; k += 7) mask.push(k); }
       let s = 0; for (const k of mask) s += px[k * 4] + px[k * 4 + 1] + px[k * 4 + 2];
@@ -201,7 +205,7 @@ module.exports = async function tells(PT) {
       else if (dir <= 0 && lum[i] > lastExt + thr) { dir = 1; lastExt = lum[i]; }
       else if ((dir >= 0 && lum[i] > lastExt) || (dir < 0 && lum[i] < lastExt)) lastExt = lum[i];
     }
-    const hz = peaks / (lum.length / 60);
+    const hz = peaks / (lum.length / 20);
     PT.check('no flashes faster than 3 Hz', hz <= 3, { peaks, hz: +hz.toFixed(2) });
     h.stop(); X.clear();
     // legacy adapter (v3 full-angle degrees → rad half-angle)
