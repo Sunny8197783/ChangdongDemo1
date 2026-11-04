@@ -4,15 +4,17 @@ import * as THREE from 'three';
 import { buildTerrain, buildDistantMountains, LAYOUT, WATER_LEVEL, BOUNDS, CELL, ORIGIN, SIZE, NV, HEIGHTFIELD_GLSL } from './world/terrain.js';
 import { buildSky, SKY } from './world/sky.js';
 import { buildGrass } from './world/grass.js';
-import { buildFlora } from './world/flora.js';
+import { buildFlora, SHADOW_LAYER as FLORA_SHADOW_LAYER } from './world/flora.js';
 import { OCC } from './world/prefab.js';
 import { buildStructures } from './world/structures.js';
 import { buildWater, WATER_BOX } from './world/water.js';
 import { buildAmbience } from './world/ambience.js';
 import { buildVillage } from './world/village.js';
 import { buildWorldTree } from './world/worldtree.js';
-import { buildSurface, createBurnField } from './world/surface.js';
+import { buildSurface, createBurnField, GRID as SGRID } from './world/surface.js';
 import { VILLAGE } from './world/villageLayout.js';
+import { buildBeacon, BEACON_KINDS } from './world/beacon.js';
+import { SURFACE_ATTACKS, SURFACE_NAMES_KO, SURFACE_SOURCES } from './world/names.js';
 // v3 (CONTRACT §13)
 import { createZones, ARENA_DEFS, TF, STAGE_ACT, GRADE_BLEND, EXTRA_GRADES, ZONE_SIGNS } from './world/zones.js';
 import { PILLARS, HYDRA_PILLARS } from './world/terraform.js';
@@ -27,7 +29,10 @@ import { buildPlateau } from './world/plateau.js';
 /** World clamp: the r 170 circle plus the plateau / ledge AABBs (they reach past the circle). */
 const CLAMP_BOXES = [TF.plateau, TF.ledge].map((D) => ({ x0: D.x - D.r - 2, x1: D.x + D.r + 2, z0: D.z - D.r - 2, z1: D.z + D.r + 2 }));
 
-const SHADOW_Q = { low: { size: 1024, extent: 26 }, medium: { size: 2048, extent: 32 }, high: { size: 2048, extent: 44 } };
+// v4 (PLAN §2.2 / task item 7): map size per preset (settings.shadowSize 1024 low/medium, 2048 high), extent ±32 m,
+// casters within SHADOW_CASTER_D m of the receivers along the light (the sun sits that far up its direction).
+const SHADOW_Q = { low: { size: 1024, extent: 32 }, medium: { size: 1024, extent: 32 }, high: { size: 2048, extent: 32 } };
+const SHADOW_CASTER_D = 60;
 
 export function createWorld(game) {
   const { scene, renderer } = game;
@@ -58,20 +63,48 @@ export function createWorld(game) {
   let texel = 1, floraRef = null;
   function applyShadowQuality(q) {
     const Q = SHADOW_Q[q] || SHADOW_Q.medium;
-    if (sun.shadow.mapSize.x !== Q.size) {
-      sun.shadow.mapSize.set(Q.size, Q.size);
+    const size = game.settings?.values?.shadowSize || Q.size;
+    if (sun.shadow.mapSize.x !== size) {
+      sun.shadow.mapSize.set(size, size);
       if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
     }
-    Object.assign(sun.shadow.camera, { left: -Q.extent, right: Q.extent, top: Q.extent, bottom: -Q.extent, near: 5, far: 320 });
+    Object.assign(sun.shadow.camera, { left: -Q.extent, right: Q.extent, top: Q.extent, bottom: -Q.extent, near: 1, far: SHADOW_CASTER_D + 50 });
     sun.shadow.camera.updateProjectionMatrix();
-    texel = (Q.extent * 2) / Q.size;
+    texel = (Q.extent * 2) / size;
     floraRef?.setShadowRadius?.(Q.extent * 1.5);
   }
   applyShadowQuality(S0.shadowQuality || 'medium');
 
   // ---------------------------------------------------------------- terrain & queries
   const terrain = buildTerrain(game);
-  terrain.mesh.castShadow = false; // terrain self-shadow inside the 30 m shadow box is invisible in cel shading; saves its full tri count
+  // v4 shadow-only casters (flora families, village proxy) live on layer FLORA_SHADOW_LAYER. three r160 tests shadow casters
+  // against the VIEW camera's layers, so a tiny degenerate caster (first in the shadow traversal, culled from the view by
+  // sitting behind the camera) enables that layer on the view camera for the shadow pass; the sky (drawn in every main pass)
+  // disables it again before the camera is used to build the next render list. Cost: 1 shadow call, 0 pixels.
+  const _hookDir = new THREE.Vector3();
+  const shadowHook = (() => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0.01);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false }));
+    m.name = 'worldShadowHook'; m.castShadow = true; m.receiveShadow = false; m.userData.dynamic = true;
+    m.onBeforeShadow = (r, o, camera) => { camera?.layers?.enable?.(FLORA_SHADOW_LAYER); };
+    return m;
+  })();
+  terrain.group.add(shadowHook);
+  // v4 warm-up: flora no longer casts through the default instanced(+colour) depth program (its casters use their own depth
+  // material), but other owners' instanced, coloured casters still do. One degenerate instanced+colour caster drawn in the
+  // shadow pass for the first frames compiles that variant at boot instead of on first sight (e.g. the final boss arena).
+  const depthWarm = (() => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0.01);
+    const m = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ colorWrite: false }), 1);
+    m.setColorAt(0, new THREE.Color(1, 1, 1));
+    m.name = 'worldDepthWarm'; m.castShadow = true; m.userData.dynamic = true; m.frustumCulled = false;
+    return m;
+  })();
+  shadowHook.add(depthWarm);
+  let depthWarmFrames = 8;
+  // v4: terrain never casts (chunks + far mesh are built with castShadow = false; PLAN §2.2 low/medium)
   const { getHeight } = terrain;
   const colliders = [];
   let collidersDirty = true;
@@ -79,6 +112,23 @@ export function createWorld(game) {
   const burnField = createBurnField();
   terrain.burn.uBurnTex.value = burnField.tex;
   terrain.burn.uBurnXform.value.copy(burnField.xform);
+  // v4: bounding circle of the live overlay texels (burn / bless / curse) → terrain uOverlayCircle (r 0 = no fetch anywhere)
+  let overlayVer = -1;
+  function refreshOverlayCircle() {
+    const tex = burnField.tex; if (tex.version === overlayVer) return;
+    overlayVer = tex.version;
+    const D = burnField.data, n = SGRID.n;
+    let i0 = n, i1 = -1, j0 = n, j1 = -1;
+    for (let k = 0, q = 0; k < n * n; k++, q += 4) {
+      if ((D[q] | D[q + 1] | D[q + 2] | D[q + 3]) === 0) continue;
+      const i = k % n, j = (k - i) / n;
+      if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j;
+    }
+    const C = terrain.burn.uOverlayCircle.value;
+    if (i1 < 0) { C.set(0, 0, 0, 0); return; }
+    const cs = SGRID.cs, x0 = SGRID.x0 + i0 * cs, x1 = SGRID.x0 + (i1 + 1) * cs, z0 = SGRID.z0 + j0 * cs, z1 = SGRID.z0 + (j1 + 1) * cs;
+    C.set((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + cs * 1.5, 0);
+  }
 
   function getNormal(x, z, out = new THREE.Vector3()) {
     const e = CELL * 0.5;
@@ -109,6 +159,7 @@ export function createWorld(game) {
 
   buildDistantMountains(game).material.uniforms.uSun.value.copy(sunDir);
   const sky = buildSky(game, sunDir);
+  sky.mesh.onBeforeRender = (r, sc, camera) => { camera?.layers?.disable?.(FLORA_SHADOW_LAYER); };
 
   const uTime = { value: 0 };
   const structures = buildStructures(game, world);
@@ -119,6 +170,7 @@ export function createWorld(game) {
   const grass = buildGrass(game, terrain, wind, { burnTex: burnField.tex, burnXform: burnField.xform });
   const ambience = buildAmbience(game, terrain, wind);
   const worldTree = buildWorldTree(game, sunDir);
+  const beacon = buildBeacon(game, { getHeight, getGroundHeight: (x, z) => world.getGroundHeight?.(x, z) ?? getHeight(x, z) });
 
   // ---------------------------------------------------------------- collider spatial hash
   const GC = 8, GOFF = 200, GN = Math.ceil((GOFF * 2) / GC);
@@ -285,6 +337,8 @@ export function createWorld(game) {
   const camps = LAYOUT.camps.map((c) => ({
     id: c.id, name: c.name, position: v3(c.x, c.z), radius: c.r,
     fire: c.fire, tents: c.tents, tower: c.tower, entranceAngle: c.entranceAngle,
+    // v4 P1 (§6.3): the palisade gap facing the incoming path (beacons for camps point here)
+    entrance: Number.isFinite(c.entranceAngle) ? v3(c.x + Math.cos(c.entranceAngle) * (c.r + 1.5), c.z + Math.sin(c.entranceAngle) * (c.r + 1.5)) : null,
   }));
   const A = LAYOUT.arena;
   const bossArena = {
@@ -432,19 +486,35 @@ export function createWorld(game) {
 
   // ---------------------------------------------------------------- graphics settings (live)
   let drawDist = S0.drawDistance ?? 0.8;
+  // v4 preset keys: grassDensity, grassNearFade, grassReceiveShadow, treeDist, floraOutlineDist, shadowSize (+ v3 drawDistance,
+  // shadowQuality); game.quality.budget.{grassMul, floraMul, floraOutlineDist} are read live every frame (applyBudget).
+  const WORLD_KEYS = ['grassDensity', 'drawDistance', 'shadowQuality', 'shadowSize', 'grassNearFade', 'grassReceiveShadow', 'treeDist', 'floraOutlineDist', 'quality', '*'];
   function applySettings(key) {
     const v = game.settings?.values || {};
-    if (key === '*' || key === 'grassDensity') grass.setDensity(v.grassDensity ?? 0.6);
-    if (key === '*' || key === 'drawDistance') { drawDist = v.drawDistance ?? 0.8; grass.setDrawDistance(drawDist); flora.setDrawDistance(drawDist); }
-    if (key === '*' || key === 'shadowQuality') applyShadowQuality(v.shadowQuality || 'medium');
+    const all = key === '*' || key === 'quality';
+    if (all || key === 'grassDensity') { if (!bossLOD) grass.setDensity(v.grassDensity ?? 0.4); }
+    if (all || key === 'drawDistance') { drawDist = v.drawDistance ?? 0.8; grass.setDrawDistance(drawDist); }   // v4: flora range = settings.treeDist (preset key)
+    if (all || key === 'shadowQuality' || key === 'shadowSize') applyShadowQuality(v.shadowQuality || 'medium');
+    if (all || key === 'grassNearFade') grass.setFadeMul(v.grassNearFade ?? 0.7);
+    if (all || key === 'grassReceiveShadow') grass.setReceiveShadow(!!v.grassReceiveShadow);
+    budgetSeen.floraMul = -1;   // re-apply ranges
   }
+  const budgetSeen = { grassMul: -1, floraMul: -1, outline: -1, tree: -1 };
+  function applyBudget() {
+    const B = game.quality?.budget, v = game.settings?.values || {};
+    const gm = B?.grassMul ?? 1, fm = B?.floraMul ?? 1;
+    const od = Math.min(B?.floraOutlineDist ?? 99, v.floraOutlineDist ?? 35), td = v.treeDist ?? (150 + 250 * drawDist);
+    if (gm !== budgetSeen.grassMul) { budgetSeen.grassMul = gm; grass.setDensityMul(gm); }
+    if (fm !== budgetSeen.floraMul || od !== budgetSeen.outline || td !== budgetSeen.tree) {
+      budgetSeen.floraMul = fm; budgetSeen.outline = od; budgetSeen.tree = td;
+      flora.setRange({ treeDist: td, outlineDist: od, mul: fm });
+    }
+  }
+  let bossLOD = false;
   applySettings('*');
-  game.events.on('settingsChanged', ({ key }) => {
-    if (['grassDensity', 'drawDistance', 'shadowQuality', '*'].includes(key)) applySettings(key);
-  });
+  game.events.on('settingsChanged', ({ key }) => { if (WORLD_KEYS.includes(key)) applySettings(key); });
 
   // ---------------- v3 API (CONTRACT §13)
-  let bossLOD = false;
   Object.assign(world, {
     zones: zones.zones, getZoneAt: zones.getZoneAt, zoneById: zones.byId,
     bossArenas, bossArena: bossArenas.golem,
@@ -465,8 +535,8 @@ export function createWorld(game) {
     setBossFightLOD(on) {
       bossLOD = !!on;
       const v = game.settings?.values || {};
-      grass.setDensity(on ? Math.min(0.25, v.grassDensity ?? 0.6) : (v.grassDensity ?? 0.6));
-      flora.setDrawDistance(on ? Math.min(0.3, drawDist) : drawDist);
+      grass.setDensity(on ? Math.min(0.25, v.grassDensity ?? 0.4) : (v.grassDensity ?? 0.4));
+      flora.setDrawDistance(on ? 0.3 : 0.8);   // boss-fight LOD factor (0.375 × treeDist)
       flora.setShadowRadius?.(on ? 24 : (SHADOW_Q[v.shadowQuality || 'medium'] || SHADOW_Q.medium).extent * 1.5);
     },
     serialize() {
@@ -510,7 +580,99 @@ export function createWorld(game) {
       r.updateMatrixWorld(true);
     }
     world._staticRoots = roots;
+    for (const r of roots) if (!r.isLight && !r.isCamera) worldRootSet.add(r);
   }
+  // ---------------- v4 (task item 5/6): always-drawn / village-only / zone transparents culled by camera distance.
+  // Each entry: objects + anchor points [x, z, …] + reach R: visible iff the camera is within R of an anchor (xz).
+  // Entries remember the visibility they set; objects other code hides (elderwood LOD, act gates) stay hidden.
+  const VM = VILLAGE.mask, villageR = Math.max(VM.rx, VM.rz) * 1.1;
+  const distCull = [];
+  const addCull = (objs, pts, R) => { objs = objs.filter(Boolean); if (objs.length && pts.length) distCull.push({ objs, pts, R2: R * R, on: true }); };
+  addCull([village.smoke, village.glow, village.crystals, village.pond], [VM.x, VM.z], villageR + 15);
+  for (const o of worldTree.meshes || []) if (o && (o.name === 'worldTreeMotes' || o.frustumCulled === false)) addCull([o], [worldTree.data.position.x, worldTree.data.position.z], villageR + 15);
+  addCull(structures.signs || [], structures.signSpots || [], 45);
+  if (structures.fires?.positions?.length) addCull([structures.fires.group], structures.fires.positions.flatMap((p) => [p.x, p.z]), 90);
+  for (const o of mirwen.meshes || []) if (o?.name === 'mirwenMist') addCull([o], [mirwen.center.x, mirwen.center.z], mirwen.radius + 25);
+  function applyDistCull(cam) {
+    const cx = cam.position.x, cz = cam.position.z;
+    for (let i = 0; i < distCull.length; i++) {
+      const D = distCull[i], P = D.pts;
+      let on = false;
+      for (let k = 0; k < P.length; k += 2) { const dx = P[k] - cx, dz = P[k + 1] - cz; if (dx * dx + dz * dz < D.R2) { on = true; break; } }
+      if (on === D.on) continue;
+      D.on = on;
+      for (let j = 0; j < D.objs.length; j++) D.objs[j].visible = on;
+    }
+  }
+  // ---------------- v4 P1: coarse route helper (path graph from LAYOUT.paths + straight segments)
+  const pathPts = []; for (const k in LAYOUT.paths) for (const p of LAYOUT.paths[k]) pathPts.push(p);
+  const nearestPathIdx = (x, z) => { let bi = -1, bd = Infinity; for (let i = 0; i < pathPts.length; i++) { const d = (pathPts[i][0] - x) ** 2 + (pathPts[i][1] - z) ** 2; if (d < bd) { bd = d; bi = i; } } return { i: bi, d: Math.sqrt(bd) }; };
+  function routeTo(from, to, step, out) {
+    const pts = [[from.x, from.z]];
+    const a = nearestPathIdx(from.x, from.z), b = nearestPathIdx(to.x, to.z);
+    const direct = Math.hypot(to.x - from.x, to.z - from.z);
+    if (a.d < 25 && b.d < 25 && direct > 40) {
+      // walk the path polyline set greedily from a toward b (points sorted by remaining distance to the target)
+      let cur = pathPts[a.i]; pts.push(cur);
+      for (let guard = 0; guard < 400; guard++) {
+        let best = null, bd = Math.hypot(cur[0] - to.x, cur[1] - to.z);
+        for (const p of pathPts) { const hop = Math.hypot(p[0] - cur[0], p[1] - cur[1]); if (hop > 9 || hop < 0.5) continue; const d = Math.hypot(p[0] - to.x, p[1] - to.z); if (d < bd - 0.5) { bd = d; best = p; } }
+        if (!best) break; cur = best; pts.push(cur);
+        if (bd < b.d + 2) break;
+      }
+    }
+    pts.push([to.x, to.z]);
+    let n = 0;
+    const put = (x, z) => { let y = getHeight(x, z); if (y < WATER_LEVEL - 0.6) y = WATER_LEVEL; const v = out[n] || (out[n] = new THREE.Vector3()); v.set(x, y + 0.1, z); n++; };
+    let carry = 0;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [x0, z0] = pts[k], [x1, z1] = pts[k + 1]; const L = Math.hypot(x1 - x0, z1 - z0); if (L < 1e-3) continue;
+      for (let t = carry; t < L; t += step) put(x0 + (x1 - x0) * t / L, z0 + (z1 - z0) * t / L);
+      carry = (carry + Math.ceil((L - carry) / step) * step) - L;
+    }
+    put(to.x, to.z);
+    out.length = n;
+    return out;
+  }
+
+  // ---------------- v4 API (PLAN §7.4.2): beacon, surface attack descriptors, debug hooks
+  const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _bs = new THREE.Sphere();
+  const isWorldObject = (o) => { let p = o; while (p && p.parent && p.parent !== scene) p = p.parent; return !!p && worldRootSet.has(p); };
+  const worldRootSet = new Set();
+  Object.assign(world, {
+    /** Objective beacon: thin unlit 40 m pillar + ground ring (≤ 2 calls); null hides it. kind: 'quest' | 'camp' | 'boss'. */
+    setBeacon(pos, opts) { beacon.set(pos, opts || {}); },
+    beacon, beaconKinds: BEACON_KINDS,
+    surfaceAttacks: SURFACE_ATTACKS, surfaceNamesKo: SURFACE_NAMES_KO, surfaceSources: SURFACE_SOURCES,
+    /**
+     * v4 P1 (§6.3 breadcrumbs): coarse walkable route from → to as points every `step` m (reused `out` array of Vector3s
+     * is filled and its length set). Follows the dirt-path network when both ends are near it, else a straight line;
+     * points over deep water are pushed to the nearest shore sample. Coarse: no collider avoidance.
+     */
+    routeTo(from, to, { step = 4, out = [] } = {}) { return routeTo(from, to, step, out); },
+    /** attack descriptor {id:'surface.<kind>', nameKo, kind:'surface'} for a surface kind (burning, mud, cursed, blight, void). */
+    surfaceAttack: (kind) => SURFACE_ATTACKS[kind] || null,
+    debug: {
+      setGrassVisible(on) { for (const L of grass.layers) L.mesh.visible = !!on && grass.density > 0.001; },
+      terrainChunks() { const s = terrain.chunkStats; return { total: s.total, visible: s.visible, near: s.near, far: s.far, farInView: s.farInView, inView: s.inView, calls: s.calls }; },
+      /** World transparent drawables that pass visibility + frustum this frame. */
+      transparents() {
+        const cam = game.camera; cam.updateMatrixWorld(); _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _fr.setFromProjectionMatrix(_pm);
+        let n = 0;
+        for (const r of worldRootSet) r.traverseVisible((o) => {
+          const m = o.material; if (!m || Array.isArray(m) || !m.transparent || !(o.isMesh || o.isPoints || o.isSprite)) return;
+          if (o.isInstancedMesh && o.count === 0) return;
+          if (o.frustumCulled && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); _bs.copy(o.isInstancedMesh && o.boundingSphere ? o.boundingSphere : o.geometry.boundingSphere).applyMatrix4(o.matrixWorld); if (!_fr.intersectsSphere(_bs)) return; }
+          n++;
+        });
+        return n;
+      },
+      /** true when obj belongs to the world module (under one of its scene roots). */
+      owns: isWorldObject,
+      roots: () => [...worldRootSet],
+      flora: () => ({ ...flora.stats }),
+    },
+  });
   Object.defineProperty(world, 'act', { get: () => act, enumerable: true });
   Object.defineProperty(world, 'bossFightLOD', { get: () => bossLOD, enumerable: true });
   let acc4 = 1, acc1 = 1;
@@ -527,6 +689,9 @@ export function createWorld(game) {
       village.refreshCrystals?.();
       // material pre-warm happens in main.js boot (after all module inits, with the composer target bound)
       freezeStaticMatrices();
+      // v4 (§7.2 rule 4): warm every world material now, while the culled sets (flora LODs / outlines / far meshes, zone
+      // dressing) are still visible — renderer.compile skips invisible objects, so a set first seen later would compile then
+      try { for (const r of worldRootSet) if (r.visible) game.render?.warm?.(r, { target: 'scene', now: true }); } catch (err) { console.warn('[world] warm', err?.message || err); }
     },
     update(dt, realDt) {
       const t = game.realTime;
@@ -540,7 +705,12 @@ export function createWorld(game) {
       const ty = Math.round((fx * ly.x + focus.y * ly.y + fz * ly.z) / texel) * texel;
       const tz = fx * lz.x + focus.y * lz.y + fz * lz.z;
       sun.target.position.set(lx.x * tx + ly.x * ty + lz.x * tz, lx.y * tx + ly.y * ty + lz.y * tz, lx.z * tx + ly.z * ty + lz.z * tz);
-      sun.position.copy(sun.target.position).addScaledVector(sunDir, 160);
+      sun.position.copy(sun.target.position).addScaledVector(sunDir, SHADOW_CASTER_D);
+      // shadow-only casters: the hook sits just behind the camera (outside the view frustum, inside the shadow box)
+      cam.getWorldDirection(_hookDir);
+      shadowHook.position.copy(cam.position).addScaledVector(_hookDir, -0.6); shadowHook.updateMatrixWorld();
+      cam.layers.disable(FLORA_SHADOW_LAYER);
+      if (depthWarmFrames > 0 && --depthWarmFrames === 0) { depthWarm.visible = false; depthWarm.castShadow = false; }
       sun.target.updateMatrixWorld();
       cam.updateMatrixWorld();
       sky.update(cam, t);
@@ -548,10 +718,15 @@ export function createWorld(game) {
       water.update(t);
       structures.update(t);
       ambience.update(t, cam);
+      applyBudget();
+      applyDistCull(cam);
       flora.update(cam, focus);
       village.update(t, cam, dt);
       worldTree.update(t);
+      beacon.update(realDt, t);
       terrain.burn.uBurnTime.value = t;
+      terrain.updateChunks(cam);
+      refreshOverlayCircle();
       try { surface.update(dt, realDt); } catch (err) { if (!world._surfErr) { world._surfErr = true; console.error('[world] surface', err); } }
       // ---- v3
       try {

@@ -311,7 +311,7 @@ export function buildPlateau(game, world, { uTime }) {
       door.prop.alive = false;
       game.interact?.withdraw?.('mirrorDoor');
       if (!quiet) {
-        try { game.vfx?.burst?.(door.position.clone().setY(door.position.y + 2), { count: 36, color: [0xffe08a, 0xffffff, 0xe9d8ff], speed: 4, spread: 1, size: 0.14, sizeEnd: 0, life: 1, shape: 'spark', drag: 1.5 }); } catch (_) { /* */ }
+        try { game.vfx?.burst?.(door.position.clone().setY(door.position.y + 2), { count: 36, color: [0xffe08a, 0xfff4dc, 0xe9d8ff], speed: 4, spread: 1, size: 0.14, sizeEnd: 0, life: 1, shape: 'spark', drag: 1.5, owner: 'world' }); } catch (_) { /* */ }
         try { game.audio?.play?.('holy_chime', { position: door.position }); } catch (_) { /* */ }
         try { game.ui?.toast?.(MIRROR_TEXT.open); } catch (_) { /* */ }
         try { game.events?.emit?.('mirrorDoorOpen', { id: door.id }); } catch (_) { /* */ }
