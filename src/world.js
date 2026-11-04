@@ -77,6 +77,20 @@ export function createWorld(game) {
 
   // ---------------------------------------------------------------- terrain & queries
   const terrain = buildTerrain(game);
+  // v4 shadow-only casters (flora families, village proxy) live on layer FLORA_SHADOW_LAYER. three r160 tests shadow casters
+  // against the VIEW camera's layers, so a tiny degenerate caster (first in the shadow traversal, culled from the view by
+  // sitting behind the camera) enables that layer on the view camera for the shadow pass; the sky (drawn in every main pass)
+  // disables it again before the camera is used to build the next render list. Cost: 1 shadow call, 0 pixels.
+  const _hookDir = new THREE.Vector3();
+  const shadowHook = (() => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0.01);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false }));
+    m.name = 'worldShadowHook'; m.castShadow = true; m.receiveShadow = false; m.userData.dynamic = true;
+    m.onBeforeShadow = (r, o, camera) => { camera?.layers?.enable?.(FLORA_SHADOW_LAYER); };
+    return m;
+  })();
+  terrain.group.add(shadowHook);
   // v4: terrain never casts (chunks + far mesh are built with castShadow = false; PLAN §2.2 low/medium)
   const { getHeight } = terrain;
   const colliders = [];
@@ -132,6 +146,7 @@ export function createWorld(game) {
 
   buildDistantMountains(game).material.uniforms.uSun.value.copy(sunDir);
   const sky = buildSky(game, sunDir);
+  sky.mesh.onBeforeRender = (r, sc, camera) => { camera?.layers?.disable?.(FLORA_SHADOW_LAYER); };
 
   const uTime = { value: 0 };
   const structures = buildStructures(game, world);
@@ -675,7 +690,10 @@ export function createWorld(game) {
       const tz = fx * lz.x + focus.y * lz.y + fz * lz.z;
       sun.target.position.set(lx.x * tx + ly.x * ty + lz.x * tz, lx.y * tx + ly.y * ty + lz.y * tz, lx.z * tx + ly.z * ty + lz.z * tz);
       sun.position.copy(sun.target.position).addScaledVector(sunDir, SHADOW_CASTER_D);
-      { const SL = sun.shadow.camera.layers; if ((SL.mask & 1) && !(SL.mask & (1 << FLORA_SHADOW_LAYER))) SL.mask |= 1 << FLORA_SHADOW_LAYER; }   // shadow-only casters (core resets the mask on settings changes)
+      // shadow-only casters: the hook sits just behind the camera (outside the view frustum, inside the shadow box)
+      cam.getWorldDirection(_hookDir);
+      shadowHook.position.copy(cam.position).addScaledVector(_hookDir, -0.6); shadowHook.updateMatrixWorld();
+      cam.layers.disable(FLORA_SHADOW_LAYER);
       sun.target.updateMatrixWorld();
       cam.updateMatrixWorld();
       sky.update(cam, t);

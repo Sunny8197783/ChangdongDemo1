@@ -3,6 +3,7 @@
 // mesh (windows, lantern glass, rune bands), windmill sails (rotating), altar crystals (instanced), chimney smoke and
 // altar glow (GPU points), pond water. ≈10 draw calls for the whole village.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { toonMat, ELEMENT_COLORS } from '../core/utils.js';
 import { ALL_ELEMENTS, ELEMENT_DEFS, elColor } from '../core/elements.js';
 import { mulberry32, sstep } from './noise.js';
@@ -535,9 +536,27 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
   }
 
   // ------------------------------------------------------------------ build meshes
+  // v4 shadow proxy (PLAN §2.6: world ≤ 20k shadow tris at medium): only the big parts (≥ 1.6 m: house bodies, roofs,
+  // walls, towers) cast, from one position-only merged mesh on the shadow-only layer; the detailed mesh never casts
+  const shadowParts = [];
+  {
+    const bb = new THREE.Box3(), sz = new THREE.Vector3();
+    for (const g of P) {
+      g.computeBoundingBox(); bb.copy(g.boundingBox).getSize(sz);
+      if (Math.max(sz.x, sz.y, sz.z) < 1.6) continue;
+      const q = new THREE.BufferGeometry(); q.setAttribute('position', g.attributes.position.clone()); shadowParts.push(q);
+    }
+  }
   const staticGeo = merge(P);
-  const main = staticMesh(group, staticGeo, { outline: 0.035, outlineColor: 0x2a2018 });
+  const main = staticMesh(group, staticGeo, { outline: 0.035, outlineColor: 0x2a2018, cast: false });
   main.name = 'villageStatic';
+  if (shadowParts.length) {
+    const sg = mergeGeometries(shadowParts, false); for (const q of shadowParts) q.dispose();
+    const caster = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ colorWrite: false }));
+    caster.name = 'villageShadowProxy'; caster.castShadow = true; caster.receiveShadow = false; caster.layers.set(1);   // world shadow-only layer
+    sg.computeBoundingSphere();
+    group.add(caster);
+  }
   main.userData.outline = main.children[0];
   const emGeo = merge(E);
   const emMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: true });
