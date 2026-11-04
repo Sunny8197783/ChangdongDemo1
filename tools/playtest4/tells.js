@@ -610,6 +610,33 @@ module.exports = async function tells(PT) {
     window.__tellThumb = await TL.renderThumb('danger', 160);
   });
 
+  // ==================================================================================================== fallback without world.heightField
+  if (!only || only.test('T1 fallback')) {
+    const pf = await PT.boot('&cls=mage&level=30&stub=world', { w: 640, h: 360 });
+    await pf.run('T1 fallback (world stub: no heightField → CPU 24×24 grids)', () => {
+      const g = game, T = g.THREE, TL = g.tells, D = TL.debug.decals;
+      g.settings.set('teachSlowmo', false, { persist: false });
+      PT.check('fallback active (no heightField)', D.useHF === false && D.uniforms.uUseHF.value === 0);
+      const p = g.player.object.position; PT.look(0, -0.42); PT.step(0.1);
+      const e = { object: { position: new T.Vector3(p.x, 0, p.z - 6) }, alive: true, radius: 0.6, height: 1.6 };
+      const h = TL.attack(e, { id: 'fb', tell: 'danger', cls: 'check', windup: 3, melee: false, sound: false, body: false, shape: { kind: 'circle', pos: new T.Vector3(p.x, 0, p.z - 4), r: 2.5 } });
+      PT.step(0.3);
+      const px = PT.pixels.diff((on) => TL.debug.setVisible(on)).changed;
+      PT.check('fallback decal renders (≥ 600 px at 640×360)', px >= 600, px);
+      const tex = D.uniforms.uGrid.value; let v0 = tex.version;
+      h.setPos(new T.Vector3(p.x + 0.05, 0, p.z - 4)); PT.step(0.05);
+      const small = tex.version - v0; v0 = tex.version;
+      h.setPos(new T.Vector3(p.x + 0.5, 0, p.z - 4)); PT.step(0.05);
+      const big = tex.version - v0;
+      PT.check('grid rebuilt only when the decal moves > 0.1 m', small === 0 && big >= 1, { small, big });
+      const calls = Object.values(D.fams).filter((f) => f.mesh.visible).length;
+      PT.check('fallback keeps the instanced families (≤ 16 calls; here ' + calls + ')', calls <= 16);
+      h.stop();
+    });
+    PT.check('fallback page: no console errors', pf.errors().length === 0, pf.errors().slice(0, 3));
+    await pf.close();
+  }
+
   // ==================================================================================================== static greps (rule 5 / rule 6)
   {
     const fs = require('fs'), path = require('path');
