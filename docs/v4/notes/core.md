@@ -105,9 +105,16 @@ Fixtures (`tools/playtest4/fixtures/`): the evidence scripts `fight.js, lib.js, 
 | Allocation (2 s rotation) | 11.4 MB / game-s | ≤ 1.0 (owners' per-frame rules) |
 | Sim ms median / frame CPU median | 2.2 / 9.9 ms (submit 6.2 ms) | ≤ 3.5 / — (submit ≤ 4) |
 
-## Test results at core-p0a
-See the commit message of the tag commit and the final report (playtest4 core, bootcheck, playtest, playtest2, playtest3).
+## Test results at core-p0a (this branch, tells/vfx-kit on their stubs)
+- `node tools/playtest4.js` (core section): **73 passed, 0 failed, 5 skipped** (C1–C4, C7 = P0b) — C5 green; boot ≈ 3.7–4.7 s to ready (SwiftShader).
+- `node tools/bootcheck.js`: all 15 default configs `playing` (tells stubbed), exit 0. The third config (`src/tells.js` renamed away) is P0b item 17 (today `src/tells.js` does not exist, so every config already boots on the tells stub).
+- `node tools/playtest.js --quick`: all 4 legacy checks PASS (expected 404 of a missing module file is now ignored, like the playtest3 harness).
+- `node tools/playtest2.js`: story / sword / settings / perf all PASS (hitstop still global in P0a).
+- `node tools/playtest3.js` (all sections): 1259 passed, 1 failed (core `stub=all` count 12 → 13, fixed and re-run: core 198/0), 1 skipped.
+- Harness smoke: `PT.longFrames`, `PT.gpuRatio`, `PT.pixels.mask/sobel/iou`, `PT.baseline()` (v3 build boots in 4.7 s), `PT.gpuRatioPages`, `PT.alloc`, `PT.sheet` (144 KB) all return data.
 
 ## Legacy test updates (rule 9 / §7.9)
 - `tools/playtest3/core.js`: element colours per §3.2 incl. the shadow special case and the physical ramp; `screenShake` default 0.6; `damageNumbers` default `'merged'`.
 - `tools/playtest3/harness.js`: `tells` added to the module list (its 404 is an expected stub).
+- `tools/playtest3/core.js`: `stub=all` boots 13 stubs (ORDER gains tells).
+- `tools/playtest.js`: a 404 of a module file missing on disk is not a page error.

@@ -74,7 +74,8 @@ module.exports = async function core(PT) {
     PT.check('stub=all: ready', pg.ready);
     if (pg.ready) {
       const r = await pg.run('stub=all', () => { PT.step(1); return { state: game.state, n: game.stubbed.length }; });
-      PT.check('stub=all: playing with 12 stubs', r?.state === 'playing' && r?.n === 12, r);
+      // v4 (§7.3): 13 modules incl. tells
+      PT.check('stub=all: playing with 13 stubs (v4 ORDER incl. tells)', r?.state === 'playing' && r?.n === 13, r);
       PT.check('stub=all: no console errors', pg.errors().length === 0, pg.errors().slice(0, 6));
     }
     await pg.close();
