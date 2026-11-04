@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Emitter } from './core/events.js';
 import { Input } from './core/input.js';
 import { stubs } from './core/stubs.js';
-import { createSettings } from './core/settings.js';
+import { createSettings, computeAssist, PRESETS, DEFAULT_KEYBINDS } from './core/settings.js';
 import { createProgression } from './core/progression.js';
 import { ELEMENTS_API } from './core/elements.js';
 import { CLASSES_API, CLASS_DEFS, familyOf } from './core/classes.js';
@@ -17,11 +17,34 @@ import { createArchetypes } from './core/archetypes.js';
 import { createInteract } from './core/interact.js';
 import { createTimeScale } from './core/timescale.js';
 import { createDebug } from './core/debug.js';
-import { KEYS, keymapMode } from './core/keymap.js';
+import { KEYS, keymapMode, createKeymap } from './core/keymap.js';
 import { DIFFICULTY } from './core/settings.js';
+import { createRender } from './core/render.js';
+import { detectGpu } from './core/gpu.js';
+import { createQuality } from './core/quality.js';
 
 const params = new URLSearchParams(location.search);
 const isTest = params.has('test');
+// v4 test params (PLAN §7.6; ?test=1 implied). prod=1 = production render settings in test (checkShaderErrors off,
+// MSAA per preset). governor off in test unless governor=1. seed=N makes Math.random deterministic (rotations, AI, glyphs).
+const testParams = {
+  prod: isTest && params.get('prod') === '1',
+  governor: !isTest || params.get('governor') === '1',
+  budgetPx: isTest && params.has('budgetPx') ? +params.get('budgetPx') : null,
+  refresh: isTest && params.has('refresh') ? +params.get('refresh') : null,
+  seed: isTest && params.has('seed') ? (+params.get('seed') || 0) : null,
+  gpu: isTest ? params.get('gpu') : null,
+};
+if (testParams.seed != null) {
+  // mulberry32: same sequence for the same seed in every run
+  let a = (testParams.seed >>> 0) || 1;
+  Math.random = function seededRandom() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 // Pixel-ratio cap depends on the quality preset (high-DPI laptops at 'medium' would otherwise render 2.25x pixels).
 const prCap = () => (isTest ? 1 : (game.settings?.values?.quality === 'high' ? 1.5 : 1.0));
 const basePR = () => Math.min(devicePixelRatio, prCap());
@@ -35,7 +58,9 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;   // decided per preset at boot (applyBootRender)
+// checkShaderErrors costs a synchronous getProgramInfoLog per program: on only in (non-prod) tests or with &shaderCheck
+renderer.debug.checkShaderErrors = (isTest && !testParams.prod) || params.has('shaderCheck');
 app.appendChild(renderer.domElement);
 
 // NaN guard for every shader. On real GPUs pow(x<0, y) and sqrt(x<0) return NaN. With MSAA, varyings such as a
@@ -61,8 +86,11 @@ camera.position.set(0, 10, 30);
 scene.add(camera);
 
 // Canvas MSAA would only cover the final OutputPass quad; anti-alias the scene target itself instead (WebGL2).
-const composerRT = (samples) => new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples });
-const composer = new EffectComposer(renderer, composerRT(isTest ? 0 : 4));
+// v4: both ping-pong targets carry a DepthTexture so the threat scene can soft-occlude against the scene (§2.4, §5.3).
+const composerRT = (samples) => new THREE.WebGLRenderTarget(innerWidth, innerHeight,
+  { type: THREE.HalfFloatType, samples, depthTexture: new THREE.DepthTexture(innerWidth, innerHeight) });
+const composer = new EffectComposer(renderer, composerRT(0));
+composer.renderTarget2.depthTexture = new THREE.DepthTexture(innerWidth, innerHeight);   // own texture (clone shares the source)
 composer.addPass(new RenderPass(scene, camera));
 // Second safety net: scrub any NaN/Inf left in the HDR scene target (e.g. normalize(0) in some shader) before
 // bloom can spread it across the frame, and cap extreme additive stacking that would overflow half floats.
@@ -103,6 +131,8 @@ const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight)
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 
+// raw compile (no target binding): game.render.warm binds the right target itself
+const rawCompile = renderer.compile.bind(renderer);
 // Every renderer.compile() (modules pre-warm their pools with it) must build the variant that is actually drawn:
 // with no target bound three r160 compiles the tone-mapped sRGB canvas variant, but the scene is drawn into the
 // composer's linear HalfFloat target. Bind that target for the compile when the caller didn't bind one.
@@ -137,10 +167,23 @@ const game = {
   get _slowScale() { return this.timeScale.value(); },
   get _slowTime() { let t = 0; for (const e of this.timeScale.active()) t = Math.max(t, e.left); return t; },
   _hitstopFrames: 0,
-  hitstop(s) {
-    this._hitstop = Math.max(this._hitstop, Math.min(s, 0.25));
-    // minimum frozen frame count so the freeze still reads on low-FPS machines
-    if (s > 0) this._hitstopFrames = Math.max(this._hitstopFrames, s >= 0.1 ? 4 : 3);
+  /**
+   * v4 signature hitstop(seconds, {tier, target}) (PLAN §2.5). P0a keeps the v3 global freeze for every request (the
+   * per-entity budgeted semantics land in P0b) and already stamps target.hitstopUntil (game.realTime seconds) and logs
+   * every request for game.debug.hitstopLog().
+   */
+  hitstop(s, opts) {
+    const sec = Math.max(0, Math.min(+s || 0, 0.25));
+    const tier = opts?.tier || null, target = opts?.target || null;
+    const granted = sec > 0;
+    if (granted) {
+      this._hitstop = Math.max(this._hitstop, sec);
+      // minimum frozen frame count so the freeze still reads on low-FPS machines
+      this._hitstopFrames = Math.max(this._hitstopFrames, sec >= 0.1 ? 4 : 3);
+      if (target) target.hitstopUntil = Math.max(target.hitstopUntil || 0, this.realTime + sec);
+    }
+    hitstopLogPush(this.realTime, sec, tier, granted, target);
+    return granted;
   },
   /** v2 shim → game.timeScale.set('legacy', scale, s) (CONTRACT §3.3). */
   slowmo(scale, s) { this.timeScale.set('legacy', scale, Math.max(this.timeScale.timeLeft('legacy'), s)); },
@@ -193,20 +236,75 @@ const game = {
   },
 };
 window.game = game;
-// Core services exist BEFORE any module factory runs (CONTRACT §2).
+// ---------- hitstop log (game.debug.hitstopLog: the last 64 requests, reused records) ----------
+const HS_LOG = Array.from({ length: 64 }, () => ({ t: 0, sec: 0, tier: null, granted: false, target: null }));
+let hsHead = 0, hsCount = 0;
+function hitstopLogPush(t, sec, tier, granted, target) {
+  const r = HS_LOG[hsHead]; hsHead = (hsHead + 1) % HS_LOG.length; if (hsCount < HS_LOG.length) hsCount++;
+  r.t = t; r.sec = sec; r.tier = tier; r.granted = granted;
+  r.target = target ? (target.type || target.kind || target.id || 'entity') : null;
+}
+function hitstopLog() {
+  const out = [];
+  for (let i = 0; i < hsCount; i++) { const r = HS_LOG[(hsHead - hsCount + i + HS_LOG.length) % HS_LOG.length]; out.push({ t: r.t, sec: r.sec, tier: r.tier, granted: r.granted, target: r.target }); }
+  return out;
+}
+// Core services exist BEFORE any module factory runs (CONTRACT §2, PLAN v4 §7.3).
+game.testParams = testParams;
 game.KEYS = KEYS;
 game.keymapMode = keymapMode(game);
 game.elements = ELEMENTS_API;
 game.classes = CLASSES_API;
 game.timeScale = createTimeScale(game);
 game.settings = createSettings(game);
+applyTestSettings();
+// game.assist (§5.12): difficulty row × assist settings, recomputed on settingsChanged; consumers read it each use
+{
+  const assist = computeAssist(game.settings.values, {});
+  Object.defineProperty(game, 'assist', { get() { return assist; }, enumerable: true });
+  game.events.on('settingsChanged', () => computeAssist(game.settings.values, assist));
+}
+game.input.keymap = createKeymap(game, DEFAULT_KEYBINDS);
+game.enemyTime = 0;                                        // enemy-speed-scaled game seconds (tells time base)
+game.frame = { step: 0, n: 1, lastStep: true, frameDt: 0 }; // sub-step info for playing modules (§2.5)
+{ let castSeq = 0; game.nextCastId = () => ++castSeq; }
+// render state decided at boot (program keys): MSAA, shadow type, point lights (PLAN §2.2: apply on reload only)
+const bootPreset = PRESETS[game.settings.values.quality] || PRESETS.medium;
+const gpuInfo = detectGpu(renderer);
+if (testParams.gpu && ['integrated', 'discrete', 'unknown'].includes(testParams.gpu)) gpuInfo.tier = testParams.gpu;
+if (!isTest) { try { game.settings.set('gpuTier', gpuInfo.tier, { silent: true }); } catch (_) { /* */ } }
+const bootMsaa = (isTest && !testParams.prod) ? 0 : (game.settings.values.quality === 'custom' ? (game.settings.values.msaa ?? 0) : (bootPreset.msaa ?? 0));
+const SHADOW_TYPES = { basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, pcfsoft: THREE.PCFSoftShadowMap };
+const bootShadowType = SHADOW_TYPES[game.settings.values.shadowType] ? game.settings.values.shadowType : (bootPreset.shadowType || 'pcf');
+renderer.shadowMap.type = SHADOW_TYPES[bootShadowType];
+const bootPointLights = game.settings.values.quality === 'custom' ? !!game.settings.values.pointLights : !!bootPreset.pointLights;
+game.render = createRender(game, {
+  renderer, scene, camera, rawCompile, sceneTarget: () => composer.readBuffer, gpu: gpuInfo,
+  msaa: bootMsaa, pointLights: bootPointLights, shadowType: bootShadowType,
+});
+game.quality = createQuality(game, {});
 game.stats = createStats(game);
 game.progression = createProgression(game);
 game.archetypes = createArchetypes(game);
 game.interact = createInteract(game);
 game.save = createSave(game);
 game.debug = createDebug(game);
+game.debug.hitstopLog = hitstopLog;
 if (isTest) game.debug.events.enable();
+
+/** Test params that are settings (PLAN §7.6): applied transiently (never persisted). */
+function applyTestSettings() {
+  if (!isTest) return;
+  const S = game.settings, t = { silent: true, persist: false };
+  const q = params.get('quality');
+  if (q && PRESETS[q]) { for (const [k, v] of Object.entries(PRESETS[q])) S.set(k, v, t); S.set('quality', q, t); }
+  if (params.has('fx')) { const v = +params.get('fx'); if ([1, 0.7, 0.4].includes(v)) S.set('fxIntensity', v, t); }
+  if (params.get('difficulty') && DIFFICULTY[params.get('difficulty')]) S.set('difficulty', params.get('difficulty'), t);
+  if (params.get('witch') === '0') S.set('witchSlowmo', false, t);
+  const cb = params.get('colorblind'); if (cb && ['protan', 'deutan', 'tritan', 'off'].includes(cb)) S.set('colorblind', cb, t);
+  if (params.get('threat') === 'strong') S.set('threatEmphasis', 'strong', t);
+  if (params.get('hints') === '0') S.set('hints', false, t);
+}
 
 // ---------- post hooks (core-owned; fx only calls these) ----------
 const GRADES = {
@@ -219,6 +317,7 @@ const GRADES = {
   finale:  { tint: [0.9, 0.84, 1.1], sat: 0.72, contrast: 1.16 },
   dawn:    { tint: [1.08, 1.0, 0.92], sat: 1.1, contrast: 1.02 },
   break:   { tint: [1.0, 1.0, 1.0], sat: 0.35, contrast: 1.2 },
+  witch:   { tint: [0.97, 0.99, 1.04], sat: 0.5, contrast: 1.04 },   // v4 witch time: × strength 0.6 → 30 % desaturation
   dusk:    { tint: [0.92, 0.95, 1.1], sat: 0.82, contrast: 1.04 },   // Elderwood (world zones)
   golden:  { tint: [1.08, 1.02, 0.88], sat: 1.06, contrast: 1.02 },  // Mirwen / ending light
 };
@@ -226,8 +325,42 @@ const GRADES = {
   const U = sanitizePass.uniforms;
   const pulse = { chroma: 0, radial: 0, dur: 0.2, left: 0, peakC: 0, peakR: 0 };
   const grade = { name: 'none', target: { tint: new THREE.Vector3(1, 1, 1), sat: 1, contrast: 1, mix: 0 }, rate: 4 };
+  // v4 setGrade(id, strength, {priority, durReal}) entries; the legacy grade() is the cinematic priority (10)
+  const GRADE_PRIORITY = { witch: 1, cinematic: 10 };
+  const layers = new Map();   // id → {strength, priority, left}
+  const legacy = { name: 'none', mix: 0, rate: 4 };
+  const NONE = GRADES.none;
+  function pickGrade() {
+    let id = null, g = null, mix = 0, rate = legacy.rate;
+    if (legacy.name !== 'none' && legacy.mix > 0) { id = legacy.name; g = GRADES[legacy.name]; mix = legacy.mix; }
+    else {
+      let best = -Infinity;
+      for (const [lid, L] of layers) if (L.left > 0 && L.strength > 0 && L.priority > best && GRADES[lid]) { best = L.priority; id = lid; g = GRADES[lid]; mix = L.strength; rate = L.rate; }
+    }
+    if (!g) { g = NONE; id = 'none'; mix = 0; }
+    grade.name = id;
+    grade.target.tint.set(g.tint[0], g.tint[1], g.tint[2]); grade.target.sat = g.sat; grade.target.contrast = g.contrast;
+    grade.target.mix = Math.max(0, Math.min(1, mix)); grade.rate = rate;
+  }
+  const v2 = (x = 0, y = 0) => ({ value: new THREE.Vector2(x, y) });
   game.post = {
-    GRADES,
+    GRADES, GRADE_PRIORITY,
+    // v4 overlay / depth uniforms (§2.4), updated every frame by main before the composer renders
+    sceneDepth: { value: null }, uvScale: v2(1, 1), sceneRes: v2(1, 1), canvasRes: v2(1, 1),
+    cameraNear: { value: camera.near }, cameraFar: { value: camera.far },
+    projInv: { value: camera.projectionMatrixInverse }, camWorld: { value: camera.matrixWorld },
+    bloomTex: { value: null },
+    bloomStrength(v) { if (v != null && bloomPass) bloomPass.strength = +v; return bloomPass?.strength ?? 0; },
+    /**
+     * Priority-arbitrated colour grade layer. strength 0 removes it; durReal (real s) auto-expires it. The legacy
+     * post.grade(name, …) always wins (cinematic priority). GRADES[id] must exist.
+     */
+    setGrade(id, strength = 1, { priority, durReal, fade = 0.25 } = {}) {
+      if (!id) return;
+      if (!(strength > 0)) { layers.delete(id); pickGrade(); return; }
+      layers.set(id, { strength: Math.min(1, +strength), priority: priority ?? GRADE_PRIORITY[id] ?? 5, left: durReal > 0 ? durReal : Infinity, rate: fade > 0 ? 3 / fade : 1000 });
+      pickGrade();
+    },
     /** Chromatic + radial pulse that decays over durReal (real seconds). opts.radial overrides the blur amount. */
     pulse(amount = 0.5, durReal = 0.25, opts = {}) {
       const scale = game.settings?.values?.screenShake ?? 1;
@@ -239,15 +372,17 @@ const GRADES = {
     },
     /** Blend toward a named grade (see GRADES). blend 0 removes it. dur = fade time in real seconds. */
     grade(name = 'none', blend = 1, dur = 0.6) {
-      const g = GRADES[name] || GRADES.none;
-      grade.name = GRADES[name] ? name : 'none';
-      grade.target.tint.set(g.tint[0], g.tint[1], g.tint[2]);
-      grade.target.sat = g.sat; grade.target.contrast = g.contrast;
-      grade.target.mix = grade.name === 'none' ? 0 : Math.max(0, Math.min(1, blend));
-      grade.rate = dur > 0 ? 3 / dur : 1000;
+      legacy.name = GRADES[name] ? name : 'none';
+      legacy.mix = legacy.name === 'none' ? 0 : Math.max(0, Math.min(1, blend));
+      legacy.rate = dur > 0 ? 3 / dur : 1000;
+      pickGrade();
+      if (legacy.name === 'none') grade.rate = legacy.rate;
     },
     get gradeName() { return grade.name; },
     update(realDt) {
+      let expired = false;
+      for (const [lid, L] of layers) if (L.left !== Infinity) { L.left -= realDt; if (L.left <= 0) { layers.delete(lid); expired = true; } }
+      if (expired) pickGrade();
       if (pulse.left > 0) {
         pulse.left = Math.max(0, pulse.left - realDt);
         const k = pulse.left / pulse.dur, e = k * k;
@@ -292,7 +427,7 @@ function applyShadowMode() {
 }
 function applyRenderSettings() {
   const v = game.settings.values;
-  const msaa = (v.quality === 'low' || isTest) ? 0 : 4;
+  const msaa = bootMsaa;   // v4: decided at boot per preset (applies on reload only)
   if (composer.renderTarget1.samples !== msaa) { composer.renderTarget1.samples = msaa; composer.renderTarget2.samples = msaa; composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); }
   renderer.setPixelRatio(basePR() * (v.renderScale || 1));
   composer.setPixelRatio?.(basePR() * (v.renderScale || 1));
@@ -307,9 +442,9 @@ game.events.on('settingsChanged', ({ key }) => {
 });
 
 // ---------- modules ----------
-const ORDER = ['world', 'vfx', 'combat', 'audio', 'player', 'spells', 'sword', 'skills', 'enemies', 'story', 'cinematic', 'ui'];
+const ORDER = ['world', 'vfx', 'combat', 'tells', 'audio', 'player', 'spells', 'sword', 'skills', 'enemies', 'story', 'cinematic', 'ui'];
 const FILES = {
-  world: ['./world.js', 'createWorld'], vfx: ['./vfx.js', 'createVFX'], combat: ['./combat.js', 'createCombat'],
+  world: ['./world.js', 'createWorld'], vfx: ['./vfx.js', 'createVFX'], combat: ['./combat.js', 'createCombat'], tells: ['./tells.js', 'createTells'],
   audio: ['./audio.js', 'createAudio'], player: ['./player.js', 'createPlayer'], spells: ['./spells.js', 'createSpells'],
   sword: ['./sword.js', 'createSword'], skills: ['./skills.js', 'createSkills'], enemies: ['./enemies.js', 'createEnemies'], story: ['./story.js', 'createStory'],
   cinematic: ['./cinematic.js', 'createCinematic'], ui: ['./ui.js', 'createUI'],
@@ -424,6 +559,11 @@ async function prewarm() {
     else renderer.compile(scene, camera);
   } catch (err) { console.warn('[boot] precompile', err); }
   finally { for (const o of tmp) scene.remove(o); }
+  // threat scene: canvas variant (sRGB output, toneMapped:false materials), never the composer target
+  try {
+    const th = game.render.threatScene;
+    if (th.children.length) { renderer.setRenderTarget(null); rawCompile(th, game.render.overlayCamera, th); }
+  } catch (err) { console.warn('[boot] threat precompile', err); }
 }
 
 // First-draw warm-up: a program compiled by renderer.compile() still pays its link wait and the driver's
@@ -463,35 +603,50 @@ function call(name, dt, realDt) {
     if (!call.errs[name]) { console.error(`[loop] ${name}.update:`, err); call.errs[name] = true; }
   }
 }
+const FR = game.frame;
 function frame(realDt, render = true) {
   game.timeScale.update(realDt);          // first, in every state (CONTRACT §2)
   game.input.update();
   game.realTime += realDt;
+  try { game.quality.update(realDt); } catch (_) { /* */ }
 
   let dt = 0;
   const st = game.state;
+  FR.step = 0; FR.n = 1; FR.lastStep = true; FR.frameDt = 0;
   if (st === 'playing') {
     // F is interact only (CONTRACT §6). In the legacy keymap F keeps its old ultimate meaning when nothing is offered.
     if (game.input.pressed(KEYS.interact) && (game.keymapMode === 'v3' || game.interact.current())) {
       try { game.interact.use(); } catch (err) { console.error('[interact] use', err); }
     }
     let scale = game.timeScale.value();
-    if (game._hitstop > 0 || game._hitstopFrames > 0) { game._hitstop -= realDt; if (game._hitstopFrames > 0) game._hitstopFrames--; scale *= 0.03; }
+    const frozen = game._hitstop > 0 || game._hitstopFrames > 0;   // P0a: every hitstop is a global freeze
+    if (frozen) { game._hitstop -= realDt; if (game._hitstopFrames > 0) game._hitstopFrames--; scale *= 0.03; }
     if (game.cinematic?.active) scale *= game.cinematic.timeScale ?? 1;
-    dt = Math.min(realDt, 1 / 20) * scale;
-    game.time += dt;
-    call('player', dt, realDt);
-    try { game.stats.update(dt); } catch (err) { if (!call.statsErr) { console.error('[loop] stats.update:', err); call.statsErr = true; } }
-    call('spells', dt, realDt);
-    call('sword', dt, realDt);
-    call('skills', dt, realDt);   // before enemies: a cast happens in the same frame as its input
-    call('enemies', dt, realDt);
-    call('combat', dt, realDt);
-    call('story', dt, realDt);
-    call('cinematic', dt, realDt);   // gameplay-mode cinematics override the camera here
+    // sub-steps (§2.5): P0a runs one step per frame (n = 1); P0b raises n to ≤ 2 for slow frames
+    const n = 1;
+    const stepDt = Math.min(realDt, 1 / 20) * scale;
+    dt = stepDt;
+    FR.n = n; FR.frameDt = stepDt * n;
+    const enemySpeed = game.assist.enemySpeed;
+    for (let i = 0; i < n; i++) {
+      FR.step = i; FR.lastStep = i === n - 1;
+      if (!frozen) game.enemyTime += stepDt * enemySpeed;
+      game.time += stepDt;
+      call('player', stepDt, realDt);
+      try { game.stats.update(stepDt); } catch (err) { if (!call.statsErr) { console.error('[loop] stats.update:', err); call.statsErr = true; } }
+      call('spells', stepDt, realDt);
+      call('sword', stepDt, realDt);
+      call('skills', stepDt, realDt);   // before enemies: a cast happens in the same frame as its input
+      call('enemies', stepDt, realDt);
+      call('combat', stepDt, realDt);
+      call('story', stepDt, realDt);
+      call('cinematic', stepDt, realDt);   // gameplay-mode cinematics override the camera here
+    }
+    dt = FR.frameDt;
   } else if (st === 'dialogue' || st === 'cutscene') {
     // Gameplay frozen; ambient world keeps moving. Story drives dialogue camera; cinematic drives cutscenes.
     dt = Math.min(realDt, 1 / 20);
+    FR.frameDt = dt;
     call('story', 0, realDt);
     call('cinematic', dt, realDt);
   } else if (!game.cinematic?.active) {
@@ -503,25 +658,45 @@ function frame(realDt, render = true) {
   try { game.save.update(realDt); } catch (_) { /* */ }
   game.post.update(realDt);
   const ambientDt = st === 'dialogue' || st === 'cutscene' ? Math.min(realDt, 1 / 20) : dt;
+  // once per frame: world → tells → vfx → ui → audio (tells before vfx so footprints are current for ducking)
   call('world', ambientDt, realDt);
+  call('tells', ambientDt, realDt);
   call('vfx', ambientDt, realDt);
   call('ui', realDt, realDt);
   call('audio', realDt, realDt);
   if (render) {
     if (warmPending) warmView();
+    if (game.render.warmQueue) game.render.flushWarm();
     if (shadowsOn && shadowEvery > 0 && (++shadowFrame % shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
-    composer.render(realDt);
+    renderFrame(realDt);
   }
   game.input.endFrame();
 }
+// ---------- render: composer (scene → post) → threat scene over the canvas (§2.4) ----------
+const _sz = new THREE.Vector2();
+function updatePostUniforms() {
+  const P = game.post, rb = composer.readBuffer;   // the RenderPass writes the current read buffer
+  P.sceneDepth.value = rb.depthTexture;
+  P.sceneRes.value.set(rb.width, rb.height);
+  renderer.getDrawingBufferSize(_sz); P.canvasRes.value.copy(_sz);
+  P.cameraNear.value = camera.near; P.cameraFar.value = camera.far;
+}
+function renderFrame(dt) {
+  updatePostUniforms();
+  composer.render(dt);
+  game.render.drawOverlay();
+}
 function loop(now) {
   requestAnimationFrame(loop);
+  if (game.frozen) { last = now; return; }
+  // frame cap (fpsCap 60 default / 30 / 0 = 무제한): skip callbacks earlier than 1/fpsCap − 2 ms after the last frame
+  const cap = +game.settings.values.fpsCap || 0;
+  if (cap > 0 && now - last < 1000 / cap - 2) return;
   let realDt = Math.min((now - last) / 1000, 0.1);
   last = now;
-  if (game.frozen) return;
   fpsWin.push(realDt); if (fpsWin.length > 60) fpsWin.shift();
   game.fps = fpsWin.length / fpsWin.reduce((a, b) => a + b, 0);
-  governor(realDt);
+  if (testParams.governor) governor(realDt);
   frame(realDt);
 }
 // ---------- dynamic quality governor (DESIGN §12) ----------
@@ -549,6 +724,6 @@ game.freeze = (on = true) => { game.frozen = on; if (!on) last = performance.now
 game.step = (n = 1, dt = 1 / 60, render = false) => {
   for (let i = 0; i < n; i++) frame(dt, render && i === n - 1);
 };
-game.renderNow = () => composer.render(0);
+game.renderNow = () => renderFrame(0);
 
 boot();

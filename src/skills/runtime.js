@@ -405,6 +405,8 @@ export function installRuntime(game, K) {
     // 3. implementation
     const aim = aimFor(opts);
     const ctx = buildCtx(id, def, el, fam, opts, aim, castMul);
+    // v4 (PLAN §7.4.1): one castId per cast, stamped before perform; spells/sword use ctx.castId ?? game.nextCastId()
+    ctx.castId = opts.castId ?? game.nextCastId?.() ?? 0;
     const seq0 = spellCastSeq;
     let path = null;
     try { path = perform(id, def, el, fam, opts, ctx); }
@@ -417,7 +419,8 @@ export function installRuntime(game, K) {
     // 4. events: exactly one skillCast; spellCast unless the performing (legacy) code emitted it
     const slot = opts.slot || def.slot;
     const origin = ctx.origin;
-    E.emit('skillCast', { id, element: el, slot, cls: pr?.cls, family: fam, origin, path });
+    E.emit('skillCast', { id, element: el, slot, cls: pr?.cls, family: fam, origin, path, castId: ctx.castId });
+    R.lastCastId = ctx.castId;
     if (spellCastSeq === seq0) { opts._emitted = true; E.emit('spellCast', { element: el, kind: SPELL_KIND[def.slot] || 'skill', spellId: id, origin, skillId: id }); }
     // 5. cooldown (compensated time)
     if (!free || game.isTest) startCooldown(id, def);

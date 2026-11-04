@@ -1,6 +1,10 @@
 // Save system (CONTRACT §4 Save). game.save = { has, save, load, clear, request }.
 // localStorage 'aw_save_v3': {v:3, progression, loadout, story, world, codex, difficulty, time}.
 // No position and no HP are saved: a load spawns at the last reached spirit gate (or the village) with full HP.
+// v4 (PLAN §7.2 rule 11): game.save.section(name, {serialize, load}) adds per-save sections under the new key
+// `sections` ({name: data}); the v3 snapshot keys are unchanged. Reserved names: tells, hints, monsterCodex, encounters.
+// load(data) is called on save load (data = stored value or undefined), with null on clear(), and right away when a
+// section registers after a load already happened.
 // Autosave only at stage boundaries (questComplete) and when leaving the altar / tree; never while a boss is alive or
 // during a cinematic; debounced 2 s; everything in try/catch; never in test mode unless &save=1.
 export const SAVE_KEY = 'aw_save_v3';
@@ -9,6 +13,17 @@ export function createSave(game) {
   const params = (() => { try { return new URLSearchParams(location.search); } catch (_) { return new URLSearchParams(); } })();
   const allowed = () => !game.isTest || params.get('save') === '1';
   let pendingT = -1, lastErr = null;
+  const sections = new Map();     // name → {serialize, load}
+  let loadedSections = null;      // the `sections` object of the last loaded save (late registrations read it)
+  const RESERVED = { tells: 'tells', hints: 'ux', monsterCodex: 'ux', encounters: 'mobs' };
+  function sectionsSnapshot() {
+    const out = {};
+    for (const [name, s] of sections) {
+      try { const v = s.serialize?.(); if (v !== undefined) out[name] = v; } catch (err) { console.warn(`[save] section ${name} serialize failed`, err); }
+    }
+    return out;
+  }
+  function loadSection(name, s, data) { try { s.load?.(data); } catch (err) { console.warn(`[save] section ${name} load failed`, err); } }
 
   function blocked() {
     if (game.enemies?.boss?.alive) return 'boss';
@@ -27,11 +42,27 @@ export function createSave(game) {
       codex,
       difficulty: game.settings?.values?.difficulty || 'normal',
       time: Date.now(),
+      sections: sectionsSnapshot(),
     };
   }
 
   const api = {
     key: SAVE_KEY,
+    RESERVED,
+    /** Register a per-save section (rule 11). Re-registering a name replaces it. */
+    section(name, { serialize, load } = {}) {
+      if (!name || typeof name !== 'string') return;
+      const s = { serialize, load };
+      sections.set(name, s);
+      if (loadedSections && name in loadedSections) loadSection(name, s, loadedSections[name]);
+    },
+    sectionNames() { return [...sections.keys()]; },
+    /** Test / debug: the sections object a save would write now, and feeding one back (round trip without storage). */
+    sectionsSnapshot,
+    loadSections(obj) {
+      loadedSections = obj && typeof obj === 'object' ? obj : {};
+      for (const [name, s] of sections) loadSection(name, s, loadedSections[name]);
+    },
     has() {
       if (!allowed()) return false;
       try { const s = localStorage.getItem(SAVE_KEY); if (!s) return false; const o = JSON.parse(s); return o?.v === 3; } catch (_) { return false; }
@@ -65,6 +96,7 @@ export function createSave(game) {
       step('skills', () => { if (game.skills?.deserialize) game.skills.deserialize(o.loadout); });
       step('story', () => game.story?.deserialize?.(o.story));
       step('world', () => game.world?.deserialize?.(o.world));
+      step('sections', () => api.loadSections(o.sections || {}));
       step('codex', () => { const d = game.combat?.discovered; if (d?.add && Array.isArray(o.codex)) for (const id of o.codex) d.add(id); });
       step('player', () => {
         const pl = game.player;
@@ -79,7 +111,11 @@ export function createSave(game) {
       game.events.emit('loaded', {});
       return true;
     },
-    clear() { try { localStorage.removeItem(SAVE_KEY); } catch (_) { /* */ } },
+    clear() {
+      try { localStorage.removeItem(SAVE_KEY); } catch (_) { /* */ }
+      loadedSections = null;
+      for (const [name, s] of sections) loadSection(name, s, null);
+    },
     update(realDt) {
       if (pendingT < 0) return;
       pendingT -= realDt;

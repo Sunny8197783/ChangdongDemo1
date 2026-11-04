@@ -146,6 +146,40 @@ export function createDebug(game) {
       return out;
     }),
     stats: () => game.stats?.dump?.(),
+    // ---- v4 forwarders (PLAN §7.7); each owner implements its part, absent parts return null
+    hitstopLog: () => [],                                      // replaced by main.js
+    governor: safe('governor', () => {
+      const Q = game.quality; if (!Q) return null;
+      const gv = Q.governor?.() || {};
+      return { level: Q.level, scale: Q.scale, T: gv.T ?? null, misses: gv.misses ?? null, ema: gv.ema ?? null, history: Q.history(), simulate: Q.simulate || null };
+    }),
+    perf: safe('perf', () => game.quality?.perf?.() || null),
+    overdraw: safe('overdraw', (on) => game.vfx?.debug?.overdraw?.(on) ?? null),
+    coverage: safe('coverage', () => game.vfx?.debug?.coverage?.() ?? null),
+    tells: safe('tells', () => game.tells?.active?.() ?? null),
+    forceAttack: safe('forceAttack', (target, id) => {
+      let e = target && typeof target === 'object' ? target : null;
+      if (!e && typeof target === 'string') {
+        const pp = playerPos(); let bd = Infinity;
+        for (const x of game.entities || []) {
+          if (!x?.alive || (x.type !== target && x.kind !== target) || !x.debugAttack) continue;
+          const d = pp && x.object?.position ? x.object.position.distanceToSquared(pp) : 0;
+          if (d < bd) { bd = d; e = x; }
+        }
+      }
+      if (!e?.debugAttack) { warn('forceAttack:' + target, 'forceAttack: no entity with debugAttack', target); return null; }
+      return e.debugAttack(id);
+    }),
+    lookOf: safe('lookOf', (id, family) => {
+      const fam = family || (game.skills?.family?.() ?? 'caster');
+      const m = fam === 'melee' ? game.sword : game.spells;
+      return m?.lookOf?.(id) ?? null;
+    }),
+    /** New THREE.Material objects created since the last call (global id counter). */
+    newMaterials: (() => { let last = -1; return () => { const m = new THREE.Material(); const id = m.id; m.dispose(); const n = last < 0 ? 0 : Math.max(0, id - last - 1); last = id; return n; }; })(),
+    /** Programs created since the last call (first draws of never-compiled programs). */
+    firstDraws: (() => { let last = -1; return () => { const n = game.renderer?.info?.programs?.length ?? 0; const d = last < 0 ? 0 : Math.max(0, n - last); last = n; return d; }; })(),
+    fragments: safe('fragments', () => (window.PT?.fragments ? window.PT.fragments() : null)),
   };
   return D;
 }

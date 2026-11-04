@@ -1,16 +1,17 @@
 import * as THREE from 'three';
 import { ELEMENT_DEFS, PSEUDO_ELEMENTS } from './elements.js';
 
-// Legacy element maps (v1/v2 code). Values of the 5 classic elements are frozen; the new elements and the pseudo
-// elements are explicit keys, and any unknown key falls back to 'physical' (white / '물리') instead of undefined.
+// Legacy element maps (v1/v2 code). v4: every element colour comes from the elements.js ramps (PLAN §3.2); the new elements and the pseudo
+// elements are explicit keys, and any unknown key falls back to 'physical' (v4 ramp mid / '물리') instead of undefined.
 // New code uses elColor / elName from elements.js (ELEMENT_NAMES_KO.ice stays '냉기' for legacy strings).
 const withFallback = (obj) => new Proxy(obj, {
   get(t, k) { return (typeof k === 'string' && !(k in t)) ? t.physical : t[k]; },
 });
 export const ELEMENT_COLORS = withFallback({
-  fire: 0xff6a1f, ice: 0x7fe3ff, lightning: 0xc9a4ff, wind: 0x8fffc1, earth: 0xe0a85a,
+  fire: ELEMENT_DEFS.fire.colors.hex, ice: ELEMENT_DEFS.ice.colors.hex, lightning: ELEMENT_DEFS.lightning.colors.hex,
+  wind: ELEMENT_DEFS.wind.colors.hex, earth: ELEMENT_DEFS.earth.colors.hex,
   water: ELEMENT_DEFS.water.colors.hex, nature: ELEMENT_DEFS.nature.colors.hex, light: ELEMENT_DEFS.light.colors.hex,
-  shadow: ELEMENT_DEFS.shadow.colors.hex, physical: 0xffffff, void: PSEUDO_ELEMENTS.void.hex,
+  shadow: ELEMENT_DEFS.shadow.colors.hex, physical: PSEUDO_ELEMENTS.physical.hex, void: PSEUDO_ELEMENTS.void.hex,
 });
 export const ELEMENT_NAMES_KO = withFallback({
   fire: '화염', ice: '냉기', lightning: '번개', wind: '바람', earth: '대지',

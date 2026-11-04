@@ -38,10 +38,12 @@ export class Input {
       this.keys.clear(); this.buttons.clear();
     });
     addEventListener('mousedown', (e) => {
+      if (e.button >= 3) e.preventDefault();   // Mouse3/Mouse4 (back/forward) are bindable (dodgeAlt): never navigate
       if (!this.buttons.has(e.button)) this.btnPressed.add(e.button);
       this.buttons.add(e.button);
     });
     addEventListener('mouseup', (e) => {
+      if (e.button >= 3) e.preventDefault();
       this.buttons.delete(e.button);
       this.btnReleased.add(e.button);
     });
