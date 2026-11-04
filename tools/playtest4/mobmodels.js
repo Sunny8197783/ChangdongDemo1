@@ -130,9 +130,9 @@ module.exports = async function mobmodels(PT) {
     const Rig = await import('/src/enemies/mobs/rig.js');
     for (const [key, type, opts] of KEYS) {
       // first sight = create + game.render.warm + geometry upload + first draw of a type never drawn before, minus the same frame once warm.
-      // 3 genuine first sights per type (fresh re-keyed builds of the same definition), median (the machine is shared; single samples spike).
+      // 5 genuine first sights per type (fresh re-keyed builds of the same definition); best and median reported (the machine is shared; samples spike).
       const trials = [];
-      for (let tr = 0; tr < 3; tr++) {
+      for (let tr = 0; tr < 5; tr++) {
         const def = MM.defFor(type, opts); def.key = (def.key || def.type) + '#fs' + tr;
         const TT = Rig.defineType(def);
         window.PT.gpuSync();       // empty the GPU command queue first: we time CPU-side work, not SwiftShader rasterising earlier frames
@@ -149,7 +149,7 @@ module.exports = async function mobmodels(PT) {
         fm.dispose(); TT.geo.dispose(); TT.proxyGeo.dispose(); TT.glowGeo?.dispose(); Rig.builtTypes().delete(TT.key);
       }
       trials.sort((a, b) => a - b);
-      const first = trials[0], firstMed = trials[1];   // best of 3 (the 4-CPU machine is shared: stalls of 0.3–4 s from other processes were seen)
+      const first = trials[0], firstMed = trials[2];   // best of 5 (the 4-CPU machine is shared: stalls of 0.3–4 s from other processes were seen)
       const m = MM.createModel(type, { ...opts, game: g });
       // spawn cost: 20 more instances (shared geometry, cloned skeleton only)
       const sp = [];
@@ -171,7 +171,7 @@ module.exports = async function mobmodels(PT) {
     PT.check('build once per type: instances share BufferGeometry + materials, clone only the skeleton', keys.every((k) => R[k].shared), keys.filter((k) => !R[k].shared));
     PT.check(`spawn ≤ 1 ms per mob (median of 20 per type; worst ${worstSpawn.toFixed(3)} ms)`, worstSpawn <= 1.0, Object.fromEntries(keys.map((k) => [k, R[k].spawnMed])));
     PT.check(`first sight ≤ 8 ms incl. game.render.warm (worst ${worstFirst.toFixed(2)} ms over a ${cost.baseMs.toFixed(1)} ms frame)`, worstFirst <= 8, Object.fromEntries(keys.map((k) => [k, R[k].firstMs])));
-    PT.note('first sight median of 3 (ms): ' + keys.map((k) => `${k} ${R[k].firstMed}`).join(', '));
+    PT.note('first sight median of 5 (ms): ' + keys.map((k) => `${k} ${R[k].firstMed}`).join(', '));
     PT.note('build ms / KB per type: ' + keys.map((k) => `${k} ${R[k].buildMs}ms ${R[k].kb}KB`).join(', '));
     // ---------------------------------------------------------------- tri budgets
     for (const k of keys) {

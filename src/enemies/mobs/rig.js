@@ -474,7 +474,8 @@ export function defineType(def) {
   const bones = [bone('__flash', null, [0, 0, 0]), ...def.bones];
   def.bones = bones;
   const R = restMatrices(bones);
-  const bodyParts = def.parts.filter((q) => !q.f.glow);
+  const bodyParts = def.parts.filter((q) => !q.f.glow && !q.f.proxyOnly);
+  const proxyOnly = def.parts.filter((q) => q.f.proxyOnly);
   const glowParts = def.parts.filter((q) => q.f.glow).concat(def.glow || []);
   const size = (q) => { const e = primExt(q.spec); return Math.max(e[0] * q.s[0], e[1] * q.s[1], e[2] * q.s[2]); };
   const lodParts = bodyParts.filter((q) => q.f.lod || (!q.f.noLod && !q.f.small && size(q) >= (def.lodMin ?? 0.09)));
@@ -483,7 +484,7 @@ export function defineType(def) {
   const proxyParts = bodyParts.filter((q) => q.f.proxy || (!q.f.noProxy && !q.f.small && q.spec.k !== 'card' && q.spec.k !== 'tor' && !thin(q) && size(q) >= (def.proxyMin ?? 0.12)));
   const body = assemble(def, R, bodyParts, 'body');
   const lod = assemble(def, R, lodParts, 'lod');
-  const proxy = assemble(def, R, proxyParts, 'proxy');
+  const proxy = assemble(def, R, proxyParts.concat(proxyOnly), 'proxy');
   const glow = glowParts.length ? assemble(def, R, glowParts, 'glow') : null;
   const both2 = concat(body, lod);
   const geo = geometryFrom(both2);

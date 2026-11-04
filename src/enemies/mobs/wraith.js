@@ -31,6 +31,7 @@ export function wraithDef() {
   add(P('rig', FN(skirtGeo, [0.52, 0.55, 0.52]), robeCol, [0, -0.45, 0], [0, 0, 0], [1, 1, 1], { proxy: true, aoCast: false }));
   add(P('rig', K(0.42, 0.9, 12, { open: true }), WR.robeDeep, [0, -0.4, -0.03], [0, 0, 0], [1, 1, 1], { aoCast: false }));
   add(P('rig', T(0.3, 0.035, 14, 4), WR.trim, [0, 0.02, 0], [Math.PI / 2, 0, 0]));
+  add(P('rig', C(0.56, 0.56, 0.04, 12), 0, [0, -1.12, 0], [0, 0, 0], [1, 1, 1], { proxyOnly: true }));   // closes the open skirt for the outline hull
   for (const [b, w, h] of [['hem1', 0.16, 0.34], ['hem2', 0.15, 0.3], ['hem3', 0.18, 0.36]]) add(P(b, CARD(w, h, 3, { taper: 0.15, bend: 0.04 }), WR.robeDark, [0, 0, 0], [0, Math.atan2(bones.find((q) => q.name === b).p[0], bones.find((q) => q.name === b).p[2]), 0], [1, 1, 1], { ao: false }));
   // ---------------------------------------------------------------- torso: robe chest, shoulders, ribcage, chain wrapped around
   add(P('spine', S(0.3, 12, 9), robeCol, [0, 0.26, 0], [0, 0, 0], [1.1, 1.15, 0.85], { blend: { axis: '+y', band: 0.06 } }));
