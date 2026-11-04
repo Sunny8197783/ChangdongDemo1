@@ -125,23 +125,42 @@ const game = {
   get _slowTime() { let t = 0; for (const e of this.timeScale.active()) t = Math.max(t, e.left); return t; },
   _hitstopFrames: 0,
   /**
-   * v4 signature hitstop(seconds, {tier, target}) (PLAN §2.5). P0a keeps the v3 global freeze for every request (the
-   * per-entity budgeted semantics land in P0b) and already stamps target.hitstopUntil (game.realTime seconds) and logs
-   * every request for game.debug.hitstopLog().
+   * Hitstop v4 (PLAN §2.5, §5.10): hitstop(seconds, {tier, target}) → granted:boolean.
+   *  - per-entity: freezes the struck `target` (target.hitstopUntil, game.realTime seconds; enemies skip their update
+   *    and tells extends their TellHandles) and the player's animation (game.playerHitstopUntil); other enemies,
+   *    telegraphs and projectiles keep running.
+   *  - tiers 'ult' and 'kill' freeze globally (≤ 0.10 s). A call without options (legacy v3 signature) is a global freeze too.
+   *  - caps: 0.10 s per request (0.12 for break / parry); the 3–4 frame floor only below 50 fps; a rolling 1 s window may
+   *    be frozen ≤ 80 ms in total, except ult / break / parry / kill (always granted). Over-budget requests are dropped.
+   * Every request is logged (game.debug.hitstopLog()).
    */
   hitstop(s, opts) {
-    const sec = Math.max(0, Math.min(+s || 0, 0.25));
-    const tier = opts?.tier || null, target = opts?.target || null;
-    const granted = sec > 0;
+    const legacy = opts == null;
+    const tier = opts?.tier || (legacy ? 'legacy' : null), target = opts?.target || null;
+    let sec = Math.max(0, +s || 0);
+    const exempt = tier === 'ult' || tier === 'break' || tier === 'parry' || tier === 'kill' || (legacy && sec >= 0.1);
+    sec = Math.min(sec, tier === 'break' || tier === 'parry' ? 0.12 : legacy ? 0.16 : 0.10);
+    const fpsLow = hsFrameDt > 1 / 50 + 1e-6;   // the current frame's real delta (below 50 fps)
+    if (fpsLow && sec > 0) sec = Math.max(sec, Math.min(0.12, (sec >= 0.1 ? 4 : 3) * (hsFrameDt || 1 / 60)));
+    let granted = sec > 0;
+    if (granted && !exempt && hsBudgetUsed(this.realTime) + sec > HS_BUDGET + 1e-9) granted = false;
     if (granted) {
-      this._hitstop = Math.max(this._hitstop, sec);
-      // minimum frozen frame count so the freeze still reads on low-FPS machines
-      this._hitstopFrames = Math.max(this._hitstopFrames, sec >= 0.1 ? 4 : 3);
-      if (target) target.hitstopUntil = Math.max(target.hitstopUntil || 0, this.realTime + sec);
+      hsBudgetPush(this.realTime, sec);
+      const global = legacy || tier === 'ult' || tier === 'kill';
+      if (global) {
+        this._hitstop = Math.max(this._hitstop, sec);
+        if (fpsLow) this._hitstopFrames = Math.max(this._hitstopFrames, sec >= 0.1 ? 4 : 3);
+      }
+      const until = this.realTime + sec;
+      if (target) target.hitstopUntil = Math.max(target.hitstopUntil || 0, until);
+      if (target !== this.player?.entity) this.playerHitstopUntil = Math.max(this.playerHitstopUntil || 0, until);
     }
     hitstopLogPush(this.realTime, sec, tier, granted, target);
     return granted;
   },
+  /** true while `e` is frozen by a per-entity hitstop (enemies skip their update; player animation pauses for the player). */
+  isHitstopped(e) { return !!e && e.hitstopUntil > this.realTime; },
+  playerHitstopUntil: 0,
   /** v2 shim → game.timeScale.set('legacy', scale, s) (CONTRACT §3.3). */
   slowmo(scale, s) { this.timeScale.set('legacy', scale, Math.max(this.timeScale.timeLeft('legacy'), s)); },
   setState(s) {
@@ -193,6 +212,17 @@ const game = {
   },
 };
 window.game = game;
+// ---------- hitstop budget: ≤ 80 ms frozen per rolling second (exempt tiers excluded), ring of granted requests ----------
+const HS_BUDGET = 0.08;
+const HS_T = new Float64Array(64), HS_S = new Float64Array(64); let hsBHead = 0;
+let hsFrameDt = 1 / 60;
+function hsBudgetPush(t, sec) { HS_T[hsBHead] = t; HS_S[hsBHead] = sec; hsBHead = (hsBHead + 1) & 63; }
+function hsBudgetUsed(now) {
+  // frozen time inside [now − 1, now]: each request covers [t, t + sec]
+  let sum = 0;
+  for (let i = 0; i < 64; i++) { const t = HS_T[i], s = HS_S[i]; if (s <= 0 || t + s < now - 1) continue; sum += Math.min(t + s, now + 1) - Math.max(t, now - 1); }
+  return sum;
+}
 // ---------- hitstop log (game.debug.hitstopLog: the last 64 requests, reused records) ----------
 const HS_LOG = Array.from({ length: 64 }, () => ({ t: 0, sec: 0, tier: null, granted: false, target: null }));
 let hsHead = 0, hsCount = 0;
@@ -275,6 +305,7 @@ game.interact = createInteract(game);
 game.save = createSave(game);
 game.debug = createDebug(game);
 game.debug.hitstopLog = hitstopLog;
+game.quality.perf = () => perfReport();
 if (isTest) game.debug.events.enable();
 
 /** Test params that are settings (PLAN §7.6): applied transiently (never persisted). */
@@ -607,14 +638,39 @@ game.events.on('bossPhase', () => { warmPending = true; });
 // ---------- loop ----------
 let last = performance.now();
 const fpsWin = [];
+// per-module CPU ms (game.debug.perf(): median over the last 120 frames; sub-steps of one frame are summed)
+const PERF_N = 120, PERF_NAMES = ['world', 'vfx', 'combat', 'tells', 'audio', 'player', 'spells', 'sword', 'skills', 'enemies', 'story', 'cinematic', 'ui', 'stats', 'render'];
+const perfRing = Object.fromEntries(PERF_NAMES.map((n) => [n, new Float32Array(PERF_N)]));
+const perfAcc = Object.fromEntries(PERF_NAMES.map((n) => [n, 0]));
+let perfHead = 0, perfCount = 0;
+function perfCommit() {
+  for (const n of PERF_NAMES) { perfRing[n][perfHead] = perfAcc[n]; perfAcc[n] = 0; }
+  perfHead = (perfHead + 1) % PERF_N; if (perfCount < PERF_N) perfCount++;
+}
+const _perfTmp = new Float32Array(PERF_N);
+function perfReport() {
+  const out = {};
+  for (const n of PERF_NAMES) {
+    for (let i = 0; i < perfCount; i++) _perfTmp[i] = perfRing[n][i];
+    const a = Array.from(_perfTmp.subarray(0, perfCount)).sort((x, y) => x - y);
+    out[n] = a.length ? +a[a.length >> 1].toFixed(3) : 0;
+  }
+  out.frames = perfCount;
+  return out;
+}
 function call(name, dt, realDt) {
+  const t0 = performance.now();
   try { game[name].update(dt, realDt); }
   catch (err) {
     if (!call.errs) call.errs = {};
     if (!call.errs[name]) { console.error(`[loop] ${name}.update:`, err); call.errs[name] = true; }
   }
+  perfAcc[name] += performance.now() - t0;
 }
 const FR = game.frame;
+let prevSimMs = 0;
+// step group order (§7.3): player → stats → spells → sword → skills (before enemies: a cast lands in the frame of its input) → enemies → combat → story → cinematic
+const STEP_MODS = ['player', 'stats', 'spells', 'sword', 'skills', 'enemies', 'combat', 'story', 'cinematic'];
 function frame(realDt, render = true) {
   game.frameCount = (game.frameCount || 0) + 1;
   game.timeScale.update(realDt);          // first, in every state (CONTRACT §2)
@@ -631,30 +687,38 @@ function frame(realDt, render = true) {
       try { game.interact.use(); } catch (err) { console.error('[interact] use', err); }
     }
     let scale = game.timeScale.value();
-    const frozen = game._hitstop > 0 || game._hitstopFrames > 0;   // P0a: every hitstop is a global freeze
+    // global freeze: only hitstop tiers ult / kill (and legacy no-option calls); per-entity hitstop never stops the clock
+    const frozen = game._hitstop > 0 || game._hitstopFrames > 0;
     if (frozen) { game._hitstop -= realDt; if (game._hitstopFrames > 0) game._hitstopFrames--; scale *= 0.03; }
     if (game.cinematic?.active) scale *= game.cinematic.timeScale ?? 1;
-    // sub-steps (§2.5): P0a runs one step per frame (n = 1); P0b raises n to ≤ 2 for slow frames
-    const n = 1;
-    const stepDt = Math.min(realDt, 1 / 20) * scale;
+    // logic-only sub-steps (§2.5): realDt ≤ 0.1, n = min(2, ceil(realDt / (1/30))) so a step is ≤ 1/20 s; n = 1 when the
+    // previous frame's simulation took > 8 ms (no CPU spiral). Visual-only work runs on game.frame.lastStep.
+    const rdt = Math.min(realDt, 0.1);
+    hsFrameDt = rdt;
+    const n = prevSimMs > 8 ? 1 : Math.max(1, Math.min(2, Math.ceil(rdt * 30 - 1e-6)));
+    const stepDt = (rdt / n) * scale;
     dt = stepDt;
     FR.n = n; FR.frameDt = stepDt * n;
+    const simT0 = performance.now();
+    const stepReal = realDt / n;
     const enemySpeed = game.assist.enemySpeed;
+    const fdt = stepDt * n, freal = realDt;
     for (let i = 0; i < n; i++) {
       FR.step = i; FR.lastStep = i === n - 1;
       if (!frozen) game.enemyTime += stepDt * enemySpeed;
       game.time += stepDt;
-      call('player', stepDt, realDt);
-      try { game.stats.update(stepDt); } catch (err) { if (!call.statsErr) { console.error('[loop] stats.update:', err); call.statsErr = true; } }
-      call('spells', stepDt, realDt);
-      call('sword', stepDt, realDt);
-      call('skills', stepDt, realDt);   // before enemies: a cast happens in the same frame as its input
-      call('enemies', stepDt, realDt);
-      call('combat', stepDt, realDt);
-      call('story', stepDt, realDt);
-      call('cinematic', stepDt, realDt);   // gameplay-mode cinematics override the camera here
+      // a module that declares `substeps: true` (it does its visual-only work on game.frame.lastStep) runs every
+      // sub-step; any other module runs once per frame on the last step with the whole frame dt (v3-compatible fallback:
+      // no slow motion, no doubled visual work)
+      for (let k = 0; k < STEP_MODS.length; k++) {
+        const name = STEP_MODS[k];
+        if (name === 'stats') { try { game.stats.update(stepDt); } catch (err) { if (!call.statsErr) { console.error('[loop] stats.update:', err); call.statsErr = true; } } continue; }
+        if (game[name]?.substeps === true) call(name, stepDt, stepReal);
+        else if (FR.lastStep) call(name, fdt, freal);
+      }
     }
     dt = FR.frameDt;
+    prevSimMs = performance.now() - simT0;
   } else if (st === 'dialogue' || st === 'cutscene') {
     // Gameplay frozen; ambient world keeps moving. Story drives dialogue camera; cinematic drives cutscenes.
     dt = Math.min(realDt, 1 / 20);
@@ -680,8 +744,11 @@ function frame(realDt, render = true) {
     if (warmPending) warmView();
     if (game.render.warmQueue) game.render.flushWarm();
     scheduleShadows();
+    const tr = performance.now();
     renderFrame(realDt);
+    perfAcc.render += performance.now() - tr;
   }
+  perfCommit();
   game.input.endFrame();
 }
 // ---------- render: composer (scene → bloom → final) → threat scene over the canvas (§2.4) ----------

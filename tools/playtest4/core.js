@@ -522,6 +522,99 @@ async function c2(PT) {
   PT.check('C2 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
 }
-async function c3(PT) { PT.skip('C3', 'pending'); }
-async function c4(PT) { PT.skip('C4', 'pending'); }
+// ==================================================================== C3: sub-stepping
+async function c3(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage&zone=plains');
+  if (!pg.ready) { PT.check('C3 boot', false); return; }
+  await pg.run('C3 sub-steps', () => {
+    const g = game, FR = g.frame;
+    PT.tp(-20, 45); PT.step(0.3);
+    const ratio = (rdt, frames) => { const t0 = g.time, e0 = g.enemyTime; g.step(frames, rdt, false); return { game: (g.time - t0) / (frames * rdt), enemy: (g.enemyTime - e0) / (frames * rdt) }; };
+    const r15 = ratio(1 / 15, 30), r10 = ratio(1 / 10, 20), r60 = ratio(1 / 60, 60);
+    PT.check('game-time / real-time ≥ 0.99 at realDt 1/15 and 1/10 (no slow motion below 20 fps)', r15.game >= 0.99 && r10.game >= 0.99 && r15.enemy >= 0.99 && r10.enemy >= 0.99 && Math.abs(r60.game - 1) < 1e-6, { r15, r10, r60 });
+    // step bookkeeping seen by a playing module
+    // (a module declaring substeps:true runs every sub-step; others run once on the last step with the frame dt)
+    const rec = [], recL = []; const P = g.player, orig = P.update, keepSub = P.substeps, E = g.enemies, origE = E.update, keepSubE = E.substeps;
+    P.update = function (dt, rdt) { rec.push([FR.step, FR.n, FR.lastStep, +dt.toFixed(5)]); return orig.call(this, dt, rdt); };
+    E.update = function (dt, rdt) { recL.push([FR.step, FR.lastStep, +dt.toFixed(5)]); return origE.call(this, dt, rdt); };
+    P.substeps = true; E.substeps = false;
+    try { g.step(1, 1 / 15, false); g.step(1, 1 / 10, false); g.step(1, 1 / 60, false); g.step(1, 0.25, false); } finally { P.update = orig; P.substeps = keepSub; E.update = origE; E.substeps = keepSubE; }
+    PT.check('module without substeps runs once per frame on the last step with the frame dt', recL.length === 4 && recL.every((r) => r[1] === true) && Math.abs(recL[0][2] - 1 / 15) < 1e-4 && Math.abs(recL[1][2] - 0.1) < 1e-4, recL);
+    const ok = rec.length === 7 && rec[0][1] === 2 && rec[0][2] === false && rec[1][2] === true && rec[1][0] === 1 && Math.abs(rec[0][3] - 1 / 30) < 1e-4 &&
+      rec[2][1] === 2 && Math.abs(rec[2][3] - 0.05) < 1e-4 && rec[4][1] === 1 && rec[4][2] === true && rec[5][1] === 2 && Math.abs(rec[5][3] - 0.05) < 1e-4 && rec.every((r) => r[1] <= 2 && r[3] <= 0.05 + 1e-6);
+    PT.check('n = min(2, ceil(realDt·30)), step dt ≤ 1/20, lastStep on the final step only (realDt capped at 0.1)', ok, rec);
+    PT.check('game.frame.frameDt = whole frame', Math.abs(FR.frameDt - 0.1) < 1e-6, FR.frameDt);
+    // game.step(n, 1/60) keeps its deterministic contract: one step per frame
+    const t0 = g.time; const rec2 = []; P.update = function (dt, rdt) { rec2.push(FR.n); return orig.call(this, dt, rdt); };
+    P.substeps = true;
+    try { g.step(10, 1 / 60, false); } finally { P.update = orig; P.substeps = keepSub; }
+    PT.check('game.step(n, 1/60): n frames × 1 step, game.time += n·dt exactly', rec2.length === 10 && rec2.every((x) => x === 1) && Math.abs(g.time - t0 - 10 / 60) < 1e-9, rec2.length);
+    // CPU: one 1/15 frame (2 logic steps + one visual pass) vs one 1/60 frame
+    const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    const time = (rdt) => { const ts = []; for (let i = 0; i < 40; i++) { const t = performance.now(); g.step(1, rdt, false); ts.push(performance.now() - t); } return med(ts); };
+    time(1 / 60); const a60 = time(1 / 60), a15 = time(1 / 15), b60 = time(1 / 60), b15 = time(1 / 15);
+    const c60 = (a60 + b60) / 2, c15 = (a15 + b15) / 2;
+    const aware = ['player', 'spells', 'sword', 'skills', 'enemies', 'combat', 'story', 'cinematic'].filter((m) => g[m]?.substeps === true);
+    PT.check('CPU at realDt 1/15 ≤ 1.6 × one 1/60 step', c15 <= 1.6 * c60 + 0.05, { ms60: +c60.toFixed(3), ms15: +c15.toFixed(3), ratio: +(c15 / c60).toFixed(2), substepModules: aware });
+    // spiral guard: when the previous frame's simulation took > 8 ms, the next slow frame runs one step
+    const slow = g.enemies.update; let n2 = 0;
+    g.enemies.update = function (...a) { const t = performance.now(); while (performance.now() - t < 9) { /* burn */ } return slow.apply(this, a); };
+    try { g.step(1, 1 / 15, false); P.update = function (dt, rdt) { n2 = FR.n; return orig.call(this, dt, rdt); }; g.step(1, 1 / 15, false); } finally { g.enemies.update = slow; P.update = orig; }
+    PT.check('n = 1 after a frame whose simulation took > 8 ms', n2 === 1, n2);
+    g.step(2, 1 / 60, false);
+  });
+  PT.check('C3 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}
+
+// ==================================================================== C4: per-entity hitstop, budget, slow-motion arbitration
+async function c4(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage&zone=plains');
+  if (!pg.ready) { PT.check('C4 boot', false); return; }
+  await pg.run('C4 hitstop', () => {
+    const g = game;
+    PT.tp(-20, 45); PT.step(0.5);
+    const A = { type: 'ptA', hitstopUntil: 0 }, B = { type: 'ptB', hitstopUntil: 0 };
+    g._hitstop = 0; g._hitstopFrames = 0;
+    PT.step(1.2);   // empty the rolling window
+    const e0 = g.enemyTime; let granted = 0, frozenA = 0, globalSeen = false;
+    for (let i = 0; i < 60; i++) {
+      if (i % 2 === 0) { if (g.hitstop(0.025, { tier: 'light', target: A })) granted += 0.025; }
+      g.step(1, 1 / 60, false);
+      if (A.hitstopUntil > g.realTime) frozenA += 1 / 60;
+      if (g._hitstop > 0) globalSeen = true;
+    }
+    const enemyRate = (g.enemyTime - e0) / 1;
+    PT.check('30 light requests in 1 s: target frozen ≤ 80 ms (over-budget requests dropped)', granted <= 0.08 + 1e-9 && granted >= 0.05 && frozenA <= 0.08 + 1 / 60, { granted, frozenA: +frozenA.toFixed(3) });
+    PT.check('per-entity: other enemies never frozen, no global freeze, enemy clock keeps running', B.hitstopUntil === 0 && !globalSeen && Math.abs(enemyRate - g.assist.enemySpeed) < 0.02, { B: B.hitstopUntil, globalSeen, enemyRate });
+    const log = g.debug.hitstopLog().slice(-30);
+    PT.check('hitstopLog records granted and dropped requests', log.filter((r) => r.granted).length >= 2 && log.some((r) => !r.granted) && log.every((r) => r.tier === 'light' && r.target === 'ptA'), log.slice(-4));
+    // ult: global, always granted, ≤ 0.10 s
+    PT.step(0.2);
+    const okU = g.hitstop(0.3, { tier: 'ult' }); const sec = g.debug.hitstopLog().slice(-1)[0].sec;
+    const t1 = g.enemyTime; g.step(3, 1 / 60, false); const stalled = g.enemyTime - t1;
+    PT.check("'ult' is global and granted ≤ 0.10 s (even over budget)", okU && sec === 0.1 && stalled < 1e-9, { okU, sec, stalled });
+    PT.step(0.3);
+    // exempt tiers granted while the light budget is spent; break/parry cap 0.12
+    for (let i = 0; i < 6; i++) g.hitstop(0.025, { tier: 'light', target: A });
+    const lightNow = g.hitstop(0.025, { tier: 'light', target: A });
+    const br = g.hitstop(0.2, { tier: 'break', target: A }); const brSec = g.debug.hitstopLog().slice(-1)[0].sec;
+    const pa = g.hitstop(0.2, { tier: 'parry', target: A });
+    PT.check('budget spent: light dropped, break/parry still granted (capped 0.12)', lightNow === false && br && pa && Math.abs(brSec - 0.12) < 1e-9, { lightNow, br, pa, brSec });
+    PT.check('struck player-side animation freeze flag (game.playerHitstopUntil) set by enemy-target hitstop', g.playerHitstopUntil > g.realTime, g.playerHitstopUntil);
+    PT.step(1.3);
+    // slow-motion arbitration: one source at a time, comp() compensates witch
+    const TS = g.timeScale;
+    const w = TS.set('witch', 0.5, 0.6, { compensate: true }); const comp = TS.comp(), val = TS.value();
+    const teach = TS.set('teach', 0.3, 0.4); const src = TS.slowmoSource();
+    const witch2 = TS.set('witch', 0.5, 0.6, { compensate: true });
+    TS.clear('teach'); TS.clear('witch');
+    PT.check('slow-motion arbitration (one source; teach > witch) and comp() = 1/scale for witch', w && Math.abs(comp - 2) < 1e-9 && val === 0.5 && teach && src === 'teach' && witch2 === false && TS.comp() === 1, { comp, val, src, witch2 });
+    // per-frame share of globally frozen frames for ordinary hits: 0
+    let gf = 0; for (let i = 0; i < 60; i++) { if (i % 6 === 0) g.hitstop(0.05, { tier: 'heavy', target: B }); g.step(1, 1 / 60, false); if (g._hitstop > 0) gf++; }
+    PT.check('heavy hits never freeze globally', gf === 0, gf);
+  });
+  PT.check('C4 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}
 async function c7(PT) { PT.skip('C7', 'pending'); }
