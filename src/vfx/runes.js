@@ -166,7 +166,9 @@ export function createRunes(game, vfx, textures) {
       if (!r.active) continue;
       const p = r.mesh.position, z = Math.max(0.5, (p.x - _cam.x) * _fw.x + (p.y - _cam.y) * _fw.y + (p.z - _cam.z) * _fw.z);
       const R = r.mesh.scale.x, cosv = Math.max(0.15, Math.abs(p.y - _cam.y) / Math.max(0.5, p.distanceTo(_cam)));
-      c += Math.PI * R * R * 0.78 * e[0] * e[5] / (4 * z * z) * cosv;     // the disc is drawn (discard outside r=1)
+      let cr = Math.PI * R * R * 0.78 * e[0] * e[5] / (4 * z * z) * cosv;     // the disc is drawn (discard outside r=1)
+      if (vfx._proj) cr = Math.min(cr, vfx._proj.disc(p.x, p.y, p.z, R, 0.5 * cosv));
+      c += cr;
     }
     for (const s of smears) if (s.active) { const p = s.mesh.position, z = Math.max(0.5, (p.x - _cam.x) * _fw.x + (p.y - _cam.y) * _fw.y + (p.z - _cam.z) * _fw.z); c += 1.2 * s.mesh.scale.x * s.mesh.scale.x * e[0] * e[5] / (4 * z * z); }
     return c;

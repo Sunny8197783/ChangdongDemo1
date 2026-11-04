@@ -437,6 +437,7 @@ export function createVFX(game) {
 
   // ---------- kit ----------
   const projector = createProjector(game);
+  // (exposed to runes.js for its coverage estimate)
   let otherCover = 0;   // enemy-owned kit coverage of the frame (enemy / world linework, FM, ribbons, bolts)
   const kit = createKit(game, { shared: duck.shared, cast, screenH, time: uTime, proj: projector, emit: (pos, o) => burst(pos, o, false), onOtherCover: (c) => { otherCover += c; } });
 
@@ -620,6 +621,7 @@ export function createVFX(game) {
   installPresets(api, game);
   const tele = createTelegraphs(game, api);
   const dis = createDissolve(game, api);
+  api._proj = projector;
   const runes = createRunes(game, api, textures);
   api.hitFeel = feel.hitFeel;
   api.feelStats = feel.stats;
