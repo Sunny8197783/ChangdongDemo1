@@ -37,6 +37,7 @@ const AUTO_REVIVE_SEC = 2, AUTO_REVIVE_HP = 0.5;
 const BASE_FOV = 62;
 const DEEP_WATER = 1.15;
 const AIM_CONE = Math.cos(THREE.MathUtils.degToRad(4.5));
+const AIM_CONE_WEAK = Math.cos(THREE.MathUtils.degToRad(8)), AIM_CONE_STRONG = Math.cos(THREE.MathUtils.degToRad(12));
 const GUARD_BREAK_T = 0.8, UPDRAFT_VY_CAP = 9, SPRINT_STAM = 18, GLIDE_STAM = 10, GLIDE_STAM_UPDRAFT = 4;
 const HARD_LAND_H = 6, DAZZLED_PARRY_ADD = 0.1;
 // after-image tints (element ramp steps, never white: rule 5)
@@ -1233,7 +1234,9 @@ export function createPlayer(game) {
         if (er && er.entity && er.dist < best) { best = er.dist; point = new THREE.Vector3().copy(er.point); target = er.entity; }
       } catch (e) { /* */ }
       if (!target) {
-        let bestCos = AIM_CONE;
+        // P1 aim assist (settings.aimAssist 끔 / 약 / 강): a wider cone around the crosshair picks the enemy centre
+        const aa = game.settings?.values?.aimAssist;
+        let bestCos = aa === 'strong' ? AIM_CONE_STRONG : aa === 'weak' ? AIM_CONE_WEAK : AIM_CONE;
         for (const e of game.entities) {
           if (!e || e.team !== 'enemy' || !e.alive || !e.object) continue;
           const c = e.getCenter ? e.getCenter(v2) : v2.copy(e.object.position).setY(e.object.position.y + (e.height || 1.6) * 0.5);

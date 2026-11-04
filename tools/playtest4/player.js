@@ -355,6 +355,24 @@ module.exports = async function player(PT) {
     pl.hitstopUntil = 0; P.step(1.5);
   });
 
+  // ------------------------------------------------------------ P1 aim assist (settings.aimAssist)
+  await pg.run('PL1 (P1) aim assist', () => {
+    const g = game, P = PT, pl = g.player;
+    P.clearEnemies(); pl.setClass('mage'); P.look(0, -0.05); P.step(0.3);
+    const cam = g.camera.position, f = pl.camForward;
+    const a = 0.12;   // ≈ 6.9° to the side of the crosshair
+    const dir = new g.THREE.Vector3(f.x * Math.cos(a) - f.z * Math.sin(a), 0, f.x * Math.sin(a) + f.z * Math.cos(a)).normalize();
+    const p = cam.clone().addScaledVector(dir, 14);
+    const e = g.debug.spawnDummy(new g.THREE.Vector3(p.x, P.groundHeight(p.x, p.z), p.z), {});
+    e.getCenter = (out) => out.copy(e.object.position).setY(cam.y);
+    P.step(0.1);
+    const off = pl.getAim().target;
+    g.settings.set('aimAssist', 'weak', { persist: false }); const weak = pl.getAim().target;
+    g.settings.set('aimAssist', 'off', { persist: false });
+    PT.check('aim assist off: an enemy 7° off the crosshair is not picked; 약 picks it', off !== e && weak === e, { off: off === e, weak: weak === e });
+    P.clearEnemies(); P.step(0.2);
+  });
+
   // ------------------------------------------------------------ draw calls / triangles per class
   await pg.run('PL1 draws', () => {
     const g = game, P = PT, pl = g.player;
