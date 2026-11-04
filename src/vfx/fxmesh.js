@@ -234,7 +234,9 @@ export function createFxMesh(game, hooks = {}) {
         Tn[k] = r.tint.r; Tn[k + 1] = r.tint.g; Tn[k + 2] = r.tint.b; Tn[k + 3] = r.tintAmt;
         if (r.shape.outline && hooks.outlinesOn()) outlineN++;
         const z = Math.max(r.depth, 0.4);
-        if (r.depth > 0.1) { const rad = r.shape.radius * Math.max(_s.x, _s.y, _s.z); const c = 0.55 * Math.PI * rad * rad * p00 * p11 / (4 * z * z) * (1 - er) * Math.min(1, al * 1.5); r.cov = c; if (!r.enemy) cover += c; else hooks.onOtherCover?.(c, r); }
+        if (r.depth > -2) { const rad = r.shape.radius * Math.max(_s.x, _s.y, _s.z); let c = 0.55 * Math.PI * rad * rad * p00 * p11 / (4 * z * z) * (1 - er) * Math.min(1, al * 1.5);
+          if (hooks.proj) c = Math.min(c, hooks.proj.disc(r.pos.x, r.pos.y, r.pos.z, rad, 0.6 * (1 - er)));
+          r.cov = c; if (!r.enemy) cover += c; else hooks.onOtherCover?.(c, r); }
         else r.cov = 0;
       }
       f.mesh.count = n; f.outline.count = outlineN > 0 ? n : 0;

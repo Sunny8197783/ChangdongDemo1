@@ -42,6 +42,7 @@ export function createCombat(game) {
     if (!e.velocity) e.velocity = new THREE.Vector3();
     if (e.alive === undefined) e.alive = true;
     if (!game.entities.includes(e)) game.entities.push(e);
+    try { game.vfx?.prepareFlash?.(e); } catch (_) { /* */ }
   }
   function unregister(e) {
     const i = game.entities.indexOf(e);

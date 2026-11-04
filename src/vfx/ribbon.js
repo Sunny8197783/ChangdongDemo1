@@ -201,7 +201,8 @@ export function createRibbons(game, hooks) {
       // coverage estimate: length × mean width, projected at the mid point
       const mid = Math.floor(RS / 2) * 3;
       const z = Math.max(0.5, (rx[mid] - _cam.x) * fw.x + (rx[mid + 1] - _cam.y) * fw.y + (rx[mid + 2] - _cam.z) * fw.z);
-      const c = total * r.width * r.userScale * (1 - r.taper * 0.5) * 0.7 * p00 * p11 / (4 * z * z) * Math.min(1, al);
+      let c = total * r.width * r.userScale * (1 - r.taper * 0.5) * 0.7 * p00 * p11 / (4 * z * z) * Math.min(1, al);
+      if (hooks.proj) c = hooks.proj.poly(rx, RS, r.width * r.userScale * (1 - r.taper * 0.5) * 0.7) * Math.min(1, al);
       r.cov = c; if (!r.enemy) cover += c; else hooks.onOtherCover?.(c, r);
     }
     let calls = 0;
