@@ -19,6 +19,9 @@ import { chuchuDef, CHU_TYPES } from './chuchu.js';
 import { lizardDef } from './lizard.js';
 import { shroomDef } from './shroom.js';
 import { wolfDef } from './wolf.js';
+import { wraithDef } from './wraith.js';
+import { voidknightDef } from './voidknight.js';
+import { dummyDef } from './dummy.js';
 
 /** type → (opts) => def (rig.defineType input). Filled by the species files as they land. */
 const FACTORIES = {};
@@ -35,6 +38,9 @@ registerType('chuchu', (o) => chuchuDef(o), { variants: CHU_TYPES });
 registerType('lizard', () => lizardDef());
 registerType('shroom', () => shroomDef());
 registerType('wolf', (o) => wolfDef(o), { variants: [null, 'alpha'] });
+registerType('wraith', () => wraithDef());
+registerType('voidknight', () => voidknightDef());
+registerType('dummy', () => dummyDef());
 
 const V3 = {
   bokoblin: () => buildBokoblin(), shaman: (o) => buildShaman(o?.element || o?.variant || 'fire'), chuchu: (o) => buildChuchu(o?.variant || 'normal'),
