@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const args = process.argv.slice(2); const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const root = path.resolve(__dirname, '..');
-const port = +opt('--port', 8000 + Math.floor(Math.random() * 900));
+const port = +opt('--port', 8100 + Math.floor(Math.random() * 900));
 const types = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/index.html';

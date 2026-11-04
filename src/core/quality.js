@@ -135,6 +135,7 @@ export function createQuality(game, { renderSize } = {}) {
     if (gpuMs >= 0) { G.gpuMs = gpuMs; G.gpuEma = G.gpuEma > 0 ? G.gpuEma + (gpuMs / 1000 - G.gpuEma) * 0.15 : gpuMs / 1000; }
     G.tEst -= dt; if (G.tEst <= 0) { G.tEst = 0.5; estimateT(); }
     if (headroomLeft > 0) { /* budget-only headroom runs on real time in update() */ }
+    if (locked) { G.overT = 0; return; }                         // lock(): keep the current level and scale (benchmark)
     if (!enabled()) { if (level !== 0) setLevel(0, 'autoQualityOff'); if (api.scale !== 1) setScale(1); G.overT = 0; return; }
     const T = G.T;
     G.levelT += dt;

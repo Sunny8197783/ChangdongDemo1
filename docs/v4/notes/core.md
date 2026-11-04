@@ -161,6 +161,42 @@ Fixtures (`tools/playtest4/fixtures/`): the evidence scripts `fight.js, lib.js, 
 - `tools/playtest4/core.js`: C1, C2, C3, C4, C5, C7 + debug hooks; `PT4_CORE_ONLY=c1,c2,…` runs single blocks (blocks: c5 params seed c1 c2 c3 c4 c7).
 - `seed=1` determinism check uses `game.seedRandom(1)` (the rAF loop consumes a boot-dependent number of draws before the harness freezes).
 
+## Measured at core-b (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; this branch: v3 world/vfx/enemies/player, tells on the stub)
+
+Counts are representative; SwiftShader wall-clock ms are not (the 4 shared CPUs made 1-px `readPixels` syncs take 1–16 s during these runs).
+
+| Metric | Measured (branch) | Budget | Owner of the gap |
+|---|---|---|---|
+| Post passes, full-res equivalents (C1) | **1.41** (final 1.0 + bright 0.25 + 3 down / 2 up mips 0.16), 7 post calls | ≤ 2.0 | — |
+| Bright target / first mip / mips (C1) | 0.25 / 0.0625 of the render area / 3 (high 5) | ¼ / ≤ 1/16 / 3 | — |
+| MSAA at low / medium / high | 0 / 0 / 4 (FXAA off at high) | 0 / 0 / 4 | — |
+| Render size at a 1920×970 window, medium | 1406 × 710 = 0.998 MP (`renderSize(1920, 970, 1)`) | ≤ 1.0 MP | — |
+| Resolution step | viewport + uvScale follow, textures 38 → 38, 0 reallocations, ≈ 0 ms extra CPU | no realloc, ≤ 2 ms | — |
+| Threat-scene colour, bloom on/off/scale 0.8 | (255, 42, 61) in all three | ΔRGB ≤ 8 | — |
+| F-mage rotation p95 calls scene + shadow + overlay | 221 + 40 + 0 = **261** | ≤ 250 | vfx (player FX calls), world/mobmodels (shadow ≤ 30) |
+| F-mage triangles scene / shadow p95 | 636k / 92k | ≤ 700k / 50k | world, mobmodels, player (shadow casters) |
+| F-mage transparents in the scene pass p95 | 74 | ≤ 55 | vfx |
+| F-mage uploads p95 | 1443 KB in 120 calls | ≤ 150 KB / 30 calls | vfx (v3 particle pools upload full capacity), world |
+| F-mage simulation ms median (`PT.simMs`) | 1.4 | ≤ 3.5 | — |
+| Programs after boot | 136 | ≤ 130 | vfx/tells (kit + tells ≤ 10) at integration; post4 itself uses 4 |
+| First draws after boot (4-zone sweep) | 0 | 0 | — |
+| Boot warm-up (compile + one real draw of every object) | ≈ 2.0 s, 1072 draws (SwiftShader) | — | first-view hitch at Mirwen 8.4 → 6.1 s, Elderwood 1.1 → 0.74 s, plains 1.3 → 0.70 s (sync'd SwiftShader frames) |
+| Game-time / real-time at realDt 1/15 and 1/10 (C3) | 1.000 / 1.000 | ≥ 0.99 | — |
+| CPU of a 1/15 s frame vs a 1/60 frame (C3) | ≈ 1.0× (no module declares `substeps` yet → legacy modules run once per frame) | ≤ 1.6× | each playing owner when it sets `substeps:true` |
+| Hitstop: 30 light requests / s on one target (C4) | 0.075 s granted, rest dropped; other targets 0, no global freeze | ≤ 80 ms | — |
+| 성능 테스트 3 s (C7, driven mode) | 10–11 fps avg, 1 % low 10, L0, 640×360, CPU 12–14 ms | fields + exact restore | — |
+| Title benchmark (C7) | picks L2 on SwiftShader (misses 0.67–0.75, headroom ≈ 0) | picks a level | — |
+| Boot to ready (harness) | 5.8–7.2 s (P0a: 3.7–4.7 s; +≈ 2 s warm draws on SwiftShader) | recorded | — |
+
+Integration-only rows (C6, C8: GPU ratios, long frames, allocation, soak) are measured in wave C with every owner merged.
+
+## Test results at core-b (this branch, tells on the stub, no other tags merged)
+- `node tools/playtest4.js core`: **132 passed, 0 failed, 0 skipped** (C1, C2, C3, C4, C5, C7 + debug hooks; 239 s).
+- `node tools/bootcheck.js`: all **17** configs OK (15 v3 configs + `@noTells` + `&stub=tells`: stub true, mobs attack, the stub's shaped attack shows the fixed v3 decal), exit 0.
+- `node tools/playtest.js --quick`: all checks PASS, exit 0.
+- `node tools/playtest2.js`: 75 PASS, 0 FAIL, exit 0 (hitstop and settings expectations updated per §7.9, see (17)).
+- `node tools/playtest3.js` (all sections): see the line below (run at the end of wave B).
+
 ## Measured at core-p0a (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; v3 render path still in place)
 
 | Metric | F-mage (static frame after set-up) | Budget (§1.2) |
