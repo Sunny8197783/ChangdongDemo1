@@ -91,6 +91,19 @@ export function createWorld(game) {
     return m;
   })();
   terrain.group.add(shadowHook);
+  // v4 warm-up: flora no longer casts through the default instanced(+colour) depth program (its casters use their own depth
+  // material), but other owners' instanced, coloured casters still do. One degenerate instanced+colour caster drawn in the
+  // shadow pass for the first frames compiles that variant at boot instead of on first sight (e.g. the final boss arena).
+  const depthWarm = (() => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0.01);
+    const m = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ colorWrite: false }), 1);
+    m.setColorAt(0, new THREE.Color(1, 1, 1));
+    m.name = 'worldDepthWarm'; m.castShadow = true; m.userData.dynamic = true; m.frustumCulled = false;
+    return m;
+  })();
+  shadowHook.add(depthWarm);
+  let depthWarmFrames = 45;
   // v4: terrain never casts (chunks + far mesh are built with castShadow = false; PLAN §2.2 low/medium)
   const { getHeight } = terrain;
   const colliders = [];
@@ -676,6 +689,9 @@ export function createWorld(game) {
       village.refreshCrystals?.();
       // material pre-warm happens in main.js boot (after all module inits, with the composer target bound)
       freezeStaticMatrices();
+      // v4 (§7.2 rule 4): warm every world material now, while the culled sets (flora LODs / outlines / far meshes, zone
+      // dressing) are still visible — renderer.compile skips invisible objects, so a set first seen later would compile then
+      try { for (const r of worldRootSet) if (r.visible) game.render?.warm?.(r, { target: 'scene', now: true }); } catch (err) { console.warn('[world] warm', err?.message || err); }
     },
     update(dt, realDt) {
       const t = game.realTime;
@@ -694,6 +710,7 @@ export function createWorld(game) {
       cam.getWorldDirection(_hookDir);
       shadowHook.position.copy(cam.position).addScaledVector(_hookDir, -0.6); shadowHook.updateMatrixWorld();
       cam.layers.disable(FLORA_SHADOW_LAYER);
+      if (depthWarmFrames > 0 && --depthWarmFrames === 0) { depthWarm.visible = false; depthWarm.castShadow = false; }
       sun.target.updateMatrixWorld();
       cam.updateMatrixWorld();
       sky.update(cam, t);
