@@ -194,9 +194,10 @@ export function buildSurface(game, world, terrain, field, grass) {
   game.scene.add(embers);
 
   // one pooled fire light (always in the scene so the light count never changes → no shader recompiles)
-  const fireLight = new THREE.PointLight(0xff7a2a, 0, 26, 1.6);
+  // v4: only when game.render.pointLights (decided at boot); otherwise a plain stand-in object keeps the maths below simple
+  const fireLight = game.render?.pointLights === true ? new THREE.PointLight(0xff7a2a, 0, 26, 1.6) : { position: new THREE.Vector3(), intensity: 0, isStandIn: true };
   fireLight.position.set(0, -50, 0);
-  game.scene.add(fireLight);
+  if (fireLight.isLight) game.scene.add(fireLight);
 
   // ---------------------------------------------------------------- ice discs on water
   const iceGeo = (() => {

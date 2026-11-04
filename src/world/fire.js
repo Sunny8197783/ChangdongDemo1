@@ -131,10 +131,10 @@ export function buildFires(game, positions) {
 
   // ---- light: ONE shared camp-fire light (constant light count = no recompiles), parked at the camp
   // nearest the camera within 45 m; intensity 0 otherwise.
-  const light = new THREE.PointLight(0xff8a3c, 0, 22, 1.6);
-  light.position.set(0, -60, 0);
-  group.add(light);
-  const lights = [light];
+  // v4 (PLAN §7.2 rule 4): the light exists only when core decided point lights at boot (high); never added later.
+  const light = game.render?.pointLights === true ? new THREE.PointLight(0xff8a3c, 0, 22, 1.6) : null;
+  if (light) { light.position.set(0, -60, 0); group.add(light); }
+  const lights = light ? [light] : [];
   let near = -1;
 
   return {
@@ -151,6 +151,7 @@ export function buildFires(game, positions) {
       const i = near < 0 ? 0 : near;
       const f = 0.82 + 0.1 * Math.sin(t * 11 + i * 3) + 0.08 * Math.sin(t * 17.3 + i) + 0.05 * Math.sin(t * 29 + i * 7);
       glowMat.opacity = 0.3 * f;
+      if (!light) return;
       if (near >= 0) { const p = positions[near]; light.position.set(p.x, p.y + 1.4, p.z); light.intensity = 12 * f; }
       else light.intensity = 0;
     },

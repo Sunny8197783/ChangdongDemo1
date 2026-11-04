@@ -11,7 +11,7 @@ import { buildWater, WATER_BOX } from './world/water.js';
 import { buildAmbience } from './world/ambience.js';
 import { buildVillage } from './world/village.js';
 import { buildWorldTree } from './world/worldtree.js';
-import { buildSurface, createBurnField } from './world/surface.js';
+import { buildSurface, createBurnField, GRID as SGRID } from './world/surface.js';
 import { VILLAGE } from './world/villageLayout.js';
 // v3 (CONTRACT §13)
 import { createZones, ARENA_DEFS, TF, STAGE_ACT, GRADE_BLEND, EXTRA_GRADES, ZONE_SIGNS } from './world/zones.js';
@@ -71,7 +71,7 @@ export function createWorld(game) {
 
   // ---------------------------------------------------------------- terrain & queries
   const terrain = buildTerrain(game);
-  terrain.mesh.castShadow = false; // terrain self-shadow inside the 30 m shadow box is invisible in cel shading; saves its full tri count
+  // v4: terrain never casts (chunks + far mesh are built with castShadow = false; PLAN §2.2 low/medium)
   const { getHeight } = terrain;
   const colliders = [];
   let collidersDirty = true;
@@ -79,6 +79,23 @@ export function createWorld(game) {
   const burnField = createBurnField();
   terrain.burn.uBurnTex.value = burnField.tex;
   terrain.burn.uBurnXform.value.copy(burnField.xform);
+  // v4: bounding circle of the live overlay texels (burn / bless / curse) → terrain uOverlayCircle (r 0 = no fetch anywhere)
+  let overlayVer = -1;
+  function refreshOverlayCircle() {
+    const tex = burnField.tex; if (tex.version === overlayVer) return;
+    overlayVer = tex.version;
+    const D = burnField.data, n = SGRID.n;
+    let i0 = n, i1 = -1, j0 = n, j1 = -1;
+    for (let k = 0, q = 0; k < n * n; k++, q += 4) {
+      if ((D[q] | D[q + 1] | D[q + 2] | D[q + 3]) === 0) continue;
+      const i = k % n, j = (k - i) / n;
+      if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j;
+    }
+    const C = terrain.burn.uOverlayCircle.value;
+    if (i1 < 0) { C.set(0, 0, 0, 0); return; }
+    const cs = SGRID.cs, x0 = SGRID.x0 + i0 * cs, x1 = SGRID.x0 + (i1 + 1) * cs, z0 = SGRID.z0 + j0 * cs, z1 = SGRID.z0 + (j1 + 1) * cs;
+    C.set((x0 + x1) / 2, (z0 + z1) / 2, Math.hypot(x1 - x0, z1 - z0) / 2 + cs * 1.5, 0);
+  }
 
   function getNormal(x, z, out = new THREE.Vector3()) {
     const e = CELL * 0.5;
@@ -552,6 +569,8 @@ export function createWorld(game) {
       village.update(t, cam, dt);
       worldTree.update(t);
       terrain.burn.uBurnTime.value = t;
+      terrain.updateChunks(cam);
+      refreshOverlayCircle();
       try { surface.update(dt, realDt); } catch (err) { if (!world._surfErr) { world._surfErr = true; console.error('[world] surface', err); } }
       // ---- v3
       try {

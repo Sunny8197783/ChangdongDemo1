@@ -1,6 +1,7 @@
 // Terrain: analytic height composition baked into a grid; mesh + data textures + exact queries.
 import * as THREE from 'three';
 import { toonMat } from '../core/utils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fbm, vnoise, ridge, sstep, smin, distPolyline, mulberry32 } from './noise.js';
 import { VILLAGE } from './villageLayout.js';
 import { WATER } from './zones.js';
@@ -13,6 +14,8 @@ export const ORIGIN = -SIZE / 2;
 export const NV = SEG + 1;
 export const WATER_LEVEL = WATER;   // 1.5 (zones.js owns the value so the terraform can use it while baking)
 export const BOUNDS = 170;
+/** v4 terrain chunking: CHUNKS × CHUNKS chunks of CHUNK_CELLS cells; LOD1 keeps every LOD_STEP-th grid line beyond NEAR_D m. */
+export const CHUNKS = 8, CHUNK_CELLS = SEG / CHUNKS, LOD_STEP = 3, NEAR_D = 120;
 
 function smoothPath(pts, per = 6) {
   const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], 0, p[1])), false, 'centripetal');
@@ -379,74 +382,244 @@ export function buildTerrain(game) {
     colTexData[k * 4 + 2] = Math.min(255, col.b * 255); colTexData[k * 4 + 3] = Math.max(0, Math.min(255, dens * 255));
   }
 
-  // mesh
-  const pos = new Float32Array(NV * NV * 3);
-  const uvs = new Float32Array(NV * NV * 2);
-  for (let j = 0; j < NV; j++) for (let i = 0; i < NV; i++) {
-    const k = j * NV + i;
-    pos[k * 3] = ORIGIN + i * CELL; pos[k * 3 + 1] = heights[k]; pos[k * 3 + 2] = ORIGIN + j * CELL;
-    uvs[k * 2] = (ORIGIN + i * CELL) / 7; uvs[k * 2 + 1] = (ORIGIN + j * CELL) / 7;
-  }
-  const idx = new Uint32Array(SEG * SEG * 6);
-  let p = 0;
-  for (let j = 0; j < SEG; j++) for (let i = 0; i < SEG; i++) {
-    const a = j * NV + i, b = (j + 1) * NV + i, c = (j + 1) * NV + i + 1, d = j * NV + i + 1;
-    idx[p++] = a; idx[p++] = b; idx[p++] = c;
-    idx[p++] = a; idx[p++] = c; idx[p++] = d;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-  geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  geo.computeBoundingSphere(); geo.computeBoundingBox();
+  // ---------------------------------------------------------------- mesh: v4 8×8 chunks, 2 LODs with skirts (PLAN §2.1 #4)
+  // LOD0 = the full 1.5 m grid (same triangulation as getHeight), one Mesh per chunk (three.js frustum-culls its bounding
+  // sphere), drawn only within NEAR_D of the camera. LOD1 = every 3rd grid line, all 64 chunks merged into ONE far mesh;
+  // its vertex shader collapses the chunks LOD0 is drawing (uTerrNear mask), so the far terrain costs one draw call.
+  // Skirts (both windings) hide the T-junction cracks between LODs.
+  const geoFor = (ci, cj, step, chunkId) => {
+    const c0 = ci * CHUNK_CELLS, r0 = cj * CHUNK_CELLS, n = CHUNK_CELLS / step + 1;
+    const nv = n * n + 4 * (n - 1) * 2;   // grid + skirt rows (2 verts per edge segment end, shared per edge)
+    const P = new Float32Array(nv * 3), N3 = new Float32Array(nv * 3), Cc = new Float32Array(nv * 3), U = new Float32Array(nv * 2), A = new Float32Array(nv);
+    let v = 0;
+    const put = (gi, gj, dy) => {
+      const k = gj * NV + gi;
+      P[v * 3] = ORIGIN + gi * CELL; P[v * 3 + 1] = heights[k] + dy; P[v * 3 + 2] = ORIGIN + gj * CELL;
+      N3[v * 3] = normals[k * 3]; N3[v * 3 + 1] = normals[k * 3 + 1]; N3[v * 3 + 2] = normals[k * 3 + 2];
+      Cc[v * 3] = colors[k * 3]; Cc[v * 3 + 1] = colors[k * 3 + 1]; Cc[v * 3 + 2] = colors[k * 3 + 2];
+      U[v * 2] = P[v * 3] / 7; U[v * 2 + 1] = P[v * 3 + 2] / 7; A[v] = chunkId;
+      return v++;
+    };
+    const grid = new Int32Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) grid[j * n + i] = put(c0 + i * step, r0 + j * step, 0);
+    const idx = [];
+    for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+      const a = grid[j * n + i], b = grid[(j + 1) * n + i], c = grid[(j + 1) * n + i + 1], d = grid[j * n + i + 1];
+      idx.push(a, b, c, a, c, d);
+    }
+    // skirts: each border edge gets a strip hanging SKIRT m below (emitted in both windings)
+    const depth = step > 1 ? 3.0 : 1.2;
+    const edge = (list) => {
+      let prevTop = -1, prevBot = -1;
+      for (const [gi, gj] of list) {
+        const top = grid[((gj - r0) / step) * n + (gi - c0) / step];
+        const bot = put(gi, gj, -depth);
+        if (prevTop >= 0) idx.push(prevTop, prevBot, top, top, prevBot, bot, prevTop, top, prevBot, top, bot, prevBot);
+        prevTop = top; prevBot = bot;
+      }
+    };
+    const s0 = [], s1 = [], s2 = [], s3 = [];
+    for (let t = 0; t < n; t++) {
+      s0.push([c0 + t * step, r0]); s1.push([c0 + t * step, r0 + CHUNK_CELLS]);
+      s2.push([c0, r0 + t * step]); s3.push([c0 + CHUNK_CELLS, r0 + t * step]);
+    }
+    edge(s0); edge(s1); edge(s2); edge(s3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(P.subarray(0, v * 3), 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(N3.subarray(0, v * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(Cc.subarray(0, v * 3), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(U.subarray(0, v * 2), 2));
+    geo.setAttribute('aChunk', new THREE.BufferAttribute(A.subarray(0, v), 1));
+    geo.setIndex(idx);
+    geo.computeBoundingSphere(); geo.computeBoundingBox();
+    return geo;
+  };
 
-  const mat = toonMat(0xffffff, { vertexColors: true, map: makeGrainTexture(), steps: 4, rim: false });
-  // triplanar grain (no stretching on cliffs) + horizontal rock strata darkening steep faces
-  const burn = { uBurnTex: { value: null }, uBurnXform: { value: new THREE.Vector4(0, 0, 0, 0) }, uBurnTime: { value: 0 } };
+  // v4 terrain shader (PLAN §2.1 #4: the terrain is fragment-bound). Same look as the v3 4-step toon material
+  // (gradient levels 0.42…1.0 of getGradientMap(4), hemisphere + sun, shadows, fog), but lighting terms are evaluated per
+  // VERTEX (sun N·L as one varying stepped per fragment = crisp bands; hemisphere/ambient/point lights as one irradiance
+  // varying): the fragment shader is one grain fetch where slope < 0.25 (cross-fade to triplanar + strata 0.25–0.35 and
+  // above), the shadow mask, and ONE overlay-mask fetch (burn R/G, bless B, curse A) only inside uOverlayCircle.
+  const grain = makeGrainTexture();
+  const lv = (i) => Math.round(255 * (0.42 + 0.58 * (i / 3))) / 255;
+  const burn = {
+    uBurnTex: { value: null }, uBurnXform: { value: new THREE.Vector4(0, 0, 0, 0) }, uBurnTime: { value: 0 },
+    uOverlayCircle: { value: new THREE.Vector4(0, 0, 0, 0) },
+    uTerrNear: { value: Array.from({ length: CHUNKS * CHUNKS / 4 }, () => new THREE.Vector4()) },
+  };
   {
     const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat); blank.needsUpdate = true;
     burn.uBurnTex.value = blank;
   }
-  mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, burn);
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN;')
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\n vTW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTN = normalize(mat3(modelMatrix) * objectNormal);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW; varying vec3 vTN; uniform sampler2D uBurnTex; uniform vec4 uBurnXform; uniform float uBurnTime;')
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        { vec4 bt4 = texture2D(uBurnTex, (vTW.xz - uBurnXform.xy) * uBurnXform.zw); vec2 bt = bt4.rg;
-          // v3 surface2: B = blessed (gold sheen, soft pulse), A = cursed (violet miasma, dark veins)
-          float blessK = bt4.b * smoothstep(0.3, 0.7, normalize(vTN).y);
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.08, 0.78) + vec3(0.1, 0.08, 0.0), blessK * 0.7);
-          totalEmissiveRadiance += vec3(1.0, 0.82, 0.38) * blessK * (0.18 + 0.1 * sin(uBurnTime * 2.4 + vTW.x * 0.6 + vTW.z * 0.5));
-          float curseK = bt4.a;
-          float vein = smoothstep(0.62, 0.95, sin(vTW.x * 2.3 + sin(vTW.z * 1.7) * 2.0) * sin(vTW.z * 2.1 + sin(vTW.x * 1.3) * 2.0) * 0.5 + 0.5);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.12, 0.28) + diffuseColor.rgb * 0.25, curseK * 0.75);
-          totalEmissiveRadiance += vec3(0.62, 0.22, 1.0) * curseK * vein * (0.35 + 0.25 * sin(uBurnTime * 3.1 + vTW.z));
-          float flat_ = smoothstep(0.55, 0.85, normalize(vTN).y);
-          float ch = smoothstep(0.05, 0.75, bt.r) * flat_;
-          float speck = fract(sin(dot(floor(vTW.xz * 3.0), vec2(12.9898, 78.233))) * 43758.5453);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13, 0.11, 0.10) + speck * 0.05, ch * 0.85);
-          totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * bt.g * flat_ * (0.55 + 0.35 * sin(uBurnTime * 9.0 + vTW.x * 1.7 + vTW.z * 1.3));
-          totalEmissiveRadiance += vec3(0.9, 0.25, 0.04) * ch * step(0.92, speck) * (0.4 + 0.4 * sin(uBurnTime * 3.0 + speck * 40.0)) * (1.0 - bt.g) * smoothstep(0.6, 1.0, bt.r); }`)
-      .replace('#include <map_fragment>', `
-      #ifdef USE_MAP
+  const mat = new THREE.ShaderMaterial({
+    name: 'terrainV4', lights: true, fog: true, vertexColors: true,
+    uniforms: Object.assign(THREE.UniformsUtils.merge([THREE.UniformsLib.lights, THREE.UniformsLib.fog]), burn, {
+      uGrain: { value: grain }, uLevels: { value: new THREE.Vector4(lv(0), lv(1), lv(2), lv(3)) },
+    }),
+    vertexShader: /* glsl */`
+      #include <common>
+      #include <fog_pars_vertex>
+      #include <shadowmap_pars_vertex>
+      #include <lights_pars_begin>
+      attribute float aChunk;
+      uniform vec4 uTerrNear[${CHUNKS * CHUNKS / 4}];
+      varying vec3 vTW; varying vec3 vTN; varying vec3 vCol; varying vec3 vInd; varying float vNL;
+      void main() {
+        #include <beginnormal_vertex>
+        #include <defaultnormal_vertex>
+        #include <begin_vertex>
+        if (aChunk >= 0.0) { int ci = int(aChunk + 0.5); if (uTerrNear[ci / 4][ci - (ci / 4) * 4] > 0.5) transformed = vec3(0.0, -2000.0, 0.0); }
+        #include <project_vertex>
+        #include <worldpos_vertex>
+        #include <shadowmap_vertex>
+        #include <fog_vertex>
+        vTW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vTN = normalize(mat3(modelMatrix) * objectNormal);
+        vCol = color;
+        vec3 nV = normalize(transformedNormal);
+        vec3 ind = ambientLightColor;
+        #if NUM_HEMI_LIGHTS > 0
+          #pragma unroll_loop_start
+          for (int i = 0; i < NUM_HEMI_LIGHTS; i++) ind += getHemisphereLightIrradiance(hemisphereLights[i], nV);
+          #pragma unroll_loop_end
+        #endif
+        #if NUM_POINT_LIGHTS > 0
+          PointLight pl; IncidentLight il;
+          #pragma unroll_loop_start
+          for (int i = 0; i < NUM_POINT_LIGHTS; i++) {
+            pl = pointLights[i]; getPointLightInfo(pl, mvPosition.xyz, il);
+            ind += il.color * saturate(dot(nV, il.direction) * 0.5 + 0.5);
+          }
+          #pragma unroll_loop_end
+        #endif
+        vInd = ind * RECIPROCAL_PI;
+        #if NUM_DIR_LIGHTS > 0
+          vNL = dot(nV, directionalLights[0].direction);
+        #else
+          vNL = -1.0;
+        #endif
+      }`,
+    fragmentShader: /* glsl */`
+      #include <common>
+      #include <packing>
+      #include <fog_pars_fragment>
+      #include <lights_pars_begin>
+      #include <shadowmap_pars_fragment>
+      // 5-tap PCF (centre + 4 diagonals at the light's shadow radius): terrain only, ~⅓ of the 17-tap PCF cost
+      float terrShadow() {
+        #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+          DirectionalLightShadow L = directionalLightShadows[0];
+          vec4 sc = vDirectionalShadowCoord[0];
+          sc.xyz /= sc.w; sc.z += L.shadowBias;
+          if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
+          vec2 d = L.shadowRadius / L.shadowMapSize;
+          return (texture2DCompare(directionalShadowMap[0], sc.xy, sc.z) * 2.0
+            + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(-d.x, -d.y), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(d.x, -d.y), sc.z)
+            + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(-d.x, d.y), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(d.x, d.y), sc.z)) / 6.0;
+        #else
+          return 1.0;
+        #endif
+      }
+      uniform sampler2D uGrain; uniform vec4 uLevels;
+      uniform sampler2D uBurnTex; uniform vec4 uBurnXform; uniform float uBurnTime; uniform vec4 uOverlayCircle;
+      varying vec3 vTW; varying vec3 vTN; varying vec3 vCol; varying vec3 vInd; varying float vNL;
+      void main() {
         vec3 tn = normalize(vTN);
-        vec3 bw = pow(abs(tn), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-        vec4 tx = texture2D(map, vTW.xz / 7.0) * bw.y + texture2D(map, vTW.xy / 7.0) * bw.z + texture2D(map, vTW.zy / 7.0) * bw.x;
-        diffuseColor *= tx;
         float slope = 1.0 - clamp(tn.y, 0.0, 1.0);
-        float band = sin(vTW.y * 1.3 + tx.r * 3.0 + sin(vTW.x * 0.05 + vTW.z * 0.07) * 2.0);
-        float band2 = sin(vTW.y * 3.7 + 1.3);
-        diffuseColor.rgb *= 1.0 - smoothstep(0.35, 0.75, slope) * (0.09 + 0.07 * band + 0.03 * band2);
-      #endif`);
-  };
-  mat.customProgramCacheKey = () => 'terrainTri2';
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true; mesh.castShadow = true;
-  mesh.name = 'terrain';
-  game.scene.add(mesh);
+        vec4 tx = texture2D(uGrain, vTW.xz / 7.0);
+        vec3 albedo;
+        if (slope > 0.25) {
+          vec3 bw = pow(abs(tn), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+          // biplanar: top + the dominant side projection (2 fetches instead of 3)
+          vec4 side = bw.z > bw.x ? texture2D(uGrain, vTW.xy / 7.0) : texture2D(uGrain, vTW.zy / 7.0);
+          vec4 tri = mix(side, tx, bw.y / max(1e-3, bw.y + max(bw.x, bw.z)));
+          tx = mix(tx, tri, smoothstep(0.25, 0.35, slope));
+          albedo = vCol * tx.rgb;
+          float band = sin(vTW.y * 1.3 + tx.r * 3.0 + sin(vTW.x * 0.05 + vTW.z * 0.07) * 2.0);
+          float band2 = sin(vTW.y * 3.7 + 1.3);
+          albedo *= 1.0 - smoothstep(0.35, 0.75, slope) * (0.09 + 0.07 * band + 0.03 * band2);
+        } else albedo = vCol * tx.rgb;
+        vec3 emissive = vec3(0.0);
+        vec2 ovd = vTW.xz - uOverlayCircle.xy;
+        if (dot(ovd, ovd) < uOverlayCircle.z * uOverlayCircle.z) {
+          vec4 bt4 = texture2D(uBurnTex, (vTW.xz - uBurnXform.xy) * uBurnXform.zw); vec2 bt = bt4.rg;
+          // v3 surface2: B = blessed (gold sheen, soft pulse), A = cursed (violet miasma, dark veins)
+          float blessK = bt4.b * smoothstep(0.3, 0.7, tn.y);
+          albedo = mix(albedo, albedo * vec3(1.18, 1.08, 0.78) + vec3(0.1, 0.08, 0.0), blessK * 0.7);
+          emissive += vec3(1.0, 0.82, 0.38) * blessK * (0.18 + 0.1 * sin(uBurnTime * 2.4 + vTW.x * 0.6 + vTW.z * 0.5));
+          float curseK = bt4.a;
+          if (curseK > 0.004) {
+            float vein = smoothstep(0.62, 0.95, sin(vTW.x * 2.3 + sin(vTW.z * 1.7) * 2.0) * sin(vTW.z * 2.1 + sin(vTW.x * 1.3) * 2.0) * 0.5 + 0.5);
+            albedo = mix(albedo, vec3(0.2, 0.12, 0.28) + albedo * 0.25, curseK * 0.75);
+            emissive += vec3(0.62, 0.22, 1.0) * curseK * vein * (0.35 + 0.25 * sin(uBurnTime * 3.1 + vTW.z));
+          }
+          if (bt.r + bt.g > 0.004) {
+            float flat_ = smoothstep(0.55, 0.85, tn.y);
+            float ch = smoothstep(0.05, 0.75, bt.r) * flat_;
+            float speck = fract(sin(dot(floor(vTW.xz * 3.0), vec2(12.9898, 78.233))) * 43758.5453);
+            albedo = mix(albedo, vec3(0.13, 0.11, 0.10) + speck * 0.05, ch * 0.85);
+            emissive += vec3(1.0, 0.32, 0.05) * bt.g * flat_ * (0.55 + 0.35 * sin(uBurnTime * 9.0 + vTW.x * 1.7 + vTW.z * 1.3));
+            emissive += vec3(0.9, 0.25, 0.04) * ch * step(0.92, speck) * (0.4 + 0.4 * sin(uBurnTime * 3.0 + speck * 40.0)) * (1.0 - bt.g) * smoothstep(0.6, 1.0, bt.r);
+          }
+        }
+        vec3 light = vInd;
+        #if NUM_DIR_LIGHTS > 0
+          float u = vNL * 0.5 + 0.5;
+          float g = u < 0.25 ? uLevels.x : (u < 0.5 ? uLevels.y : (u < 0.75 ? uLevels.z : uLevels.w));
+          light += directionalLights[0].color * (g * (receiveShadow ? terrShadow() : 1.0) * RECIPROCAL_PI);
+        #endif
+        gl_FragColor = vec4(albedo * light + emissive, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+  mat.customProgramCacheKey = () => 'terrainV4';
+  const group = new THREE.Group(); group.name = 'terrain';
+  const chunks = [];
+  const farParts = [];
+  for (let cj = 0; cj < CHUNKS; cj++) for (let ci = 0; ci < CHUNKS; ci++) {
+    const id = cj * CHUNKS + ci;
+    const g0 = geoFor(ci, cj, 1, -1);
+    const m = new THREE.Mesh(g0, mat);
+    m.name = 'terrainChunk'; m.receiveShadow = true; m.castShadow = false; m.visible = false;
+    group.add(m);
+    const bb = g0.boundingBox;
+    chunks.push({ id, ci, cj, mesh: m, x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z,
+      sphere: new THREE.Sphere().copy(g0.boundingSphere), near: false, inView: false });
+    farParts.push(geoFor(ci, cj, LOD_STEP, id));
+  }
+  const farGeo = mergeGeometries(farParts, false);
+  for (const gq of farParts) gq.dispose();
+  farGeo.computeBoundingSphere();
+  const far = new THREE.Mesh(farGeo, mat);
+  far.name = 'terrainFar'; far.receiveShadow = true; far.castShadow = false; far.frustumCulled = false;
+  group.add(far);
+  game.scene.add(group);
+  const mesh = group;
+
+  // per-frame LOD + visibility (camera xz distance to the chunk AABB; frustum test only for the debug count)
+  const tFrustum = new THREE.Frustum(), tPM = new THREE.Matrix4();
+  const tStats = { total: CHUNKS * CHUNKS, visible: 0, near: 0, far: 0 };
+  const nearMask = burn.uTerrNear.value;
+  function updateChunks(cam, nearD = NEAR_D) {
+    tPM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    tFrustum.setFromProjectionMatrix(tPM);
+    const px = cam.position.x, pz = cam.position.z, n2 = nearD * nearD;
+    let vis = 0, nn = 0, ff = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const C = chunks[i];
+      const dx = Math.max(C.x0 - px, 0, px - C.x1), dz = Math.max(C.z0 - pz, 0, pz - C.z1);
+      const near = dx * dx + dz * dz < n2;
+      const inView = tFrustum.intersectsSphere(C.sphere);
+      C.near = near; C.inView = inView;
+      C.mesh.visible = near;
+      nearMask[i >> 2].setComponent(i & 3, near ? 1 : 0);
+      if (inView) { vis++; if (near) nn++; else ff++; }
+    }
+    tStats.visible = vis; tStats.near = nn; tStats.far = ff;
+    return tStats;
+  }
 
   const heightTex = new THREE.DataTexture(heights, NV, NV, THREE.RedFormat, THREE.FloatType);
   heightTex.minFilter = heightTex.magFilter = THREE.NearestFilter;
@@ -455,7 +628,7 @@ export function buildTerrain(game) {
   colorTex.minFilter = colorTex.magFilter = THREE.LinearFilter;
   colorTex.needsUpdate = true;
 
-  return { mesh, heights, normals, getHeight, heightTex, colorTex, colTexData, mountainFactor, burn };
+  return { mesh, group, chunks, far, material: mat, updateChunks, chunkStats: tStats, heights, normals, getHeight, heightTex, colorTex, colTexData, mountainFactor, burn };
 }
 
 /** Painterly grain texture to break vertex colour flatness. */
@@ -481,7 +654,7 @@ function makeGrainTexture() {
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 1;   // v4: anisotropic taps were ~15 % of the Elderwood frame (SwiftShader); the grain is subtle at grazing angles
   return tex;
 }
 
