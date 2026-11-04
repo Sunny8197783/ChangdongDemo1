@@ -34,9 +34,9 @@ export const LAYOUT = {
   spawn: [VILLAGE.houses[0].door[0], VILLAGE.houses[0].door[1]],
   training: [VILLAGE.training.x, VILLAGE.training.z], trainingR: VILLAGE.training.r,
   camps: [
-    { id: 'camp0', name: '서쪽 보코블린 야영지', x: -80, z: 20, r: 14 },
-    { id: 'camp1', name: '동쪽 보코블린 야영지', x: 85, z: -5, r: 14 },
-    { id: 'camp2', name: '북쪽 보코블린 야영지', x: 10, z: -55, r: 14 },
+    { id: 'camp0', name: '서쪽 뿔도깨비 야영지', x: -80, z: 20, r: 14 },
+    { id: 'camp1', name: '동쪽 뿔도깨비 야영지', x: 85, z: -5, r: 14 },
+    { id: 'camp2', name: '북쪽 뿔도깨비 야영지', x: 10, z: -55, r: 14 },
   ],
   arena: { x: 0, z: -125, r: 24, rise: 9 },
   ramp: { x: 0, z0: -101, z1: -77, hw: 3.6 },
@@ -586,7 +586,7 @@ export function buildTerrain(game) {
     group.add(m);
     const bb = g0.boundingBox;
     chunks.push({ id, ci, cj, mesh: m, x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z,
-      sphere: new THREE.Sphere().copy(g0.boundingSphere), near: false, inView: false });
+      sphere: new THREE.Sphere().copy(g0.boundingSphere), box: bb.clone(), near: false, inView: false });
     farParts.push(geoFor(ci, cj, LOD_STEP, id));
   }
   const farGeo = mergeGeometries(farParts, false);
@@ -600,24 +600,26 @@ export function buildTerrain(game) {
 
   // per-frame LOD + visibility (camera xz distance to the chunk AABB; frustum test only for the debug count)
   const tFrustum = new THREE.Frustum(), tPM = new THREE.Matrix4();
-  const tStats = { total: CHUNKS * CHUNKS, visible: 0, near: 0, far: 0 };
+  // visible = LOD0 chunk meshes in view (one draw each); farInView = LOD1 chunks in view (all inside ONE far draw)
+  const tStats = { total: CHUNKS * CHUNKS, visible: 0, near: 0, far: 0, farInView: 0, inView: 0, calls: 0 };
   const nearMask = burn.uTerrNear.value;
   function updateChunks(cam, nearD = NEAR_D) {
     tPM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     tFrustum.setFromProjectionMatrix(tPM);
     const px = cam.position.x, pz = cam.position.z, n2 = nearD * nearD;
-    let vis = 0, nn = 0, ff = 0;
+    let vis = 0, nn = 0, ff = 0, nearAll = 0;
     for (let i = 0; i < chunks.length; i++) {
       const C = chunks[i];
       const dx = Math.max(C.x0 - px, 0, px - C.x1), dz = Math.max(C.z0 - pz, 0, pz - C.z1);
       const near = dx * dx + dz * dz < n2;
-      const inView = tFrustum.intersectsSphere(C.sphere);
+      const inView = tFrustum.intersectsBox(C.box);
       C.near = near; C.inView = inView;
       C.mesh.visible = near;
       nearMask[i >> 2].setComponent(i & 3, near ? 1 : 0);
+      if (near) nearAll++;
       if (inView) { vis++; if (near) nn++; else ff++; }
     }
-    tStats.visible = vis; tStats.near = nn; tStats.far = ff;
+    tStats.inView = vis; tStats.visible = nn; tStats.near = nearAll; tStats.far = CHUNKS * CHUNKS - nearAll; tStats.farInView = ff; tStats.calls = nn + 1;
     return tStats;
   }
 

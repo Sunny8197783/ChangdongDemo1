@@ -7,6 +7,7 @@ import { toonMat } from '../core/utils.js';
 import { ORIGIN, CELL, NV, villageMask } from './terrain.js';
 import { outlineMat } from './prefab.js';
 import { GUSTS } from './grass.js';
+import { SURFACE_ATTACKS, SURFACE_SOURCES } from './names.js';
 
 export const GRID = { x0: -172, z0: -172, cs: 2, n: 172 };
 
@@ -292,9 +293,9 @@ export function buildSurface(game, world, terrain, field, grass) {
     b.alive = false; b.exploded = true; b.respawnT = 60; b.pop = 0;
     try { game.combat?.unregister?.(b); } catch (_) { /* */ }
     const vfx = game.vfx;
-    try { vfx?.explosion?.(p, { element: 'fire', scale: 1.25 }); } catch (_) { /* */ }
+    try { vfx?.explosion?.(p, { element: 'fire', scale: 1.25, owner: 'world' }); } catch (_) { /* */ }
     try { vfx?.shake?.(0.55); } catch (_) { /* */ }
-    try { vfx?.flash?.(p, { color: 0xff7a2a, intensity: 30, distance: 18, duration: 0.35 }); } catch (_) { /* */ }
+    try { vfx?.flash?.(p, { color: 0xff7a2a, intensity: 30, distance: 18, duration: 0.35, owner: 'world' }); } catch (_) { /* */ }
     try { game.audio?.play?.('explode_fire', { position: p, volume: 1.1 }); } catch (_) { /* */ }
     api.ignite(p, 5, 1.2);
     const C = game.combat;
@@ -308,7 +309,8 @@ export function buildSurface(game, world, terrain, field, grass) {
         const amount = e.team === 'player' ? 14 * k : e.isProp ? 5 : 48 * k;
         try {
           C.dealDamage(e, { amount, element: 'fire', source: 'player', point: e.getCenter ? e.getCenter(new THREE.Vector3()) : ep.clone(),
-            direction: dir.clone(), knockback: 9 * k, launch: 5 * k, status: { burning: 3 }, heavy: true, tags: ['explosion', 'barrel'], hitstop: 0.09, shake: 0.4 });
+            direction: dir.clone(), knockback: 9 * k, launch: 5 * k, status: { burning: 3 }, heavy: true, tags: ['explosion', 'barrel'], hitstop: 0.09, shake: 0.4,
+            attack: SURFACE_ATTACKS.barrel, owner: 'world', ...(e.team === 'player' ? { sourceEntity: SURFACE_SOURCES.barrel, sourceName: SURFACE_SOURCES.barrel.nameKo } : {}) });
         } catch (err) { console.error('[surface] barrel damage', err); }
       }
     }
@@ -323,7 +325,7 @@ export function buildSurface(game, world, terrain, field, grass) {
           b.alive = true; b.exploded = false; b.hp = 1; b.statuses = {}; b.pop = 0.001; b.fuse = 0;
           b.object.position.copy(b.home); b.velocity.set(0, 0, 0);
           try { game.combat?.register?.(b); } catch (_) { /* */ }
-          try { game.vfx?.burst?.(_v.copy(b.home).setY(b.home.y + 0.6), { count: 14, color: [0xffd27a, 0xff8a2a], speed: 2, size: 0.25, life: 0.6, shape: 'ember' }); } catch (_) { /* */ }
+          try { game.vfx?.burst?.(_v.copy(b.home).setY(b.home.y + 0.6), { count: 14, color: [0xffd27a, 0xff8a2a], speed: 2, size: 0.25, life: 0.6, shape: 'ember', owner: 'world' }); } catch (_) { /* */ }
         }
       }
       if (b.alive && b.pop < 1) b.pop = Math.min(1, b.pop + dt * 3);
@@ -494,7 +496,9 @@ export function buildSurface(game, world, terrain, field, grass) {
       if (k < 0 || state[k] !== 1 || heat[k] < 0.3) continue;
       if (p.y - terrain.getHeight(p.x, p.z) > 1.6) continue;
       if (e.isProp && e.team === 'prop' && barrels.includes(e)) { if (!e.fuse) e.fuse = 0.7; continue; }
-      try { C?.applyStatus?.(e, 'burning', 2); } catch (_) { /* */ }
+      // v4: the player's burn carries the world surface source (death recap / playerHurt attack 'surface.burning');
+      // enemies keep the legacy (player-credited) source
+      try { C?.applyStatus?.(e, 'burning', 2, e.team === 'player' ? { source: SURFACE_SOURCES.burning, el: 'fire' } : undefined); } catch (_) { /* */ }
     }
     // burning enemies (not the player) set dry grass alight where they stagger
     for (let q = 0; q < ents.length; q++) {
@@ -694,7 +698,7 @@ export function buildSurface(game, world, terrain, field, grass) {
         if (acc > TICK) acc = 0;
         entAcc += dt; if (entAcc >= 0.5) { entAcc = 0; entityCheck(); }
         // barrel fuses + chained explosions
-        for (const b of barrels) if (b.alive && b.fuse > 0) { b.fuse -= dt; b.wobble = 1; if (b.fuse <= 0) { b.fuse = 0; try { game.combat?.dealDamage?.(b, { amount: 5, element: 'fire', source: 'player', tags: ['tick'] }); } catch (_) { /* */ } if (b.alive) explodeQueue.push({ b, t: 0 }); } }
+        for (const b of barrels) if (b.alive && b.fuse > 0) { b.fuse -= dt; b.wobble = 1; if (b.fuse <= 0) { b.fuse = 0; try { game.combat?.dealDamage?.(b, { amount: 5, element: 'fire', source: 'player', tags: ['tick'], attack: SURFACE_ATTACKS.burning, owner: 'world' }); } catch (_) { /* */ } if (b.alive) explodeQueue.push({ b, t: 0 }); } }
       }
       for (let q = explodeQueue.length - 1; q >= 0; q--) {
         const ex = explodeQueue[q]; ex.t -= dt;

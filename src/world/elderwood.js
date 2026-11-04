@@ -310,9 +310,9 @@ export function buildElderwood(game, world, { uTime }) {
       const p = _p.copy(w.position); p.y += 1.8;
       const vfx = game.vfx;
       try {
-        if (how === 'burned') { vfx?.explosion?.(p.clone(), { element: 'fire', scale: 1.1 }); world.surface?.ignite?.(w.position, 2.5, 1); }
-        else if (how === 'purified') { vfx?.burst?.(p.clone(), { count: 40, color: [0xffe9a8, 0xffffff, 0xffc24a], speed: 5, spread: 1, size: 0.16, sizeEnd: 0, life: 1.1, shape: 'spark', drag: 1.5 }); vfx?.flash?.(p.clone(), { color: 0xffe08a, intensity: 20, distance: 14, duration: 0.5 }); }
-        else { vfx?.burst?.(p.clone(), { count: 34, color: [0x5b2a8a, 0x2a1830, 0xc8955a], speed: 7, spread: 1, size: 0.2, sizeEnd: 0.05, life: 0.9, shape: 'chunk', gravity: 12 }); vfx?.shake?.(0.5); }
+        if (how === 'burned') { vfx?.explosion?.(p.clone(), { element: 'fire', scale: 1.1, owner: 'world' }); world.surface?.ignite?.(w.position, 2.5, 1); }
+        else if (how === 'purified') { vfx?.burst?.(p.clone(), { count: 40, color: [0xffe9a8, 0xfff4dc, 0xffc24a], speed: 5, spread: 1, size: 0.16, sizeEnd: 0, life: 1.1, shape: 'spark', drag: 1.5, owner: 'world' }); vfx?.flash?.(p.clone(), { color: 0xffe08a, intensity: 20, distance: 14, duration: 0.5, owner: 'world' }); }
+        else { vfx?.burst?.(p.clone(), { count: 34, color: [0x5b2a8a, 0x2a1830, 0xc8955a], speed: 7, spread: 1, size: 0.2, sizeEnd: 0.05, life: 0.9, shape: 'chunk', gravity: 12, owner: 'world' }); vfx?.shake?.(0.5); }
       } catch (_) { /* */ }
       try { game.audio?.play?.(how === 'burned' ? 'explode_fire' : how === 'purified' ? 'holy_chime' : 'rock_smash', { position: w.position }); } catch (_) { /* */ }
       try { game.ui?.toast?.(ROT_TEXT[how]); } catch (_) { /* */ }

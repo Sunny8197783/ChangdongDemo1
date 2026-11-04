@@ -13,6 +13,8 @@ import { buildVillage } from './world/village.js';
 import { buildWorldTree } from './world/worldtree.js';
 import { buildSurface, createBurnField, GRID as SGRID } from './world/surface.js';
 import { VILLAGE } from './world/villageLayout.js';
+import { buildBeacon, BEACON_KINDS } from './world/beacon.js';
+import { SURFACE_ATTACKS, SURFACE_NAMES_KO } from './world/names.js';
 // v3 (CONTRACT §13)
 import { createZones, ARENA_DEFS, TF, STAGE_ACT, GRADE_BLEND, EXTRA_GRADES, ZONE_SIGNS } from './world/zones.js';
 import { PILLARS, HYDRA_PILLARS } from './world/terraform.js';
@@ -140,6 +142,7 @@ export function createWorld(game) {
   const grass = buildGrass(game, terrain, wind, { burnTex: burnField.tex, burnXform: burnField.xform });
   const ambience = buildAmbience(game, terrain, wind);
   const worldTree = buildWorldTree(game, sunDir);
+  const beacon = buildBeacon(game, { getHeight, getGroundHeight: (x, z) => world.getGroundHeight?.(x, z) ?? getHeight(x, z) });
 
   // ---------------------------------------------------------------- collider spatial hash
   const GC = 8, GOFF = 200, GN = Math.ceil((GOFF * 2) / GC);
@@ -547,6 +550,7 @@ export function createWorld(game) {
       r.updateMatrixWorld(true);
     }
     world._staticRoots = roots;
+    for (const r of roots) if (!r.isLight && !r.isCamera) worldRootSet.add(r);
   }
   // ---------------- v4 (task item 5/6): always-drawn / village-only / zone transparents culled by camera distance.
   // Each entry: objects + anchor points [x, z, …] + reach R: visible iff the camera is within R of an anchor (xz).
@@ -570,6 +574,38 @@ export function createWorld(game) {
       for (let j = 0; j < D.objs.length; j++) D.objs[j].visible = on;
     }
   }
+  // ---------------- v4 API (PLAN §7.4.2): beacon, surface attack descriptors, debug hooks
+  const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _bs = new THREE.Sphere();
+  const isWorldObject = (o) => { let p = o; while (p && p.parent && p.parent !== scene) p = p.parent; return !!p && worldRootSet.has(p); };
+  const worldRootSet = new Set();
+  Object.assign(world, {
+    /** Objective beacon: thin unlit 40 m pillar + ground ring (≤ 2 calls); null hides it. kind: 'quest' | 'camp' | 'boss'. */
+    setBeacon(pos, opts) { beacon.set(pos, opts || {}); },
+    beacon, beaconKinds: BEACON_KINDS,
+    surfaceAttacks: SURFACE_ATTACKS, surfaceNamesKo: SURFACE_NAMES_KO,
+    /** attack descriptor {id:'surface.<kind>', nameKo, kind:'surface'} for a surface kind (burning, mud, cursed, blight, void). */
+    surfaceAttack: (kind) => SURFACE_ATTACKS[kind] || null,
+    debug: {
+      setGrassVisible(on) { for (const L of grass.layers) L.mesh.visible = !!on && grass.density > 0.001; },
+      terrainChunks() { const s = terrain.chunkStats; return { total: s.total, visible: s.visible, near: s.near, far: s.far, farInView: s.farInView, inView: s.inView, calls: s.calls }; },
+      /** World transparent drawables that pass visibility + frustum this frame. */
+      transparents() {
+        const cam = game.camera; cam.updateMatrixWorld(); _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _fr.setFromProjectionMatrix(_pm);
+        let n = 0;
+        for (const r of worldRootSet) r.traverseVisible((o) => {
+          const m = o.material; if (!m || Array.isArray(m) || !m.transparent || !(o.isMesh || o.isPoints || o.isSprite)) return;
+          if (o.isInstancedMesh && o.count === 0) return;
+          if (o.frustumCulled && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); _bs.copy(o.isInstancedMesh && o.boundingSphere ? o.boundingSphere : o.geometry.boundingSphere).applyMatrix4(o.matrixWorld); if (!_fr.intersectsSphere(_bs)) return; }
+          n++;
+        });
+        return n;
+      },
+      /** true when obj belongs to the world module (under one of its scene roots). */
+      owns: isWorldObject,
+      roots: () => [...worldRootSet],
+      flora: () => ({ ...flora.stats }),
+    },
+  });
   Object.defineProperty(world, 'act', { get: () => act, enumerable: true });
   Object.defineProperty(world, 'bossFightLOD', { get: () => bossLOD, enumerable: true });
   let acc4 = 1, acc1 = 1;
@@ -613,6 +649,7 @@ export function createWorld(game) {
       flora.update(cam, focus);
       village.update(t, cam, dt);
       worldTree.update(t);
+      beacon.update(realDt, t);
       terrain.burn.uBurnTime.value = t;
       terrain.updateChunks(cam);
       refreshOverlayCircle();

@@ -276,7 +276,7 @@ export function buildGates(game, world, { uTime, shrineY }) {
       gems.setColorAt(i, gemColor(s)); gems.instanceColor.needsUpdate = true;
       if (!quiet) {
         try { game.events?.emit?.('shrineFound', { id: s.id, kind: s.kind }); } catch (err) { console.error('[world] shrineFound', err); }
-        try { game.vfx?.burst?.(s.position.clone().setY(s.position.y + 1.3), { count: 26, color: [0x9bff7a, 0xffffff, 0xffe08a], speed: 3.5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.9, shape: 'spark', drag: 2 }); } catch (_) { /* */ }
+        try { game.vfx?.burst?.(s.position.clone().setY(s.position.y + 1.3), { count: 26, color: [0x9bff7a, 0xfff4dc, 0xffe08a], speed: 3.5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.9, shape: 'spark', drag: 2, owner: 'world' }); } catch (_) { /* */ }
         try { game.audio?.play?.(s.kind === 'seed' ? 'shrine_seed' : 'shrine_found', { position: s.position }); } catch (_) { /* */ }
       }
       return true;
