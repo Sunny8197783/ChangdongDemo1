@@ -54,9 +54,11 @@ export function createCombat(game) {
 
   // ---------------- queries ----------------
   const teamOk = (e, team) => !team || (team === FOES ? e.team !== 'player' : team.charCodeAt(0) === 33 ? e.team !== team.slice(1) : e.team === team);
+  // v4 (§2.7): no per-call array when the caller passes none — a ring of 32 reused result arrays (valid until 32 later calls)
+  const QR = Array.from({ length: 32 }, () => []); let qri = 0;
   function queryRadius(point, r, team, out) {
-    const res = out || [];
-    if (out) out.length = 0;
+    const res = out || QR[qri = (qri + 1) & 31];
+    res.length = 0;
     const neg = !!team && team.charCodeAt(0) === 33, tn = neg ? (team === FOES ? 'player' : team.slice(1)) : team;
     const ents = game.entities;
     for (let i = 0; i < ents.length; i++) {

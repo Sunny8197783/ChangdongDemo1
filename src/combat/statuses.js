@@ -30,7 +30,7 @@ export const STATUS_DEFS = {
   blight:   { nameKo: '공허 침식', color: '#5a2a9a', dur: 6, playerOnly: true, flags: ['regenDisabled'], dmgDealtMul: 0.9 },
   // reaction-owned statuses (not auras; shown as pips by the UI through statusInfo)
   necroflame: { nameKo: '흑염', color: '#9a5cff', dur: 6, dot: { dmg: 10, every: 0.5, element: 'shadow', healPct: 0.3 }, aura: false },
-  broken:   { nameKo: '붕괴', color: '#ffffff', dur: 4, dmgTakenMul: 1.5, aura: false },
+  broken:   { nameKo: '붕괴', color: '#f4f1ea', dur: 4, dmgTakenMul: 1.5, aura: false },
   cursedMist: { nameKo: '독무', color: '#7a3cff', dur: 1, dmgDealtMul: 0.7, aura: false },
 };
 
