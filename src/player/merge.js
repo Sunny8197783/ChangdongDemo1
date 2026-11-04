@@ -410,11 +410,11 @@ export function mergeRig(root, opts = {}) {
     if (!capeRec || !cape.ready) return;
     const cur = cape.cur, nrm = cape.nrm, n3 = capeRec.nv * 3;
     const o = capeRec.v0 * 3, f = capeRec.f0 * 3;
-    P.set(cur.subarray(0, n3), o); P.set(cur.subarray(0, n3), f);
+    for (let i = 0; i < n3; i++) { const v = cur[i]; P[o + i] = v; P[f + i] = v; }      // (no subarray views per frame)
     if (nrm) for (let i = 0; i < n3; i++) { N[o + i] = nrm[i]; N[f + i] = -nrm[i]; }
     aP.addUpdateRange(o, n3 * 2); aP.needsUpdate = true;     // the two copies are adjacent
     aN.addUpdateRange(o, n3 * 2); aN.needsUpdate = true;
-    if (capeRec.pn) { const pa = ppA.array, po = capeRec.pv0 * 3; pa.set(cur.subarray(0, n3), po); ppA.addUpdateRange(po, n3); ppA.needsUpdate = true; }
+    if (capeRec.pn) { const pa = ppA.array, po = capeRec.pv0 * 3; for (let i = 0; i < n3; i++) pa[po + i] = cur[i]; ppA.addUpdateRange(po, n3); ppA.needsUpdate = true; }
   }
 
   bakeColors();

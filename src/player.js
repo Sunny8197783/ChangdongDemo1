@@ -404,8 +404,11 @@ export function createPlayer(game) {
   function pendingCovers(hit, kind) {
     if (!pending.on || pending.kind !== kind) return false;
     const rt = game.realTime;
-    if (pending.noInfo) return rt - pending.t0 <= pending.win + 1e-4;     // no tells / orb data at the press: v3 time window
-    if (rt > pending.until) return false;
+    // clocks: the prediction is in enemy time (tells run on game.enemyTime, slowed by slow motion like the enemies);
+    // without a prediction source the v3 rule applies on game time
+    void rt;
+    if (pending.noInfo) return game.time - pending.t0 <= pending.win + 1e-4;
+    if ((game.enemyTime ?? game.time) > pending.until) return false;
     const a = srcEntity(hit);
     return !pending.enemy || !a || a === pending.enemy;
   }
@@ -669,14 +672,14 @@ export function createPlayer(game) {
         if (holds && rem < best) { best = rem; who = r.enemy; tp = r.targetsPlayer !== false; }
       }
     }
-    pending.kind = kind; pending.t0 = game.realTime; pending.win = w;
+    pending.kind = kind; pending.t0 = game.time; pending.win = w;
     if (t === Infinity) {
       // no prediction source at all (e.g. tells stub without live handles): the v3 rule, a hit within the window after the press
-      pending.on = true; pending.noInfo = true; pending.enemy = null; pending.targetsPlayer = false; pending.until = game.realTime + w;
+      pending.on = true; pending.noInfo = true; pending.enemy = null; pending.targetsPlayer = false; pending.until = (game.enemyTime ?? game.time) + w;
       return;
     }
     pending.noInfo = false;
-    if (t <= w) { pending.on = true; pending.enemy = who; pending.targetsPlayer = tp; pending.until = game.realTime + t + 0.06; }
+    if (t <= w) { pending.on = true; pending.enemy = who; pending.targetsPlayer = tp; pending.until = (game.enemyTime ?? game.time) + t + 0.06; }
   }
   function breakBlock() {
     if (!blocking) return;
@@ -1278,7 +1281,7 @@ export function createPlayer(game) {
     /** Test/debug: per-frame internals (read only). */
     debugState() {
       return { cls, kit: kit.dodge.type + '/' + kit.defend.type, dodgeT, dodgeIframeT, blocking, counterT, focusing, decoyT, wardHp, superArmorT, platform: !!platformHandle, ikDrop: footIK.drop, springs: springs.stats(),
-        pending: pending.on ? { kind: pending.kind, noInfo: pending.noInfo, left: pending.until - game.realTime, targetsPlayer: pending.targetsPlayer } : null,
+        pending: pending.on ? { kind: pending.kind, noInfo: pending.noInfo, left: pending.until - (game.enemyTime ?? game.time), targetsPlayer: pending.targetsPlayer } : null,
         buffer: inputBuf.action, protect: Math.max(0, protectUntil - game.time), witchReadyIn: Math.max(0, witchReadyAt - game.realTime), dodgeDir: { x: dodgeDir.x, z: dodgeDir.z },
         animFrozen: animFrozen(), revive: reviveT };
     },
@@ -1322,8 +1325,10 @@ export function createPlayer(game) {
       if (dodgeCd > 0) dodgeCd = Math.max(0, dodgeCd - dt);
       if (invulT > 0) { invulT -= dt; if (invulT <= 0) entity.invulnerable = false; }
       if (shieldT > 0) { shieldT -= dt; if (shieldT <= 0 || !(entity.shieldHp > 0)) { shieldT = 0; entity.shieldHp = 0; } }
-      if (dodgeIframeT > 0) dodgeIframeT -= dt;
-      if (superArmorT > 0) superArmorT -= dt;
+      // i-frames / super armour / parry windows run on game time (uncompensated): under a compensated slow motion (witch,
+      // teaching) the player moves at full speed while the protection keeps pace with the slowed enemies
+      if (dodgeIframeT > 0) dodgeIframeT -= gameDt;
+      if (superArmorT > 0) superArmorT -= gameDt;
       castRecent = Math.max(0, castRecent - dt);
       gemFlare = Math.max(0, gemFlare - dt * 2.2);
       hurt = Math.max(0, hurt - dt * 3.2);
@@ -1333,7 +1338,7 @@ export function createPlayer(game) {
       if (castKind) { castT += dt; if (castT >= CAST_DUR[castKind]) castKind = null; }
       if (guardBreakT > 0) guardBreakT -= dt;
       if (counterReady > 0) { counterReady -= realDt; if (counterReady <= 0) counterTarget = null; }
-      if (counterT > 0) { counterT -= dt; if (counterT <= 0) counterCd = D.cd ?? 1; }
+      if (counterT > 0) { counterT -= gameDt; if (counterT <= 0) counterCd = D.cd ?? 1; }
       else if (counterCd > 0) counterCd -= dt;
       perfectFx = Math.max(0, perfectFx - realDt * 2);
       if (DG.charges) {
@@ -1399,7 +1404,7 @@ export function createPlayer(game) {
           else bufferPress('defend', 'locked');
         }
       } else if (blocking) {
-        blockT += dt;
+        blockT += gameDt;
         if (!blockHeld || !canAct) breakBlock();
         else if (dt0 === 'barrier') {
           R.mp -= (D.drain ?? 6) * dt; R.lastMpSpend = t;
@@ -1444,7 +1449,7 @@ export function createPlayer(game) {
           if (waited > BUFFER_SEC) { inputBuf.action = null; rejectPress(a, reason === 'cooldown' ? 'cooldown' : 'locked'); }
         }
       }
-      if (pending.on && game.realTime > pending.until + 0.05 && (!pending.noInfo || game.realTime - pending.t0 > pending.win + 0.05)) pending.on = false;
+      if (pending.on && (pending.noInfo ? game.time - pending.t0 > pending.win + 0.05 : (game.enemyTime ?? game.time) > pending.until + 0.05)) pending.on = false;
 
       // ---------- death ----------
       if (dying) {

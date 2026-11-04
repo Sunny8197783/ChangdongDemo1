@@ -41,6 +41,8 @@ export class Cape {
     this.cur = new Float32Array(n * 3); this.prev = new Float32Array(n * 3);
     this.restW = [];
     for (let c = 0; c < this.cols - 1; c++) this.restW.push(anchorsLocal[c].distanceTo(anchorsLocal[c + 1]));
+    this.restH = new Float32Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < this.cols - 1; c++) this.restH[r * this.cols + c] = this.restW[c] * (1 + 0.08 * r / rows);
     const geo = new THREE.BufferGeometry();
     this.posAttr = new THREE.BufferAttribute(new Float32Array(n * 3), 3); this.posAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('position', this.posAttr);
@@ -120,8 +122,8 @@ export class Cape {
       }
       for (let it = 0; it < 8; it++) {
         for (let r = 1; r < rows; r++) for (let c = 0; c < cols; c++) {
-          this._link((r - 1) * cols + c, r * cols + c, this.segLen, r === 1);
-          if (c < cols - 1) this._link(r * cols + c, r * cols + c + 1, this.restW[c] * (1 + 0.08 * r / rows), false);
+          this._link((r - 1) * cols + c, r * cols + c, -1, r === 1);
+          if (c < cols - 1) this._link(r * cols + c, r * cols + c + 1, r * cols + c, false);
         }
         // long-range tether: each point stays within r*segLen of its column anchor (cape can never float/stiffen)
         for (let c = 0; c < cols; c++) {
@@ -185,8 +187,10 @@ export class Cape {
     }
     if (!this.detached) this.geo.attributes.normal.needsUpdate = true;
   }
-  _link(a, b, rest, pinA) {
-    const { cur } = this; a *= 3; b *= 3;
+  /** k < 0: vertical link (segLen); else the precomputed horizontal rest length restH[k] (typed array: no boxed doubles per call). */
+  _link(a, b, k, pinA) {
+    const cur = this.cur; a *= 3; b *= 3;
+    const rest = k < 0 ? this.segLen : this.restH[k];
     const dx = cur[b] - cur[a], dy = cur[b + 1] - cur[a + 1], dz = cur[b + 2] - cur[a + 2];
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
     const diff = (d - rest) / d;
