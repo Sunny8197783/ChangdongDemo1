@@ -103,7 +103,7 @@ export function createWorld(game) {
     return m;
   })();
   shadowHook.add(depthWarm);
-  let depthWarmFrames = 45;
+  let depthWarmFrames = 8;
   // v4: terrain never casts (chunks + far mesh are built with castShadow = false; PLAN §2.2 low/medium)
   const { getHeight } = terrain;
   const colliders = [];
