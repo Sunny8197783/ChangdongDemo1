@@ -1,5 +1,6 @@
 // Instanced erupting props (rock pillars, ice spikes), ground sigils, charge orb.
 import * as THREE from 'three';
+import { GLINT } from './palette.js';
 import {
   pillarGeo, rockMat, crystalGeo, iceMatSolid, outlineBasic, sigilMat, makeGroundDisc, conformDisc,
   fresnelMat, coreMat, tornadoMat,
@@ -25,6 +26,8 @@ class Eruptors {
     this.p = new THREE.Vector3(); this.s = new THREE.Vector3();
   }
   spawn(x, y, z, { height = 2, width = 1, delay = 0, rise = 0.14, hold = 1.5, sink = 0.45, tiltX = 0, tiltZ = 0, yaw = Math.random() * 6.28 } = {}) {
+    // v4: an override (spells looks: ice spikes → FM prisms) may take the eruption instead of the instanced prop
+    if (this.override && this.override(x, y, z, { height, width, delay, rise, hold, sink, tiltX, tiltZ, yaw }) === true) return;
     if (this.items.length >= this.max) this.items.shift();
     this.items.push({ x, y, z, height, width, delay, rise, hold, sink, tiltX, tiltZ, yaw, t: 0 });
   }
@@ -70,18 +73,22 @@ export function createProps(game) {
 
   // ---- sigils ----
   const sigilPool = [], sigils = [];
-  function sigil(pos, { color = 0xffffff, radius = 3, duration = 1.2, spin = 1.2, grow = 0.2 } = {}) {
+  const makeSigil = (color) => {
+    const mat = sigilMat(color);
+    mat.map = mat.map.clone(); mat.map.center.set(0.5, 0.5);
+    const s = new THREE.Mesh(makeGroundDisc(10), mat);
+    s.renderOrder = 4; s.frustumCulled = false; s.name = 'spells-sigil';
+    return s;
+  };
+  // v4: the rune circles are pre-built (0 new materials / textures per cast; adopted by spells.js like every spell object)
+  for (let i = 0; i < 6; i++) sigilPool.push(makeSigil(GLINT));
+  function sigil(pos, { color = GLINT, radius = 3, duration = 1.2, spin = 1.2, grow = 0.2 } = {}) {
     let s = sigilPool.pop();
-    if (!s) {
-      const mat = sigilMat(color);
-      mat.map = mat.map.clone(); mat.map.center.set(0.5, 0.5);
-      s = new THREE.Mesh(makeGroundDisc(10), mat);
-      s.renderOrder = 4; s.frustumCulled = false;
-    }
+    if (!s) { s = makeSigil(color); onNewSigil?.(s); }
     s.material.color.set(color);
     conformDisc(s.geometry, game.world, pos.x, pos.z, radius, 0.12);
     s.position.set(pos.x, 0, pos.z);
-    s.userData = { t: 0, duration, spin, grow, radius };
+    Object.assign(s.userData, { t: 0, duration, spin, grow, radius });
     s.scale.setScalar(0.01);
     scene.add(s); sigils.push(s);
     return s;
@@ -89,10 +96,10 @@ export function createProps(game) {
 
   // ---- charge orb at staff tip ----
   const chargeGroup = new THREE.Group();
-  const chargeCore = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), coreMat(0xff6a1f, 2.4));
-  const chargeShell = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), fresnelMat(0xff6a1f, { power: 1.6, intensity: 2 }));
+  const chargeCore = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), coreMat(0xff6a1f, 1.2));
+  const chargeShell = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), fresnelMat(0xff6a1f, { power: 1.6, intensity: 1.2 }));
   const ringGeo = new THREE.TorusGeometry(1, 0.06, 6, 40);
-  const ringMat = fresnelMat(0xffffff, { power: 0.5, intensity: 2, core: 0.6 });
+  const ringMat = fresnelMat(GLINT, { power: 0.5, intensity: 1.2, core: 0.6 });
   const chargeRing = new THREE.Mesh(ringGeo, ringMat);
   const chargeRing2 = new THREE.Mesh(ringGeo, ringMat);
   chargeGroup.add(chargeCore, chargeShell, chargeRing, chargeRing2);
@@ -126,7 +133,7 @@ export function createProps(game) {
   function gust(pos, dir, length, color) {
     let g = gustPool.pop();
     if (!g) { g = new THREE.Mesh(gustGeo, tornadoMat()); g.renderOrder = 6; g.frustumCulled = false; }
-    g.material.uniforms.colA.value.set(0xffffff); g.material.uniforms.colB.value.set(color);
+    g.material.uniforms.colA.value.set(GLINT); g.material.uniforms.colB.value.set(color);
     g.material.uniforms.speed.value = 2.5;
     g.position.copy(pos);
     g.lookAt(pos.x + dir.x, pos.y + dir.y, pos.z + dir.z);
@@ -157,5 +164,6 @@ export function createProps(game) {
     }
   }
 
-  return { pillars, spikes, sigil, gust, setCharge, update, height, chargeGroup };
+  let onNewSigil = null;
+  return { pillars, spikes, sigil, gust, setCharge, update, height, chargeGroup, sigilPool, set onNewSigil(fn) { onNewSigil = fn; } };
 }

@@ -1,0 +1,455 @@
+// v4 caster look engine (PLAN v4 §3, §1.4, §7.4.7). Owner: magic.
+//   • cast context: every cast (archetype, bespoke impl, legacy def, finisher, support) runs inside begin()/end(); deferred work
+//     (timers, projectiles, zones, objects, movers) captures `cur` and restores it, so every visual and every hit carries the cast's castId.
+//   • gate: every legacy `game.vfx.*` call of src/spells* goes through fx(name, args): v4 restraint (no point-light flashes, no domes or
+//     glow sprites, screenFlash / fovKick only for U/F tiers, bursts → element accents within the tier particle cap, shockwaves → LW rings,
+//     beams → BT bolts, decals → DC linework, player "telegraphs" → dotted rotating target rings in the element `light` step) + castId / owner.
+//   • hooks: castFx / body (projectile body + trail) / impact (one burst per castId, then per-target sparks) / zone / target, resolved
+//     bespoke row (looks_rows.js) → archetype default → element motif (motifs/*.js for fire/ice/lightning/wind/water, melee's registered
+//     motifs or motifs/others.js stand-ins for earth/nature/light/shadow).
+//   • budgets: a kit facade enforces the per-tier handle and particle ceilings of §1.4 for every cast (refuses the excess).
+//   • lookOf(id) → declared level; castLock; first-cast warm.
+import * as THREE from 'three';
+import { EL9, elementOfHex, rampOf } from './palette.js';
+import * as Fire from './motifs/fire.js';
+import * as Ice from './motifs/ice.js';
+import * as Lightning from './motifs/lightning.js';
+import * as Wind from './motifs/wind.js';
+import * as Water from './motifs/water.js';
+import { installArrows, createFallbacks } from './motifs/others.js';
+import { createRows, BESPOKE_IDS } from './looks_rows.js';
+
+export const MAGIC_ELEMENTS = ['fire', 'ice', 'lightning', 'wind', 'water'];
+/** Per-cast ceilings (§1.4): kit handles and particles; our own particles keep 25 % headroom for vfx's per-target sparks. */
+export const CAPS = {
+  B: { handles: 4, particles: 12 }, C: { handles: 8, particles: 60 }, A: { handles: 8, particles: 60 },
+  Z: { handles: 6, particles: 22, perSec: true }, U: { handles: 12, particles: 110 }, F: { handles: 16, particles: 190 },
+};
+const Z_ARCH = new Set(['zone', 'summon', 'buff', 'lane', 'mine']);
+/** Tier of a registry skill (§3.3). */
+export function tierOfDef(def, id = '') {
+  if (!def) return 'A';
+  if (def.slot === 'basic') return 'B';
+  if (def.slot === 'charged') return 'C';
+  if (def.slot === 'ultimate' || /\.awakened$/.test(id)) return 'U';
+  if (def.slot === 'finisher') return 'F';
+  if (def.slot === 'support') return 'Z';
+  return Z_ARCH.has(def.archetype) ? 'Z' : 'A';
+}
+const LEGACY_SKILL = { basic: 'basic', heavy: 'charged', ultimate: 'ult', awakened: 'awakened', support: 'sup', finisher: 'finisher' };
+/** 'fire_heavy' → 'fire.charged' (legacy v2 def id → registry skill id). */
+export const skillOfSpell = (spellId) => { const k = String(spellId).lastIndexOf('_'); return k > 0 ? spellId.slice(0, k) + '.' + (LEGACY_SKILL[spellId.slice(k + 1)] || spellId.slice(k + 1)) : spellId; };
+const ARCH_V4 = new Set(['projectile', 'volley', 'lob', 'crawler', 'beam', 'cone', 'nova', 'zone', 'wall', 'pillar', 'chain', 'rain',
+  'summon', 'blink', 'dash', 'leapslam', 'grapple', 'buff', 'mark', 'chainbind', 'tether', 'lane', 'mine', 'bubble']);
+const SMOKE = { smoke: 1, puff: 1, dust: 1, steam: 1, cloud: 1 };
+const DROP_SHAPES = { ring: 1, flare: 1, glow: 1, soft: 1, halo: 1 };
+const SPARK_SHAPES = { fire: 'ember', ice: 'shard', lightning: 'spark', wind: 'leaf', water: 'droplet', earth: 'rock', nature: 'petal', light: 'mote', shadow: 'wisp', physical: 'spark' };
+const DECAL_OF = { fire: 'scorch', ice: 'frost', lightning: 'lichtenberg', water: 'ripple', earth: 'crack', nature: 'flower', light: 'rune', shadow: 'scorch', wind: 'ripple', physical: 'crack' };
+const DECAL_KIND = { scorch: 'scorch', frost: 'frost', ice: 'frost', crack: 'crack', cracks: 'crack', lichtenberg: 'lichtenberg', ripple: 'ripple', flowers: 'flower', flower: 'flower', rune: 'rune', strata: 'strata', violet: 'scorch', soft: 'ripple' };
+const DEAD = Object.freeze({ alive: false, stop() { return this; }, setPos() { return this; }, setDir() { return this; }, setScale() { return this; }, setAlpha() { return this; }, setEnds() { return this; }, push() { return this; }, update() { return this; } });
+
+export function createLooks(S) {
+  const game = S.game;
+  let cur = null, kitReal = null, K = null, installed = false;
+  const MY = {};                 // el → motif table (magic's 5 elements)
+  let FB = null;                 // caster stand-ins for the melee elements
+  let ROWS = {};
+  const issued = { id: 0, used: 0 };
+  let lockUntil = 0;
+  const warnedK = new Set();
+  const warnOnce = (k, ...a) => { if (!warnedK.has(k)) { warnedK.add(k); console.warn('[spells.looks]', k, ...a); } };
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+  const now = () => game.time || 0;
+
+  // ------------------------------------------------------------------ install (factory)
+  function install() {
+    if (installed) return true;
+    const k = game.vfx?.kit;
+    if (!k || typeof k.registerShape !== 'function' || typeof k.line !== 'function') return false;
+    kitReal = k; K = facade(k);
+    try {
+      MY.fire = Fire.install(K, game).M; MY.ice = Ice.install(K, game).M; MY.lightning = Lightning.install(K, game).M;
+      MY.wind = Wind.install(K, game).M; MY.water = Water.install(K, game).M;
+      installArrows(K); FB = createFallbacks(K, game);
+      ROWS = createRows(api);
+      installed = true;
+    } catch (err) { warnOnce('install', err); installed = false; }
+    // castId bookkeeping: the skills runtime stamps ctx.castId with game.nextCastId() just before perform(); the legacy adapter
+    // (castById) does not forward it, so remember the last issued id and let castById adopt it once.
+    const nc = game.nextCastId;
+    if (typeof nc === 'function' && !nc.__magic) {
+      const wrapped = function () { const id = nc.apply(this, arguments); issued.id = id; return id; };
+      wrapped.__magic = true; game.nextCastId = wrapped;
+    }
+    return installed;
+  }
+  const on = () => installed && !!game.vfx?.kit && game.vfx.kit === kitReal;
+
+  // ------------------------------------------------------------------ budget facade over the kit
+  function facade(k) {
+    const can = () => {
+      const c = cur; if (!c) return true;
+      if (c.h >= c.cap.handles) { c.refused++; return false; }
+      c.h++; return true;
+    };
+    const F = Object.create(k);
+    F.line = (s) => (can() ? stampCast(s) && k.line(s) : DEAD);
+    F.mesh = (n, s) => (can() ? stampCast(s) && k.mesh(n, s) : DEAD);
+    F.ribbon = (s) => (can() ? stampCast(s) && k.ribbon(s) : DEAD);
+    F.bolt = (s) => (can() ? stampCast(s) && k.bolt(s) : DEAD);
+    F.decal = (kind, p, r, life, o = {}) => (can() ? (o.castId == null && cur && (o.castId = cur.castId), k.decal(kind, p, r, life, o)) : DEAD);
+    F.spark = (p, el, n, dir, o = {}) => {
+      const c = cur;
+      if (c) { tickWindow(c); const left = c.cap.particles - c.p; n = Math.min(n, left); if (n <= 0) return; c.p += n; if (o.castId == null) o.castId = c.castId; }
+      k.spark(p, el, n, dir, o);
+    };
+    F.DEAD = DEAD;
+    return F;
+  }
+  function stampCast(s) { if (s && s.castId == null && cur) s.castId = cur.castId; return true; }
+  function tickWindow(c) { if (c.cap.perSec && now() - c.win > 1) { c.win = now(); c.p = 0; } }
+
+  // ------------------------------------------------------------------ cast context
+  /** begin({castId, skillId, el, tier, style, arch, family}) → previous context (pass to end()). */
+  function begin(o = {}) {
+    const def = o.skillId ? game.skills?.def?.(o.skillId) : null;
+    const tier = o.tier || tierOfDef(def, o.skillId || '');
+    const castId = o.castId || takeIssued() || (game.nextCastId?.() ?? 0);
+    const c = {
+      castId, skillId: o.skillId || null, el: o.el || def?.element || 'physical', tier, cap: CAPS[tier] || CAPS.A, style: o.style || styleNow(),
+      arch: o.arch || def?.archetype || null, row: ROWS[o.skillId] || null, h: 0, p: 0, win: now(), burst: 0, refused: 0, flashed: false, smoke: 0,
+      t0: now(), data: {},
+    };
+    issued.used = Math.max(issued.used, castId);
+    const prev = cur; cur = c;
+    return prev;
+  }
+  function end(prev) { cur = prev ?? null; }
+  /** Run fn inside context c (deferred work). */
+  function within(c, fn, ...a) { const p = cur; cur = c; try { return fn(...a); } finally { cur = p; } }
+  function swap(c) { const p = cur; cur = c; return p; }
+  /** Wrap a deferred callback so it runs in the current cast context. */
+  function bind(fn) { const c = cur; if (!c) return fn; return (...a) => within(c, fn, ...a); }
+  function takeIssued() { if (issued.id > issued.used) { issued.used = issued.id; return issued.id; } return 0; }
+  function styleNow() { try { return game.skills?.style?.() || game.player?.weaponStyle || 'staff'; } catch (_) { return 'staff'; } }
+  /** Stamp a hit with the cast's castId (never overwrites). */
+  function stamp(h) { if (h && h.castId == null && cur) h.castId = cur.castId; return h; }
+
+  // ------------------------------------------------------------------ motif dispatch
+  function motif(el, kind, spec = {}) {
+    if (!on()) return null;
+    const c = cur;
+    if (spec.castId == null && c) spec.castId = c.castId;
+    if (spec.tier == null && c) spec.tier = c.tier;
+    if (spec.lean == null) spec.lean = spec.tier === 'B';
+    if (!spec.pos && spec.follow) spec.pos = spec.follow.position;
+    if (!spec.pos) return null;
+    try {
+      const mine = MY[el]?.[kind];
+      if (mine) return mine(spec);
+      if (kitReal.hasMotif?.(el, kind)) return kitReal.motif(el, kind, spec);        // melee's earth / nature / light / shadow
+      const f = FB?.[el]?.[kind];
+      if (f) return f(spec);
+      return kitReal.motif(el, kind, spec);                                           // vfx generic (marks the cast 'generic')
+    } catch (err) { warnOnce('motif:' + el + ':' + kind, err); return null; }
+  }
+  /** Element motif source for lookOf: 'magic' | 'melee' | 'standin' | 'generic'. */
+  function motifSource(el) {
+    if (MY[el]) return 'magic';
+    if (kitReal?.hasMotif?.(el, 'burst')) return 'melee';
+    if (FB?.[el]) return 'standin';
+    return 'generic';
+  }
+
+  // ------------------------------------------------------------------ semantic hooks
+  /** Anticipation at the weapon tip (staff glyph / bow string glyph / totem spirit echo). */
+  function castFx(origin, o = {}) {
+    if (!on() || !origin) return false;
+    const c = cur, el = o.el || c?.el || 'physical';
+    if (c?.row?.cast && c.row.cast(origin, o) !== undefined) return true;
+    const r = (o.r ?? (c?.tier === 'U' ? 0.6 : c?.tier === 'B' ? 0.34 : 0.45)) * (c?.style === 'bow' ? 0.85 : 1);
+    motif(el, 'cast', { pos: origin.clone ? origin.clone() : origin, r, life: o.life });
+    if (c && !c.echoed && (c.style === 'totem' || o.echo)) { c.echoed = true; echo(el, r); }
+    return true;
+  }
+  /** Spiritcaller: cast echo on the familiars at 50 % scale (positions read from the familiar instanced mesh). */
+  const _m4 = new THREE.Matrix4();
+  function echo(el, r) {
+    const fm = game.skills?.familiars?.mesh;
+    if (!fm || !fm.visible || !(fm.count > 0)) return;
+    for (let i = 0; i < Math.min(3, fm.count); i++) {
+      fm.getMatrixAt(i, _m4); v1.setFromMatrixPosition(_m4); if (v1.lengthSq() < 1e-6) continue;
+      const p = v1.clone(); p.applyMatrix4(fm.matrixWorld);
+      K.line({ shape: 'glyph', glyph: el, el, pos: p, plane: 'billboard', r: r * 0.5, width: 0.03, life: 0.22, tIn: 0.08, tOut: 0.1, spin: 1.2, alpha: 0.7 });
+    }
+  }
+  /** Projectile body + trail on a follow proxy. Returns handles (array) or null (caller keeps the legacy mesh). */
+  function body(p, o = {}) {
+    if (!on()) return null;
+    const c = cur, el = p.element || c?.el || 'physical', key = o.mesh || p.meshKey;
+    if (c?.row?.body) { const r = c.row.body(p, o); if (r) return r; }
+    const sc = o.scale || 1;
+    if (key === 'arrow') {
+      const R = rampOf(el);
+      return [K.mesh(el + '.arrow', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: 1.05 * sc, life: Infinity, tIn: 0.02, tOut: 0.08, erode: false }),
+        K.ribbon({ follow: p.proxy, width: 0.07 * sc, taper: 1, life: 0.3, maxLen: 3.2, el, colors: { head: R.light, edge: R.light }, tailSat: 0.3 })].filter(Boolean);
+    }
+    if (key === 'meteor') return null;   // rows handle the meteor
+    const shape = key === 'lance' || key === 'spear' || key === 'glance' ? 'lance' : null;
+    const big = key === 'inferno' ? 1.35 : 1;
+    return toArr(motif(el, 'trail', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: sc * big * (c?.tier === 'B' ? 0.9 : 1), shape, len: o.len }));
+  }
+  /** Impact at the epicentre: the full burst once per castId, per-target sparks after that. */
+  function impact(pos, o = {}) {
+    if (!pos) return null;
+    if (!on()) return null;
+    const c = cur, el = o.el || c?.el || 'physical';
+    const r = Math.max(0.5, Math.min(7, o.r ?? (o.big ? 1.6 : 1.0) * (o.scale ?? 1)));
+    if (!c) return motif(el, 'spark', { pos: pos.clone ? pos.clone() : pos, n: 4 });
+    if (c.burst > 0 && !o.force) return motif(el, 'spark', { pos: pos.clone ? pos.clone() : pos, n: 4, dir: o.dir });
+    c.burst++;
+    if (c.row?.impact) { const res = c.row.impact(pos, r, o); if (res !== undefined) return res; }
+    return motif(el, 'burst', { pos: pos.clone ? pos.clone() : pos, r, dir: o.dir, decal: o.decal });
+  }
+  /** Player target marker (replaces player-side telegraphs): dotted rotating ring in the element `light` step (R5). */
+  function target(o = {}) {
+    if (!on()) return null;
+    const c = cur, el = o.el || c?.el || 'physical';
+    if (c?.row?.target) { const res = c.row.target(o); if (res !== undefined) return res; }
+    const p = o.pos; if (!p) return DEAD;
+    const r = Math.max(0.6, Math.min(12, o.r ?? o.radius ?? 2)), life = Math.max(0.2, Math.min(4, (o.dur ?? 0.6) + 0.12));
+    return K.line({ shape: 'dots', n: Math.round(10 + r * 5), el, pos: v2.set(p.x, S.height(p.x, p.z) + 0.05, p.z).clone(), plane: 'ground', r, width: 0.05, life, tIn: 0.12, tOut: 0.12, spin: 1.1, alpha: 0.75, color: rampOf(el).light });
+  }
+  /** Persistent zone linework (replaces filled ground discs). Returns handles; stop them at the zone's end. */
+  function zone(kind, pos, r, life, o = {}) {
+    if (!on()) return null;
+    const c = cur, el = o.el || c?.el || 'physical';
+    if (c?.row?.zone) { const res = c.row.zone(kind, pos, r, life, o); if (res !== undefined) return toArr(res); }
+    return toArr(motif(el, 'zone', { pos, r, life: life ?? 4, follow: o.follow }));
+  }
+  // ---- archetype-level hooks (archetypes.js calls them; rows may override each by name)
+  const rowHook = (name, ...a) => { const f = cur?.row?.[name]; return f ? f(...a) : undefined; };
+  /** crawler head: motif body travelling on c.proxy (fire.salamander / earth.spikes rows override). */
+  function crawl(c) {
+    if (!on()) return null;
+    const r = rowHook('crawl', c); if (r !== undefined) return toArr(r);
+    return toArr(motif(c.el, 'trail', { follow: c.proxy, pos: c.proxy.position, dir: c.dir, scale: 1.25 }));
+  }
+  function crawlTick(c, dt) {
+    const f = cur?.row?.crawlTick; if (f) return f(c, dt);
+    c.lookT = (c.lookT ?? 0.25) - dt;
+    if (c.lookT <= 0) { c.lookT = 0.45; motif(c.el, 'spark', { pos: c.proxy.position.clone(), n: 3, dir: UP }); }
+    return undefined;
+  }
+  /** nova ring around the caster: one burst (once per cast) + a crisp ground ring at R. */
+  function nova(el, c, R) {
+    if (!on()) return null;
+    const r = rowHook('nova', el, c, R); if (r !== undefined) return r;
+    const g = v1.set(c.x, S.height(c.x, c.z) + 0.05, c.z).clone();
+    const first = !cur || cur.burst === 0;
+    if (first) impact(c, { el, r: Math.min(5, R * 0.55) });
+    return K.line({ shape: 'ring', el, pos: g, plane: 'ground', r: R, width: 0.05, life: 0.42, tIn: 0, tOut: 0.25, scaleIn: 'expand', color: rampOf(el).light });
+  }
+  /** cone sweep (gust / wave / scythe): the element `wave` motif across the cone. */
+  function wave(o, dir, len, angDeg) {
+    if (!on()) return null;
+    const r = rowHook('wave', o, dir, len, angDeg); if (r !== undefined) return r;
+    const el = cur?.el || 'physical';
+    return motif(el, 'wave', { pos: o.clone ? o.clone() : o, dir, r: len, arc: Math.min(1.4, (angDeg || 60) * Math.PI / 360) });
+  }
+  /** one rain strike (meteor shower, storm bolts, light lances …): pillar motif, lean. */
+  function strike(el, q, R, p) {
+    if (!on()) return null;
+    const r = rowHook('strike', el, q, R, p); if (r !== undefined) return r;
+    return motif(el, 'pillar', { pos: q, r: Math.min(1.2, R * 0.35), h: el === 'lightning' || el === 'light' ? 10 : 2.6, lean: true, life: 0.5, decal: false });
+  }
+  /** blink: a line from → to (bolt for lightning, tapered ribbon otherwise) + cast glyph at the start + spark at the end. */
+  function blink(el, a, b) {
+    if (!on()) return null;
+    const r = rowHook('blink', el, a, b); if (r !== undefined) return r;
+    const out = [];
+    if (el === 'lightning') out.push(K.bolt({ from: a, to: b, forks: 1, width: 0.08, halo: 0.3, life: 0.06, afterglow: 0.25, el }));
+    else out.push(K.ribbon({ points: [a, a.clone().lerp(b, 0.5).setY(Math.max(a.y, b.y) + 0.15), b], width: 0.16, taper: 0.9, life: 0.3, el, alpha: 0.75 }));
+    motif(el, 'spark', { pos: b.clone(), n: 5 });
+    return out;
+  }
+  /** props.spikes eruption (ice): rows decide (ice.ult wave front); default = one FM prism within the cast budget. */
+  function spike(x, y, z, o = {}) {
+    if (!on()) return false;
+    const r = rowHook('spike', x, y, z, o); if (r !== undefined) return r;
+    const h = Math.max(0.6, o.height || 1.6) * 0.62;
+    K.mesh('ice.prism', { pos: new THREE.Vector3(x, y, z), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tiltX || 0, o.yaw || 0, o.tiltZ || 0)), scale: h,
+      life: (o.rise ?? 0.14) + (o.hold ?? 1.5) + (o.sink ?? 0.45), tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true });
+    return true;
+  }
+  /** buff aura following the caster for dur. */
+  function aura(el, obj, dur) {
+    if (!on()) return null;
+    const r = rowHook('aura', el, obj, dur); if (r !== undefined) return toArr(r);
+    return toArr(motif(el, 'aura', { follow: obj, pos: obj.position, life: dur }));
+  }
+  const toArr = (x) => (x == null ? null : Array.isArray(x) ? x.filter(Boolean) : [x]);
+  const stopAll = (list, fade = true) => { if (!list) return; for (const h of list) { try { h?.stop?.(fade); } catch (_) { /* */ } } };
+
+  // ------------------------------------------------------------------ the legacy gate
+  const V = () => game.vfx;
+  function call(name, a) { const f = V()?.[name]; if (typeof f !== 'function') return null; try { return f.apply(V(), a); } catch (err) { warnOnce('vfx.' + name, err); return null; } }
+  function optsOf(a) { for (let i = a.length - 1; i >= 0; i--) { const x = a[i]; if (x && typeof x === 'object' && !x.isVector3 && !Array.isArray(x) && !x.isColor) return x; } return null; }
+  function stampOpts(a) { const o = optsOf(a); if (o && cur) { if (o.castId == null) o.castId = cur.castId; if (o.owner == null) o.owner = 'player'; } return a; }
+  const colEl = (col) => elementOfHex(Array.isArray(col) ? col[col.length > 1 ? 1 : 0] : col);
+
+  function fx(name, a) {
+    if (!V()) return null;
+    const c = cur;
+    if (c?.row && on()) {
+      const g = c.row.gate?.[name];
+      if (g) { const r = g(a); if (r !== undefined) return r; }
+      if (c.row.quiet?.[name]) return null;
+    }
+    const ultLike = c && (c.tier === 'U' || c.tier === 'F') && !c.row?.noFlash;
+    if (name === 'screenFlash' || name === 'fovKick') {
+      if (!ultLike || c.flashed === name) return null;
+      if (name === 'screenFlash') {
+        if (game.settings?.values?.flashReduce) return null;
+        c.flashed = name;
+        return call(name, [rampOf(c.el).mid, Math.min(0.25, a[1] ?? 0.2), Math.min(0.15, a[2] ?? 0.15)]);
+      }
+      return call(name, [Math.max(-4, Math.min(4, a[0] ?? 0)), Math.min(0.3, a[1] ?? 0.3)]);
+    }
+    if (!on()) {
+      if (name === 'flash' || name === 'dome') return null;
+      return call(name, stampOpts(a));
+    }
+    switch (name) {
+      case 'flash': case 'dome': case 'flashSprite': case 'charge': return null;
+      case 'telegraph': return target(a[0] || {});
+      case 'burst': return accent(a[0], a[1] || {});
+      case 'emitter': return emitter(a[0] || {});
+      case 'shockwave': return ring(a[0], a[1] || {});
+      case 'groundDecal': return gdecal(a[0], a[1], a[2], a[3]);
+      case 'decal': return ldecal(a[0], a[1] || {});
+      case 'debris': return debris(a[0], a[1] || {});
+      case 'explosion': return impact(a[0], { el: a[1]?.element, scale: (a[1]?.scale ?? 1) * 0.8, big: true });
+      case 'impact': return impact(a[0], { el: a[1]?.element, scale: a[1]?.scale ?? 0.8 });
+      case 'shatter': return impact(a[0], { el: 'ice', scale: a[1]?.scale ?? 1 });
+      case 'preset': {
+        const n = String(a[0] || '');
+        const m = /^(impact|explosion)_(\w+)$/.exec(n);
+        if (m) return impact(a[1], { el: m[2], scale: a[2]?.scale ?? 1, big: m[1] === 'explosion' });
+        return call(name, stampOpts(a));
+      }
+      case 'beam': return beam(a[0], a[1], a[2] || {});
+      case 'steam': return accent(a[0], { count: 6, shape: 'smoke', color: 0xdde6ee, life: 0.7 });
+      case 'reaction': case 'blessing': case 'crystal': case 'smear': return call(name, stampOpts(a));
+      default: return call(name, stampOpts(a));
+    }
+  }
+  function accent(pos, o) {
+    if (!pos) return null;
+    const c = cur, el = c?.el && !o.color ? c.el : (o.element || colEl(o.color) || c?.el || 'physical');
+    const shape = o.shape || 'spark';
+    if (DROP_SHAPES[shape]) return null;
+    if (SMOKE[shape]) {
+      if (c && c.smoke >= 12) return null;
+      const n = Math.min(4, o.count ?? 3); if (c) c.smoke += n;
+      const R = rampOf(el === 'physical' || el === 'wind' || el === 'light' ? 'earth' : el);
+      return call('burst', [pos, { count: n, shape: 'smoke', color: [R.light, R.mid], alpha: Math.min(0.3, o.alpha ?? 0.3), additive: false, speed: Math.min(2, o.speed ?? 1.5), spread: 1,
+        size: Math.min(0.8, o.size ?? 0.6), sizeEnd: Math.min(1.1, o.sizeEnd ?? 1), life: Math.min(0.8, o.life ?? 0.7), drag: 2, castId: c?.castId, owner: 'player' }]);
+    }
+    const n = Math.min(12, Math.max(2, Math.round((o.count ?? 8) * 0.3)));
+    const sh = shape === 'spark' || shape === 'star' ? (SPARK_SHAPES[el] || 'spark') : shape === 'snow' ? 'shard' : shape === 'bubble' ? 'droplet' : shape;
+    K.spark(pos, el, n, o.dir || null, { shape: sh, speed: Math.min(9, o.speed ?? 5), gravity: o.gravity ?? undefined, life: Math.min(0.6, o.life ?? 0.4), size: Math.min(0.2, o.size ?? 0.14) });
+    return null;
+  }
+  function emitter(o) {
+    const h = { alive: true, stop() { this.alive = false; if (this.rb) this.rb.stop(true); } };
+    const c = cur;
+    if (o.follow && c && !c.trail) {
+      c.trail = true;
+      h.rb = K.ribbon({ follow: o.follow, width: Math.min(0.22, (o.size ?? 0.2) * 0.9), taper: 1, life: 0.3, maxLen: 3, el: c.el, alpha: 0.6 });
+    }
+    return h;
+  }
+  function ring(pos, o) {
+    if (!pos) return null;
+    const c = cur, el = c?.el || colEl(o.color) || 'physical', R = rampOf(el);
+    const life = Math.max(0.15, Math.min(c?.tier === 'U' ? 0.8 : 0.5, o.duration ?? 0.4));
+    const nearG = !o.vertical && pos.y - S.height(pos.x, pos.z) < 1.2;
+    return K.line({ shape: 'ring', el, pos: nearG ? v1.set(pos.x, S.height(pos.x, pos.z) + 0.05, pos.z).clone() : pos, plane: o.vertical ? 'billboard' : nearG ? 'ground' : 'flat',
+      r: Math.max(0.3, Math.min(16, o.radius ?? 2)), width: Math.max(0.025, Math.min(0.07, (o.thickness ?? 0.5) * 0.05)), life, tIn: 0, tOut: life * 0.6, scaleIn: 'expand',
+      alpha: Math.min(0.8, o.opacity ?? 0.8), color: R.light });
+  }
+  function gdecal(kind, pos, r, life) {
+    if (!pos) return null;
+    const c = cur, el = c?.el || 'physical', k = DECAL_KIND[kind] || DECAL_OF[el];
+    return K.decal(k, pos, Math.max(0.5, Math.min(10, r ?? 2)), Math.min(c?.tier === 'U' ? 6 : 2.5, life ?? 2), { el, alpha: 0.3 });
+  }
+  function ldecal(pos, o) {
+    if (!pos) return null;
+    const c = cur, el = c?.el || colEl(o.color) || 'physical';
+    return K.decal(DECAL_OF[el] || 'crack', pos, Math.max(0.5, Math.min(10, o.radius ?? 2)), Math.min(c?.tier === 'U' ? 6 : 2, o.duration ?? 2), { el, alpha: Math.min(0.3, o.opacity ?? 0.3) });
+  }
+  function debris(pos, o) {
+    if (!pos) return null;
+    const el = cur?.el || (o.material === 'rock' ? 'earth' : colEl(o.color));
+    K.spark(pos, el, Math.min(8, Math.max(2, Math.round((o.count ?? 8) * 0.3))), UP, { shape: el === 'earth' || o.material === 'rock' ? 'rock' : 'shard', gravity: 14, speed: Math.min(9, o.speed ?? 6), life: 0.6 });
+    return null;
+  }
+  function beam(from, to, o) {
+    if (!from || !to) return null;
+    const c = cur, el = c?.el || colEl(o.color) || 'physical';
+    const jag = o.jagged ?? 0.3, w = o.width ?? 0.12;
+    if (el === 'lightning' || jag > 0.2) {
+      return K.bolt({ from, to, forks: Math.min(2, o.branches ?? (c?.tier === 'B' ? 1 : 2)), width: Math.min(0.12, Math.max(0.05, w * 0.6)), halo: Math.min(0.35, w + 0.12),
+        life: Math.min(0.1, o.duration ?? 0.08), afterglow: 0.25, el, seed: (c?.castId || 1) * 7 + (c ? c.h : 0) });
+    }
+    return K.bolt({ from, to, forks: 0, jagged: 0, width: Math.min(0.12, Math.max(0.05, w * 0.25)), halo: Math.min(0.6, w * 0.55 + 0.1), life: Math.max(0.1, o.duration ?? 0.3), afterglow: 0.15, el });
+  }
+
+  // ------------------------------------------------------------------ cast lock (player dodge buffer, §5.8)
+  function lock(sec) { lockUntil = Math.max(lockUntil, (game.realTime ?? now()) + Math.max(0, sec)); }
+  function castLock() { const t = game.realTime ?? now(); return Math.max(0, lockUntil - t); }
+
+  // ------------------------------------------------------------------ declared look level (§1.4; MG1 verifies it by measurement)
+  function lookOf(id) {
+    const def = game.skills?.def?.(id);
+    if (!def) return null;
+    if (!on()) return 'legacy';
+    const el = def.element || 'physical';
+    if (motifSource(el) === 'generic') return 'generic';
+    if (ROWS[id]) return 'bespoke';
+    if (def.slot === 'finisher') return 'archetype';
+    if (!def.archetype || !ARCH_V4.has(def.archetype)) return 'legacy';
+    return 'archetype';
+  }
+
+  // ------------------------------------------------------------------ spell objects (R8, R10, §7.4.7)
+  const adopted = new WeakSet();
+  /** Spell objects: userData.noCameraCollide / owner, private materials through vfx.applyPlayerFx (side effect only),
+   *  depthWrite false in the transparent pass (entities — treant, totem, clone — keep depth: they are bodies). */
+  function adopt(root, { role = 'fill', entity = false } = {}) {
+    if (!root?.traverse) return root;
+    const apf = game.vfx?.applyPlayerFx;
+    root.traverse((o) => {
+      o.userData.noCameraCollide = true; if (!o.userData.owner) o.userData.owner = 'player';
+      if (!o.isMesh && !o.isPoints && !o.isSprite) return;
+      for (const m of [].concat(o.material)) {
+        if (!m || adopted.has(m) || m.userData?.shared) continue;
+        adopted.add(m);
+        if (!entity) { m.depthWrite = false; if (!m.transparent) m.transparent = true; }
+        try { if (typeof apf === 'function') apf(m, { role, additive: m.blending === THREE.AdditiveBlending }); } catch (_) { /* */ }
+      }
+    });
+    return root;
+  }
+
+  const api = {
+    adopt, install, on, begin, end, within, swap, bind, stamp, motif, motifSource, castFx, body, impact, target, zone, fx, stopAll, toArr,
+    crawl, crawlTick, nova, wave, strike, blink, aura, rowHook, spike,
+    lock, castLock, lookOf, tierOf: tierOfDef, skillOfSpell, takeIssued, CAPS, BESPOKE_IDS, MAGIC_ELEMENTS,
+    get cur() { return cur; }, get kit() { return K; }, get rows() { return ROWS; }, get installed() { return installed; },
+    S, game, DEAD, UP,
+  };
+  return api;
+}

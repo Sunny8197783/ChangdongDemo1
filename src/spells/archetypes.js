@@ -5,6 +5,7 @@
 // hammer radius ×1.2 / speed ×0.85, daggers radius ×0.85 / speed ×1.25 (when a melee class falls back to the caster form).
 // Every active also does its world "twist" (DESIGN §13.1): terrain, surfaces, objects, platforms, colliders, updrafts.
 import * as THREE from 'three';
+import { glint } from './palette.js';
 import { elColor, elDef } from '../core/elements.js';
 import { fresnelMat } from './assets.js';
 
@@ -28,9 +29,12 @@ export function baseOf(p, charge = 1) {
 export function createArchetypes(S, api, { summons, structures }) {
   const { game } = S;
   const E = game.events;
+  const L = S.looks;   // v4 look engine (gate, hooks, cast context)
   // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
-  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
-  const C = () => game.combat;
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return L ? L.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  /** Run fn with the cast context of record r (deferred per-frame work of a cast). */
+  const inCtx = (r, fn) => { if (!L || !r?.cur) return fn(); const p = L.swap(r.cur); try { return fn(); } finally { L.swap(p); } };
+  const C = () => S.combat;   // shim: stamps the cast castId on every hit
   const pl = () => game.player;
   const ppos = () => pl()?.object?.position || S.playerPos();
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), v4 = new THREE.Vector3(), v5 = new THREE.Vector3();
@@ -47,6 +51,7 @@ export function createArchetypes(S, api, { summons, structures }) {
   function H(ctx, extra) {
     const p = P(ctx);
     const base = { amount: dmgOf(ctx), element: ctx.element, status: p.status ? cloneStatus(p.status) : undefined, knockback: p.knockback || 0, launch: p.launch || 0 };
+    if (ctx.castId != null) base.castId = ctx.castId;
     if (extra) Object.assign(base, extra);
     if (p.knockdown) base.knockback = Math.max(base.knockback || 0, 7);
     if (p.break || p.poise) base.poise = p.break || p.poise;
@@ -110,9 +115,10 @@ export function createArchetypes(S, api, { summons, structures }) {
   /** Cast flourish at the weapon tip (bow: string flash, totem: spirit swirl, staff: gem burst). */
   function castFx(ctx, k = 1) {
     const el = ctx.element, o = ctx.origin || v3.copy(ppos()).setY(ppos().y + 1.5);
+    if (L?.on()) { L.castFx(o, { el, k }); return; }
     const c1 = colOf(el, 'core'), c2 = colOf(el, 'mid');
     if (ctx.style === 'bow') {
-      fx('burst', o, { count: Math.round(10 * k), shape: 'spark', color: [0xffffff, c2], dir: fwd(ctx, v4), spread: 0.25, speed: 6, size: 0.08, life: 0.22, drag: 3, velocityStretch: true });
+      fx('burst', o, { count: Math.round(10 * k), shape: 'spark', color: [glint(c2), c2], dir: fwd(ctx, v4), spread: 0.25, speed: 6, size: 0.08, life: 0.22, drag: 3, velocityStretch: true });
     } else if (ctx.style === 'totem') {
       fx('burst', o, { count: Math.round(12 * k), shape: 'wisp', color: [c1, c2], radius: 0.4, tangential: 4, up: 1.2, speed: 0.6, size: 0.2, sizeEnd: 0.05, life: 0.5 });
     } else {
@@ -121,6 +127,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     fx('flashSprite', o, c2, 1.2 * k, 0.12, 0.7);
   }
   function impactFx(el, p, scale = 1, big = false) {
+    if (L?.on()) { L.impact(p, { el, scale, big }); return; }
     fx('preset', (big ? 'explosion_' : 'impact_') + el, p, { scale });
   }
   function sfx(name, pos, o) { S.sfx(name, Object.assign({ position: pos }, o || {})); }
@@ -157,7 +164,7 @@ export function createArchetypes(S, api, { summons, structures }) {
   // ---------------- movers (dash / blink / leap / grapple) ----------------
   /** Move the player along a path over `dur` (game time); arc: peak height; onStep(pos, k); onEnd(). */
   function move(from, to, dur, { arc = 0, onStep, onEnd, trailEl } = {}) {
-    const m = { a: from.clone(), b: to.clone(), t: 0, dur: Math.max(0.05, dur), arc, onStep, onEnd, emitter: null };
+    const m = { a: from.clone(), b: to.clone(), t: 0, dur: Math.max(0.05, dur), arc, onStep, onEnd, emitter: null, cur: L?.cur || null };
     const obj = pl()?.object;
     if (trailEl && obj) m.emitter = fx('emitter', { follow: obj, offset: new THREE.Vector3(0, 1, 0), rate: 70, color: [colOf(trailEl, 'core'), colOf(trailEl, 'mid')], shape: shape(trailEl), speed: 1.2, spread: 1, size: 0.2, sizeEnd: 0, life: 0.45, drag: 2, radius: 0.4 });
     movers.push(m);
@@ -174,12 +181,12 @@ export function createArchetypes(S, api, { summons, structures }) {
       if (m.arc > 0) v1.y = Math.max(gy, THREE.MathUtils.lerp(m.a.y, m.b.y, e)) + Math.sin(Math.PI * e) * m.arc;
       else v1.y = Math.max(gy, v1.y);
       try { p?.teleport?.(v1, m.arc <= 0); if (p?.entity?.velocity) p.entity.velocity.set(0, 0, 0); } catch (_) { /* */ }
-      try { m.onStep?.(v1, k); } catch (err) { warn('move.step', err); }
+      try { inCtx(m, () => m.onStep?.(v1, k)); } catch (err) { warn('move.step', err); }
       if (k >= 1) {
         movers.splice(i, 1);
         try { m.emitter?.stop?.(); } catch (_) { /* */ }
         try { p?.teleport?.(v1.set(m.b.x, S.height(m.b.x, m.b.z), m.b.z), true); } catch (_) { /* */ }
-        try { m.onEnd?.(); } catch (err) { warn('move.end', err); }
+        try { inCtx(m, () => m.onEnd?.()); } catch (err) { warn('move.end', err); }
       }
     }
   }
@@ -366,8 +373,12 @@ export function createArchetypes(S, api, { summons, structures }) {
       const start = new THREE.Vector3(pp.x, 0, pp.z).addScaledVector(dir, 1.2);
       start.y = S.height(start.x, start.z);
       crawlers.push({ ctx, p, el, hit, dir, pos: start, d: 0, dist: (p.dist || 14), speed: (p.speed || 10) * vMul(ctx), r: (p.r || 1.4) * rMul(ctx),
-        hitSet: new Set(), fxT: 0, lineT: 0, stepD: p.n ? (p.dist || 12) / p.n : 0, nextStep: 0, emitter: null, boulder: null });
+        hitSet: new Set(), fxT: 0, lineT: 0, stepD: p.n ? (p.dist || 12) / p.n : 0, nextStep: 0, emitter: null, boulder: null, cur: L?.cur || null, look: null, proxy: null });
       const c = crawlers[crawlers.length - 1];
+      if (L?.on()) {   // v4: the crawling head is a motif body on a proxy (row override: fire.salamander tongues, earth.spikes …)
+        c.proxy = new THREE.Object3D(); c.proxy.position.set(start.x, start.y + 0.35, start.z); game.scene.add(c.proxy);
+        c.look = L.crawl(c);
+      }
       if (p.boulder) {
         c.boulder = S.projectiles.spawn({ kind: 'boulder', element: 'earth', mesh: 'rock', pos: start.clone().setY(start.y + 0.9), dir, speed: 0.001, radius: 0.1, scale: 1.6, damage: 0, life: c.dist / c.speed + 0.3, ignoreGround: true, objects: false, blockable: false, trail: false });
       }
@@ -377,6 +388,12 @@ export function createArchetypes(S, api, { summons, structures }) {
   function updateCrawlers(dt) {
     for (let i = crawlers.length - 1; i >= 0; i--) {
       const c = crawlers[i];
+      const prevC = L && c.cur ? L.swap(c.cur) : null;
+      try { crawlStep(c, i, dt); } finally { if (prevC !== null || c.cur) L?.swap(prevC); }
+    }
+  }
+  function crawlStep(c, i, dt) {
+    {
       const step = c.speed * dt;
       c.d += step; c.pos.addScaledVector(c.dir, step); c.pos.y = S.height(c.pos.x, c.pos.z);
       const el = c.el, p = c.p;
@@ -397,8 +414,9 @@ export function createArchetypes(S, api, { summons, structures }) {
       }
       // visuals
       c.fxT -= dt;
+      if (c.proxy) { c.proxy.position.set(c.pos.x, c.pos.y + 0.35, c.pos.z); L.crawlTick?.(c, dt); }
       if (c.fxT <= 0) {
-        c.fxT = 0.05;
+        c.fxT = L?.on() ? 0.16 : 0.05;
         v2.copy(c.pos); v2.y += 0.2;
         if (el === 'fire') {
           fx('burst', v2, { count: 6, shape: 'ember', color: [0xffe080, 0xff5a10], speed: 2, up: 4, spread: 0.4, dir: UP, size: 0.3, sizeEnd: 0.05, life: 0.45, gravity: -2 });
@@ -426,6 +444,8 @@ export function createArchetypes(S, api, { summons, structures }) {
       }
       if (c.d >= c.dist) {
         crawlers.splice(i, 1);
+        if (c.look) { L.stopAll(c.look); c.look = null; }
+        if (c.proxy) { const pr = c.proxy; c.proxy = null; S.laterReal(0.4, () => game.scene.remove(pr)); }
         if (p.endBurst) {
           v2.copy(c.pos); v2.y += 0.5;
           api.aoe(v2, p.endBurst.r || 3, Object.assign({}, c.hit, { amount: p.endBurst.dmg || 40, tier: 'heavy' }));
@@ -461,7 +481,7 @@ export function createArchetypes(S, api, { summons, structures }) {
         onTick(bm) {
           const s = bm.segs[0]; if (!s.on) return;
           let last = s; for (const q of bm.segs) if (q.on) last = q;
-          fx('burst', last.b, { count: 4, shape: 'spark', color: [0xffffff, colOf(el)], speed: 5, spread: 1, size: 0.12, life: 0.25, drag: 2 });
+          fx('burst', last.b, { count: 4, shape: 'spark', color: [glint(colOf(el)), colOf(el)], speed: 5, spread: 1, size: 0.12, life: 0.25, drag: 2 });
         },
       });
     }
@@ -483,9 +503,10 @@ export function createArchetypes(S, api, { summons, structures }) {
     } : base;
     api.cone(o, dir, len, ang, spec, { element: el });
     // visuals
-    if (el === 'wind' || el === 'water') {
+    if (L?.on()) L.wave(o, dir, len, ang);
+    else if (el === 'wind' || el === 'water') {
       try { S.props.gust(o, dir, len, colOf(el)); } catch (_) { /* */ }
-      fx('burst', o, { count: 40, shape: el === 'water' ? 'droplet' : 'leaf', color: [0xffffff, colOf(el)], dir, spread: ang / 360, speed: len * 2.2, size: 0.2, life: 0.45, drag: 2, gravity: el === 'water' ? 8 : 0 });
+      fx('burst', o, { count: 40, shape: el === 'water' ? 'droplet' : 'leaf', color: [glint(colOf(el)), colOf(el)], dir, spread: ang / 360, speed: len * 2.2, size: 0.2, life: 0.45, drag: 2, gravity: el === 'water' ? 8 : 0 });
     } else {
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
       fx('smear', 'wide', o, q, len * 0.5, el);
@@ -537,6 +558,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     return true;
   };
   function novaFx(el, c, R) {
+    if (L?.on()) { L.nova(el, c, R); return; }
     const g = v4.copy(c); g.y = S.height(c.x, c.z) + 0.15;
     fx('shockwave', g.clone(), { color: colOf(el), radius: R, duration: 0.45, thickness: 0.8 });
     fx('shockwave', c.clone(), { color: colOf(el, 'core'), radius: R * 0.6, duration: 0.3, thickness: 0.3, vertical: true });
@@ -549,7 +571,7 @@ export function createArchetypes(S, api, { summons, structures }) {
   function frostCoat(ctx, c) {
     coat = { hits: c.hits || 2, until: (game.time || 0) + (c.dur || 6), chill: c.chill || 3, kb: c.knockback || 4 };
     const obj = pl()?.object;
-    if (obj) coat.em = fx('emitter', { follow: obj, offset: new THREE.Vector3(0, 1, 0), rate: 16, duration: c.dur || 6, color: [0xffffff, 0x9fe8ff], shape: 'snow', speed: 0.6, spread: 1, size: 0.14, life: 0.6, radius: 0.7 });
+    if (obj) coat.em = fx('emitter', { follow: obj, offset: new THREE.Vector3(0, 1, 0), rate: 16, duration: c.dur || 6, color: [glint(0x9fe8ff), 0x9fe8ff], shape: 'snow', speed: 0.6, spread: 1, size: 0.14, life: 0.6, radius: 0.7 });
   }
   E.on('damage', (ev) => {
     if (!coat || !ev?.isPlayer || ev.target !== pl()?.entity || ev.dot) return;
@@ -559,7 +581,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     status(src, 'chilled', 4, coat.chill, 'ice');
     v4.subVectors(src.object.position, ppos()).setY(0).normalize();
     if (src.velocity && !src.isBoss) src.velocity.addScaledVector(v4, coat.kb * 3);
-    fx('burst', center(src, v5), { count: 16, shape: 'shard', color: [0xffffff, 0x9fe8ff], speed: 5, spread: 1, size: 0.15, life: 0.4 });
+    fx('burst', center(src, v5), { count: 16, shape: 'shard', color: [glint(0x9fe8ff), 0x9fe8ff], speed: 5, spread: 1, size: 0.15, life: 0.4 });
     if (--coat.hits <= 0) { try { coat.em?.stop?.(); } catch (_) { /* */ } coat = null; }
   });
 
@@ -600,7 +622,7 @@ export function createArchetypes(S, api, { summons, structures }) {
   function onWater(p) { const wl = game.world?.waterLevel; return Number.isFinite(wl) && S.height(p.x, p.z) < wl; }
   /** Wind vortex: extra pull radius (m1a) on top of the v2 tornado. */
   function wanderPull(z, p) {
-    fields.push({ kind: 'pull', z, r: p.pullR || 6, t: 0, dur: z.duration || 5, every: 0.25, acc: 0 });
+    fields.push({ kind: 'pull', z, r: p.pullR || 6, t: 0, dur: z.duration || 5, every: 0.25, acc: 0, cur: L?.cur || null });
   }
 
   // 9. wall — temporary collider (earth wall) or a thorn grove
@@ -677,13 +699,13 @@ export function createArchetypes(S, api, { summons, structures }) {
         strike(1);
         impactFx('ice', at.clone().setY(at.y + 1), 1.6, true);
         fx('shockwave', at.clone().setY(at.y + 0.1), { color: 0x9fe8ff, radius: R + 2, duration: 0.5, thickness: 1 });
-        fx('burst', at.clone().setY(at.y + 0.5), { count: 60, shape: 'snow', color: [0xffffff, 0x9fe8ff], disc: true, radius: 1, speed: R * 3, up: 2, size: 0.25, life: 0.8, drag: 2 });
+        fx('burst', at.clone().setY(at.y + 0.5), { count: 60, shape: 'snow', color: [glint(0x9fe8ff), 0x9fe8ff], disc: true, radius: 1, speed: R * 3, up: 2, size: 0.25, life: 0.8, drag: 2 });
         fx('groundDecal', 'frost', at.clone(), R + 1, 10);
         api.terrain.chill(at, R + 1);
         fx('shake', 0.35);
         sfx('explode_ice', at);
       };
-      if (p.chillAura) fields.push({ kind: 'chill', pos: at.clone(), r: p.chillAura.r || 5, t: 0, dur: life, every: 1, acc: 0 });
+      if (p.chillAura) fields.push({ kind: 'chill', pos: at.clone(), r: p.chillAura.r || 5, t: 0, dur: life, every: 1, acc: 0, cur: L?.cur || null });
       Hd.onEnd = p.shatter ? () => shards(ctx, at.clone().setY(at.y + 1.2), p.shatter.n || 8, p.shatter.dmg || 20) : null;
       return true;
     }
@@ -702,7 +724,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     if (p.smite) {   // light.charged 심판의 기둥: a pillar of light from the sky
       fx('beam', at.clone().setY(at.y + 24), at.clone(), { color: colOf(el, 'mid'), width: R * 0.9, duration: 0.45, jagged: 0.02, segments: 4 });
       fx('runeCircle', at.clone(), { element: 'light', r: R, dur: 0.7, rotSpeed: 3 });
-      S.later(0.08, () => { strike(1); impactFx(el, at.clone().setY(at.y + 1), R / 2.5, true); fx('burst', at.clone().setY(at.y + 0.5), { count: 40, shape: 'star', color: [0xffffff, colOf(el)], dir: UP, spread: 0.25, speed: 12, size: 0.2, life: 0.5 }); api.terrain.bless(at, R, 4); });
+      S.later(0.08, () => { strike(1); impactFx(el, at.clone().setY(at.y + 1), R / 2.5, true); fx('burst', at.clone().setY(at.y + 0.5), { count: 40, shape: 'star', color: [glint(colOf(el)), colOf(el)], dir: UP, spread: 0.25, speed: 12, size: 0.2, life: 0.5 }); api.terrain.bless(at, R, 4); });
       sfx('cast_light', at, { pitch: 0.8 });
       return true;
     }
@@ -758,7 +780,7 @@ export function createArchetypes(S, api, { summons, structures }) {
       S.props.spikes.spawn(v4.x, top - 0.5, v4.z, { height: 1.0, width: 1.2, hold: life - 0.5, tiltX: 1.2 * dir.z, tiltZ: -1.2 * dir.x, delay: i * 0.04 });
     }
     api.terrain.chill(at, 3);
-    fx('burst', at.clone().setY(at.y + 1), { count: 30, shape: 'snow', color: [0xffffff, 0x9fe8ff], dir, spread: 0.2, speed: 10, size: 0.2, life: 0.6 });
+    fx('burst', at.clone().setY(at.y + 1), { count: 30, shape: 'snow', color: [glint(0x9fe8ff), 0x9fe8ff], dir, spread: 0.2, speed: 10, size: 0.2, life: 0.6 });
   }
 
   // 11. chain — jumps between N targets
@@ -807,13 +829,14 @@ export function createArchetypes(S, api, { summons, structures }) {
   };
   function strikeAt(ctx, el, q, R, hit, p) {
     const top = q.clone().setY(q.y + 18);
-    if (el === 'lightning' || el === 'light') fx('beam', top, q.clone(), { color: colOf(el), width: el === 'light' ? R * 0.6 : 0.3, duration: 0.3, jagged: el === 'light' ? 0.03 : 0.5, segments: 12, branches: el === 'light' ? 0 : 2 });
+    if (L?.on()) L.strike(el, q, R, p);
+    else if (el === 'lightning' || el === 'light') fx('beam', top, q.clone(), { color: colOf(el), width: el === 'light' ? R * 0.6 : 0.3, duration: 0.3, jagged: el === 'light' ? 0.03 : 0.5, segments: 12, branches: el === 'light' ? 0 : 2 });
     else if (el === 'nature') {
       for (let k = 0; k < 5; k++) { const a = k * 1.26; S.props.pillars.spawn(q.x + Math.cos(a) * R * 0.5, q.y - 0.3, q.z + Math.sin(a) * R * 0.5, { height: 2.2 + Math.random(), width: 0.55, hold: 0.7, tiltX: Math.cos(a) * 0.5, tiltZ: Math.sin(a) * 0.5, delay: k * 0.02 }); }
       fx('burst', q.clone().setY(q.y + 0.3), { count: 26, shape: 'thorn', color: [0xd8ff9a, 0x2f7d3a], dir: UP, spread: 0.3, speed: 9, size: 0.5, sizeEnd: 0.2, life: 0.5, gravity: 12 });
     } else if (el === 'water' && p.wave) {
       fx('shockwave', q.clone().setY(q.y + 0.3), { color: 0x7fd3ff, radius: R * 1.6, duration: 0.7, thickness: 1.6 });
-      fx('burst', q.clone().setY(q.y + 0.5), { count: 60, shape: 'droplet', color: [0xffffff, 0x4fb4ff], disc: true, radius: R * 0.3, speed: R * 2.5, up: 6, size: 0.25, life: 0.8, gravity: 10 });
+      fx('burst', q.clone().setY(q.y + 0.5), { count: 60, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], disc: true, radius: R * 0.3, speed: R * 2.5, up: 6, size: 0.25, life: 0.8, gravity: 10 });
     } else {
       fx('burst', top, { count: 30, shape: shape(el), color: [colOf(el, 'core'), colOf(el, 'mid')], dir: v4.set(0, -1, 0), spread: 0.05, speed: 40, size: 0.4, life: 0.45, velocityStretch: 0.08 });
     }
@@ -900,6 +923,7 @@ export function createArchetypes(S, api, { summons, structures }) {
   };
   function blinkFx(el, from, to) {
     const a = from.clone().setY(from.y + 1), b = to.clone().setY(to.y + 1);
+    if (L?.on()) { L.blink(el, a, b); try { pl()?.spawnGhost?.(colOf(el, 'mid'), 0.3, 0.5); } catch (_) { /* */ } return; }
     fx('burst', a, { count: 30, shape: shape(el), color: [colOf(el, 'core'), colOf(el, 'mid')], speed: 4, spread: 1, size: 0.2, life: 0.4, drag: 2 });
     fx('burst', b, { count: 30, shape: shape(el), color: [colOf(el, 'core'), colOf(el, 'mid')], radius: 1, inward: true, speed: 5, size: 0.2, life: 0.3 });
     if (el === 'lightning') fx('beam', a, b, { color: colOf(el), width: 0.35, duration: 0.25, jagged: 0.4, segments: 12, branches: 2 });
@@ -918,7 +942,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     for (let i = 1; i <= n; i++) {
       const q = from.clone().lerp(to, i / (n + 1));
       S.later(0.25 + i * 0.12, () => { api.aoe(q.clone().setY(q.y + 0.9), 2.2, hit); impactFx(el, q.clone().setY(q.y + 1), 0.9, true); });
-      fx('burst', q.clone().setY(q.y + 1), { count: 12, shape: shape(el), color: [0xffffff, colOf(el)], speed: 1, spread: 1, size: 0.3, life: 0.4 });
+      fx('burst', q.clone().setY(q.y + 1), { count: 12, shape: shape(el), color: [glint(colOf(el)), colOf(el)], speed: 1, spread: 1, size: 0.3, life: 0.4 });
     }
   }
   /** shadow.m1a 그림자 분신: a shade at the start copies the next 3 player hits at 40%. */
@@ -975,7 +999,7 @@ export function createArchetypes(S, api, { summons, structures }) {
         ghostT -= 1 / 60;
         if ((p.afterimages || el === 'fire' || el === 'wind') && ghostT <= 0) { ghostT = game.settings?.values?.effectQuality === 'high' ? 0.04 : 0.075; try { pl()?.spawnGhost?.(colOf(el, 'mid'), 0.35, 0.6); } catch (_) { /* */ } }
         if (el === 'fire') fx('burst', v4.copy(pos).setY(pos.y + 1.2), { count: 6, shape: 'ember', color: [0xffe080, 0xff5a10], speed: 3, spread: 1, size: 0.35, sizeEnd: 0, life: 0.5, drag: 1 });
-        if (el === 'water') fx('burst', v4.copy(pos).setY(pos.y + 0.3), { count: 8, shape: 'droplet', color: [0xffffff, 0x6fc8ff], speed: 4, up: 3, spread: 1, size: 0.18, life: 0.5, gravity: 9 });
+        if (el === 'water') fx('burst', v4.copy(pos).setY(pos.y + 0.3), { count: 8, shape: 'droplet', color: [glint(0x6fc8ff), 0x6fc8ff], speed: 4, up: 3, spread: 1, size: 0.18, life: 0.5, gravity: 9 });
       },
       onEnd() {
         api.touch(to, width, el, hit);
@@ -1016,7 +1040,7 @@ export function createArchetypes(S, api, { summons, structures }) {
         sfx('explode_' + el, c);
         if (p.electrifyR) api.zones.chargeWater(to, p.electrifyR);
         if (p.followBolts) { const list = enemiesNear(to, 12, []).slice(0, p.followBolts.n || 3); list.forEach((e, i) => S.later(0.15 + i * 0.12, () => { if (!e.alive) return; const ec = center(e, new THREE.Vector3()); fx('beam', ec.clone().setY(ec.y + 16), ec, { color: colOf(el), width: 0.3, duration: 0.25, jagged: 0.5, segments: 12, branches: 2 }); api.deal(e, api.makeHit(H(ctx, { amount: p.followBolts.dmg || 30, tier: 'light' }), e, ec, 0)); })); }
-        if (p.staticField) fields.push({ kind: 'static', pos: to.clone(), r: p.staticField.r || 5, t: 0, dur: p.staticField.dur || 5, every: p.staticField.every || 1, acc: 0 });
+        if (p.staticField) fields.push({ kind: 'static', pos: to.clone(), r: p.staticField.r || 5, t: 0, dur: p.staticField.dur || 5, every: p.staticField.every || 1, acc: 0, cur: L?.cur || null });
         if (p.tornado) api.zones.spawn('vortex', to, { radius: 3.5, duration: p.tornado.dur || 3 });
         if (p.staminaRefund) { const P2 = pl(); if (P2 && P2.stamina != null) P2.stamina = Math.min(P2.maxStamina || 100, P2.stamina + p.staminaRefund); }
         if (p.glideOut) { try { pl()?.startGlide?.(); } catch (_) { /* */ } }
@@ -1075,7 +1099,10 @@ export function createArchetypes(S, api, { summons, structures }) {
     // cast flourish + aura emitter (stopped when the buff ends)
     novaFx(el, v4.copy(pp).setY(pp.y + 0.8).clone(), 2.6);
     S.props.sigil(v4.copy(pp).setY(S.height(pp.x, pp.z) + 0.06).clone(), { color: colOf(el), radius: 2.4, duration: 1, spin: 2 });
-    if (obj) {
+    if (obj && L?.on()) {
+      const hs = L.aura(el, obj, dur);
+      auras.push({ em: { stop: () => L.stopAll(hs) }, until: (game.time || 0) + dur, id: 'buff:' + ctx.skillId });
+    } else if (obj) {
       const em = fx('emitter', { follow: obj, offset: new THREE.Vector3(0, 1, 0), rate: 14, duration: dur, color: [colOf(el, 'core'), colOf(el, 'mid')], shape: shape(el), speed: 0.8, spread: 1, up: 0.8, size: 0.14, sizeEnd: 0, life: 0.7, drag: 1.5, radius: 0.7 });
       if (em) auras.push({ em, until: (game.time || 0) + dur, id: 'buff:' + ctx.skillId });
     }
@@ -1175,7 +1202,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     sfx('cast_' + el, pp);
     const dur = p.dur || 3;
     const anchor = pp.clone().setY(S.height(pp.x, pp.z) + 0.1);
-    const b = { ctx, p, list, t: 0, dur, handles: [], anchor, hit, healAcc: 0 };
+    const b = { ctx, p, list, t: 0, dur, handles: [], anchor, hit, healAcc: 0, cur: L?.cur || null };
     for (const e of list) {
       api.deal(e, api.makeHit(hit, e, pp, 0));
       if (e.isBoss && p.bossBreak) { try { C()?.addBreak?.(e, p.bossBreak); } catch (_) { /* */ } }
@@ -1191,6 +1218,12 @@ export function createArchetypes(S, api, { summons, structures }) {
   function updateBinds(dt) {
     for (let i = binds.length - 1; i >= 0; i--) {
       const b = binds[i]; b.t += dt;
+      const prevC = L && b.cur ? L.swap(b.cur) : undefined;
+      try { bindStep(b, i); } finally { if (prevC !== undefined) L.swap(prevC); }
+    }
+  }
+  function bindStep(b, i) {
+    {
       let k = 0;
       for (const e of b.list) {
         const h = b.handles[k]; k += 2;
@@ -1202,7 +1235,7 @@ export function createArchetypes(S, api, { summons, structures }) {
         binds.splice(i, 1);
         for (const h of b.handles) { try { h?.stop?.(); } catch (_) { /* */ } }
         if (b.p.yank) {
-          const alive = b.list.filter((e) => e.alive); if (!alive.length) continue;
+          const alive = b.list.filter((e) => e.alive); if (!alive.length) return;
           const c = new THREE.Vector3(); for (const e of alive) c.add(e.object.position); c.multiplyScalar(1 / alive.length);
           for (const e of alive) { pull(e, c, 18); fx('beam', center(e, new THREE.Vector3()), c.clone().setY(c.y + 1), { color: 0xb14bff, width: 0.18, duration: 0.25, jagged: 0.1 }); }
           S.later(0.25, () => { api.aoe(c.clone().setY(c.y + 1), 2.5, Object.assign({}, b.hit, { amount: b.p.yank.dmg || 60, tier: 'heavy', status: undefined })); impactFx('shadow', c.clone().setY(c.y + 1), 1.2, true); });
@@ -1221,7 +1254,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     sfx('cast_' + el, ctx.origin);
     const dur = (p.dur || 1.5) * (ctx.def?.slot === 'charged' ? Math.max(0.3, ctx.charge ?? 1) : 1);
     const lashes = p.lashes || 0;
-    const T = { ctx, p, el, t, len, hit, dur, time: 0, every: lashes ? dur / lashes : (p.tick || 0.2), acc: 0, n: 0, lashes, beam: null, alive: true };
+    const T = { ctx, p, el, t, len, hit, dur, time: 0, every: lashes ? dur / lashes : (p.tick || 0.2), acc: 0, n: 0, lashes, beam: null, alive: true, cur: L?.cur || null };
     const o = ctx.origin.clone();
     const end = t ? center(t, new THREE.Vector3()) : o.clone().addScaledVector(fwd(ctx, v4), len);
     T.beam = fx('beam', o, end, { color: colOf(el, el === 'shadow' ? 'edge' : 'mid'), width: el === 'water' ? 0.28 : 0.18, duration: dur + 0.1, jagged: el === 'shadow' ? 0.25 : 0.12, segments: 12 });
@@ -1233,6 +1266,12 @@ export function createArchetypes(S, api, { summons, structures }) {
     const P2 = pl();
     for (let i = tethers.length - 1; i >= 0; i--) {
       const T = tethers[i];
+      const prevC = L && T.cur ? L.swap(T.cur) : undefined;
+      try { tetherStep(T, i, dt, P2); } finally { if (prevC !== undefined) L.swap(prevC); }
+    }
+  }
+  function tetherStep(T, i, dt, P2) {
+    {
       T.time += dt; T.acc += dt;
       const o = v1; try { P2?.getWeaponTip ? P2.getWeaponTip('main', o) : o.copy(ppos()).setY(ppos().y + 1.5); } catch (_) { o.copy(ppos()).setY(ppos().y + 1.5); }
       const tAlive = T.t?.alive && T.t.object.position.distanceTo(ppos()) <= T.len + 3;
@@ -1268,7 +1307,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     const kind = el === 'wind' ? 'wind' : el === 'ice' ? 'ice' : 'frost';
     const start = new THREE.Vector3(pp.x, 0, pp.z).addScaledVector(dir, 0.5); start.y = S.height(start.x, start.z);
     api.zones.spawn('lane', start, { dir, len: p.len || 12, width: (p.width || 3) * rMul(ctx), dur: p.dur || 8, laneKind: kind, hit: H(ctx), params: Object.assign({ tick: p.dmg || 0 }, p) });
-    fx('burst', start.clone().setY(start.y + 0.4), { count: 40, shape: el === 'ice' ? 'snow' : 'leaf', color: [0xffffff, colOf(el)], dir, spread: 0.12, speed: 14, size: 0.2, life: 0.7, drag: 1 });
+    fx('burst', start.clone().setY(start.y + 0.4), { count: 40, shape: el === 'ice' ? 'snow' : 'leaf', color: [glint(colOf(el)), colOf(el)], dir, spread: 0.12, speed: 14, size: 0.2, life: 0.7, drag: 1 });
     castFx(ctx, 1);
     sfx('cast_' + el, start);
     return true;
@@ -1291,7 +1330,10 @@ export function createArchetypes(S, api, { summons, structures }) {
   const bubbleGeo = new THREE.SphereGeometry(1, 20, 14);
   const bubblePool = [];
   for (let i = 0; i < 3; i++) {
-    const m = new THREE.Mesh(bubbleGeo, fresnelMat(0x9fe0ff, { power: 2.4, intensity: 1.6, core: 0.04 }));
+    // v4: FR rim-only shell (kit.fxMaterial: cached, ducked, depthWrite false), else the v3 fresnel
+    const kit = game.vfx?.kit;
+    const m = new THREE.Mesh(bubbleGeo, kit?.fxMaterial ? kit.fxMaterial({ el: 'water', rimOnly: true }) : fresnelMat(0x9fe0ff, { power: 2.4, intensity: 1.2, core: 0.04 }));
+    m.userData.noCameraCollide = true; m.userData.owner = 'player'; m.name = 'spells-bubble';
     m.visible = false; m.renderOrder = 4; m.frustumCulled = false;
     game.scene.add(m); bubblePool.push(m);
   }
@@ -1305,7 +1347,7 @@ export function createArchetypes(S, api, { summons, structures }) {
     if (t.isBoss) { if (p.bossBreak) { try { C()?.addBreak?.(t, p.bossBreak); } catch (_) { /* */ } } status(t, 'wet', 8, 0, 'water'); impactFx(el, center(t, v4), 1.2, true); return true; }
     const m = bubblePool.find((x) => !x.visible) || bubblePool[0];
     m.visible = true; m.scale.setScalar(0.1);
-    const B = { ctx, p, t, m, time: 0, dur: p.dur || 2.5, baseY: t.object.position.y, hit, r: Math.max(1, (t.height || 1.6) * 0.75) };
+    const B = { ctx, p, t, m, time: 0, dur: p.dur || 2.5, baseY: t.object.position.y, hit, r: Math.max(1, (t.height || 1.6) * 0.75), cur: L?.cur || null };
     status(t, 'airborne', B.dur, 0, null); status(t, 'stunned', B.dur, 0, null);
     bubbles.push(B);
     sfx('cast_water', center(t, v4));
@@ -1313,7 +1355,14 @@ export function createArchetypes(S, api, { summons, structures }) {
   };
   function updateBubbles(dt) {
     for (let i = bubbles.length - 1; i >= 0; i--) {
-      const B = bubbles[i]; B.time += dt;
+      const B = bubbles[i];
+      const prevC = L && B.cur ? L.swap(B.cur) : undefined;
+      try { bubbleStep(B, i, dt); } finally { if (prevC !== undefined) L.swap(prevC); }
+    }
+  }
+  function bubbleStep(B, i, dt) {
+    {
+      B.time += dt;
       const t = B.t;
       const k = Math.min(1, B.time / 0.3);
       if (t.alive) {
@@ -1322,14 +1371,14 @@ export function createArchetypes(S, api, { summons, structures }) {
         t.object.position.y = Math.max(t.object.position.y, gy + lift);
         if (t.velocity) { t.velocity.x *= 0.8; t.velocity.z *= 0.8; t.velocity.y = Math.max(0, t.velocity.y); }
         B.m.position.copy(center(t, v4)); B.m.scale.setScalar(B.r * (0.6 + 0.4 * k) * (1 + Math.sin(B.time * 9) * 0.04));
-        B.fxT = (B.fxT || 0) - dt; if (B.fxT <= 0) { B.fxT = 0.25; fx('burst', B.m.position, { count: 2, shape: 'bubble', color: [0xffffff, 0x9fe0ff], radius: B.r, speed: 0.3, up: 0.8, size: 0.2, life: 0.8 }); }
+        B.fxT = (B.fxT || 0) - dt; if (B.fxT <= 0) { B.fxT = 0.25; fx('burst', B.m.position, { count: 2, shape: 'bubble', color: [glint(0x9fe0ff), 0x9fe0ff], radius: B.r, speed: 0.3, up: 0.8, size: 0.2, life: 0.8 }); }
       }
       if (B.time >= B.dur || !t.alive) {
         bubbles.splice(i, 1);
         B.m.visible = false;
         const c = t.alive ? center(t, v4).clone() : B.m.position.clone();
         api.aoe(c, B.p.popR || 3, Object.assign({}, B.hit, { amount: B.p.popDmg || 30, tier: 'heavy', status: { wet: { dur: 8 } } }));
-        fx('burst', c, { count: 40, shape: 'droplet', color: [0xffffff, 0x6fc8ff], speed: 6, spread: 1, size: 0.2, life: 0.6, gravity: 9 });
+        fx('burst', c, { count: 40, shape: 'droplet', color: [glint(0x6fc8ff), 0x6fc8ff], speed: 6, spread: 1, size: 0.2, life: 0.6, gravity: 9 });
         fx('shockwave', c, { color: 0x9fe0ff, radius: B.p.popR || 3, duration: 0.35, thickness: 0.3 });
         impactFx('water', c, 1, true);
         sfx('explode_water', c, { volume: 0.7 });
@@ -1350,8 +1399,8 @@ export function createArchetypes(S, api, { summons, structures }) {
           else if (f.kind === 'static') { status(e, 'shocked', 2, 0, 'lightning'); status(e, 'stunned', 0.15, 0, null); }
           else if (f.kind === 'pull') pull(e, f.pos, 4);
         }
-        if (f.kind === 'static') fx('burst', v4.copy(f.pos).setY(f.pos.y + 0.3), { count: 10, shape: 'spark', color: [0xffffff, 0xc9a4ff], disc: true, radius: f.r * 0.8, speed: 1, size: 0.1, life: 0.25 });
-        if (f.kind === 'chill') fx('burst', v4.copy(f.pos).setY(f.pos.y + 0.3), { count: 6, shape: 'snow', color: [0xffffff, 0x9fe8ff], disc: true, radius: f.r * 0.7, speed: 0.5, up: 0.6, size: 0.14, life: 0.8 });
+        if (f.kind === 'static') inCtx(f, () => fx('burst', v4.copy(f.pos).setY(f.pos.y + 0.3), { count: 10, shape: 'spark', color: [glint(0xc9a4ff), 0xc9a4ff], disc: true, radius: f.r * 0.8, speed: 1, size: 0.1, life: 0.25 }));
+        if (f.kind === 'chill') inCtx(f, () => fx('burst', v4.copy(f.pos).setY(f.pos.y + 0.3), { count: 6, shape: 'snow', color: [glint(0x9fe8ff), 0x9fe8ff], disc: true, radius: f.r * 0.7, speed: 0.5, up: 0.6, size: 0.14, life: 0.8 }));
       }
       if (f.t >= f.dur) fields.splice(i, 1);
     }
@@ -1382,7 +1431,11 @@ export function createArchetypes(S, api, { summons, structures }) {
     let n = 0;
     for (const name of ARCHETYPES) {
       const fn = A[name]; if (!fn) continue;
-      const wrapped = (ctx) => { try { return fn(ctx); } catch (err) { warn('arch:' + name, err); throw err; } };
+      const wrapped = (ctx) => {
+        // v4: one cast context per archetype cast (castId on every hit and visual, tier budgets, bespoke row hooks)
+        const prev = L ? L.begin({ castId: ctx.castId, skillId: ctx.skillId, el: ctx.element, style: ctx.style, arch: name, family: ctx.family }) : null;
+        try { return fn(ctx); } catch (err) { warn('arch:' + name, err); throw err; } finally { if (L) L.end(prev); }
+      };
       try { (R?.registerArchetype || game.skills?.registerArchetype)?.call(R || game.skills, name, 'caster', wrapped); n++; } catch (err) { warn('register:' + name, err); }
     }
     return n;

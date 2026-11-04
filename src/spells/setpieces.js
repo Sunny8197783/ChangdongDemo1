@@ -2,6 +2,7 @@
 // and then deliver the blow. Animated with REAL time (the cinematic freezes gameplay time), built lazily
 // once per element and reused. Materials come from spells/assets (already compiled at boot → no hitch).
 import * as THREE from 'three';
+import { glint, GLINT } from './palette.js';
 import {
   fresnelMat, coreMat, flameGeo, flameMat, crystalGeo, iceMatSolid, outlineBasic, rockGeo, rockMat,
   sigilMat, tornadoGeo, tornadoMat, uTime,
@@ -58,9 +59,9 @@ function featherMat() {
 function buildPhoenix() {
   const g = new THREE.Group();
   const body = new THREE.Group(); g.add(body);
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), coreMat(0xff9a30, 1.5)); core.scale.set(1, 1, 2.2);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), coreMat(0xff9a30, 1.2)); core.scale.set(1, 1, 2.2);
   const shell = new THREE.Mesh(new THREE.SphereGeometry(1.2, 18, 12), fresnelMat(0xff5a10, { power: 1.6, intensity: 1.2, core: 0.02 })); shell.scale.set(1, 1, 2);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 10), coreMat(0xffc070, 1.7)); head.position.set(0, 0.5, 1.9);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 14, 10), coreMat(0xffc070, 1.2)); head.position.set(0, 0.5, 1.9);
   const crest = new THREE.Mesh(flameGeo(), featherMat()); crest.position.set(0, 0.7, 1.8); crest.scale.set(1.2, 1.6, 1.2); crest.rotation.x = -0.6;
   body.add(core, shell, head, crest);
   const fg = flameGeo(), fm = featherMat();
@@ -96,13 +97,13 @@ function buildIceSky() {
   const geo = crystalGeo(), mat = iceMatSolid();
   for (let i = 0; i < 9; i++) {
     const c = outlined(geo, mat, 0x1d4a66, 1.08);
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), fresnelMat(0x9feaff, { power: 1.4, intensity: 1.6, core: 0.02 }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), fresnelMat(0x9feaff, { power: 1.4, intensity: 1.2, core: 0.02 }));
     halo.position.y = 0.8; halo.scale.set(1, 2.2, 1); c.add(halo);
     c.userData = { a: (i / 9) * Math.PI * 2, r: 8 + (i % 3) * 1.6, h: 19 + (i % 2) * 4, s: 4 + (i % 3) };
     g.add(c); crystals.push(c);
   }
   const big = outlined(geo, mat, 0x1d4a66, 1.06);
-  const bigHalo = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 10), fresnelMat(0xdffaff, { power: 1.2, intensity: 2.2, core: 0.05 }));
+  const bigHalo = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 10), fresnelMat(0xdffaff, { power: 1.2, intensity: 1.2, core: 0.05 }));
   bigHalo.position.y = 0.8; bigHalo.scale.set(1.2, 2.4, 1.2); big.add(bigHalo);
   g.add(big);
   const sig = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(0x9feaff)); sig.rotation.x = Math.PI / 2; sig.renderOrder = 5; sig.frustumCulled = false;
@@ -114,14 +115,14 @@ function buildIceSky() {
 function buildThunder() {
   const g = new THREE.Group();
   const sky = new THREE.Mesh(new THREE.CircleGeometry(1, 56), sigil(0xc9a4ff)); sky.rotation.x = Math.PI / 2; sky.renderOrder = 5; sky.frustumCulled = false;
-  const sky2 = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(0xffffff)); sky2.rotation.x = Math.PI / 2; sky2.renderOrder = 5; sky2.frustumCulled = false;
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 6, 64), fresnelMat(0xd9c2ff, { power: 0.5, intensity: 2.4, core: 0.6 })); halo.rotation.x = Math.PI / 2;
+  const sky2 = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(GLINT)); sky2.rotation.x = Math.PI / 2; sky2.renderOrder = 5; sky2.frustumCulled = false;
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 6, 64), fresnelMat(0xd9c2ff, { power: 0.5, intensity: 1.2, core: 0.6 })); halo.rotation.x = Math.PI / 2;
   // hero-side vertical sigil (the god's mark behind the caster)
   const back = new THREE.Mesh(new THREE.CircleGeometry(1, 40), sigil(0xe0ccff)); back.renderOrder = 5; back.frustumCulled = false;
   // conduit from hero to sky and the final colossal bolt column
-  const conduit = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 14, 1, true), fresnelMat(0xc9a4ff, { power: 0.8, intensity: 2.6, core: 0.3 }));
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 18, 1, true), coreMat(0xd9c2ff, 3.2));
-  const columnGlow = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 18, 1, true), fresnelMat(0xa070ff, { power: 0.9, intensity: 2.2, core: 0.15 }));
+  const conduit = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 14, 1, true), fresnelMat(0xc9a4ff, { power: 0.8, intensity: 1.2, core: 0.3 }));
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 18, 1, true), coreMat(0xd9c2ff, 1.2));
+  const columnGlow = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 18, 1, true), fresnelMat(0xa070ff, { power: 0.9, intensity: 1.2, core: 0.15 }));
   column.visible = columnGlow.visible = false;
   g.add(sky, sky2, halo, back, conduit, column, columnGlow);
   g.userData = { sky, sky2, halo, back, conduit, column, columnGlow };
@@ -132,7 +133,7 @@ function buildEye() {
   const g = new THREE.Group();
   const vortex = new THREE.Mesh(tornadoGeo(), tornadoMat()); vortex.renderOrder = 6;
   vortex.material.uniforms.colA.value.set(0xf4fffa); vortex.material.uniforms.colB.value.set(0x4a8a78); vortex.material.uniforms.speed.value = 0.6;
-  const eye = new THREE.Mesh(new THREE.TorusGeometry(1, 0.18, 8, 48), fresnelMat(0xbfffe0, { power: 0.6, intensity: 2.4, core: 0.5 })); eye.rotation.x = Math.PI / 2;
+  const eye = new THREE.Mesh(new THREE.TorusGeometry(1, 0.18, 8, 48), fresnelMat(0xbfffe0, { power: 0.6, intensity: 1.2, core: 0.5 })); eye.rotation.x = Math.PI / 2;
   const eyeCore = new THREE.Mesh(new THREE.CircleGeometry(1, 40), sigil(0x8fffc1)); eyeCore.rotation.x = Math.PI / 2; eyeCore.renderOrder = 5; eyeCore.frustumCulled = false;
   const rings = [];
   for (let i = 0; i < 3; i++) {
@@ -140,7 +141,7 @@ function buildEye() {
     rings.push(r); g.add(r);
   }
   const column = new THREE.Mesh(tornadoGeo(), tornadoMat()); column.renderOrder = 6; column.visible = false;
-  column.material.uniforms.colA.value.set(0xffffff); column.material.uniforms.colB.value.set(0x5fc8a0); column.material.uniforms.speed.value = 2.2;
+  column.material.uniforms.colA.value.set(GLINT); column.material.uniforms.colB.value.set(0x5fc8a0); column.material.uniforms.speed.value = 2.2;
   const columnCore = new THREE.Mesh(tornadoGeo(), tornadoMat()); columnCore.renderOrder = 6; columnCore.visible = false;
   columnCore.material.uniforms.colA.value.set(0xeafff6); columnCore.material.uniforms.colB.value.set(0x8fffc1); columnCore.material.uniforms.speed.value = 3;
   g.add(vortex, eye, eyeCore, column, columnCore);
@@ -160,11 +161,11 @@ function buildColossus() {
   part(body, -3.6, 9.6, 0, 3.2, 3, 3, 0, 0, 0.4);         // shoulders
   part(body, 3.6, 9.6, 0, 3.2, 3, 3, 0, 0, -0.4);
   const head = part(body, 0, 12, 0.6, 2.8, 2.6, 2.6, 0.15);
-  const eyeMat = coreMat(0xffc050, 3.2);
+  const eyeMat = coreMat(0xffc050, 1.2);
   const eyes = [];
   for (const sx of [-0.45, 0.45]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), eyeMat); e.position.set(sx, 0.05, 0.42); e.scale.set(1.4, 0.7, 0.5); head.add(e); eyes.push(e); }
   // glowing rune cracks on the chest
-  const rune = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), fresnelMat(0xffb040, { power: 1.6, intensity: 1.8, core: 0.05 })); rune.position.set(0, 7.6, 1.2); rune.scale.set(1.6, 1.6, 0.6); body.add(rune);
+  const rune = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), fresnelMat(0xffb040, { power: 1.6, intensity: 1.2, core: 0.05 })); rune.position.set(0, 7.6, 1.2); rune.scale.set(1.6, 1.6, 0.6); body.add(rune);
   // arms: pivot at the shoulder, arm hangs along -Y
   const arms = [];
   for (const side of [-1, 1]) {
@@ -360,9 +361,9 @@ export function createSetPieces(S) {
       const { hero, center } = c.ctx;
       switch (c.el) {
         case 'fire': S.vfx('burst', v.set(hero.x, hero.y + 1, hero.z), { count: 6, color: [0xffe080, 0xff4a10], shape: 'ember', speed: 3, dir: UPV, spread: 0.6, size: 0.22, life: 1.2, radius: 1.6 }); break;
-        case 'ice': S.vfx('burst', v.set(center.x, center.y + 10, center.z), { count: 10, color: [0xffffff, 0xbff4ff], shape: 'snow', speed: 1, spread: 1, size: 0.25, life: 2.5, radius: 9, gravity: -1 }); break;
-        case 'lightning': S.vfx('burst', v.set(hero.x, hero.y + 1.2, hero.z), { count: 5, color: [0xffffff, 0xc9a4ff], shape: 'spark', speed: 4, spread: 1, size: 0.12, life: 0.4, radius: 1.2 }); break;
-        case 'wind': S.vfx('burst', v.set(hero.x, hero.y + 0.5, hero.z), { count: 6, color: [0xffffff, 0x8fffc1], shape: 'leaf', speed: 5, spread: 1, size: 0.16, life: 1, radius: 2, tangential: 6 }); break;
+        case 'ice': S.vfx('burst', v.set(center.x, center.y + 10, center.z), { count: 10, color: [glint(0xbff4ff), 0xbff4ff], shape: 'snow', speed: 1, spread: 1, size: 0.25, life: 2.5, radius: 9, gravity: -1 }); break;
+        case 'lightning': S.vfx('burst', v.set(hero.x, hero.y + 1.2, hero.z), { count: 5, color: [glint(0xc9a4ff), 0xc9a4ff], shape: 'spark', speed: 4, spread: 1, size: 0.12, life: 0.4, radius: 1.2 }); break;
+        case 'wind': S.vfx('burst', v.set(hero.x, hero.y + 0.5, hero.z), { count: 6, color: [glint(0x8fffc1), 0x8fffc1], shape: 'leaf', speed: 5, spread: 1, size: 0.16, life: 1, radius: 2, tangential: 6 }); break;
         case 'earth': {
           const bx = center.x + c.ctx.dir.x * 8, bz = center.z + c.ctx.dir.z * 8;
           S.vfx('burst', v.set(bx, S.height(bx, bz) + 0.5, bz), { count: 5, color: [0xd9c09a, 0xa88a68], shape: 'smoke', speed: 4, spread: 0.7, dir: UPV, size: 2, sizeEnd: 4, life: 1.4, additive: false, radius: 4 });
