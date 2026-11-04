@@ -4,7 +4,8 @@
 //   • check 7 (regen, asserted on debug.regenState()): combat delay 5 → no rise at 4.5 s, rise at 5.5 s; out of combat 3.5 s;
 //     a hit in between resets, a fully blocked / dodged hit does not, a DoT tick does; blessed (light.sanctuary) delay 2.5;
 //     boss HoT cap ≤ 5 %/s
-//   • per class: weapon prop shown, dodge (Q) and defend (E) behave per kit, resources (MP / 투지 / stamina) stat-driven
+//   • per class: weapon prop shown, dodge (Q) and defend (E) behave per kit (v4 §5.8 numbers), resources (MP / 투지 / stamina) stat-driven
+//   • v4 (PLAN §7.9): the kit numbers are the §5.8 ones; the rig perf check counts drawn triangles of the v4 merge (≤ 3 draws, ≤ 30k)
 //   • player.mods getter view, stat-driven max keeps the percentage, platforms / clampToBounds, cast kinds, perf of the rig
 const fs = require('fs'); const path = require('path');
 
@@ -215,6 +216,12 @@ module.exports = async function player(PT) {
       // dodge (Q)
       const kit = pl.kit;
       PT.check('kit types from kits.js', kit.dodge.type === def.dodge && kit.defend.type === def.defend, { dodge: kit.dodge.type, defend: kit.defend.type, want: [def.dodge, def.defend] });
+      // v4 kit numbers (PLAN §5.8, §7.9): i-frames ≥ 0.30 (ranger 0.42, shadowblade 0.40; paladin 0.20 + super armour 0.38),
+      // perfect 0.20 (shadowblade 0.22, paladin brace 0.15) + 0.05 grace, guard / parry perfect 0.22
+      const V4 = { blink: [0.30, 0.20], dashstep: [0.30, 0.20], backflip: [0.42, 0.20], shieldstep: [0.20, 0.15], spiritswap: [0.30, 0.20], shadowroll: [0.40, 0.22] }[kit.dodge.type];
+      PT.check('v4 kit numbers (§5.8)', !!V4 && Math.abs(kit.dodge.iframes - V4[0]) < 1e-9 && Math.abs(kit.dodge.perfectWin - V4[1]) < 1e-9 && kit.dodge.grace === 0.05 &&
+        (kit.dodge.type !== 'shieldstep' || kit.dodge.superArmor === 0.38) && (!(kit.defend.perfect > 0) || kit.defend.perfect === 0.22),
+        { dodge: kit.dodge, perfect: kit.defend.perfect });
       stepGame(1.5);
       const p0 = pl.object.position.clone(), st0 = pl.stamina;
       press('KeyQ'); release();
@@ -367,12 +374,16 @@ module.exports = async function player(PT) {
         pl.mods.doubleJump = false;
         PT.check('legacy restore → defaults', g.stats.get('atkMul') === 1 && g.stats.get('extraJumps') === 0);
       });
+      // v4 (PLAN §2.6, §7.9): body + outline + shadow proxy; triangles counted as DRAWN (draw range: the visible outfit's parts),
+      // budget ≤ 30k scene tris incl. outline + proxy, ≤ 6k shadow tris (playtest4 PL1 measures the real passes per class)
       await pg.run('rig perf', () => {
         const pl = game.player, sk = pl.rig.skin;
-        let tris = 0; for (const m of sk.meshes) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
-        PT.note(`hero rig: ${sk.meshes.length} skinned draw calls, ${Math.round(tris)} tris, ${sk.skeleton.bones.length} bones`);
-        PT.check('hero rig: all class gear merged into ≤ 51 skinned draws (+0 vs v2)', sk.meshes.length <= 51, sk.meshes.length);
-        PT.check('hero rig: ≤ 22.2k + 18k triangles', tris <= 22196 + 18000, tris);
+        let tris = 0;
+        for (const m of sk.meshes) { const g = m.geometry, n = g.index ? g.index.count : g.attributes.position.count; tris += Math.min(n, g.drawRange.count) / 3; }
+        PT.note(`hero rig: ${sk.meshes.length} skinned draw calls, ${Math.round(tris)} drawn tris, ${sk.skeleton.bones.length} bones, stats ${JSON.stringify(sk.stats)}`);
+        PT.check('hero rig: all class gear merged into ≤ 3 skinned draws (body, outline, shadow proxy)', sk.meshes.length <= 3, sk.meshes.length);
+        PT.check('hero rig: ≤ 30k drawn triangles (v4 player budget)', tris <= 30000, tris);
+        PT.check('hero rig: shadow proxy ≤ 6k triangles', !sk.stats || sk.stats.shadowTris <= 6000, sk.stats?.shadowTris);
       });
       PT.check('paladin misc: no console errors', pg.errors().length === 0, pg.errors().slice(0, 6));
     }
