@@ -14,7 +14,7 @@ import { buildWorldTree } from './world/worldtree.js';
 import { buildSurface, createBurnField, GRID as SGRID } from './world/surface.js';
 import { VILLAGE } from './world/villageLayout.js';
 import { buildBeacon, BEACON_KINDS } from './world/beacon.js';
-import { SURFACE_ATTACKS, SURFACE_NAMES_KO } from './world/names.js';
+import { SURFACE_ATTACKS, SURFACE_NAMES_KO, SURFACE_SOURCES } from './world/names.js';
 // v3 (CONTRACT §13)
 import { createZones, ARENA_DEFS, TF, STAGE_ACT, GRADE_BLEND, EXTRA_GRADES, ZONE_SIGNS } from './world/zones.js';
 import { PILLARS, HYDRA_PILLARS } from './world/terraform.js';
@@ -309,6 +309,8 @@ export function createWorld(game) {
   const camps = LAYOUT.camps.map((c) => ({
     id: c.id, name: c.name, position: v3(c.x, c.z), radius: c.r,
     fire: c.fire, tents: c.tents, tower: c.tower, entranceAngle: c.entranceAngle,
+    // v4 P1 (§6.3): the palisade gap facing the incoming path (beacons for camps point here)
+    entrance: Number.isFinite(c.entranceAngle) ? v3(c.x + Math.cos(c.entranceAngle) * (c.r + 1.5), c.z + Math.sin(c.entranceAngle) * (c.r + 1.5)) : null,
   }));
   const A = LAYOUT.arena;
   const bossArena = {
@@ -463,7 +465,7 @@ export function createWorld(game) {
     const v = game.settings?.values || {};
     const all = key === '*' || key === 'quality';
     if (all || key === 'grassDensity') { if (!bossLOD) grass.setDensity(v.grassDensity ?? 0.4); }
-    if (all || key === 'drawDistance') { drawDist = v.drawDistance ?? 0.8; grass.setDrawDistance(drawDist); if (!bossLOD) flora.setDrawDistance(drawDist); }
+    if (all || key === 'drawDistance') { drawDist = v.drawDistance ?? 0.8; grass.setDrawDistance(drawDist); }   // v4: flora range = settings.treeDist (preset key)
     if (all || key === 'shadowQuality' || key === 'shadowSize') applyShadowQuality(v.shadowQuality || 'medium');
     if (all || key === 'grassNearFade') grass.setFadeMul(v.grassNearFade ?? 0.7);
     if (all || key === 'grassReceiveShadow') grass.setReceiveShadow(!!v.grassReceiveShadow);
@@ -506,7 +508,7 @@ export function createWorld(game) {
       bossLOD = !!on;
       const v = game.settings?.values || {};
       grass.setDensity(on ? Math.min(0.25, v.grassDensity ?? 0.4) : (v.grassDensity ?? 0.4));
-      flora.setDrawDistance(on ? Math.min(0.3, drawDist) : drawDist);
+      flora.setDrawDistance(on ? 0.3 : 0.8);   // boss-fight LOD factor (0.375 × treeDist)
       flora.setShadowRadius?.(on ? 24 : (SHADOW_Q[v.shadowQuality || 'medium'] || SHADOW_Q.medium).extent * 1.5);
     },
     serialize() {
@@ -574,6 +576,37 @@ export function createWorld(game) {
       for (let j = 0; j < D.objs.length; j++) D.objs[j].visible = on;
     }
   }
+  // ---------------- v4 P1: coarse route helper (path graph from LAYOUT.paths + straight segments)
+  const pathPts = []; for (const k in LAYOUT.paths) for (const p of LAYOUT.paths[k]) pathPts.push(p);
+  const nearestPathIdx = (x, z) => { let bi = -1, bd = Infinity; for (let i = 0; i < pathPts.length; i++) { const d = (pathPts[i][0] - x) ** 2 + (pathPts[i][1] - z) ** 2; if (d < bd) { bd = d; bi = i; } } return { i: bi, d: Math.sqrt(bd) }; };
+  function routeTo(from, to, step, out) {
+    const pts = [[from.x, from.z]];
+    const a = nearestPathIdx(from.x, from.z), b = nearestPathIdx(to.x, to.z);
+    const direct = Math.hypot(to.x - from.x, to.z - from.z);
+    if (a.d < 25 && b.d < 25 && direct > 40) {
+      // walk the path polyline set greedily from a toward b (points sorted by remaining distance to the target)
+      let cur = pathPts[a.i]; pts.push(cur);
+      for (let guard = 0; guard < 400; guard++) {
+        let best = null, bd = Math.hypot(cur[0] - to.x, cur[1] - to.z);
+        for (const p of pathPts) { const hop = Math.hypot(p[0] - cur[0], p[1] - cur[1]); if (hop > 9 || hop < 0.5) continue; const d = Math.hypot(p[0] - to.x, p[1] - to.z); if (d < bd - 0.5) { bd = d; best = p; } }
+        if (!best) break; cur = best; pts.push(cur);
+        if (bd < b.d + 2) break;
+      }
+    }
+    pts.push([to.x, to.z]);
+    let n = 0;
+    const put = (x, z) => { let y = getHeight(x, z); if (y < WATER_LEVEL - 0.6) y = WATER_LEVEL; const v = out[n] || (out[n] = new THREE.Vector3()); v.set(x, y + 0.1, z); n++; };
+    let carry = 0;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [x0, z0] = pts[k], [x1, z1] = pts[k + 1]; const L = Math.hypot(x1 - x0, z1 - z0); if (L < 1e-3) continue;
+      for (let t = carry; t < L; t += step) put(x0 + (x1 - x0) * t / L, z0 + (z1 - z0) * t / L);
+      carry = (carry + Math.ceil((L - carry) / step) * step) - L;
+    }
+    put(to.x, to.z);
+    out.length = n;
+    return out;
+  }
+
   // ---------------- v4 API (PLAN §7.4.2): beacon, surface attack descriptors, debug hooks
   const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _bs = new THREE.Sphere();
   const isWorldObject = (o) => { let p = o; while (p && p.parent && p.parent !== scene) p = p.parent; return !!p && worldRootSet.has(p); };
@@ -582,7 +615,13 @@ export function createWorld(game) {
     /** Objective beacon: thin unlit 40 m pillar + ground ring (≤ 2 calls); null hides it. kind: 'quest' | 'camp' | 'boss'. */
     setBeacon(pos, opts) { beacon.set(pos, opts || {}); },
     beacon, beaconKinds: BEACON_KINDS,
-    surfaceAttacks: SURFACE_ATTACKS, surfaceNamesKo: SURFACE_NAMES_KO,
+    surfaceAttacks: SURFACE_ATTACKS, surfaceNamesKo: SURFACE_NAMES_KO, surfaceSources: SURFACE_SOURCES,
+    /**
+     * v4 P1 (§6.3 breadcrumbs): coarse walkable route from → to as points every `step` m (reused `out` array of Vector3s
+     * is filled and its length set). Follows the dirt-path network when both ends are near it, else a straight line;
+     * points over deep water are pushed to the nearest shore sample. Coarse: no collider avoidance.
+     */
+    routeTo(from, to, { step = 4, out = [] } = {}) { return routeTo(from, to, step, out); },
     /** attack descriptor {id:'surface.<kind>', nameKo, kind:'surface'} for a surface kind (burning, mud, cursed, blight, void). */
     surfaceAttack: (kind) => SURFACE_ATTACKS[kind] || null,
     debug: {

@@ -576,13 +576,15 @@ export function buildTerrain(game) {
   });
   mat.customProgramCacheKey = () => 'terrainV4';
   const group = new THREE.Group(); group.name = 'terrain';
+  // v4: terrain chunks draw after the renderOrder-0 opaques (flora, props, characters) so early-z rejects the ground they
+  // cover; grass (−0.5) and opaque water (−0.4) still draw before it
   const chunks = [];
   const farParts = [];
   for (let cj = 0; cj < CHUNKS; cj++) for (let ci = 0; ci < CHUNKS; ci++) {
     const id = cj * CHUNKS + ci;
     const g0 = geoFor(ci, cj, 1, -1);
     const m = new THREE.Mesh(g0, mat);
-    m.name = 'terrainChunk'; m.receiveShadow = true; m.castShadow = false; m.visible = false;
+    m.name = 'terrainChunk'; m.receiveShadow = true; m.castShadow = false; m.visible = false; m.renderOrder = 1;
     group.add(m);
     const bb = g0.boundingBox;
     chunks.push({ id, ci, cj, mesh: m, x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z,
@@ -593,7 +595,7 @@ export function buildTerrain(game) {
   for (const gq of farParts) gq.dispose();
   farGeo.computeBoundingSphere();
   const far = new THREE.Mesh(farGeo, mat);
-  far.name = 'terrainFar'; far.receiveShadow = true; far.castShadow = false; far.frustumCulled = false;
+  far.name = 'terrainFar'; far.receiveShadow = true; far.castShadow = false; far.frustumCulled = false; far.renderOrder = 1;
   group.add(far);
   game.scene.add(group);
   const mesh = group;
@@ -709,7 +711,7 @@ export function buildDistantMountains(game) {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'farMountains';
-  mesh.renderOrder = -1;
+  mesh.renderOrder = 99;   // v4: after the terrain / props (early-z), before the sky
   game.scene.add(mesh);
   return mesh;
 }

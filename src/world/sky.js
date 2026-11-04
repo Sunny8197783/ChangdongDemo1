@@ -72,7 +72,7 @@ export function buildSky(game, sunDir) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'sky';
   mesh.frustumCulled = false;
-  mesh.renderOrder = -10;
+  mesh.renderOrder = 100;   // v4: drawn LAST among opaques (depthTest, no depth write): only the visible sky pixels are shaded
   game.scene.add(mesh);
   return {
     mesh, uniforms,

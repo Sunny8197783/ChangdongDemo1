@@ -302,10 +302,11 @@ export function buildVillage(game, world, { uTime, waterMaterial }) {
       m.uniforms.uTime = waterMaterial.uniforms.uTime;
       m.uniforms.uLevel = { value: Pd.level };
       m.uniforms.uHeightTex = waterMaterial.uniforms.uHeightTex;
+      if (waterMaterial.uniforms.uColorTex) m.uniforms.uColorTex = waterMaterial.uniforms.uColorTex;
       const g = new THREE.CircleGeometry(Pd.r * 1.25, 28); g.rotateX(-Math.PI / 2);
       pond = new THREE.Mesh(g, m);
       pond.position.set(Pd.x, Pd.level, Pd.z);
-      pond.renderOrder = 1; pond.name = 'pond';
+      pond.renderOrder = -0.4; pond.name = 'pond';
       group.add(pond);
     }
   }
