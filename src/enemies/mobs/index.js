@@ -17,6 +17,7 @@ import { bokoblinDef } from './bokoblin.js';
 import { shamanDef } from './shaman.js';
 import { chuchuDef, CHU_TYPES } from './chuchu.js';
 import { lizardDef } from './lizard.js';
+import { shroomDef } from './shroom.js';
 
 /** type → (opts) => def (rig.defineType input). Filled by the species files as they land. */
 const FACTORIES = {};
@@ -31,6 +32,7 @@ registerType('bokoblin', () => bokoblinDef());
 registerType('shaman', (o) => shamanDef(o), { variants: ['fire', 'ice'] });
 registerType('chuchu', (o) => chuchuDef(o), { variants: CHU_TYPES });
 registerType('lizard', () => lizardDef());
+registerType('shroom', () => shroomDef());
 
 const V3 = {
   bokoblin: () => buildBokoblin(), shaman: (o) => buildShaman(o?.element || o?.variant || 'fire'), chuchu: (o) => buildChuchu(o?.variant || 'normal'),
