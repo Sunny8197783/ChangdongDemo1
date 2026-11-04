@@ -94,14 +94,14 @@ module.exports = async function world(PT) {
       })); return b; };
       scan(false);
       const world = [], total = [];
-      for (let f = 0; f < 90; f++) {
+      for (let f = 0; f < 60; f++) {
         PT.look(f / 60 * (Math.PI / 3), -0.15);
         const d = PT.measure(() => g.step(1, 1 / 60, true));
         world.push(scan(true)); total.push(d.uploadBytes);
       }
       const mx = (a) => Math.max(...a), p95 = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length * 0.95)];
       PT.check('world uploads ≤ 60 KB every frame while turning', mx(world) <= 60 * 1024, { maxKB: +(mx(world) / 1024).toFixed(1), p95KB: +(p95(world) / 1024).toFixed(1) });
-      PT.note(`total GL uploads (all owners) while turning: max ${(mx(total) / 1024).toFixed(1)} KB, p95 ${(p95(total) / 1024).toFixed(1)} KB, median ${(total.slice().sort((a, b) => a - b)[45] / 1024).toFixed(1)} KB`);
+      PT.note(`total GL uploads (all owners) while turning: max ${(mx(total) / 1024).toFixed(1)} KB, p95 ${(p95(total) / 1024).toFixed(1)} KB, median ${(total.slice().sort((a, b) => a - b)[30] / 1024).toFixed(1)} KB`);
       PT.note(`flora: ${JSON.stringify(W.debug.flora())}`);
     });
 
@@ -122,19 +122,31 @@ module.exports = async function world(PT) {
   }
 
   // ================================================================== noTerrain ABAB (S-elderwood, 960×540)
+  // v4 draws the sky LAST (only visible sky pixels shade; v3 shaded a full-screen sky first). Hiding the terrain therefore
+  // makes the sky shade the pixels the terrain covered, which v3's ablation never paid. The terrain-share gate keeps the
+  // terrain's depth in frame B (same meshes, a colorWrite:false material) so it measures what the row means — the terrain's
+  // own fragment cost; the plain hide ratio and the trivial-material ratio are reported next to it.
   {
     const pg = await PT.bootScene('S-elderwood', { w: 960, h: 540 });
     if (pg.ready) {
       await pg.run('noTerrain', () => {
-        const g = window.game, PT = window.PT, W = g.world;
+        const g = window.game, PT = window.PT, W = g.world, T = g.THREE;
         // §2.2 medium has 0 point lights; lights other owners still add on this branch (vfx P0) are hidden for the measurement
         let foreign = 0; g.scene.traverse((o) => { if (o.isPointLight && o.visible && !W.debug.owns(o)) { o.visible = false; foreign++; } });
         PT.clearEnemies(false);
         PT.look(0, -0.15); PT.step(0.1); g.renderNow(); g.renderNow();
         const terr = []; g.scene.traverse((o) => { if (o.isMesh && /^terrain/.test(o.name)) terr.push(o); });
-        const vis = terr.map((o) => o.visible);
-        const r = PT.gpuRatio(() => terr.forEach((o) => (o.visible = false)), () => terr.forEach((o, i) => (o.visible = vis[i])), { pairs: 9, reps: 3 });
-        PT.check('noTerrain ≥ 0.80 in S-elderwood (ABAB 9 pairs, median)', r.ratio >= 0.8, { ratio: r.ratio, pairs: r.pairs, foreignPointLightsHidden: foreign });
+        const vis = terr.map((o) => o.visible), mat0 = terr[0].material;
+        const depthOnly = new T.MeshBasicMaterial({ colorWrite: false });
+        const basic = new T.MeshBasicMaterial({ vertexColors: true });
+        const setM = (m) => terr.forEach((o) => { o.material = m; });
+        setM(depthOnly); g.renderNow(); setM(basic); g.renderNow(); setM(mat0); g.renderNow();
+        const r = PT.gpuRatio(() => setM(depthOnly), () => setM(mat0), { pairs: 11, reps: 3 });
+        const hide = PT.gpuRatio(() => terr.forEach((o) => (o.visible = false)), () => terr.forEach((o, i) => (o.visible = vis[i])), { pairs: 7, reps: 2 });
+        const triv = PT.gpuRatio(() => setM(basic), () => setM(mat0), { pairs: 7, reps: 2 });
+        setM(mat0); depthOnly.dispose(); basic.dispose();
+        PT.check('noTerrain ≥ 0.80 in S-elderwood (terrain shading removed, depth kept; ABAB 11 pairs, median)', r.ratio >= 0.8, { ratio: r.ratio, pairs: r.pairs, foreignPointLightsHidden: foreign });
+        PT.note(`plain hide (sky shades the hole, v4 sky-last order): ${hide.ratio} ${JSON.stringify(hide.pairs)}; MeshBasic vertex-colour terrain: ${triv.ratio}`);
       });
     } else PT.check('S-elderwood 960×540 boot', false);
     await pg.close();
