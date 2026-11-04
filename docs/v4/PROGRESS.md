@@ -4,7 +4,9 @@
 ④ 몹을 정교하게, 디테일까지 모델링 ⑤ 몬스터마다 공략법, 전투 중 회피를 더 쉽게 ⑥ 이펙트 때문에 적이 어디를 얼마나 빠르게 때리는지 안 보임 → 확실히 수정
 
 ## 단계
-1. [진행중] 진단+설계 워크플로 `arcane-wilds-v4-design` (run id는 아래에 기록)
+1. [진행중] 진단+설계 워크플로 `arcane-wilds-v4-design` run `wf_e06ffa7a-d47`
+   - script: /root/.claude/projects/-home-user-changdongdemo1/73b5b35e-096f-5c23-8d86-2f6619326bcd/workflows/scripts/arcane-wilds-v4-design-wf_e06ffa7a-d47.js
+   - 재개: Workflow({scriptPath, resumeFromRunId: "wf_e06ffa7a-d47"})
 2. [대기] 구현 워크플로 (docs/v4/PLAN.md의 JSON 작업 목록)
 3. [대기] 직접 검증 → 커밋 → origin v4-polish 푸시 → 아티팩트 재배포 (https://claude.ai/artifact/7LwzvnUbMZoR78eALTV69d, 파일 목록: 스크래치패드 pub/list.json 재생성)
 
