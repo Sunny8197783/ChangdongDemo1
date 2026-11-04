@@ -8,10 +8,11 @@ Branch `v4/core`, worktree `/home/user/wt4/core`.
 | Wave | Items | State |
 |---|---|---|
 | A — P0a (tag `core-p0a`) | (1)–(8) of the core task | **done** (C5 + boot green) |
-| B — P0b | (9) post4 render path, (10) gpu.js pixel budget, (11) governor, (12) sub-steps + per-entity hitstop, (13) warm-up draws, (14) skills presentation, (15) bench.js, (16) debug hooks, (17) bootcheck config 3 / playtest2 / C1–C4, C7 | next invocation |
-| P1 | uiScale CSS helper (if ux asks), half-res soft-smoke pass (if vfx asks) | not started |
+| B — P0b (tag `core-b`) | (9) post4 render path, (10) pixel budget, (11) governor, (12) sub-steps + per-entity hitstop, (13) warm-up draws, (14) skills presentation, (15) bench.js, (16) debug hooks, (17) bootcheck config 3 / playtest2 / C1–C4, C7 | **done** (C1–C5, C7 green; legacy tests green) |
+| P1 | uiScale CSS helper (if ux asks), half-res soft-smoke pass (if vfx asks) | **cut** for wave B (ux has not asked; vfx marked its ask "not needed for P0"); fallbacks: `uiScale` is a stored setting ux applies itself, smoke stays in the scene pass |
+| C — integration | §7.10 | next invocation |
 
-## What exists at `core-p0a` (the contract every owner codes against)
+## What exists at `core-p0a` (the contract every owner codes against; wave B changes are listed in the next section)
 
 ### Settings, difficulty, assist (`src/core/settings.js`)
 - Every PLAN §6.8 key with its default in `DEFAULTS` (and persisted in `aw_settings_v3`): `fxIntensity 1.0`, `threatEmphasis 'normal'|'strong'`, `tellMul 1|1.25|1.5`,
@@ -92,6 +93,110 @@ first call recompiles patched variants: ~18 s on SwiftShader, cached after), `PT
 `PT.baseline()` (v3 build `de5d823` via `git archive` into `tools/playtest4/out/v3base`), `PT.sheet` (contact sheet ≤ 150 KB).
 Fixtures (`tools/playtest4/fixtures/`): the evidence scripts `fight.js, lib.js, common.js, percast.js, measure.js, inject.js, synctest.js` with repo-relative paths, output in `tools/playtest4/out/<name>/` (git-ignored).
 `.gitignore` keeps `*.png` ignored except `tools/playtest4/sheets/**`.
+
+## Wave B (P0b) — what was built, APIs
+
+### (9) Render path v4 — `src/core/post4.js` + `src/main.js`
+- `createComposer4(renderer, scene, camera, {msaa, bloomMips})` replaces EffectComposer + RenderPass + sanitize ShaderPass + UnrealBloomPass + OutputPass. EffectComposer-shaped:
+  `passes = [RenderPass, BloomPass4, FinalPass4]`, `readBuffer`/`renderTarget1`/`renderTarget2` (= the single scene target), `render(dt)`, `setSize(cw, ch, maxScale)`, `setScale(s)`, `viewport {w, h}`,
+  `uvScale`, `state {allocW, allocH, vw, vh, reallocs}`, `bloomActive`, `bloomMul`, `setBloomMips(n)`, `materials()`. `game.composer` / `game.bloomPass` point at it (`bloomPass.enabled/strength/threshold/radius/mips`).
+- Scene target: HalfFloat, samples = boot MSAA (0 at low/medium, 4 at high), own `DepthTexture`; allocated once at **drawing buffer × renderScale**; re-allocated only on a canvas resize or a
+  renderScale change. Dynamic resolution = `rt.viewport/scissor` = floor(alloc × scale) (no dispose, no program change). One scene target instead of two ping-pong targets (nothing ping-pongs any more).
+- BloomPass4: bright pass (4 Karis-weighted taps, NaN/Inf scrub, clamp 16, threshold 1.0, hue-preserving knee) into a ¼-area target; down chain of 3 mips (5 at high) from 1/16 area;
+  additive 3×3-tent up chain back to the first mip; output = `bloomPass.texture` = `game.post.bloomTex` (never blended into the scene target). Every tap is clamped to the live viewport.
+- FinalPass4 (to the canvas): scene × uvScale; FXAA 3.11-lite whose every tap is graded + ACES-tone-mapped (exposure 1.05) before the luma/edge tests; bloom added as
+  `TM(c + bloom·strength) − TM(c)` (HDR before the curve, identical to v3 off edges); grade (`uGrade*`), pulse (`uChroma`/`uRadial`, HDR radial + chroma path), CAS-lite sharpen while the render
+  is smaller than the canvas (`uSharpen`), ±0.5 LSB dither, NaN guard, linear → sRGB. All switches are uniforms (`uBloomOn`, `uFxaa`, `uSharpen`); `game.post.uniforms` = FinalPass uniforms (v3 names kept).
+- Bloom strength = preset (`0.40` medium, `0.45` high) × 0.75 while `enemies.aggroCount?.() ≥ 3` (checked every 0.25 s) → 0.30; L4 → `uBloomOn = 0` and the bloom pass is skipped.
+  Presets are re-applied after module `init()` (world v3 overwrote the bloom pass fields).
+- `game.post.sceneRes` = live scene viewport (px), `uvScale` = viewport ÷ allocation, `canvasRes` = drawing buffer, `sceneDepth` = the scene target's DepthTexture.
+- Shadows: `autoUpdate` off; the map is rendered every frame at medium, every 2nd at low / L3 (`budget.shadowEvery`), frozen at L5; **shadows off** = one shadow pass with no casters (view camera
+  on layer 31 for that single render) and then no updates. Texel snapping stays in world.
+- `renderer.setPixelRatio(min(dpr, 1.0 medium / 1.5 high))`; renderScale is no longer multiplied into the pixel ratio.
+### (10) Pixel budget — `src/core/gpu.js`
+- `budgetSize(w, h, pr, budgetPx, renderScale, dyn)` (floor → never above the budget), `baseScale` (P0a), tier regexes (P0a; medium for every tier on first run — the settings default).
+- main: `base = baseScale(drawingBuffer, budgetPx (test param or preset), renderScale)`, total = base × `game.quality.scale` → `composer.setScale(total / renderScale)`; `game.quality.baseScale` holds base.
+- `game.quality.renderSize()` → live `{w, h}`; `renderSize(w, h, pr)` → what the current preset picks (C1 unit test: 1920×970 → 1406×710 = 0.998 MP).
+- Offers: `showOffer(game, 'high'|'medium')`, `maybeOfferHigh(game, titleBench)` (discrete tier, headroom ≥ 1.6, `settings.highOffered` once); `game.ui.qualityOffer(offer)` or event
+  `qualityOffer`, fallback DOM card outside tests (texts from `SETTINGS_TEXT_KO`). Drop-back offer: high + governor ≥ L2 for 30 s, once per session.
+### (11) Governor — `src/core/quality.js`
+- `game.quality.frame(dtMs, cpuMs, gpuMs)` is called by the rAF loop once per rendered frame (production; tests only with `governor=1`). T = p10 rAF delta of the last 2 s, snapped to common
+  refresh rates, minimum of the last 30 s of estimates, `max(T, 1/fpsCap − 0.5 ms)`; `refresh=` quantises deltas and fixes T.
+- Overload (> 20 % misses / GPU > 0.9 T / CPU EMA > 0.8 T, 1 s) → +1 level (+2 when EMA > 1.6 T); at L2+ a GPU/miss overload is first absorbed by the resolution controller until it reaches its floor.
+  Probe up after `delays[level]` (6 s) with < 2 % misses; > 5 % misses within 2 s → revert, `delays[level] ×= 2` (6 → 12 → 24 → 48). Dynamic resolution at L2+ (`dynamicRes`): GPU timer →
+  `scale ×= sqrt(0.85 T / gpu)` every 0.25 s; otherwise ×0.92 / 0.25 s while misses > 20 %, ×1.03 / 2 s while < 2 %; floor = preset `dynResMin` (L5: 0.6); changes ≥ 0.02.
+- `gpuTimer` (EXT_disjoint_timer_query_webgl2, pool of 4, disjoint-safe), `governor()` state, `simulate({frameMs, gpuMs, cpuMs, refresh, seconds, log})` (fast synthetic frames, C2), `endSimulation()`,
+  `titleBenchmark({seconds:2})` (production boot, state `title`: real rAF frames + a few 1-px-synchronised renders → start level 0/1/2, headroom → high offer; `lastTitleBench`, event `titleBenchmark`).
+  `autoQuality` off → L0 and scale 1; `dynamicRes` off → scale 1. The v3 EMA governor in main.js is gone (`game.perfScale` = `budget.particleMul`).
+### (12) Timing — `src/main.js`
+- Sub-steps: realDt ≤ 0.1, `n = min(2, ceil(realDt·30))`, step dt = realDt·scale / n (≤ 1/20), `n = 1` when the previous frame's simulation took > 8 ms. `game.frame = {step, n, lastStep, frameDt}`.
+  **Opt-in:** a playing module with `substeps: true` runs every sub-step; others run once on the last step with the whole frame dt (v3-compatible; see requests). stats runs every step.
+  `game.step(n, dt)` unchanged (1/60 → one step per frame). Game-time/real-time = 1.00 at 1/15 and 1/10 s.
+- Hitstop: per-entity (`target.hitstopUntil`, `game.playerHitstopUntil`, `game.isHitstopped(e)`), global only for `ult`/`kill` and option-less legacy calls; caps 0.10 (0.12 break/parry,
+  0.16 legacy); 3–4 frame floor only when the frame delta is below 50 fps; per-target 80 ms rolling budget (exempt: ult/break/parry/kill/legacy); log records `{t, sec, tier, granted, target, seq, reason}`.
+- Per-module CPU ring (`game.debug.perf()`): median ms per module over 120 frames + `render`.
+### (13) Warm-up — `src/core/render.js` + main `prewarm()`
+- Boot: module `prewarm()` objects → `compileAsync` (production) / `compile` (tests) for the scene (composer-target variant) and the threat scene (canvas variant) → `render.bootWarm()`:
+  one real draw of every object (hidden included, culling off, all layers) into a 64×64 HalfFloat target, and the threat scene as a 1×1 scissored canvas draw. `game.bootWarm = {compileMs, ms, draws}`.
+- `render.warm(obj, {target, now})`: compile + one real draw of obj alone (warm layer 30, the host scene's lights enabled on that layer for the call), idempotent per material; `warmStats()`, `isWarm(obj)`.
+### (14) Skills presentation — `src/skills/*`
+- familiars: instance colours from the element ramp (core light→mid, halo dark, bolt light, glow mid; base material colour default), spawn/impact via `kit.motif(el,'burst'|'spark')` when the kit exists
+  (else a pooled burst in ramp colours), one `castId` per bolt in the hit and the FX. procs: every proc firing = one `castId` shared by its hits + its burst (`kit.motif` burst/spark or legacy
+  preset with `castId`/`owner`). classkits: enchant wave (`kit.motif` wave + burst, else smear/shockwave/explosion with castId, ramp `mid` instead of `hex`) and shadow-mark detonation (`kit.motif('shadow','burst')`
+  else `impact_shadow`) with the cast's castId. `grep 0xffffff src/skills*` = 0.
+### (15) 성능 테스트 — `src/core/bench.js`
+- `game.quality.benchmark({seconds = 20, rotate, mobs = 8})` → `{avgFps, low1Fps, level, renderW, renderH, gpu, tier, cpuMs, gpuMs, seconds, frames, cast, mobs, mode}`; live mode measures real rAF frames
+  (CPU = `game.lastFrameCpuMs`), driven mode (game frozen, tests) steps the game itself. Input locked (`bench`), governor locked, player invulnerable + refilled, plains spot, `enemies.spawnBench?(8)`,
+  rotation (loadout skill / 0.5 s, ult / 7 s), slow orbit. Restores state, position, look, HP/MP/stamina/resolve, invulnerability, velocity, cooldowns + charges (`skills.cooldownSnapshot/Restore`),
+  governor lock, input, bench mobs. `game.quality.formatBench(r)` = 복사 text (template `SETTINGS_TEXT_KO.benchLine`).
+### (16) Debug hooks (§7.7)
+- `debug.governor()` (full governor state + `simulate`; also `debug.governor.simulate`), `perf()`, `firstDraws()` (programs drawn for the first time; lazy `renderBufferDirect` hook),
+  `programs()`, `newMaterials()`, `fragments()`, `overdraw`, `coverage`, `tells`, `forceAttack`, `lookOf`, `hitstopLog`.
+### (17) Tests
+- `tools/bootcheck.js`: third safety config `@noTells` (renames `src/tells.js` away) and `&stub=tells`: boots on the stub, spawned mobs attack (`enemyAttack`/`tellStart`), and `tells.attack` with a
+  shape shows the fixed v3 `vfx.telegraph` decal; no uncaught errors.
+- `tools/playtest2.js` (§7.9): hitstop probe reads `game.debug.hitstopLog()` (by `seq`) and the hit's `castId` (captured at `combat.dealDamage`): the first hit of each castId logs a hitstop ≥ 0.025 s
+  (granted, or dropped by the 80 ms per-target budget); with the v4 kit, later hits of the same castId log none; DoT ticks none. Legacy hits without a castId keep the v3 volley rule.
+  Settings: "renderScale lowers the render size" (was: pixel ratio) and "shadows off" = map no longer updated (was: shadow-camera layer mask).
+- `tools/playtest4/core.js`: C1, C2, C3, C4, C5, C7 + debug hooks; `PT4_CORE_ONLY=c1,c2,…` runs single blocks (blocks: c5 params seed c1 c2 c3 c4 c7).
+- `seed=1` determinism check uses `game.seedRandom(1)` (the rAF loop consumes a boot-dependent number of draws before the harness freezes).
+
+## Measured at core-b (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; this branch: v3 world/vfx/enemies/player, tells on the stub)
+
+Counts are representative; SwiftShader wall-clock ms are not (the 4 shared CPUs made 1-px `readPixels` syncs take 1–16 s during these runs).
+
+| Metric | Measured (branch) | Budget | Owner of the gap |
+|---|---|---|---|
+| Post passes, full-res equivalents (C1) | **1.41** (final 1.0 + bright 0.25 + 3 down / 2 up mips 0.16), 7 post calls | ≤ 2.0 | — |
+| Bright target / first mip / mips (C1) | 0.25 / 0.0625 of the render area / 3 (high 5) | ¼ / ≤ 1/16 / 3 | — |
+| MSAA at low / medium / high | 0 / 0 / 4 (FXAA off at high) | 0 / 0 / 4 | — |
+| Render size at a 1920×970 window, medium | 1406 × 710 = 0.998 MP (`renderSize(1920, 970, 1)`) | ≤ 1.0 MP | — |
+| Resolution step | viewport + uvScale follow, textures 38 → 38, 0 reallocations, ≈ 0 ms extra CPU | no realloc, ≤ 2 ms | — |
+| Threat-scene colour, bloom on/off/scale 0.8 | (255, 42, 61) in all three | ΔRGB ≤ 8 | — |
+| F-mage rotation p95 calls scene + shadow + overlay | 221 + 40 + 0 = **261** | ≤ 250 | vfx (player FX calls), world/mobmodels (shadow ≤ 30) |
+| F-mage triangles scene / shadow p95 | 636k / 92k | ≤ 700k / 50k | world, mobmodels, player (shadow casters) |
+| F-mage transparents in the scene pass p95 | 74 | ≤ 55 | vfx |
+| F-mage uploads p95 | 1443 KB in 120 calls | ≤ 150 KB / 30 calls | vfx (v3 particle pools upload full capacity), world |
+| F-mage simulation ms median (`PT.simMs`) | 1.4 | ≤ 3.5 | — |
+| Programs after boot | 136 | ≤ 130 | vfx/tells (kit + tells ≤ 10) at integration; post4 itself uses 4 |
+| First draws after boot (4-zone sweep) | 0 | 0 | — |
+| Boot warm-up (compile + one real draw of every object) | ≈ 2.0 s, 1072 draws (SwiftShader) | — | first-view hitch at Mirwen 8.4 → 6.1 s, Elderwood 1.1 → 0.74 s, plains 1.3 → 0.70 s (sync'd SwiftShader frames) |
+| Game-time / real-time at realDt 1/15 and 1/10 (C3) | 1.000 / 1.000 | ≥ 0.99 | — |
+| CPU of a 1/15 s frame vs a 1/60 frame (C3) | ≈ 1.0× (no module declares `substeps` yet → legacy modules run once per frame) | ≤ 1.6× | each playing owner when it sets `substeps:true` |
+| Hitstop: 30 light requests / s on one target (C4) | 0.075 s granted, rest dropped; other targets 0, no global freeze | ≤ 80 ms | — |
+| 성능 테스트 3 s (C7, driven mode) | 10–11 fps avg, 1 % low 10, L0, 640×360, CPU 12–14 ms | fields + exact restore | — |
+| Title benchmark (C7) | picks L2 on SwiftShader (misses 0.67–0.75, headroom ≈ 0) | picks a level | — |
+| Boot to ready (harness) | 5.8–7.2 s (P0a: 3.7–4.7 s; +≈ 2 s warm draws on SwiftShader) | recorded | — |
+
+Integration-only rows (C6, C8: GPU ratios, long frames, allocation, soak) are measured in wave C with every owner merged.
+
+## Test results at core-b (this branch, tells on the stub, no other tags merged)
+- `node tools/playtest4.js core`: **132 passed, 0 failed, 0 skipped** (C1, C2, C3, C4, C5, C7 + debug hooks; 239 s).
+- `node tools/bootcheck.js`: all **17** configs OK (15 v3 configs + `@noTells` + `&stub=tells`: stub true, mobs attack, the stub's shaped attack shows the fixed v3 decal), exit 0.
+- `node tools/playtest.js --quick`: all checks PASS, exit 0.
+- `node tools/playtest2.js`: 75 PASS, 0 FAIL, exit 0 (hitstop and settings expectations updated per §7.9, see (17)).
+- `node tools/playtest3.js` (all sections): **1260 passed, 0 failed, 1 skipped** (1270 s). No playtest3 expectation changed in wave B (core section unchanged since core-p0a).
+- After the last governor fix (lock keeps the level): `PT4_CORE_ONLY=c2,c7` re-run 22/0.
 
 ## Measured at core-p0a (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; v3 render path still in place)
 

@@ -148,11 +148,14 @@ export function createDebug(game) {
     stats: () => game.stats?.dump?.(),
     // ---- v4 forwarders (PLAN §7.7); each owner implements its part, absent parts return null
     hitstopLog: () => [],                                      // replaced by main.js
-    governor: safe('governor', () => {
+    /** {level, scale, T, misses, ema, history, …} + .simulate(spec) (C2; PLAN §7.7) */
+    governor: Object.assign(safe('governor', () => {
       const Q = game.quality; if (!Q) return null;
       const gv = Q.governor?.() || {};
-      return { level: Q.level, scale: Q.scale, T: gv.T ?? null, misses: gv.misses ?? null, ema: gv.ema ?? null, history: Q.history(), simulate: Q.simulate || null };
-    }),
+      return { ...gv, level: Q.level, scale: Q.scale, T: gv.T ?? null, misses: gv.misses ?? null, ema: gv.ema ?? null, history: Q.history(),
+        simulate: (spec) => Q.simulate?.(spec) ?? null };
+    }), { simulate: (spec) => game.quality?.simulate?.(spec) ?? null }),
+    /** per-module median CPU ms over the last 120 frames (sub-steps summed) + render submit */
     perf: safe('perf', () => game.quality?.perf?.() || null),
     overdraw: safe('overdraw', (on) => game.vfx?.debug?.overdraw?.(on) ?? null),
     coverage: safe('coverage', () => game.vfx?.debug?.coverage?.() ?? null),
@@ -177,8 +180,33 @@ export function createDebug(game) {
     }),
     /** New THREE.Material objects created since the last call (global id counter). */
     newMaterials: (() => { let last = -1; return () => { const m = new THREE.Material(); const id = m.id; m.dispose(); const n = last < 0 ? 0 : Math.max(0, id - last - 1); last = id; return n; }; })(),
-    /** Programs created since the last call (first draws of never-compiled programs). */
-    firstDraws: (() => { let last = -1; return () => { const n = game.renderer?.info?.programs?.length ?? 0; const d = last < 0 ? 0 : Math.max(0, n - last); last = n; return d; }; })(),
+    /**
+     * Programs drawn for the first time since the last call. The first call installs a light renderBufferDirect hook
+     * (every program existing then counts as drawn: the boot warm-up drew them) and returns 0.
+     */
+    firstDraws: (() => {
+      let drawn = null, n = 0, created = 0;
+      return () => {
+        const R = game.renderer; if (!R) return 0;
+        if (!drawn) {
+          drawn = new WeakSet();
+          for (const p of R.info.programs || []) drawn.add(p);
+          const props = R.properties, orig = R.renderBufferDirect.bind(R);
+          R.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+            const r = orig(camera, scene, geometry, material, object, group);
+            const prog = props.get(material).currentProgram;
+            if (prog && !drawn.has(prog)) { drawn.add(prog); n++; }
+            return r;
+          };
+          created = R.info.programs.length;
+          return 0;
+        }
+        const d = n; n = 0; created = R.info.programs.length;
+        return d;
+      };
+    })(),
+    /** programs created since boot (renderer.info.programs) */
+    programs: () => game.renderer?.info?.programs?.length ?? 0,
     fragments: safe('fragments', () => (window.PT?.fragments ? window.PT.fragments() : null)),
   };
   return D;

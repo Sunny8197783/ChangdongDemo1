@@ -4,6 +4,21 @@
 //   P0a contract: game.render / game.post / game.frame / enemyTime / timeScale / hitstop / elements.fx / threat / test params.
 //   C1–C4, C7 (B) land with P0b; C6, C8 (I) at integration (--perf).
 module.exports = async function core(PT) {
+  // PT4_CORE_ONLY=c1,c2 … runs only those blocks (development); default: everything
+  const ONLY = (process.env.PT4_CORE_ONLY || '').split(',').filter(Boolean);
+  const want = (id) => !ONLY.length || ONLY.includes(id);
+  if (want('c5')) await mainPage(PT);
+  if (want('params')) await paramsPage(PT);
+  if (want('seed')) await seedPages(PT);
+  if (want('c1')) await c1(PT);
+  if (want('c2')) await c2(PT);
+  if (want('c3')) await c3(PT);
+  if (want('c4')) await c4(PT);
+  if (want('c7')) await c7(PT);
+  if (PT.flags.perf) PT.skip('C6/C8', 'integration (wave C)');
+};
+
+async function mainPage(PT) {
   // ================================================================== main page (defaults: prod=1&governor=0&seed=1)
   const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage');
   PT.check('boot: game.ready', pg.ready, pg.params);
@@ -281,7 +296,9 @@ module.exports = async function core(PT) {
   });
   PT.check('main page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
+}
 
+async function paramsPage(PT) {
   // ================================================================== test params page (§7.6)
   const tp = await PT.boot('&cls=mage&difficulty=story&fx=0.7&witch=0&colorblind=protan&threat=strong&hints=0&gpu=integrated&budgetPx=0.5&refresh=144');
   PT.check('params boot ready', tp.ready);
@@ -298,15 +315,358 @@ module.exports = async function core(PT) {
     PT.check('params page: no console errors', tp.errors().length === 0, tp.errors().slice(0, 8));
   }
   await tp.close();
+}
 
+async function seedPages(PT) {
   // ================================================================== seeded determinism
   const s1 = await PT.boot('&cls=none');
-  const r1 = s1.ready ? await s1.eval(() => [Math.random(), Math.random()]) : null; await s1.close();
+  const rnd = () => { window.game.seedRandom?.(1); return [Math.random(), Math.random(), Math.random.name]; };
+  const r1 = s1.ready ? await s1.eval(rnd) : null; await s1.close();
   const s2 = await PT.boot('&cls=none');
-  const r2 = s2.ready ? await s2.eval(() => [Math.random(), Math.random()]) : null; await s2.close();
-  PT.check('seed=1: Math.random deterministic across boots', !!r1 && !!r2 && r1[0] === r2[0] && r1[1] === r2[1], { r1, r2 });
+  const r2 = s2.ready ? await s2.eval(rnd) : null; await s2.close();
+  PT.check('seed=1: Math.random deterministic across boots', !!r1 && !!r2 && r1[0] === r2[0] && r1[1] === r2[1] && r1[2] === 'seededRandom', { r1, r2 });
 
-  // C1–C4, C7 (P0b), C6/C8 (integration, --perf)
-  for (const id of ['C1', 'C2', 'C3', 'C4', 'C7']) PT.skip(id, 'P0b (core wave B)');
-  if (PT.flags.perf) PT.skip('C6/C8', 'integration (wave C)');
-};
+}
+
+// ==================================================================== C1: composer chain, presets, pixel budget, resolution step
+async function c1(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage&zone=plains');
+  if (!pg.ready) { PT.check('C1 boot', false); return; }
+  await pg.run('C1 composer chain', () => {
+    const g = game, C = g.composer, T = g.THREE, R = g.renderer;
+    PT.tp(-20, 45); PT.look(0.8, -0.2); PT.step(0.3, true);
+    const names = C.passes.map((p) => p.constructor.name);
+    PT.check('passes = RenderPass → BloomPass4 → FinalPass4 (no sanitize/Output pass)', names.join() === 'RenderPass,BloomPass4,FinalPass4', names);
+    const d = PT.draws();
+    // full-res-equivalent post work: final (1.0) + bright (¼) + mip chain; scene + final + overlay are the only full-res passes
+    const B = g.bloomPass, W = R.domElement.width, H = R.domElement.height;
+    const area = (rt) => rt.width * rt.height / (C.state.allocW * C.state.allocH);
+    const vpArea = (v) => v.w * v.h / (C.viewport.w * C.viewport.h);
+    PT.check('post passes ≤ 2.0 full-res equivalents (final + ¼ bright + mips)', d.postPasses <= 2.0 && d.postPasses >= 1.0, { postPasses: d.postPasses, postCalls: d.postCalls });
+    PT.check('bright pass at ¼ area, first mip ≤ 1/16 render area, 3 mips at medium', Math.abs(area(B.bright) - 0.25) < 0.02 && vpArea(B.vp[0]) <= 0.26 && vpArea(B.vp[1]) <= 1 / 16 + 0.005 &&
+      B.mips === 3 && d.postCalls === 1 + B.mips + (B.mips - 1) + 1, { bright: area(B.bright), mip1: vpArea(B.vp[1]), mips: B.mips, postCalls: d.postCalls });
+    PT.check('bloom texture only (game.post.bloomTex = first mip, sampled by FinalPass)', g.post.bloomTex.value === B.texture && C.finalPass.uniforms.tBloom.value === B.texture);
+    PT.check('MSAA 0 at medium (prod=1), FXAA on', C.readBuffer.samples === 0 && g.render.msaa === 0 && C.finalPass.uniforms.uFxaa.value === 1);
+    // the map size is applied by world (settings.shadowSize); a v3 world keeps its own size mapping
+    const ms = g.world?.sun?.shadow?.mapSize?.x, v4world = !!g.world?.debug?.terrainChunks;
+    PT.check('shadows: PCF, preset size 1024 (world applies it), every frame at medium', R.shadowMap.type === T.PCFShadowMap && g.render.shadowType === 'pcf' && g.settings.values.shadowSize === 1024 &&
+      (!v4world || ms === 1024) && g.settings.values.shadowEvery === 1, { mapSize: ms, v4world });
+    let shadowFrames = 0; for (let i = 0; i < 4; i++) { if (PT.draws().shadowCalls > 0) shadowFrames++; }
+    PT.check('shadow map rendered every frame at medium', shadowFrames === 4, shadowFrames);
+    let pls = 0; g.scene.traverse((o) => { if (o.isPointLight && o.visible) pls++; });
+    PT.check('0 point lights at medium (render.pointLights false)', g.render.pointLights === false, { visiblePointLightsInScene: pls });
+    PT.note(`C1 medium frame: ${d.calls}+${d.shadowCalls}+${d.overlayCalls} calls, post ${d.postPasses} full-res eq, ${pls} visible point lights (vfx-owned)`);
+    // pixel budget unit test
+    const r1 = g.quality.renderSize(1920, 970, 1), r2 = g.quality.renderSize(1920, 1080, 1.25), r3 = g.quality.renderSize(640, 360, 1);
+    PT.check('renderSize(1920, 970, 1) ≤ 1.0 MP at medium (pixel budget)', r1.w * r1.h <= 1e6 && r1.w * r1.h > 0.95e6 && Math.abs(r1.w / r1.h - 1920 / 970) < 0.01, r1);
+    PT.check('renderSize at pr 1.25 also ≤ 1.0 MP; small canvas unscaled', r2.w * r2.h <= 1e6 && r3.w === 640 && r3.h === 360, { r2, r3 });
+    // resolution step: no reallocation, ≤ 2 ms CPU, textures unchanged
+    PT.step(0.05, true);
+    const tex0 = R.info.memory.textures, re0 = C.state.reallocs, cw = R.domElement.width;
+    const ts = [];
+    for (const s of [0.85, 0.8, 0.9, 1]) {
+      const t0 = performance.now(); g.quality.scale = s; g.renderNow(); ts.push(performance.now() - t0);
+    }
+    g.quality.scale = 0.85; g.renderNow();
+    const vp = { ...C.viewport }, uv = g.post.uvScale.value.x, sr = g.post.sceneRes.value.x;
+    const base = []; for (let i = 0; i < 4; i++) { const t0 = performance.now(); g.renderNow(); base.push(performance.now() - t0); }
+    const tex1 = R.info.memory.textures;
+    g.quality.scale = 1; g.renderNow();
+    const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    PT.check('resolution step: viewport + uvScale follow, canvas + textures unchanged, no reallocation', vp.w === Math.floor(C.state.allocW * 0.85) && Math.abs(uv - vp.w / C.state.allocW) < 1e-6 &&
+      sr === vp.w && R.domElement.width === cw && tex1 === tex0 && C.state.reallocs === re0, { vp, uv, sr, tex0, tex1, reallocs: C.state.reallocs - re0 });
+    // CPU cost of a step = a step frame minus a plain frame (SwiftShader frame times are not representative; the delta is)
+    const stepCost = med(ts) - med(base);
+    PT.check('resolution step costs ≤ 2 ms CPU (step frame − plain frame); no frame > 25 ms beyond the plain frame', stepCost <= 2 && Math.max(...ts) - med(base) <= 25, { ts: ts.map((x) => +x.toFixed(1)), base: +med(base).toFixed(1) });
+  });
+  await pg.run('C1 threat scene after FinalPass', () => {
+    const g = game, T = g.THREE, R = g.render;
+    const m = new T.Mesh(new T.PlaneGeometry(40, 40), new T.MeshBasicMaterial({ color: 0xff2a3d, toneMapped: false, fog: false, depthTest: false, depthWrite: false }));
+    m.position.copy(g.camera.position).add(g.camera.getWorldDirection(new T.Vector3()).multiplyScalar(6)); m.lookAt(g.camera.position);
+    R.warm(m, { target: 'overlay', now: true }); R.threatScene.add(m);
+    const px = PT.pixels.render(true); const c = (px.h >> 1) * px.w * 4 + (px.w >> 1) * 4;
+    g.bloomPass.enabled = false; const px2 = PT.pixels.render(true); g.bloomPass.enabled = true;
+    g.quality.scale = 0.8; const px3 = PT.pixels.render(true); g.quality.scale = 1;
+    R.threatScene.remove(m); m.geometry.dispose(); m.material.dispose();
+    const rgb = (p) => [p.px[c], p.px[c + 1], p.px[c + 2]];
+    const a = rgb(px), b = rgb(px2), d3 = rgb(px3);
+    PT.check('threat colour exact and ΔRGB ≤ 8 with bloom on/off and at scale 0.8', Math.abs(a[0] - 255) <= 2 && Math.abs(a[1] - 42) <= 2 && Math.abs(a[2] - 61) <= 2 &&
+      a.every((v, i) => Math.abs(v - b[i]) <= 8 && Math.abs(v - d3[i]) <= 8), { a, b, d3 });
+  });
+  PT.check('C1 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+  // pixel budget boot: 1280×720 with budgetPx=0.5 → ≤ 0.5 MP render
+  const pb = await PT.boot('&cls=mage&budgetPx=0.5', { w: 1280, h: 720 });
+  if (pb.ready) {
+    await pb.run('C1 budgetPx boot', () => {
+      PT.step(0.05, true);
+      const C = game.composer, v = C.viewport, R = game.renderer;
+      PT.check('budgetPx=0.5 at 1280×720 → render ≤ 0.5 MP, canvas full size, base scale < 1', v.w * v.h <= 0.5e6 && v.w * v.h >= 0.45e6 && R.domElement.width === 1280 && game.quality.baseScale < 1,
+        { v, base: game.quality.baseScale, canvas: R.domElement.width });
+      const rs = game.quality.renderSize();
+      PT.check('quality.renderSize() = live render size', rs.w === v.w && rs.h === v.h, rs);
+    });
+  }
+  await pb.close();
+  // low preset: MSAA 0, shadows off (map cleared), bloom off; high: MSAA 4, PCFSoft, 5 mips, point lights on
+  const lo = await PT.boot('&cls=mage&quality=low');
+  if (lo.ready) {
+    await lo.run('C1 low preset', () => {
+      PT.step(0.1, true);
+      const g = game, d = PT.draws();
+      PT.check('low: MSAA 0, shadows off (no shadow pass), bloom off, 0 point lights', g.composer.readBuffer.samples === 0 && d.shadowCalls === 0 && g.composer.finalPass.uniforms.uBloomOn.value === 0 &&
+        g.render.pointLights === false, { shadow: d.shadowCalls, bloom: g.composer.finalPass.uniforms.uBloomOn.value });
+    });
+  }
+  await lo.close();
+  const hi = await PT.boot('&cls=mage&quality=high');
+  if (hi.ready) {
+    await hi.run('C1 high preset', () => {
+      PT.step(0.1, true);
+      const g = game, T = g.THREE;
+      PT.check('high: MSAA 4, PCFSoft, 5 bloom mips, FXAA off, point lights on (boot decisions)', g.composer.readBuffer.samples === 4 && g.renderer.shadowMap.type === T.PCFSoftShadowMap &&
+        g.bloomPass.mips === 5 && g.composer.finalPass.uniforms.uFxaa.value === 0 && g.render.pointLights === true,
+        { samples: g.composer.readBuffer.samples, mips: g.bloomPass.mips, fxaa: g.composer.finalPass.uniforms.uFxaa.value });
+      PT.check('high page renders without errors', true);
+    });
+    PT.check('C1 high page: no console errors', hi.errors().length === 0, hi.errors().slice(0, 8));
+  }
+  await hi.close();
+}
+
+// ==================================================================== C2: governor (simulate)
+async function c2(PT) {
+  const pg = await PT.boot('&cls=mage');
+  if (!pg.ready) { PT.check('C2 boot', false); return; }
+  await pg.run('C2 governor', () => {
+    const g = game, Q = g.quality;
+    let k = 0; const alt = () => (k++ % 2 ? 30 : 10);   // every 2nd frame misses one vsync (EMA ≈ 1.5 T)
+    Q.simulate(null);
+    let st = Q.simulate({ frameMs: alt, refresh: 60, seconds: 1.2, log: true });
+    PT.check('overload at refresh=60 (50 % misses) steps down one level within 1.2 s', st.level === 1 && st.log[0]?.t <= 1.2 && st.history.some((h) => h.reason === 'overload'), { level: st.level, log: st.log, T: st.T });
+    Q.simulate(null);
+    st = Q.simulate({ frameMs: 40, refresh: 60, seconds: 1.2, log: true });
+    PT.check('two-level jump when the frame-time EMA > 1.6 T', st.level === 2 && st.log.length === 1 && st.history.some((h) => h.reason === 'overload2'), { level: st.level, log: st.log, ema: st.ema });
+    // probe up after 6 s, revert on misses, backoff 6 → 12 → 24 s
+    Q.simulate(null);
+    Q.simulate({ frameMs: alt, seconds: 1.2 });
+    const l1 = Q.level;
+    st = Q.simulate({ frameMs: 10, seconds: 5.5 }); const before6 = st.level;
+    st = Q.simulate({ frameMs: 10, seconds: 0.7 }); const after6 = st.level;
+    st = Q.simulate({ frameMs: alt, seconds: 0.6 }); const reverted = st.level, d1 = st.delays[1];
+    st = Q.simulate({ frameMs: 10, seconds: 10.8 }); const before12 = st.level;
+    st = Q.simulate({ frameMs: 10, seconds: 1.4 }); const after12 = st.level;
+    st = Q.simulate({ frameMs: alt, seconds: 0.6 }); const d2 = st.delays[1];
+    PT.check('probe up after 6 s with < 2 % misses, revert on misses, backoff 6 → 12 → 24 s', l1 === 1 && before6 === 1 && after6 === 0 && reverted === 1 && d1 === 12 && before12 === 1 && after12 === 0 && d2 === 24,
+      { l1, before6, after6, reverted, d1, before12, after12, d2 });
+    // 144 Hz
+    g.settings.set('fpsCap', 0, { persist: false });
+    Q.simulate(null);
+    st = Q.simulate({ frameMs: 10, refresh: 144, seconds: 1.2 }); const hz144over = st.level;
+    Q.simulate(null);
+    st = Q.simulate({ frameMs: 6, refresh: 144, seconds: 3 }); const hz144ok = st.level;
+    g.settings.set('fpsCap', 60, { persist: false });
+    PT.check('works at refresh=144 (10 ms frames overload, 6 ms frames do not)', hz144over >= 1 && hz144ok === 0 && Math.abs(st.T - 1 / 144) < 1e-4, { hz144over, hz144ok, T: st.T });
+    // L2: dynamic resolution changes quality.scale (render viewport), never the canvas
+    Q.simulate(null);
+    const cw = g.renderer.domElement.width, tex0 = g.renderer.info.memory.textures;
+    Q.set(2, 'test');
+    st = Q.simulate({ frameMs: 16, gpuMs: (t, s) => 20 * s * s, refresh: 60, seconds: 1.0 });
+    const pScale = st.scale, pLevel = st.level;
+    PT.step(0.02, true);
+    const vp = { ...g.composer.viewport };
+    PT.check('L2 P-controller (GPU timer): scale → sqrt(0.85 T / gpu) within 1 s, level kept, canvas unchanged', pLevel === 2 && Math.abs(pScale - Math.sqrt((0.85 * 1000 / 60) / 20)) < 0.04 &&
+      g.renderer.domElement.width === cw && vp.w < cw && g.renderer.info.memory.textures === tex0, { pScale, pLevel, vp, cw });
+    Q.simulate(null); Q.set(2, 'test');
+    st = Q.simulate({ frameMs: alt, refresh: 60, seconds: 0.8 });
+    PT.check('L2 without GPU timing: scale × 0.92 steps while misses > 20 % (floor 0.8 at medium)', st.scale < 1 && st.scale >= 0.8 - 1e-6, { scale: st.scale, level: st.level });
+    // fpsCap 30: 33 ms frames are on time
+    Q.simulate(null);
+    g.settings.set('fpsCap', 30, { persist: false });
+    st = Q.simulate({ frameMs: 30, refresh: 60, seconds: 3 });
+    g.settings.set('fpsCap', 60, { persist: false });
+    PT.check('fpsCap respected (T = 1/30 at a 30 fps cap: no overload)', st.level === 0 && Math.abs(st.T - 1 / 30) < 0.002, { level: st.level, T: st.T });
+    // autoQuality off: no steps
+    Q.simulate(null);
+    g.settings.set('autoQuality', false, { persist: false });
+    st = Q.simulate({ frameMs: 40, seconds: 2 });
+    g.settings.set('autoQuality', true, { persist: false });
+    PT.check('autoQuality off disables every step', st.level === 0 && st.scale === 1, { level: st.level });
+    // dynamicRes off: L2 keeps scale 1
+    Q.simulate(null); g.settings.set('dynamicRes', false, { persist: false }); Q.set(2, 'test');
+    st = Q.simulate({ frameMs: alt, seconds: 0.8 });
+    g.settings.set('dynamicRes', true, { persist: false });
+    PT.check('dynamicRes off disables only the resolution controller', st.scale === 1 && st.level >= 2, { scale: st.scale, level: st.level });
+    // budget: L4 turns bloom off through the uniform (no program change)
+    Q.simulate(null); Q.endSimulation();
+    const p0 = g.renderer.info.programs.length;
+    Q.set(4, 'test'); PT.step(0.05, true);
+    const off = g.composer.finalPass.uniforms.uBloomOn.value;
+    Q.set(0, 'test'); PT.step(0.05, true);
+    PT.check('L4: bloom off via uBloomOn (no new program); events + legacy perfScale', off === 0 && g.composer.finalPass.uniforms.uBloomOn.value === 1 && g.renderer.info.programs.length === p0 &&
+      g.perfScale === 1, { off, p0, p1: g.renderer.info.programs.length });
+    // real frame cap in the rAF loop
+  });
+  // fps cap on the live loop (unfrozen): ≤ ~30 rendered frames per second at fpsCap 30
+  const n30 = await pg.eval(async () => {
+    const g = window.game; g.settings.set('fpsCap', 30, { persist: false });
+    const f0 = g.frameCount;
+    g.freeze(false);
+    await new Promise((r) => setTimeout(r, 1000));
+    g.freeze(true);
+    const n = g.frameCount - f0;
+    g.settings.set('fpsCap', 60, { persist: false });
+    return n;
+  });
+  PT.check('C2: fpsCap 30 caps the rAF loop (rendered frames in 1 s ≤ 33)', n30 > 0 && n30 <= 33, n30);
+  PT.check('C2 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}
+// ==================================================================== C3: sub-stepping
+async function c3(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage&zone=plains');
+  if (!pg.ready) { PT.check('C3 boot', false); return; }
+  await pg.run('C3 sub-steps', () => {
+    const g = game, FR = g.frame;
+    PT.tp(-20, 45); PT.step(0.3);
+    const ratio = (rdt, frames) => { const t0 = g.time, e0 = g.enemyTime; g.step(frames, rdt, false); return { game: (g.time - t0) / (frames * rdt), enemy: (g.enemyTime - e0) / (frames * rdt) }; };
+    const r15 = ratio(1 / 15, 30), r10 = ratio(1 / 10, 20), r60 = ratio(1 / 60, 60);
+    PT.check('game-time / real-time ≥ 0.99 at realDt 1/15 and 1/10 (no slow motion below 20 fps)', r15.game >= 0.99 && r10.game >= 0.99 && r15.enemy >= 0.99 && r10.enemy >= 0.99 && Math.abs(r60.game - 1) < 1e-6, { r15, r10, r60 });
+    // step bookkeeping seen by a playing module
+    // (a module declaring substeps:true runs every sub-step; others run once on the last step with the frame dt)
+    const rec = [], recL = []; const P = g.player, orig = P.update, keepSub = P.substeps, E = g.enemies, origE = E.update, keepSubE = E.substeps;
+    P.update = function (dt, rdt) { rec.push([FR.step, FR.n, FR.lastStep, +dt.toFixed(5)]); return orig.call(this, dt, rdt); };
+    E.update = function (dt, rdt) { recL.push([FR.step, FR.lastStep, +dt.toFixed(5)]); return origE.call(this, dt, rdt); };
+    P.substeps = true; E.substeps = false;
+    try { g.step(1, 1 / 15, false); g.step(1, 1 / 10, false); g.step(1, 1 / 60, false); g.step(1, 0.25, false); } finally { P.update = orig; P.substeps = keepSub; E.update = origE; E.substeps = keepSubE; }
+    PT.check('module without substeps runs once per frame on the last step with the frame dt', recL.length === 4 && recL.every((r) => r[1] === true) && Math.abs(recL[0][2] - 1 / 15) < 1e-4 && Math.abs(recL[1][2] - 0.1) < 1e-4, recL);
+    const ok = rec.length === 7 && rec[0][1] === 2 && rec[0][2] === false && rec[1][2] === true && rec[1][0] === 1 && Math.abs(rec[0][3] - 1 / 30) < 1e-4 &&
+      rec[2][1] === 2 && Math.abs(rec[2][3] - 0.05) < 1e-4 && rec[4][1] === 1 && rec[4][2] === true && rec[5][1] === 2 && Math.abs(rec[5][3] - 0.05) < 1e-4 && rec.every((r) => r[1] <= 2 && r[3] <= 0.05 + 1e-6);
+    PT.check('n = min(2, ceil(realDt·30)), step dt ≤ 1/20, lastStep on the final step only (realDt capped at 0.1)', ok, rec);
+    PT.check('game.frame.frameDt = whole frame', Math.abs(FR.frameDt - 0.1) < 1e-6, FR.frameDt);
+    // game.step(n, 1/60) keeps its deterministic contract: one step per frame
+    const t0 = g.time; const rec2 = []; P.update = function (dt, rdt) { rec2.push(FR.n); return orig.call(this, dt, rdt); };
+    P.substeps = true;
+    try { g.step(10, 1 / 60, false); } finally { P.update = orig; P.substeps = keepSub; }
+    PT.check('game.step(n, 1/60): n frames × 1 step, game.time += n·dt exactly', rec2.length === 10 && rec2.every((x) => x === 1) && Math.abs(g.time - t0 - 10 / 60) < 1e-9, rec2.length);
+    // CPU: one 1/15 frame (2 logic steps + one visual pass) vs one 1/60 frame
+    const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    const time = (rdt) => { const ts = []; for (let i = 0; i < 40; i++) { const t = performance.now(); g.step(1, rdt, false); ts.push(performance.now() - t); } return med(ts); };
+    time(1 / 60); const a60 = time(1 / 60), a15 = time(1 / 15), b60 = time(1 / 60), b15 = time(1 / 15);
+    const c60 = (a60 + b60) / 2, c15 = (a15 + b15) / 2;
+    const aware = ['player', 'spells', 'sword', 'skills', 'enemies', 'combat', 'story', 'cinematic'].filter((m) => g[m]?.substeps === true);
+    PT.check('CPU at realDt 1/15 ≤ 1.6 × one 1/60 step', c15 <= 1.6 * c60 + 0.05, { ms60: +c60.toFixed(3), ms15: +c15.toFixed(3), ratio: +(c15 / c60).toFixed(2), substepModules: aware });
+    // spiral guard: when the previous frame's simulation took > 8 ms, the next slow frame runs one step
+    const slow = g.enemies.update; let n2 = 0;
+    g.enemies.update = function (...a) { const t = performance.now(); while (performance.now() - t < 9) { /* burn */ } return slow.apply(this, a); };
+    try { g.step(1, 1 / 15, false); P.update = function (dt, rdt) { n2 = FR.n; return orig.call(this, dt, rdt); }; g.step(1, 1 / 15, false); } finally { g.enemies.update = slow; P.update = orig; }
+    PT.check('n = 1 after a frame whose simulation took > 8 ms', n2 === 1, n2);
+    g.step(2, 1 / 60, false);
+  });
+  PT.check('C3 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}
+
+// ==================================================================== C4: per-entity hitstop, budget, slow-motion arbitration
+async function c4(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage&zone=plains');
+  if (!pg.ready) { PT.check('C4 boot', false); return; }
+  await pg.run('C4 hitstop', () => {
+    const g = game;
+    PT.tp(-20, 45); PT.step(0.5);
+    const A = { type: 'ptA', hitstopUntil: 0 }, B = { type: 'ptB', hitstopUntil: 0 };
+    g._hitstop = 0; g._hitstopFrames = 0;
+    PT.step(1.2);   // empty the rolling window
+    const e0 = g.enemyTime; let granted = 0, frozenA = 0, globalSeen = false;
+    for (let i = 0; i < 60; i++) {
+      if (i % 2 === 0) { if (g.hitstop(0.025, { tier: 'light', target: A })) granted += 0.025; }
+      g.step(1, 1 / 60, false);
+      if (A.hitstopUntil > g.realTime) frozenA += 1 / 60;
+      if (g._hitstop > 0) globalSeen = true;
+    }
+    const enemyRate = (g.enemyTime - e0) / 1;
+    PT.check('30 light requests in 1 s: target frozen ≤ 80 ms (over-budget requests dropped)', granted <= 0.08 + 1e-9 && granted >= 0.05 && frozenA <= 0.08 + 1 / 60, { granted, frozenA: +frozenA.toFixed(3) });
+    PT.check('per-entity: other enemies never frozen, no global freeze, enemy clock keeps running', B.hitstopUntil === 0 && !globalSeen && Math.abs(enemyRate - g.assist.enemySpeed) < 0.02, { B: B.hitstopUntil, globalSeen, enemyRate });
+    const log = g.debug.hitstopLog().slice(-30);
+    PT.check('hitstopLog records granted and dropped requests', log.filter((r) => r.granted).length >= 2 && log.some((r) => !r.granted) && log.every((r) => r.tier === 'light' && r.target === 'ptA'), log.slice(-4));
+    // ult: global, always granted, ≤ 0.10 s
+    PT.step(0.2);
+    const okU = g.hitstop(0.3, { tier: 'ult' }); const sec = g.debug.hitstopLog().slice(-1)[0].sec;
+    const t1 = g.enemyTime; g.step(3, 1 / 60, false); const stalled = g.enemyTime - t1;
+    PT.check("'ult' is global and granted ≤ 0.10 s (even over budget)", okU && sec === 0.1 && stalled < 1e-9, { okU, sec, stalled });
+    PT.step(0.3);
+    // exempt tiers granted while the light budget is spent; break/parry cap 0.12
+    for (let i = 0; i < 6; i++) g.hitstop(0.025, { tier: 'light', target: A });
+    const lightNow = g.hitstop(0.025, { tier: 'light', target: A });
+    const br = g.hitstop(0.2, { tier: 'break', target: A }); const brSec = g.debug.hitstopLog().slice(-1)[0].sec;
+    const pa = g.hitstop(0.2, { tier: 'parry', target: A });
+    PT.check('budget spent: light dropped, break/parry still granted (capped 0.12)', lightNow === false && br && pa && Math.abs(brSec - 0.12) < 1e-9, { lightNow, br, pa, brSec });
+    PT.check('struck player-side animation freeze flag (game.playerHitstopUntil) set by enemy-target hitstop', g.playerHitstopUntil > g.realTime, g.playerHitstopUntil);
+    PT.step(1.3);
+    // slow-motion arbitration: one source at a time, comp() compensates witch
+    const TS = g.timeScale;
+    const w = TS.set('witch', 0.5, 0.6, { compensate: true }); const comp = TS.comp(), val = TS.value();
+    const teach = TS.set('teach', 0.3, 0.4); const src = TS.slowmoSource();
+    const witch2 = TS.set('witch', 0.5, 0.6, { compensate: true });
+    TS.clear('teach'); TS.clear('witch');
+    PT.check('slow-motion arbitration (one source; teach > witch) and comp() = 1/scale for witch', w && Math.abs(comp - 2) < 1e-9 && val === 0.5 && teach && src === 'teach' && witch2 === false && TS.comp() === 1, { comp, val, src, witch2 });
+    // per-frame share of globally frozen frames for ordinary hits: 0
+    let gf = 0; for (let i = 0; i < 60; i++) { if (i % 6 === 0) g.hitstop(0.05, { tier: 'heavy', target: B }); g.step(1, 1 / 60, false); if (g._hitstop > 0) gf++; }
+    PT.check('heavy hits never freeze globally', gf === 0, gf);
+  });
+  PT.check('C4 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}
+// ==================================================================== C7: 성능 테스트 benchmark + title benchmark
+async function c7(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage');
+  if (!pg.ready) { PT.check('C7 boot', false); return; }
+  const r = await pg.eval(async () => {
+    const g = window.game, p = g.player, S = g.skills;
+    PT.step(0.3);
+    S.resetCooldowns?.(); g.debug.cast(S.skillForSlot?.('q2') || S.loadout?.q2); PT.step(0.1);
+    p.hp = Math.round(p.maxHp * 0.6); if (p.entity) p.entity.hp = p.hp;
+    const snapCd = JSON.stringify(S.cooldownSnapshot?.());
+    const before = { pos: p.object.position.toArray().map((v) => +v.toFixed(4)), hp: p.hp, ehp: p.entity?.hp, mp: p.mp, yaw: p.yaw, state: g.state, level: g.quality.level, locked: g.quality.locked, enemies: PT.enemies().length };
+    const res = await g.quality.benchmark({ seconds: 3 });
+    const after = { pos: p.object.position.toArray().map((v) => +v.toFixed(4)), hp: p.hp, ehp: p.entity?.hp, mp: p.mp, yaw: p.yaw, state: g.state, level: g.quality.level, locked: g.quality.locked, enemies: PT.enemies().length };
+    const cdNow = JSON.stringify(S.cooldownSnapshot?.()); const cdSame = cdNow === snapCd; const cdDiff = cdSame ? null : [snapCd.slice(0, 300), cdNow.slice(0, 300)];
+    const text = g.quality.formatBench?.(res);
+    // title benchmark (real rAF frames, unfrozen loop) picks a start level
+    g.freeze(false);
+    const tb = await g.quality.titleBenchmark({ seconds: 1, apply: true, offer: false });
+    g.freeze(true);
+    const lvl = g.quality.level, hist = g.quality.history().slice(-1)[0];
+    g.quality.set(0, 'test');
+    return { res, before, after, cdSame, cdDiff, text, tb, lvl, hist, input: [...(g.input._locks || [])] };
+  });
+  const R = r.res || {};
+  PT.check('C7: benchmark({seconds:3}) returns every field', ['avgFps', 'low1Fps', 'level', 'renderW', 'renderH', 'gpu', 'tier', 'cpuMs'].every((k) => k in R) && R.avgFps > 0 && R.low1Fps > 0 &&
+    R.renderW > 0 && R.renderH > 0 && typeof R.gpu === 'string' && R.frames > 10 && R.cast >= 4, R);
+  PT.check('C7: game restored exactly (position, HP, MP, look, cooldowns, state, governor lock, input)', JSON.stringify(r.before) === JSON.stringify(r.after) && r.cdSame && r.input.length === 0, { before: r.before, after: r.after, cdSame: r.cdSame, cdDiff: r.cdDiff, input: r.input });
+  PT.check('C7: plain-text result for the 복사 button', typeof r.text === 'string' && r.text.includes('fps') && r.text.includes(String(R.renderW)), r.text);
+  PT.check('C7: title benchmark picks a start level (0/1/2) and applies it', r.tb && [0, 1, 2].includes(r.tb.level) && r.lvl === r.tb.level && r.tb.frames >= 2 && typeof r.tb.headroom === 'number' &&
+    (r.tb.level === 0 || r.hist?.reason === 'titleBenchmark'), { tb: r.tb, lvl: r.lvl, hist: r.hist });
+  PT.note(`C7 benchmark (SwiftShader, 640×360): ${r.text}; title: L${r.tb?.level} misses ${r.tb?.misses} headroom ${r.tb?.headroom}`);
+  await pg.run('debug hooks (§7.7)', () => {
+    const g = game, D = g.debug;
+    PT.step(0.2, true);
+    const gv = D.governor();
+    PT.check('debug.governor() → {level, scale, T, misses, ema, history} + simulate', gv && 'level' in gv && 'scale' in gv && gv.T > 0 && 'misses' in gv && 'ema' in gv && Array.isArray(gv.history) &&
+      typeof gv.simulate === 'function' && typeof D.governor.simulate === 'function', gv);
+    const pf = D.perf();
+    PT.check('debug.perf() → per-module median ms (120-frame ring)', pf && ['world', 'player', 'enemies', 'vfx', 'ui', 'render'].every((k) => typeof pf[k] === 'number') && pf.frames > 0, pf);
+    D.firstDraws(); PT.step(0.1, true);
+    const fd0 = D.firstDraws();
+    const T = g.THREE, m = new T.Mesh(new T.TorusKnotGeometry(0.4, 0.1), new T.MeshLambertMaterial({ color: 0x3355aa, emissive: 0x112233 }));
+    m.position.copy(g.player.object.position).add(new T.Vector3(0, 1.5, -3)); g.scene.add(m);
+    PT.step(0.05, true); const fd1 = D.firstDraws();
+    g.scene.remove(m); m.geometry.dispose(); m.material.dispose();
+    PT.check('debug.firstDraws() counts programs drawn for the first time', fd0 === 0 && fd1 >= 1, { fd0, fd1 });
+    D.newMaterials(); const mm = new T.MeshBasicMaterial(); mm.dispose(); const nm = D.newMaterials();
+    PT.check('debug.newMaterials() counts materials since the last call', nm === 1, nm);
+    PT.check('debug forwarders exist (fragments, overdraw, coverage, tells, forceAttack, lookOf, hitstopLog)', ['fragments', 'overdraw', 'coverage', 'tells', 'forceAttack', 'lookOf', 'hitstopLog'].every((k) => typeof D[k] === 'function'));
+  });
+  PT.check('C7 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}

@@ -33,8 +33,9 @@ export function createClassKits(game, K) {
 
   function deal(t, amount, el, extra) {
     if (!t?.alive || !(amount > 0) || !game.combat?.dealDamage) return;
-    const hit = { amount, element: el, source: pl()?.entity || 'player', point: v2.copy(t.object.position).setY(t.object.position.y + 1).clone(), noReaction: true, tags: ['signature'], tier: 'heavy' };
+    const hit = { amount, element: el, source: pl()?.entity || 'player', point: v2.copy(t.object.position).setY(t.object.position.y + 1).clone(), noReaction: true, tags: ['signature'], tier: 'heavy', castId: 0 };
     if (extra) Object.assign(hit, extra);
+    if (!hit.castId && game.nextCastId) hit.castId = game.nextCastId();
     try { game.combat.dealDamage(t, hit); } catch (_) { /* */ }
   }
 
@@ -73,19 +74,28 @@ export function createClassKits(game, K) {
     else if (pp.object?.getWorldDirection) { pp.object.getWorldDirection(fwd); fwd.y = 0; }
     fwd.normalize();
     v1.copy(pos).addScaledVector(fwd, 4); v1.y += 1;
+    const cid = game.nextCastId ? game.nextCastId() : 0;
     near.length = 0;
     try { game.combat?.queryRadius?.(v1, 5, 'enemy', near); } catch (_) { near.length = 0; }
     const status = ELEMENT_DEFS[el]?.status;
     for (const e of near) {
       v2.subVectors(e.object.position, pos); v2.y = 0;
       const d = v2.length(); if (d > 8.5 || (d > 0.5 && v2.dot(fwd) / d < 0.5)) continue;
-      deal(e, 80, el, { noReaction: false, status: status && game.combat?.STATUS_DEFS ? { [status]: { dur: 4 } } : undefined, direction: fwd.clone(), knockback: 6 });
+      deal(e, 80, el, { noReaction: false, status: status && game.combat?.STATUS_DEFS ? { [status]: { dur: 4 } } : undefined, direction: fwd.clone(), knockback: 6, castId: cid });
       if (status && !game.combat?.STATUS_DEFS) { try { game.combat?.applyStatus?.(e, status, 4); } catch (_) { /* */ } }
     }
+    // v4 (§3.6): one cast → one castId; the kit's element motifs (wave along the swing + one burst) when present,
+    // else the legacy smear/shockwave/explosion carrying the castId; colours from the element ramp (never white)
     try {
-      game.vfx?.smear?.('wide', pos, pp.object.quaternion, 2.2, el);
-      game.vfx?.shockwave?.(v1, { color: elColor(el, 'hex'), radius: 8, duration: 0.4 });
-      game.vfx?.explosion?.(v1, { element: el, scale: 1.2 });
+      const kit = game.vfx?.kit;
+      if (kit?.motif) {
+        kit.motif(el, 'wave', { pos, dir: fwd, r: 8, arc: 0.7, castId: cid, owner: 'player' });
+        kit.motif(el, 'burst', { pos: v1, r: 1.6, n: 10, castId: cid, owner: 'player' });
+      } else {
+        game.vfx?.smear?.('wide', pos, pp.object.quaternion, 2.2, el, { castId: cid, owner: 'player' });
+        game.vfx?.shockwave?.(v1, { color: elColor(el, 'mid'), radius: 8, duration: 0.4, castId: cid, owner: 'player' });
+        game.vfx?.explosion?.(v1, { element: el, scale: 1.2, castId: cid, owner: 'player' });
+      }
     } catch (_) { /* */ }
     try { game.audio?.play?.('explode_' + el, { position: v1 }); } catch (_) { /* */ }
     st.enchant = 0;
@@ -162,8 +172,14 @@ export function createClassKits(game, K) {
     if (n > 0 && (p.backstab || charged)) {
       const bonus = (p.amount || 0) * 0.12 * n;
       clearMarks(t);
-      deal(t, bonus, 'shadow');
-      try { game.vfx?.preset?.('impact_shadow', v1.copy(t.object.position).setY(t.object.position.y + 1), { scale: 1 + n * 0.2 }); } catch (_) { /* */ }
+      const cid = game.nextCastId ? game.nextCastId() : 0;
+      deal(t, bonus, 'shadow', { castId: cid });
+      try {
+        v1.copy(t.object.position).setY(t.object.position.y + 1);
+        const kit = game.vfx?.kit;
+        if (kit?.motif) kit.motif('shadow', 'burst', { pos: v1, r: 1.1 + n * 0.2, n: 8, castId: cid, owner: 'player' });
+        else game.vfx?.preset?.('impact_shadow', v1, { scale: 1 + n * 0.2, castId: cid, owner: 'player' });
+      } catch (_) { /* */ }
       E.emit('marksDetonated', { target: t, marks: n });
       if (n >= 5 && statOn('detonateRefund')) { const id = (K.api.attuned || 'shadow') + '.charged'; K.api._resetOne?.(id); }
       const ex = statOn('markExecute');

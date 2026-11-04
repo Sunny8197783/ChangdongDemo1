@@ -11,7 +11,7 @@ const args = process.argv.slice(2); const opt = (k, d) => { const i = args.index
 const root = path.resolve(__dirname, '..');
 const outDir = opt('--out', '/tmp/claude-0/-home-user/73b5b35e-096f-5c23-8d86-2f6619326bcd/scratchpad');
 const noShots = args.includes('--noshots') || args.includes('--quick');
-const port = 8000 + Math.floor(Math.random() * 900);
+const port = 8100 + Math.floor(Math.random() * 900);
 const types = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/index.html';
