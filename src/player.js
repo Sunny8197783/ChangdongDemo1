@@ -268,7 +268,7 @@ export function createPlayer(game) {
   const lightOf = (el) => pair(el)[1];
   const assist = () => game.assist || null;
   /** per-entity hitstop on the player (core stamps entity.hitstopUntil / player.hitstopUntil in game.realTime seconds). */
-  const animFrozen = () => Math.max(hitstopUntil, entity.hitstopUntil || 0) > (game.realTime || 0);
+  const animFrozen = () => Math.max(hitstopUntil, entity.hitstopUntil || 0, game.playerHitstopUntil || 0) > (game.realTime || 0);
   const perfectMul = () => { const m = +assist()?.perfectMul; return m > 0 ? m : 1; };
   const iframeMul = () => { const m = +assist()?.iframeMul; return m > 0 ? m : 1; };
   const ts = () => game.timeScale;
@@ -1296,8 +1296,10 @@ export function createPlayer(game) {
       const v = lastHit.view; v.t = lastHit.rt; v.amount = lastHit.amount; v.attacker = lastHit.attacker; v.attack = lastHit.attack; v.appliedStatuses = lastHit.statuses;
       return v;
     },
-    /** v4 per-entity hitstop: the animation freezes while game.realTime < hitstopUntil (also honours entity.hitstopUntil). */
-    get hitstopUntil() { return Math.max(hitstopUntil, entity.hitstopUntil || 0); },
+    /** v4 sub-steps (PLAN §2.5, core-b): gameplay runs every sub-step, the visual block only on game.frame.lastStep. */
+    substeps: true,
+    /** v4 per-entity hitstop: the animation freezes while game.realTime < hitstopUntil (also honours entity.hitstopUntil and game.playerHitstopUntil). */
+    get hitstopUntil() { return Math.max(hitstopUntil, entity.hitstopUntil || 0, game.playerHitstopUntil || 0); },
     set hitstopUntil(v) { hitstopUntil = Number.isFinite(+v) ? +v : 0; },
     /** v4 combat camera state (read only): {hint, dist, fov, combat, bossTell, shoulder}. */
     camera: camInfo,
@@ -1714,7 +1716,7 @@ export function createPlayer(game) {
       // holds on the player (input buffering above keeps running) — PLAN §2.5 ----------
       const FRM = game.frame;
       if (FRM && FRM.lastStep === false) return;
-      if (FRM && FRM.n > 1 && FRM.frameDt > 0) dt = FRM.frameDt * api.timeComp();
+      if (FRM && FRM.n > 1 && FRM.frameDt > 0) { dt = FRM.frameDt * api.timeComp(); realDt *= FRM.n; }   // sub-steps: the whole frame
       if (animFrozen()) { updateCamera(realDt); return; }
 
       // ---------- idle fidgets (8–14 s of standing still) ----------

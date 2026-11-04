@@ -355,6 +355,19 @@ module.exports = async function player(PT) {
     pl.hitstopUntil = 0; P.step(1.5);
   });
 
+  // ------------------------------------------------------------ sub-steps (§2.5): gameplay every step, visual work once per frame
+  await pg.run('PL1 sub-steps', () => {
+    const g = game, P = PT, pl = g.player, sk = pl.rig.skin;
+    P.step(0.3);
+    let upd = 0, vis = 0;
+    const u0 = pl.update, s0 = sk.update;
+    pl.update = function (...a) { upd++; return u0.apply(this, a); };
+    sk.update = function (...a) { vis++; return s0.apply(this, a); };
+    try { g.step(1, 1 / 15); } finally { pl.update = u0; sk.update = s0; }
+    const n = g.frame?.n;
+    PT.check('player.substeps: a 1/15 s frame → the player steps n times, its visual block (rig/cape update) runs once', pl.substeps === true && (n === 2 ? upd === 2 : upd >= 1) && vis === 1, { n, upd, vis });
+  });
+
   // ------------------------------------------------------------ P1 aim assist (settings.aimAssist)
   await pg.run('PL1 (P1) aim assist', () => {
     const g = game, P = PT, pl = g.player;
