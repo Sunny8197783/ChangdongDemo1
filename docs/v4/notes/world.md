@@ -61,15 +61,25 @@ World-owned counts use `world.debug.owns()` (NPCs = ux, training dummies = mobs 
 - Shadow-only casters: three r160 tests shadow casters against the VIEW camera's layers (WebGLShadowMap.renderObject), so the
   shadow camera's layer mask (core `applyShadowMode`) has no effect; world uses a degenerate hook caster whose `onBeforeShadow`
   enables layer 1 on the view camera for the shadow pass and the sky's `onBeforeRender` disables it before the next list build.
-- Programs: beacon adds 2 (prewarmed); terrain v4 replaces the toon terrain program 1:1; flora sets keep their v3 program keys + `|awinst`.
+- Programs: beacon adds 2 (prewarmed); terrain v4 replaces the toon terrain program 1:1; flora sets keep their v3 program keys + `|awinst`
+  (+1 depth program for the family casters). `world.init()` warms every world root with `game.render.warm(…, {now:true})` while the
+  culled sets are still visible (renderer.compile skips invisible objects), and a degenerate instanced+colour caster drawn in the
+  shadow pass for the first 8 frames compiles the default instanced+colour depth variant that flora no longer compiles (other
+  owners' coloured instanced casters used it first at the final boss: playtest3 core "programs do not grow" 147 → 148 without it).
 - heightField: 0.00024 m GPU, 0 CPU texel error.
 - Flora re-culls: 0 while still, 10 per 40 turning frames (every 4th frame).
 
-## Tests
-- `node tools/playtest4.js world` (W1, B): see the final run in the report (S-* rows, noTerrain, presets, budget L4, heightField,
-  beacon, statics, surface source, rule-5 grep). Default run ≈ 5–6 min on the shared machine (4 S-* boots + 1 at 960×540 + 1).
-- `tools/playtest3/world.js`: unchanged (all its v3 expectations still hold); `tools/bootcheck.js`, `playtest.js --quick`,
-  `playtest2.js` run in this worktree (results in the report).
+## Tests (this branch, final code)
+- `node tools/playtest4.js world` (W1, B): **58 passed, 0 failed, 0 skipped** (304 s; ≈ 5 min on the shared machine: 4 S-* boots,
+  1 at 960×540 for the ABAB, 1 for presets/heightField/beacon/statics — above the 4-min guideline because of the 4-yaw fragment sweeps).
+  Final numbers: S-plains world 106 + 8 calls; S-village / mirwen / elderwood world totals 102 / 104 / 101 (≤ 159 / 144 / 144);
+  noTerrain gate 0.90 (plain hide 0.84, trivial material 0.92); world uploads ≤ 21.6 KB/frame; transparents ≤ 0.11 screens.
+- `tools/playtest3.js` all sections: 1258 passed, 2 failed (core "programs do not grow after the final boss" → fixed by the depth
+  warm-up above; combat "natural P0 triggers: magma" → flaky, passes on re-run). Re-run `playtest3.js core combat world`:
+  **388 passed, 0 failed**. `tools/playtest3/world.js` is unchanged (its v3 expectations still hold; rule 9: no update needed).
+- Final re-run after the last world commits: `tools/bootcheck.js` 15 / 15 configs `playing`, 0 NOT OK, exit 0 (one earlier run
+  died in core's bootcheck file server — a request raced the `@noBosses` rename, ENOENT on `bosses/hydra.js`; re-run clean);
+  `tools/playtest.js --quick` all PASS (exit 0); `tools/playtest2.js` story / sword / settings / perf all PASS (exit 0).
 
 ## Integration notes (checks marked I)
 - C6: world share holds in S-*; the S-village total (≤ 175) needs the player at 8 + 4 and the ux NPCs trimmed (requests).
