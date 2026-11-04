@@ -5,6 +5,7 @@
 //                    benchmark({seconds}) → Promise<BenchResult>, headroom(sec) }
 // Runtime only, never persisted. Consumers read game.quality.budget lazily each use (the object is reused).
 import { PRESETS } from './settings.js';
+import { budgetSize } from './gpu.js';
 
 export const LEVELS = 6;   // L0..L5
 
@@ -44,7 +45,17 @@ export function createQuality(game, { renderSize } = {}) {
     scale: 1,             // dynamic-resolution scale (× base); written by the governor (P0b)
     baseScale: 1,         // pixel-budget base scale (P0b: gpu.js)
     budget,
-    renderSize() { const s = renderSize ? renderSize(_size) : null; if (s) return s; const c = game.renderer?.domElement; _size.w = c?.width || 0; _size.h = c?.height || 0; return _size; },
+    /**
+     * renderSize() → the live render size {w, h} (drawing-buffer px of the scene pass; reused object).
+     * renderSize(w, h, pr) → the size the pixel budget of the current preset picks for a w × h CSS-px canvas at pr (L0, scale 1).
+     */
+    renderSize(w, h, pr = 1) {
+      if (w > 0 && h > 0) {
+        const v = game.settings?.values || {}, p = preset();
+        return budgetSize(w, h, pr, game.testParams?.budgetPx > 0 ? game.testParams.budgetPx : (+v.budgetPx || p.budgetPx || 1), +v.renderScale || p.renderScale || 1, 1, { w: 0, h: 0 });
+      }
+      const s = renderSize ? renderSize(_size) : null; if (s) return s; const c = game.renderer?.domElement; _size.w = c?.width || 0; _size.h = c?.height || 0; return _size;
+    },
     set(l, reason = 'manual') {
       const n = Math.max(0, Math.min(LEVELS - 1, Math.round(+l || 0)));
       if (n === level && hist.length) return level;

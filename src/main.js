@@ -263,7 +263,7 @@ game.render = createRender(game, {
   renderer, scene, camera, rawCompile, sceneTarget: () => composer.readBuffer, gpu: gpuInfo,
   msaa: bootMsaa, pointLights: bootPointLights, shadowType: bootShadowType,
 });
-game.quality = createQuality(game, {});
+game.quality = createQuality(game, { renderSize: (out) => { out.w = composer.viewport.w; out.h = composer.viewport.h; return out; } });
 game.stats = createStats(game);
 game.progression = createProgression(game);
 game.archetypes = createArchetypes(game);

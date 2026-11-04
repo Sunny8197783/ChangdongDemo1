@@ -321,8 +321,8 @@ export function createComposer4(renderer, scene, camera, { msaa = 0, bloomMips =
     setScale(s) {
       s = Math.max(0.25, Math.min(1, +s || 1));
       state.scale = s;
-      state.vw = Math.max(1, Math.min(state.allocW, Math.round(state.allocW * s)));
-      state.vh = Math.max(1, Math.min(state.allocH, Math.round(state.allocH * s)));
+      state.vw = Math.max(1, Math.min(state.allocW, Math.floor(state.allocW * s + 1e-6)));   // floor: never above the pixel budget
+      state.vh = Math.max(1, Math.min(state.allocH, Math.floor(state.allocH * s + 1e-6)));
       setVp(sceneRT, state.vw, state.vh, uvScale);
       clampV.set((state.vw - 0.5) / state.allocW, (state.vh - 0.5) / state.allocH);
       texel.set(1 / state.allocW, 1 / state.allocH);
