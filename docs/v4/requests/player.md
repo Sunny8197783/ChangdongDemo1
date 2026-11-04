@@ -4,18 +4,16 @@ Owner: player (`src/player.js`, `src/player/*`). Everything below is feature-det
 fallback; nothing blocks the player's own checks (PL1 passes on `v4/player` with `core-p0a` + `tells-b.2`).
 
 ## core
-1. **Per-entity hitstop (P0b item 12)**: the player freezes its animation (not its input buffer) while
-   `max(game.player.hitstopUntil, game.player.entity.hitstopUntil) > game.realTime`. Please stamp one of them for every
-   hitstop request that should freeze the player's pose (§2.5: "freezes the struck target and the player's animation").
-   `game.player.hitstopUntil` is a settable number on the player API.
-2. **`timeScale.comp()`** returns `1 / min(all active entries)` while any compensating entry is active. During witch time
+1. **`timeScale.comp()`** returns `1 / min(all active entries)` while any compensating entry is active. During witch time
    (0.5, compensate) plus a non-compensating `bossDeath` (0.25) the player would run at 4×. Suggest `comp()` = 1 / (product or
    min) of the *compensating* entries only.
-3. `game.frame.frameDt`: the player runs its visual block once per frame on `lastStep` with `frameDt × timeScale.comp()`
-   (game-scaled frame time). Please keep `frameDt` = the sum of the step dts of the frame (as in `core-p0a`).
-4. Optional: `renderer.compile` does not build the shadow depth variant of a skinned mesh; the player's shadow proxy
-   (`player/merge.js`, SkinnedMesh + default depth material) is drawn in the shadow pass from the first frame — include the
-   shadow pass in the P0b warm draws if first-draw hitches show up there.
+2. **Keymap action `lockOn`** (P1 soft lock-on, §5.11: T / middle mouse): the player reads keys only through `game.input.keymap`;
+   with a `lockOn` action (default `KeyT`, alt `Mouse1`) the P1 lock-on can land without key literals. Cut on this branch.
+3. Done in `core-b` and adopted: per-entity hitstop (`game.playerHitstopUntil` + `entity.hitstopUntil` freeze the player's
+   animation, input keeps buffering), sub-steps (`player.substeps = true`; the visual block runs once on `lastStep` with
+   `frameDt` and the frame's real dt).
+4. Optional: the player's shadow proxy (`player/merge.js`, SkinnedMesh + default depth material) is drawn in the shadow pass from
+   the first frame; `render.bootWarm()` draws it once in the main pass — include the shadow pass if first-draw hitches show up.
 
 ## ux
 1. **Perfect callouts**: every perfect (dodge, parry, barrier, paladin brace, grace refund) now emits

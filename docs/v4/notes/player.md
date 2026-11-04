@@ -2,7 +2,8 @@
 
 Owner: player (`src/player.js`, `src/player/*`, `tools/playtest3/player.js`, `tools/playtest4/player.js`, these notes, `docs/v4/requests/player.md`).
 Branch `v4/player` (from `core-p0a`), worktree `/home/user/wt4/player`. Merged read-only: **`tells-b.2`** (which carries `world-b`, `kit-p0a`
-and `vfx-b`). `core-b` / `core-p0a.N` did not exist at the final run, so the core path is `core-p0a` (global hitstop, n = 1 sub-step).
+and `vfx-b`) and **`core-b`** (post4 render path, governor, sub-steps, per-entity hitstop). `mobs`/`bosses`/`magic`/`melee`/`ux` tags did not exist:
+`enemies.orbEta`, `spells.castLock`, `action.dodgeCancelable` (v3 sword), `cameraHint` are feature-detected.
 
 ## Status
 
@@ -13,7 +14,7 @@ and `vfx-b`). `core-b` / `core-p0a.N` did not exist at the final run, so the cor
 | P0 3 keymap-only input, 0.25 s buffer, dodgeBuffered / dodgeRejected, dodge along the held input | done |
 | P0 4 post-hit protection (melee only, 0.35 s after a non-DoT hit ≥ 12) | done |
 | P0 5 witch time (§5.9 conditions), perfectDodge payload, counterReady 1.2 s | done |
-| P0 6 per-entity hitstop: animation freeze, input keeps buffering | done (player side; core P0b stamps the time) |
+| P0 6 per-entity hitstop: animation freeze, input keeps buffering | done (`game.playerHitstopUntil`, `entity.hitstopUntil`, `player.hitstopUntil`) |
 | P0 7 story auto-revive in place, 50 % HP after 2 s | done |
 | P0 8 combat camera (6.6 m / FOV +4 / shoulder 0.9, boss tell +10 %, cameraHint, cameraDist, noCameraCollide) | done |
 | P0 9 model: ≤ 8 + 4 calls, ≤ 30k / 6k tris every class; FX through applyPlayerFx + ramps; no per-frame allocation; visual work on lastStep | done |
@@ -57,8 +58,11 @@ and `vfx-b`). `core-b` / `core-p0a.N` did not exist at the final run, so the cor
 - **Paladin brace**: a pending-perfect hit during the shield step → `{cancel, parried, perfect}` (the attacker's `onParried` stagger), shield-parry effects, `kind:'brace'`.
 - **Post-hit protection**: after a non-DoT hit ≥ 12 (`playerHurt.amount`), hits with `attackKind === 'melee'` (`hit.attack.kind`, else an enemy-entity
   source without `projectile` / dot tags) are cancelled for 0.35 s game time; projectiles, hazards, surfaces and debug hits still apply.
-- **Per-entity hitstop**: while `max(player.hitstopUntil, entity.hitstopUntil) > game.realTime` the visual block (pose, springs, cape, FX) is skipped;
-  timers, movement and the input buffer keep running (`debugState().animFrozen`).
+- **Per-entity hitstop**: while `max(player.hitstopUntil, entity.hitstopUntil, game.playerHitstopUntil) > game.realTime` the visual block (pose, springs,
+  cape, FX) is skipped; timers, movement and the input buffer keep running (`debugState().animFrozen`).
+- **Sub-steps** (`core-b`): `player.substeps = true`; gameplay (input, buffer, timers, movement, collisions) runs every sub-step; the visual block
+  (fidgets, animation weights, `anim.update`, IK, springs, bow string, gem, charge circle, sigil, ghosts, cape, rig merge update, camera) runs once on
+  `game.frame.lastStep` with `frameDt × timeComp()` and the frame's real dt (PL1: a 1/15 s frame → 2 player steps, 1 visual pass).
 - **Auto-revive** (`assist.autoRevive`, 이야기): 2 s after death, in place, 50 % HP, 2 s i-frames, statuses cleared, `playerRespawn {inPlace, autoRevive}`;
   the `dead` state / respawn timer are never entered.
 
