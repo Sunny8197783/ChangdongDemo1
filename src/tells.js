@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { THREAT, threatColor } from './core/threat.js';
 import { hitTest, shapeDistance, makeShape, setShape, setDir, syncRef, centroid, writeFootprint, TELL_CODE, SHAPE_FAMILY, FOOT_KIND, TELL_KINDS } from './tells/shapes.js';
 import { MIN, LOCK, tellDuration, isMelee, lockFor, startSound, PERFECT_WIN, TEACH, STALE_AFTER } from './tells/timing.js';
-import { createDecals, STYLE, RIBBON } from './tells/decals.js';
+import { createDecals, STYLE, RIBBON, GLYPH_SHIFT } from './tells/decals.js';
 import { createSprites } from './tells/icons.js';
 import { createRims, rimSources, RIM_SLOTS } from './tells/body.js';
 import { createZones } from './tells/zones.js';
@@ -184,7 +184,7 @@ export function createTells(game) {
       if (rec) {
         copyShape(rec.S, h.S);
         rec.tell = TELL_CODE[h.tell]; rec.mode = 'tell'; rec.clock = 'enemy'; rec.start = t0; rec.dur = dur; rec.lockAt = h.lockAt;
-        rec.style = h.tell === 'projectile' ? STYLE.noChevron : 0;
+        rec.style = (h.tell === 'projectile' ? STYLE.noChevron : 0) + glyphBits(e, spec);
         rec.perfectFrac = dur > 0 ? 1 - (PERFECT_WIN * (assist().perfectMul || 1)) / dur : 0;
         rec.owner = h; rec.visible = true;
         decals.layout(rec);
@@ -223,6 +223,28 @@ export function createTells(game) {
     if (spec.sound !== false) sound(startSound(h.tell, cls), ep);
     emit('tellStart', { enemy: e, id: h.id, nameKo: h.nameKo, tell: h.tell, windup: dur, pos: h.S ? h.S.ref.pos : ep, targetsPlayer: h.targetsPlayer });
     return h;
+  }
+  // ---- P1: faint element glyph in the fill (vfx kit glyph atlas; no kit → no glyph, nothing else changes)
+  const GLYPH_ALIAS = { holy: 'light', void: 'shadow', dark: 'shadow', thunder: 'lightning', electric: 'lightning', frost: 'ice', poison: 'nature' };
+  const GLYPH_EL = ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow'];
+  let glyphState = 0;           // 0 = not resolved, 1 = atlas bound, -1 = no kit yet (retried at most once per second)
+  let glyphRetryAt = 0;
+  function glyphBits(e, spec) {
+    let el = spec.el ?? spec.element ?? e?.element ?? e?.el ?? null;
+    if (typeof el !== 'string' || spec.glyph === false) return 0;
+    el = GLYPH_ALIAS[el] || el;
+    if (GLYPH_EL.indexOf(el) < 0) return 0;
+    if (glyphState !== 1) {
+      const t = game.realTime || 0;
+      if (glyphState === -1 && t < glyphRetryAt) return 0;
+      const K = game.vfx?.kit;
+      const g = K?.glyph?.(el);
+      if (g && g.tex && g.uv && decals.setGlyphAtlas(g.tex, Math.round(1 / Math.max(1e-3, g.uv[2] - g.uv[0])))) glyphState = 1;
+      else { glyphState = -1; glyphRetryAt = t + 1; return 0; }
+    }
+    const K = game.vfx.kit;
+    const gi = typeof K.GLYPHS?.indexOf === 'function' ? K.GLYPHS.indexOf(el) : -1;
+    return gi >= 0 ? (gi + 1) * GLYPH_SHIFT : 0;
   }
   const _fdir = { x: 0, y: 0, z: 1 };
   function facingDir(e) {

@@ -599,6 +599,29 @@ module.exports = async function tells(PT) {
     const iou = PT.pixels.iou(n0.d.mask, n1.d.mask);
     PT.check('colour-blind protan: parry rim colour changes (#3A8DFF) …', n0.rim.getHex() === 0xFFD23A && n1.rim.getHex() === 0x3A8DFF, [n0.rim.getHexString(), n1.rim.getHexString()]);
     PT.check('… but the shape (dashed rim mask) stays: IoU ≥ 0.9', iou >= 0.9, +iou.toFixed(3));
+    // P1: faint element glyph in the fill (vfx kit glyph atlas): visible, faint, same program, rim/outline untouched
+    if (g.vfx?.kit?.glyph) {
+      const U = TL.debug.decals.uniforms;
+      const hg = TL.attack(e1, { id: 'gl', tell: 'danger', cls: 'check', windup: 3, melee: false, sound: false, body: false, icon: false, el: 'fire', shape: { kind: 'circle', pos: c, r: 3 } });
+      PT.step(0.2);
+      const rec = TL.debug.decals.fams.radial.recs.find((r) => r.active && r.owner === hg);
+      const cols = U.uGlyphCols.value;
+      const gd = PT.pixels.diff((on) => { U.uGlyphCols.value = on ? cols : 0; }, { thr: 6 });
+      let dmax = 0, dsum = 0;
+      for (let k = 0; k < gd.mask.length; k++) if (gd.mask[k]) { const i = k * 4; const d = Math.max(Math.abs(gd.on.px[i] - gd.off.px[i]), Math.abs(gd.on.px[i + 1] - gd.off.px[i + 1]), Math.abs(gd.on.px[i + 2] - gd.off.px[i + 2])); dmax = Math.max(dmax, d); dsum += d; }
+      const withG = PT.pixels.diff((on) => TL.debug.setVisible(on)).changed;
+      U.uGlyphCols.value = 0; const noG = PT.pixels.diff((on) => TL.debug.setVisible(on)).changed; U.uGlyphCols.value = cols;
+      const progs = (g.renderer.info.programs || []).filter((p) => /tells-/.test(p.name || '')).length;
+      PT.check('P1 element glyph: drawn in the fill from the kit atlas (el:\'fire\')', !!rec && rec.style >= 64 && cols === 4 && U.uGlyph.value === g.vfx.kit.glyph('fire').tex && gd.changed >= 80,
+        { style: rec?.style, cols, px: gd.changed });
+      PT.check('P1 element glyph: faint (mean ΔRGB ≤ 40, max ≤ 80) and the decal footprint is unchanged (±2 %)', gd.changed > 0 && dsum / gd.changed <= 40 && dmax <= 80 && Math.abs(withG - noG) <= 0.02 * noG,
+        { mean: +(dsum / Math.max(1, gd.changed)).toFixed(1), max: dmax, withG, noG });
+      PT.check('P1 element glyph: no new program (tells programs ≤ 4)', progs <= 4, progs);
+      const hn = TL.attack(e1, { id: 'gl2', tell: 'danger', cls: 'check', windup: 3, melee: false, sound: false, body: false, icon: false, el: 'physical', shape: { kind: 'circle', pos: c, r: 3 } });
+      const rn = TL.debug.decals.fams.radial.recs.find((r) => r.active && r.owner === hn);
+      PT.check('P1 element glyph: none for physical / unknown elements', !!rn && rn.style < 64, rn?.style);
+      hg.stop(); hn.stop(); PT.step(0.3);
+    } else PT.note('P1 element glyph: no vfx kit on this page (fallback: no glyph)');
     // near-white front in the last perfect window
     const nearWhite = (buf, mask) => { let n = 0; for (let k = 0; k < mask.length; k++) if (mask[k]) { const i = k * 4, r = buf.px[i], gg = buf.px[i + 1], b = buf.px[i + 2]; if (r > 225 && gg > 205 && b > 200) n++; } return n; };
     const hf = TL.attack(e1, { id: 'pf', tell: 'danger', cls: 'mobHeavy', windup: 1.5, melee: false, sound: false, body: false, icon: false, shape: { kind: 'circle', pos: c, r: 3 } });

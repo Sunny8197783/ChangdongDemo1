@@ -29,6 +29,9 @@ export const RIBBON = { minR: 6, height: 0.35, alpha: 0.55 };
 export const ATTACK_POOL = 16;            // §5.2: pool 16 shared by the radial + linear attack decals
 /** Style bits (iT.w). */
 export const STYLE = { noFront: 4, solid: 8, noChevron: 16, marker: 32 };
+/** P1 element glyph in the fill: style += (atlas index + 1) × GLYPH_SHIFT (0 = none). Faint: alpha GLYPH_A, the rim hue 45 % toward the front white. */
+export const GLYPH_SHIFT = 64;
+const GLYPH_A = '0.2';
 
 const RIBBON_H = '0.35', RIBBON_A = '0.55';
 const VERT = /* glsl */`
@@ -97,7 +100,7 @@ const FRAG = /* glsl */`
   uniform vec3 uFrontWhite; uniform float uTime; uniform float uStrong; uniform float uLockGain;
   uniform sampler2D uDepth; uniform float uHasDepth; uniform vec2 uCanvasRes; uniform vec2 uUvScale;
   uniform mat4 uProjInv; uniform mat4 uCamWorld; uniform float uOccMul; uniform float uOccOn; uniform float uLift;
-  uniform float uThumb;
+  uniform float uThumb; uniform sampler2D uGlyph; uniform float uGlyphCols;
   varying vec2 vP; varying vec3 vW; varying float vViewZ;
   varying vec4 vS; varying vec4 vT; varying vec4 vD; varying vec4 vE;
   float sdPie(vec2 p, float a, float r) {
@@ -124,6 +127,7 @@ const FRAG = /* glsl */`
     }
     int st = int(vT.w + 0.5);
     vec2 p = vP;
+    vec2 dpx = dFdx(p), dpy = dFdy(p);                  // for the glyph's textureGrad (taken before any divergent branch)
     float mpp = max(length(fwidth(p)) * 0.7071, 1e-4);   // metres per pixel
     float aa = mpp;
     float sd, f, fillLen; bool directional = false;
@@ -188,6 +192,26 @@ const FRAG = /* glsl */`
     if (vE.y > 0.5) fillA = ${THREAT_LAYERS.end.snapFill.toFixed(2)};
     if (solid) fillA = 0.9;
     acc = over(acc, solid ? rimCol : fillCol, inside * fillA);
+    int gi = st / ${GLYPH_SHIFT} - 1;
+    if (gi >= 0 && !hazard && !safe && !marker && !solid && uGlyphCols > 0.5) {   // P1: faint element glyph in the fill
+      vec2 gc = vec2(0.0); float gR = 0.0;
+      if (kind == 0) gR = min(r0 * 0.45, 2.0);
+      else if (kind == 2) { gc = vec2(0.0, r0 * 0.55); gR = min(min(r0 * 0.24, 1.6), 0.5 * r0 * sin(min(r1, 1.5708))); }
+      else if (kind == 3 || kind == 4) { gc = vec2(0.0, r0 * 0.5); gR = min(min(r1 * 0.85, 1.4), r0 * 0.3); }
+      if (gR > 0.35) {
+        vec2 lq = (p - gc) / (2.0 * gR);
+        if (abs(lq.x) < 0.49 && abs(lq.y) < 0.49) {
+          float cols = uGlyphCols;
+          vec2 cell = vec2(mod(float(gi), cols), floor(float(gi) / cols));
+          vec2 guv = (cell + vec2(0.5 + lq.x, 0.5 - lq.y)) / cols;
+          float k = 1.0 / (2.0 * gR * cols);
+          float sdf = textureGrad(uGlyph, guv, vec2(dpx.x, -dpx.y) * k, vec2(dpy.x, -dpy.y) * k).r;
+          float gw = max(mpp * 4.0 / gR, 0.01);
+          float gm = smoothstep(0.5 - gw, 0.5 + gw, sdf);
+          acc = over(acc, mix(rimCol, uFrontWhite, 0.45), inside * gm * ${GLYPH_A} * (1.0 - 0.5 * vE.y));
+        }
+      }
+    }
     if (chevOn) {
       float sp = fillLen / 3.0;
       float v = f * fillLen - abs(p.x) * 0.55;
@@ -233,6 +257,12 @@ export function setRange(buf, range, count) {
   if (R) { R.length = 0; R[0] = range; } else buf.addUpdateRange(0, count);
 }
 
+let _blank = null;
+function blankGlyph() {   // 1×1 R8 zero texture: the sampler is always bound (one program with or without the kit atlas)
+  if (!_blank) { _blank = new THREE.DataTexture(new Uint8Array(1), 1, 1, THREE.RedFormat, THREE.UnsignedByteType); _blank.needsUpdate = true; }
+  return _blank;
+}
+
 function gridGeometry(sx, sz) {
   const g = new THREE.PlaneGeometry(2, 2, sx, sz);
   g.rotateX(-Math.PI / 2);                    // normals +y; (x, z) in [−1, 1]
@@ -266,6 +296,7 @@ export function createDecals(game) {
     uDepth: P.sceneDepth || uni(null), uHasDepth: uni(0), uCanvasRes: P.canvasRes || uni(new THREE.Vector2(1, 1)), uUvScale: P.uvScale || uni(new THREE.Vector2(1, 1)),
     uProjInv: P.projInv || uni(new THREE.Matrix4()), uCamWorld: P.camWorld || uni(new THREE.Matrix4()),
     uOccMul: uni(THREAT_LAYERS.occludedAlpha), uOccOn: uni(1), uThumb: uni(0),
+    uGlyph: uni(blankGlyph()), uGlyphCols: uni(0),
   };
   for (let i = 0; i < 8; i++) { uniforms.uRim.value.push(new THREE.Color()); uniforms.uEdge.value.push(new THREE.Color()); uniforms.uFill.value.push(new THREE.Color()); uniforms.uFillA.value.push(0.16); }
   let paletteKey = null;
@@ -438,5 +469,11 @@ export function createDecals(game) {
     if (fz >= fx) return h00 + (h11 - h01) * fx + (h01 - h00) * fz;
     return h00 + (h10 - h00) * fx + (h11 - h10) * fz;
   }
-  return { root, material, uniforms, fams, alloc, free, end, layout, frame, setPalette, count, heightAt, useHF, TELL_CODE };
+  /** P1 glyph atlas (vfx kit `GL`): bind it once; returns true when glyphs can be drawn. */
+  function setGlyphAtlas(tex, cols) {
+    if (!tex || !(cols > 0)) return false;
+    uniforms.uGlyph.value = tex; uniforms.uGlyphCols.value = cols;
+    return true;
+  }
+  return { root, material, uniforms, fams, alloc, free, end, layout, frame, setPalette, count, heightAt, useHF, TELL_CODE, setGlyphAtlas };
 }
