@@ -68,8 +68,13 @@ export function registerMeleeArchetypes(game, E) {
       poise: p.break ?? p.poise, lifesteal: p.lifesteal, ...(extra || null) };
   }
   const tickSpec = (ctx, amount, extra) => ({ amount, status: ctx.params?.status, kb: 0, launch: 0, tier: 'light', tags: ['zone'], ctx, el: ctx.element, sparks: false, sound: false, noCounter: true, ...(extra || null) });
-  /** The caster archetype fired from the weapon tip (magic present), at the strike frame. */
+  /**
+   * The caster archetype fired from the weapon tip. v4: melee owns the melee look of every skill (PLAN §3.6, §3.7 melee column),
+   * so the self-contained melee forms always play (same params: damage, radius, duration); this only runs when a skill def
+   * explicitly asks for the caster form (def.melee.caster === true).
+   */
   function casterFx(ctx, name, over) {
+    if (ctx.def?.melee?.caster !== true) return false;
     const fn = game.archetypes?.getArchetype?.(name, 'caster');
     if (!fn) return false;
     const c2 = Object.create(ctx);
@@ -84,7 +89,13 @@ export function registerMeleeArchetypes(game, E) {
     if (ctx.element) E.setElementLocal(ctx.element);
     const hitT = clamp(o.hitT ?? ctx.def?.melee?.hitT ?? 0.35, 0.05, 0.95);
     const yaw = o.yaw ?? aimYaw(ctx);
-    const evs = [[hitT, (a) => { try { o.strike?.(a); } catch (err) { warnOnce('strike:' + ctx.skillId, err); } }]];
+    const look = E.look;
+    const evs = [[hitT, (a) => {
+      look?.hook?.('strike', a, ctx);
+      if (look?.cur?.row?.replaceStrikeFx) look.cur.mute = look.cur.row.mute;
+      try { o.strike?.(a); } catch (err) { warnOnce('strike:' + ctx.skillId, err); }
+      look?.hook?.('after', a, ctx);
+    }]];
     if (o.events) for (const e of o.events) evs.push(e);
     E.tag.skillId = ctx.skillId; E.tag.slot = ctx.slot;
     const dur = o.dur ?? 0.72;
@@ -92,8 +103,9 @@ export function registerMeleeArchetypes(game, E) {
       name: 'sk_' + ctx.skillId, kind: kindOf(ctx), tpl: ctx.def?.melee?.tpl || o.tpl || 'slashR', dur, cancel: o.cancel ?? Math.min(dur, Math.max(hitT + 0.2, 0.55) * dur),
       move: o.move ?? 0.12, target: o.target ?? null, facing: yaw, superArmor: o.superArmor ?? true, noGlide: true, lunge: o.lunge, lungeT: o.lungeT,
       trail: o.trail || [Math.max(0, hitT - 0.18), Math.min(1, hitT + 0.22)], events: evs, hits: o.hits, setVy: o.setVy, gravityMul: o.gravityMul,
-      onUpdate: o.update, poseFn: o.poseFn, loop: o.loop, spin: o.spin,
+      onUpdate: o.update, poseFn: o.poseFn, loop: o.loop, spin: o.spin, strikeT: hitT,
     });
+    E.look?.hook?.('start', E.act, ctx);
     try { P().playCast?.(ctx.def?.anim || 'basic', ctx.element); } catch (_) { /* presentation */ }
     return E.act;
   }
@@ -169,7 +181,7 @@ export function registerMeleeArchetypes(game, E) {
     S.every(0.05, life, () => {
       at.addScaledVector(dir, sp * 0.05);
       at.y = S.groundAt(at.x, at.z) + 1.2;
-      vfx('burst', at, { count: 1, shape: 'spark', color: [0xffffff, palOf(ctx.element).a], speed: 1.5, spread: 1, size: 0.25, sizeEnd: 0, life: 0.15 });
+      vfx('burst', at, { count: 1, shape: 'spark', color: [0xe8d9b0, palOf(ctx.element).a], speed: 1.5, spread: 1, size: 0.25, sizeEnd: 0, life: 0.15 });
       zap -= 0.05;
       if (zap > 0) return;
       zap = orb.every || 0.5;
@@ -760,7 +772,13 @@ export function registerMeleeArchetypes(game, E) {
   for (const name of MELEE_ARCHETYPES) {
     const fn = A[name];
     if (!fn) continue;
-    const wrapped = (ctx) => { try { fn(ctx); } catch (err) { warnOnce(name, err); throw err; } };
+    // v4: every skill runs inside its cast context (castId from the skills runtime, tier from the def, bespoke row if any)
+    const wrapped = (ctx) => {
+      const L = E.look;
+      const cc = L ? L.begin({ skillId: ctx.skillId, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx), archetype: name }) : null;
+      const prev = L ? L.cur : null; if (L) L.cur = cc;
+      try { fn(ctx); } catch (err) { warnOnce(name, err); throw err; } finally { if (L) L.cur = prev; }
+    };
     try { R?.registerArchetype?.(name, 'melee', wrapped); n++; } catch (err) { warnOnce('register:' + name, err); }
   }
   return {

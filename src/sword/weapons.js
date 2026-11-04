@@ -16,25 +16,19 @@ export const WEAPONS = {
 export function weaponFor(style) { return WEAPONS[style] || WEAPONS.longsword; }
 
 // ---------------------------------------------------------------- palette
-// a: saturated slash colour, b: hot core / highlight, noise: slash-shader noise amount.
-// The classic five keep their v2 values (legacy look). Everything else comes from ELEMENT_DEFS; unknown → physical.
-const EXTRA = {
-  fire: { a: 0xff4a10, b: 0xffe08a, noise: 0.7 },
-  ice: { a: 0x3fb8ff, b: 0xeaffff, noise: 0.35 },
-  lightning: { a: 0x9a6bff, b: 0xf6eeff, noise: 0.8 },
-  wind: { a: 0x2fe39a, b: 0xeafff4, noise: 0.6 },
-  earth: { a: 0xd0802a, b: 0xfff0c0, noise: 0.55 },
-  water: { noise: 0.45 }, nature: { noise: 0.6 }, light: { noise: 0.3 }, shadow: { a: 0x8a3cff, b: 0xe2c8ff, noise: 0.85 },
-};
+// v4 (PLAN §3.2): a = the element body (`fx.mid`), b = highlight (`fx.light`, never white), edge = `fx.dark`. The look engine
+// (sword/looks.js) re-colours every legacy vfx call from the 4-step ramps anyway; these feed ghosts / tints / HUD only.
+const NOISE = { fire: 0.7, ice: 0.35, lightning: 0.8, wind: 0.6, earth: 0.55, water: 0.45, nature: 0.6, light: 0.3, shadow: 0.85 };
+const PHYS = { hi: 0xf4f1ea, light: 0xcfc8ba, mid: 0x8a8274, dark: 0x2e2a24 };
 function build() {
   const out = {};
   for (const id of ALL_ELEMENTS) {
     const c = ELEMENT_DEFS[id].colors || {};
-    const x = EXTRA[id] || {};
-    out[id] = { a: x.a ?? c.mid ?? c.hex ?? 0xffffff, b: x.b ?? c.core ?? 0xffffff, edge: c.edge ?? c.hex ?? 0xffffff, noise: x.noise ?? 0.5 };
+    const f = c.fx || { light: c.core ?? c.mid ?? PHYS.light, mid: c.mid ?? c.hex ?? PHYS.mid, dark: c.edge ?? PHYS.dark };
+    out[id] = { a: f.mid, b: f.light, edge: f.dark, noise: NOISE[id] ?? 0.5 };
   }
-  out.physical = { a: 0xd8dde6, b: 0xffffff, edge: 0x9aa4b4, noise: 0.4 };
-  out.void = { a: PSEUDO_ELEMENTS.void?.hex ?? 0x7a3cff, b: 0xe8d8ff, edge: 0x3a1a6a, noise: 0.8 };
+  out.physical = { a: PHYS.mid, b: PHYS.light, edge: PHYS.dark, noise: 0.4 };
+  out.void = { a: out.shadow?.a ?? (PSEUDO_ELEMENTS.void?.hex ?? 0x4a1a7a), b: out.shadow?.b ?? 0x9a5cff, edge: out.shadow?.edge ?? 0x0c0614, noise: 0.8 };
   return out;
 }
 export const PAL = build();
