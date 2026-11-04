@@ -141,6 +141,7 @@ export const SETTINGS_TEXT_KO = {
   offerHighYes: '바꾸기', offerHighNo: '그대로',
   offerLow: '보통 품질로 낮출까요? (재시작 필요)',
   autoLevel: '자동 품질',
+  benchLine: '성능 테스트: 평균 {avg} fps · 1% 최저 {low} fps · 자동 품질 L{level} · 렌더 {w}×{h} · CPU {cpu} ms{gpuPart} · {gpu} ({tier})',
 };
 
 /** v3 boolean damageNumbers → v4 enum. */

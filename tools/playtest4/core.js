@@ -617,4 +617,37 @@ async function c4(PT) {
   PT.check('C4 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
 }
-async function c7(PT) { PT.skip('C7', 'pending'); }
+// ==================================================================== C7: 성능 테스트 benchmark + title benchmark
+async function c7(PT) {
+  const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage');
+  if (!pg.ready) { PT.check('C7 boot', false); return; }
+  const r = await pg.eval(async () => {
+    const g = window.game, p = g.player, S = g.skills;
+    PT.step(0.3);
+    S.resetCooldowns?.(); g.debug.cast(S.skillForSlot?.('q2') || S.loadout?.q2); PT.step(0.1);
+    p.hp = Math.round(p.maxHp * 0.6); if (p.entity) p.entity.hp = p.hp;
+    const snapCd = JSON.stringify(S.cooldownSnapshot?.());
+    const before = { pos: p.object.position.toArray().map((v) => +v.toFixed(4)), hp: p.hp, ehp: p.entity?.hp, mp: p.mp, yaw: p.yaw, state: g.state, level: g.quality.level, locked: g.quality.locked, enemies: PT.enemies().length };
+    const res = await g.quality.benchmark({ seconds: 3 });
+    const after = { pos: p.object.position.toArray().map((v) => +v.toFixed(4)), hp: p.hp, ehp: p.entity?.hp, mp: p.mp, yaw: p.yaw, state: g.state, level: g.quality.level, locked: g.quality.locked, enemies: PT.enemies().length };
+    const cdNow = JSON.stringify(S.cooldownSnapshot?.()); const cdSame = cdNow === snapCd; const cdDiff = cdSame ? null : [snapCd.slice(0, 300), cdNow.slice(0, 300)];
+    const text = g.quality.formatBench?.(res);
+    // title benchmark (real rAF frames, unfrozen loop) picks a start level
+    g.freeze(false);
+    const tb = await g.quality.titleBenchmark({ seconds: 1, apply: true, offer: false });
+    g.freeze(true);
+    const lvl = g.quality.level, hist = g.quality.history().slice(-1)[0];
+    g.quality.set(0, 'test');
+    return { res, before, after, cdSame, cdDiff, text, tb, lvl, hist, input: [...(g.input._locks || [])] };
+  });
+  const R = r.res || {};
+  PT.check('C7: benchmark({seconds:3}) returns every field', ['avgFps', 'low1Fps', 'level', 'renderW', 'renderH', 'gpu', 'tier', 'cpuMs'].every((k) => k in R) && R.avgFps > 0 && R.low1Fps > 0 &&
+    R.renderW > 0 && R.renderH > 0 && typeof R.gpu === 'string' && R.frames > 10 && R.cast >= 4, R);
+  PT.check('C7: game restored exactly (position, HP, MP, look, cooldowns, state, governor lock, input)', JSON.stringify(r.before) === JSON.stringify(r.after) && r.cdSame && r.input.length === 0, { before: r.before, after: r.after, cdSame: r.cdSame, cdDiff: r.cdDiff, input: r.input });
+  PT.check('C7: plain-text result for the 복사 button', typeof r.text === 'string' && r.text.includes('fps') && r.text.includes(String(R.renderW)), r.text);
+  PT.check('C7: title benchmark picks a start level (0/1/2) and applies it', r.tb && [0, 1, 2].includes(r.tb.level) && r.lvl === r.tb.level && r.tb.frames >= 2 && typeof r.tb.headroom === 'number' &&
+    (r.tb.level === 0 || r.hist?.reason === 'titleBenchmark'), { tb: r.tb, lvl: r.lvl, hist: r.hist });
+  PT.note(`C7 benchmark (SwiftShader, 640×360): ${r.text}; title: L${r.tb?.level} misses ${r.tb?.misses} headroom ${r.tb?.headroom}`);
+  PT.check('C7 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
+  await pg.close();
+}

@@ -18,6 +18,7 @@ import { DIFFICULTY } from './core/settings.js';
 import { createRender } from './core/render.js';
 import { detectGpu, baseScale as gpuBaseScale } from './core/gpu.js';
 import { createQuality } from './core/quality.js';
+import { installBench } from './core/bench.js';
 
 const params = new URLSearchParams(location.search);
 const isTest = params.has('test');
@@ -299,6 +300,7 @@ game.render = createRender(game, {
 });
 game.quality = createQuality(game, { renderSize: (out) => { out.w = composer.viewport.w; out.h = composer.viewport.h; return out; } });
 game.quality.gpuTimer.init(renderer);
+installBench(game);   // game.quality.benchmark({seconds}) (§2.8)
 game.stats = createStats(game);
 game.progression = createProgression(game);
 game.archetypes = createArchetypes(game);
@@ -806,6 +808,7 @@ function loop(now) {
   const G = game.quality, gov = testParams.governor;
   if (gov) G.gpuTimer.begin();
   frame(realDt);
+  game.lastFrameCpuMs = performance.now() - t0;
   if (gov) {
     G.gpuTimer.end();
     try { G.frame(realDt * 1000, performance.now() - t0, G.gpuTimer.poll()); } catch (err) { if (!loop.gErr) { loop.gErr = true; console.error('[governor]', err); } }

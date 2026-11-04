@@ -520,7 +520,7 @@ export function installRuntime(game, K) {
     gift: null, element: null, index: 0,
   };
   const elemPool = [];
-  for (let i = 0; i < ALL_ELEMENTS.length + 2; i++) elemPool.push({ id: null, name: '', color: 0xffffff, css: '#fff', access: null, unlocked: false, attuned: false, points: 0, mastery: 'none', locked: true });
+  for (let i = 0; i < ALL_ELEMENTS.length + 2; i++) elemPool.push({ id: null, name: '', color: 0, css: '', access: null, unlocked: false, attuned: false, points: 0, mastery: 'none', locked: true });
   for (const s of SLOTS) HUD.slots.push({ slot: s, key: SLOT_KEY[s] || KEY_LABELS[s] || s, id: null, name: '', desc: '', element: null, kind: 'skill', archetype: null,
     cost: 0, resource: 'mp', cooldown: 0, cooldownLeft: 0, ready: false, locked: true, awakened: false, charges: 0 });
   const giftObj = { ready: false, charges: 0, element: null };
@@ -621,6 +621,16 @@ export function installRuntime(game, K) {
     loadout, attuned: null, lastPath: null,
     attune, cycleAttune, equip, unequip, canEquip, autoEquip,
     cast, castSlot, skillForSlot, isReady, cooldownLeft: cdLeft, resetCooldowns,
+    /** benchmark / tests: exact copy of the cooldown + charge state, and its restore (core bench.js, §2.8) */
+    cooldownSnapshot() { return { cd: [...cooldowns], tot: [...cdTotal], ch: [...charges].map(([k, c]) => [k, { ...c }]) }; },
+    cooldownRestore(s) {
+      if (!s) return;
+      cooldowns.clear(); for (const [k, v] of s.cd) cooldowns.set(k, v);
+      cdTotal.clear(); for (const [k, v] of s.tot) cdTotal.set(k, v);
+      const keep = new Set(s.ch.map((e) => e[0]));
+      for (const k of [...charges.keys()]) if (!keep.has(k)) charges.delete(k);
+      for (const [k, c] of s.ch) { const cur = charges.get(k); if (cur) Object.assign(cur, c); else charges.set(k, { ...c }); }
+    },
     family, style, effectiveParams, applyPreset, getHudState, useGift,
     serialize, deserialize, after,
     _update: update, _resetOne: resetOne, _ensureAttune: ensureAttune, _cleanup: cleanupUnlearned,

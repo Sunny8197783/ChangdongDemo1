@@ -317,11 +317,13 @@ export function createQuality(game, { renderSize } = {}) {
         const R = game.renderer, gl = R?.getContext?.();
         const px = new Uint8Array(4);
         const dts = [], cpus = [], syncs = [];
-        let last = performance.now(), t = 0, n = 0;
+        let last = -1, t = 0, n = 0;
         api.benchCam = { t: 0 };
         const step = () => {
-          const now = performance.now(); const dt = (now - last) / 1000; last = now;
-          if (n > 0) dts.push(dt);
+          const now = performance.now();
+          if (last < 0) { last = now; requestAnimationFrame(step); return; }   // the first callback only starts the clock
+          const dt = (now - last) / 1000; last = now;
+          dts.push(dt);
           t += dt; n++; api.benchCam.t = t;
           // every 6th frame: one synchronised render (CPU submit + GPU) for a GPU-time estimate without the timer query
           if (n % 6 === 3 && gl) {
