@@ -31,9 +31,11 @@ const testParams = {
   seed: isTest && params.has('seed') ? (+params.get('seed') || 0) : null,
   gpu: isTest ? params.get('gpu') : null,
 };
+let seedRandom = null;   // test only: re-seed the PRNG (game.seedRandom(n)); the rAF loop consumes a boot-dependent number of draws
 if (testParams.seed != null) {
   // mulberry32: same sequence for the same seed in every run
   let a = (testParams.seed >>> 0) || 1;
+  seedRandom = (n) => { a = (n >>> 0) || 1; };
   Math.random = function seededRandom() {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -206,6 +208,7 @@ function hitstopLog() {
 }
 // Core services exist BEFORE any module factory runs (CONTRACT §2, PLAN v4 §7.3).
 game.testParams = testParams;
+if (seedRandom) game.seedRandom = seedRandom;
 game.KEYS = KEYS;
 game.keymapMode = keymapMode(game);
 game.elements = ELEMENTS_API;
@@ -264,6 +267,7 @@ game.render = createRender(game, {
   msaa: bootMsaa, pointLights: bootPointLights, shadowType: bootShadowType,
 });
 game.quality = createQuality(game, { renderSize: (out) => { out.w = composer.viewport.w; out.h = composer.viewport.h; return out; } });
+game.quality.gpuTimer.init(renderer);
 game.stats = createStats(game);
 game.progression = createProgression(game);
 game.archetypes = createArchetypes(game);
@@ -489,6 +493,10 @@ async function boot() {
 
   game.ready = true;
   requestAnimationFrame(loop);
+  // title benchmark (§2.3, P0): 2 s of real frames behind the title pick the governor's start level + the high offer
+  if (!isTest && testParams.governor && game.state === 'title') {
+    setTimeout(() => { if (game.state === 'title') game.quality.titleBenchmark({ seconds: 2 }).catch?.(() => {}); }, 600);
+  }
 }
 
 // ---------- test URL params (CONTRACT §21) ----------
@@ -608,6 +616,7 @@ function call(name, dt, realDt) {
 }
 const FR = game.frame;
 function frame(realDt, render = true) {
+  game.frameCount = (game.frameCount || 0) + 1;
   game.timeScale.update(realDt);          // first, in every state (CONTRACT §2)
   game.input.update();
   game.realTime += realDt;
@@ -716,27 +725,16 @@ function loop(now) {
   last = now;
   fpsWin.push(realDt); if (fpsWin.length > 60) fpsWin.shift();
   game.fps = fpsWin.length / fpsWin.reduce((a, b) => a + b, 0);
-  if (testParams.governor) governor(realDt);
+  const t0 = performance.now();
+  const G = game.quality, gov = testParams.governor;
+  if (gov) G.gpuTimer.begin();
   frame(realDt);
-}
-// ---------- dynamic quality governor (DESIGN §12) ----------
-// frame-time EMA above 18 ms for 2 s → game.perfScale 0.7 (vfx particle counts and the global VFX draw budget
-// scale by it; distant procedural animation runs at half rate); restored after 4 s under 14 ms. Runtime only:
-// never written into the persisted settings.
-game.perfScale = 1;
-var ftEma = 1 / 60, slowT = 0, fastT = 0;   // var: the rAF loop may start before this line runs
-function governor(realDt) {
-  if (!(ftEma > 0)) { ftEma = 1 / 60; slowT = 0; fastT = 0; }
-  if (game.perfScale == null) game.perfScale = 1;
-  ftEma += (realDt - ftEma) * 0.08;
-  if (game.perfScale >= 1) {
-    slowT = ftEma > 0.018 ? slowT + realDt : 0;
-    if (slowT >= 2) { game.perfScale = 0.7; slowT = 0; fastT = 0; game.events?.emit?.('perfScale', { scale: 0.7 }); }
-  } else {
-    fastT = ftEma < 0.014 ? fastT + realDt : 0;
-    if (fastT >= 4) { game.perfScale = 1; fastT = 0; slowT = 0; game.events?.emit?.('perfScale', { scale: 1 }); }
+  if (gov) {
+    G.gpuTimer.end();
+    try { G.frame(realDt * 1000, performance.now() - t0, G.gpuTimer.poll()); } catch (err) { if (!loop.gErr) { loop.gErr = true; console.error('[governor]', err); } }
   }
 }
+// ---------- quality governor v4: src/core/quality.js (game.quality.frame above; never persisted) ----------
 // ---------- test hooks ----------
 // game.freeze(true) stops the rAF loop; game.step(n, dt) advances n frames deterministically without
 // rendering (last frame rendered when render=true). Used by tools/shot.js and tools/playtest.js.
