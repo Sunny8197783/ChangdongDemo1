@@ -1,10 +1,11 @@
 # tells — v4 notes
 
 Owner: tells (`src/tells.js`, `src/tells/*`, `tools/playtest4/tells.js`, `docs/v4/notes/tells.md`, `docs/v4/requests/tells.md`).
-Branch `v4/tells` (from `core-p0a`), worktree `/home/user/wt4/tells`. Merged read-only: `world-p0a`, then `world-b`. `kit-p0a` (vfx) and `core-b` did not exist
-at the final run, so vfx and the core render path are the `core-p0a` versions (v3 composer chain, global hitstop).
+Branch `v4/tells` (from `core-p0a`), worktree `/home/user/wt4/tells`. Merged read-only: `world-p0a`, `world-b`, `kit-p0a` (vfx). `core-b` did not exist at the final run, so the core
+render path is the `core-p0a` version (v3 composer chain, global hitstop).
 
-Tags: **`tells-p0a`** (attack / handle / hitTest / canAttack / punish / events + the instanced decal), **`tells-b`** (this state).
+Tags: **`tells-p0a`** (attack / handle / hitTest / canAttack / punish / events + the instanced decal), `tells-b` (before `kit-p0a`
+appeared), **`tells-b.2`** (this state: `kit-p0a` merged, T2 re-run with kit linework over the decals).
 
 ## What exists
 
@@ -56,7 +57,8 @@ flash at lock; fragment hard depth compare `hullDepth ≤ sceneDepth + 0.05 m`. 
 
 ### Other APIs
 `projectile(obj, {r = 0.6})` · `hazard({pos, r|shape, dur, kind, nameKo})` · `safe({pos, r|shape, dur})` (safe zones are in `footprints()`) · `hazardAt(pos, pad)` ·
-`telegraph(o)` (v3 adapter: full degrees → rad half-angle; damage/void/holy → danger, grab → unblockable, parryable → parry; times on `game.time` like v3; v3 handle + `onDone`) ·
+`telegraph(o)` (v3 adapter: full degrees → rad half-angle, or `halfAngle` in rad; `tell` / `unblockable` / grab → unblockable, parryable → parry, else danger;
+times on `game.time` like v3; v3 handle + `setPosition` alias + `onDone`; `owner:'player'` → timed handle without a decal, since the threat scene is enemy-only) ·
 `active()` (reused records + `locked`, `handle`) · `footprints()` (`{data: Float32Array(64), n}`, 8 nearest to the player: true shapes, conecap = capsule + cone, safe zones,
 hazards, winding-up bodies r + 1 m) · `renderThumb(kind, size)` (`danger, parry, unblockable, jump, projectile, hazard, safe, punish, perfect`) · `MIN`, `LOCK` ·
 `debug.{setVisible, pixelsOf, pool, rims, sprites, occlusion, heightAt, reset, resetSeen, handles, …}`.
@@ -73,7 +75,7 @@ hazards, winding-up bodies r + 1 m) · `renderThumb(kind, size)` (`danger, parry
 | `tells.update` CPU (same load) | median < 0.1 ms, p95 0.1 ms | — |
 | T1 changed px at 8 m, 960×540, grass on | circle 61.8k, ring 166.8k, cone 32.7k, line 39.3k, capsule 34.7k, conecap 35.2k | ≥ 600 (v3: 0) |
 | heightField conformance (6 m decal, 5 spots, vertices + cell midpoints) | max 0.008 m | ≤ 0.1 m |
-| T2 telegraph px with ~1,300 legacy particles over the decals ÷ hidden | 1.06 / 1.07 / 1.06 / 1.06 | ≥ 0.95 |
+| T2 telegraph px with player VFX over the decals ÷ hidden (kit-p0a linework + legacy particles) | 1.018 / 1.013 / 1.005 / 1.000 (before kit-p0a: 1.06–1.07) | ≥ 0.95 |
 | T2 grass on ÷ off | 0.997–0.998 | ≥ 0.95 |
 | T2 behind a 2.6 m wall (median per-pixel contribution ratio) | 0.418 (mean 0.437: the wall's lowest metre is not an occluder by rule) | 0.40 ± 0.05 |
 | T2 rim colour bloom on vs off | ΔRGB max 1 | ≤ 8 |
@@ -87,8 +89,11 @@ Integration-only (I) checks to verify at wave C: T2 with real looks (R-mage, R-s
 main scene (ratios > 1 because particles behind the decal raise the per-pixel diff); enemy-body-visible rows depend on mobs adopting `tells.attack` + rim sources.
 
 ## Tests on this branch
-- `node tools/playtest4.js tells`: **95 passed, 0 failed, 0 skipped** (87 s; T1–T4, the no-heightField fallback page, rule 5/6 greps). `TELLS_ONLY=<regex>` runs a subset (development only).
-- `node tools/bootcheck.js`, `tools/playtest.js --quick`, `tools/playtest2.js`, `tools/playtest3.js` (all sections): pass (playtest3: 1260 passed, 0 failed, 1 skipped).
+- `node tools/playtest4.js tells`: **95 passed, 0 failed, 0 skipped** (110 s; T1–T4, the no-heightField fallback page, rule 5/6 greps), with world-b + kit-p0a merged. `TELLS_ONLY=<regex>` runs a subset (development only).
+- `node tools/bootcheck.js` (15/15 configs reach their state; only the expected 404s of the two renamed-directory configs), `tools/playtest.js --quick`: pass.
+- `tools/playtest2.js`: passed fully before `kit-p0a`; with `kit-p0a` merged one check fails — `sword: wind combo hitstop on every hit` (vfx's v4 hitstop
+  0.025 s vs the v3 `≥ 0.03` assertion). That expectation is core's to rewrite (§7.9 row 1, `hitstopLog`); it is not caused by tells.
+- `tools/playtest3.js` (all sections): before kit-p0a 1260 passed, 0 failed, 1 skipped; final run with kit-p0a: see the report.
 - No playtest3 section is owned by tells (§7.1), so no legacy expectations changed (rule 9).
 
 ## P1
@@ -96,7 +101,10 @@ main scene (ratios > 1 because particles behind the decal raise the per-pixel di
 - **Cut**: the faint element glyph in the fill (needs the vfx glyph atlas from `kit-p0a`, which did not exist; fallback = no glyph, nothing else depends on it).
 
 ## Known issues / notes
-- In the live game the v3 enemies still use `ctx.tele` → v3 `vfx.telegraph` and `ctx.telegraphs.show` (main scene) until mobs/bosses adopt `tells.attack` and vfx forwards
-  `vfx.telegraph` (requests). Player-cast `fx('telegraph')` previews must not be forwarded into the threat scene (requests/vfx).
+- `kit-p0a`'s `vfx.telegraph` forwards **every** call to `tells.telegraph`, including the player-cast `fx('telegraph')` AoE previews of spells/sword archetypes, which
+  therefore show as red danger decals in the threat scene until magic/melee pass `owner:'player'` (the adapter then skips the decal) or stop calling it (requests/vfx).
+- Mobs/bosses still use `ctx.tele` (→ the adapter, timed on `game.time`) and `ctx.telegraphs.show` rings (main scene) until they adopt `tells.attack` (requests).
+- `tools/playtest3.js combat` "natural P0 triggers … magma" (vfx-owned section, changed by `kit-p0a`) failed in 2 of 4 runs on this branch after the kit merge (passes on retry);
+  it does not involve tells (no `tells.attack` callers exist yet).
 - `canAttack`'s off-screen test uses the camera frustum with the enemy's upper-body sphere; it recomputes the frustum per call (cheap, allocation-free).
 - Thumbnails and the `공격 기회!` text use the system Korean font of the canvas; on machines without one the text cell falls back to the browser's default sans-serif.

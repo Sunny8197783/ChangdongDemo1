@@ -21,13 +21,17 @@
   returns the v3 handle (`alive, progress, timeLeft, stop, setPos, setDir`).
 - **Do not forward player-cast telegraphs.** `src/spells/archetypes.js` (313, 672, 711, 727, 803, 1004), `src/spells/bespoke.js` (109, 161) and
   `src/sword/archetypes.js` (568) call `fx('telegraph', …)` for the player's own AoE previews; the threat scene must never hold player effects (§5.3).
-  Please route those to kit linework (or drop them) — e.g. forward only when `o.owner !== 'player'`, and ask magic/melee to pass `owner:'player'`.
+  `kit-p0a` forwards every call; the adapter now skips the decal when `o.owner === 'player'` (the handle still times), so either forward with
+  `owner:'player'` for those callers or ask **magic / melee** to pass `owner:'player'` (better: replace them with kit linework).
 - **Footprints for ducking**: `tells.footprints()` → `{data: Float32Array(64), n}`, 8 floats per footprint `(x, z, kind, r, dirX, dirZ, param, len)`:
   `1` circle (r) · `2` ring (r = outer, param = inner) · `3` cone (apex x, z; r; dir; param = half-angle rad) · `4` line (starts at x, z; dir; len; r = half width) ·
   `5` capsule (x, z = start; dir = unit toward the end; len = segment length; r = half width). A conecap is written as a capsule + a cone; safe zones,
   hazards and winding-up bodies (r = radius + 1.0 m) are circles. Exported as `FOOT_KIND` from `src/tells/shapes.js`. Refreshed once per frame in
   `tells.update` (which runs before `vfx.update`).
 - `tools/playtest3/combat.js` (§7.9): with real tells, `tells.debug.pool()` → `{active, max: 16, zones, markers, waves, sprites}`.
+
+## magic / melee
+- Pass `owner:'player'` in your `fx('telegraph', …)` calls (or replace them with kit linework); without it they become red threat decals.
 
 ## mobs / bosses
 - Start every attack with `const h = game.tells.attack(e, spec)` (§7.4.4). Extras the real module supports:

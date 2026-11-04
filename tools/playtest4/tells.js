@@ -221,6 +221,13 @@ module.exports = async function tells(PT) {
     const recs = TL.debug.decals.fams.radial.recs.filter((r) => r.active && r.clock === 'game').map((r) => r.tell);
     PT.check('telegraph(o): parryable → parry, grab → unblockable', recs.includes(1) && recs.includes(2), recs);
     pr.stop(); gr.stop();
+    const hha = TL.telegraph({ shape: 'cone', pos: X.front(6), dir: new T.Vector3(0, 0, 1), r: 4, halfAngle: 0.5, tell: 'unblockable', dur: 1 });
+    const hr = TL.debug.decals.fams.radial.recs.filter((r) => r.active && r.clock === 'game' && r.S.kind === 'cone').sort((a, b) => b.serial - a.serial)[0];
+    PT.check('telegraph(o): accepts halfAngle (rad) and tell', hr && Math.abs(hr.S.angle - 0.5) < 1e-6 && hr.tell === 2, hr ? [hr.S.angle, hr.tell] : TL.debug.decals.fams.radial.recs.filter((r) => r.active).map((r) => [r.clock, r.S.kind]));
+    hha.stop(); PT.step(0.3);
+    const n0 = TL.debug.pool().active;
+    const hp = TL.telegraph({ shape: 'circle', pos: X.front(6), r: 3, dur: 0.5, owner: 'player' });
+    PT.check('telegraph(o): owner player → timed handle, no threat-scene decal', hp && hp.alive && TL.debug.pool().active === n0);
     X.clear();
   });
 

@@ -450,14 +450,17 @@ export function createTells(game) {
   function telegraph(o = {}) {
     if (!o || !o.pos) return null;
     const kind = LEGACY_SHAPES[o.shape] || 'circle';
-    const tell = o.color === 'grab' ? 'unblockable' : o.parryable ? 'parry' : 'danger';
+    const tell = o.tell && THREAT[o.tell] && o.tell !== 'hazard' && o.tell !== 'safe' && o.tell !== 'punish' ? o.tell
+      : o.unblockable || o.color === 'grab' ? 'unblockable' : o.parryable ? 'parry' : 'danger';
     const fam = SHAPE_FAMILY[kind] || 'radial';
-    const rec = decals.alloc(fam);
+    // the threat scene is enemy-only (§5.3): player-owned previews are timed but never drawn here
+    const rec = o.owner === 'player' ? null : decals.alloc(fam);
     const t0 = game.time || 0, dur = Math.max(0.1, o.dur ?? 1);
     const L = { rec, t0, dur, onDone: o.onDone || null, done: false };
     if (rec) {
+      const half = o.halfAngle != null ? +o.halfAngle : (o.angle ?? 60) * Math.PI / 180 * 0.5;
       const sh = { kind, pos: o.pos, dir: o.dir, r: o.r ?? o.len ?? 3, inner: o.inner, len: o.len ?? 8, width: o.width ?? 2,
-        angle: Math.max(0.02, Math.min(Math.PI, (o.angle ?? 60) * Math.PI / 180 * 0.5)) };
+        angle: Math.max(0.02, Math.min(Math.PI, half)) };
       setShape(rec.S, sh, o.pos, o.dir || null);
       rec.tell = TELL_CODE[tell]; rec.mode = 'tell'; rec.clock = 'game'; rec.start = t0; rec.dur = dur; rec.lockAt = Math.min(0.35, dur * 0.4);
       rec.perfectFrac = 1 - (PERFECT_WIN * (assist().perfectMul || 1)) / dur; rec.alpha = Math.min(1, o.alpha ?? 1);
@@ -471,6 +474,7 @@ export function createTells(game) {
       get timeLeft() { return L.done ? 0 : Math.max(0, L.dur - ((game.time || 0) - L.t0)); },
       stop() { if (!L.done) { L.done = true; L.onDone = null; if (L.rec) decals.end(L.rec, false); } },
       setPos(p) { if (!L.done && p && L.rec) { L.rec.S.px = p.x; L.rec.S.pz = p.z; L.rec.S.py = p.y || 0; syncRef(L.rec.S); decals.layout(L.rec); } },
+      setPosition(p) { handle.setPos(p); },
       setDir(d) { if (!L.done && d && L.rec) { setDir(L.rec.S, d.x, d.z); syncRef(L.rec.S); decals.layout(L.rec); } },
     };
     return handle;
