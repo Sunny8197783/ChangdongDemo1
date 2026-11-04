@@ -1,0 +1,556 @@
+{
+ "frames": 1800,
+ "wallMs": 137250,
+ "heapMBperSec": [
+  89.7,
+  99.3,
+  93.9,
+  93.9,
+  95.9,
+  97.5,
+  96.8,
+  97.2,
+  96.8,
+  100.6,
+  98.9,
+  100.4,
+  99,
+  95.4,
+  96.1,
+  97,
+  96.9,
+  99.3,
+  98.6,
+  98.6,
+  98.7,
+  98.1,
+  101.1,
+  97.3,
+  97.9,
+  99.4,
+  99.4,
+  99.9,
+  99.1,
+  100.5
+ ],
+ "new": {
+  "obj3D": 170,
+  "mats": 98,
+  "geos": 39
+ },
+ "mods": {
+  "world": {
+   "avg": 0.27,
+   "max": 64.3
+  },
+  "vfx": {
+   "avg": 0.626,
+   "max": 60.9
+  },
+  "combat": {
+   "avg": 0.237,
+   "max": 16.5
+  },
+  "audio": {
+   "avg": 0.002,
+   "max": 0.4
+  },
+  "player": {
+   "avg": 1.032,
+   "max": 39.6
+  },
+  "spells": {
+   "avg": 1.153,
+   "max": 64.9
+  },
+  "sword": {
+   "avg": 0.041,
+   "max": 14.6
+  },
+  "skills": {
+   "avg": 0.027,
+   "max": 11.4
+  },
+  "enemies": {
+   "avg": 0.822,
+   "max": 48.1
+  },
+  "story": {
+   "avg": 0.06,
+   "max": 10.1
+  },
+  "cinematic": {
+   "avg": 0.017,
+   "max": 4.4
+  },
+  "ui": {
+   "avg": 0.856,
+   "max": 65.5
+  }
+ },
+ "slow": [
+  [
+   0,
+   36
+  ],
+  [
+   15,
+   42
+  ],
+  [
+   23,
+   39
+  ],
+  [
+   30,
+   18296
+  ],
+  [
+   37,
+   47
+  ],
+  [
+   60,
+   2562
+  ],
+  [
+   90,
+   659
+  ],
+  [
+   120,
+   2854
+  ],
+  [
+   138,
+   27
+  ],
+  [
+   150,
+   2556
+  ],
+  [
+   237,
+   34
+  ],
+  [
+   240,
+   2284
+  ],
+  [
+   270,
+   3060
+  ],
+  [
+   300,
+   4017
+  ],
+  [
+   330,
+   1191
+  ],
+  [
+   390,
+   34
+  ],
+  [
+   434,
+   30
+  ],
+  [
+   480,
+   40
+  ],
+  [
+   498,
+   57
+  ],
+  [
+   510,
+   33
+  ],
+  [
+   531,
+   68
+  ],
+  [
+   540,
+   29
+  ],
+  [
+   579,
+   29
+  ],
+  [
+   580,
+   69
+  ],
+  [
+   582,
+   59
+  ],
+  [
+   630,
+   3048
+  ],
+  [
+   660,
+   10765
+  ],
+  [
+   720,
+   546
+  ],
+  [
+   728,
+   67
+  ],
+  [
+   750,
+   4223
+  ]
+ ],
+ "vfx": {
+  "additive": 1265,
+  "alpha": 273,
+  "particles": 1538,
+  "emitters": 24,
+  "beams": 11,
+  "trails": 7,
+  "debris": 39,
+  "ghosts": 0,
+  "rings": 7,
+  "domes": 1,
+  "decals": 12,
+  "telegraphs": 1,
+  "runes": 2,
+  "dissolves": 0
+ },
+ "entities": 47,
+ "allocMBperGameSec": 10.01,
+ "topAlloc": [
+  [
+   "separate src/enemies.js:438",
+   0.66
+  ],
+  [
+   "queryRadius src/combat.js:57",
+   0.372
+  ],
+  [
+   "update src/combat/statusfx.js:121",
+   0.343
+  ],
+  [
+   "updateEnemy src/enemies/base.js:355",
+   0.328
+  ],
+  [
+   "assign :0",
+   0.328
+  ],
+  [
+   "update src/player/cape.js:85",
+   0.314
+  ],
+  [
+   "hypot :0",
+   0.283
+  ],
+  [
+   "update src/spells/props.js:31",
+   0.266
+  ],
+  [
+   "update src/player.js:1039",
+   0.237
+  ],
+  [
+   "update src/vfx/particles.js:164",
+   0.231
+  ],
+  [
+   "integrate src/enemies/common.js:307",
+   0.216
+  ],
+  [
+   "burst src/vfx.js:63",
+   0.185
+  ],
+  [
+   "deform src/player/model.js:134",
+   0.181
+  ],
+  [
+   "getParameters vendor/three/three.module.js:20598",
+   0.177
+  ],
+  [
+   "random :0",
+   0.166
+  ],
+  [
+   "next :0",
+   0.164
+  ],
+  [
+   "update src/vfx/trail.js:79",
+   0.159
+  ],
+  [
+   "rebuildGrid src/world.js:125",
+   0.135
+  ],
+  [
+   "getHeight src/world/terrain.js:264",
+   0.124
+  ],
+  [
+   "raycastEntities src/combat.js:74",
+   0.114
+  ],
+  [
+   "e.pose src/enemies/wolf.js:94",
+   0.106
+  ],
+  [
+   "mastery src/core/progression.js:392",
+   0.106
+  ],
+  [
+   "updateNumbers src/ui.js:1311",
+   0.101
+  ],
+  [
+   "setFromBufferAttribute vendor/three/three.module.js:4651",
+   0.101
+  ],
+  [
+   "dampPose src/enemies/base.js:509",
+   0.1
+  ],
+  [
+   "updateStorm src/spells/zones.js:423",
+   0.097
+  ],
+  [
+   "update src/enemies.js:572",
+   0.093
+  ],
+  [
+   "_bake src/player/fx.js:190",
+   0.092
+  ],
+  [
+   "PlaneGeometry vendor/three/three.module.js:13740",
+   0.089
+  ],
+  [
+   "update src/vfx/ground.js:261",
+   0.087
+  ]
+ ],
+ "cpuTop": [
+  [
+   "bufferSubData :0",
+   33059,
+   24
+  ],
+  [
+   "uniformMatrix4fv :0",
+   28993,
+   21.1
+  ],
+  [
+   "getShaderInfoLog :0",
+   22857,
+   16.6
+  ],
+  [
+   "getProgramInfoLog :0",
+   10968,
+   8
+  ],
+  [
+   "uniform3f :0",
+   5997,
+   4.4
+  ],
+  [
+   "vertexAttribPointer :0",
+   5406,
+   3.9
+  ],
+  [
+   "getProgramParameter :0",
+   3393,
+   2.5
+  ],
+  [
+   "drawArraysInstanced :0",
+   3208,
+   2.3
+  ],
+  [
+   "texSubImage2D :0",
+   2868,
+   2.1
+  ],
+  [
+   "frontFace :0",
+   2473,
+   1.8
+  ],
+  [
+   "useProgram :0",
+   1660,
+   1.2
+  ],
+  [
+   "drawArrays :0",
+   1605,
+   1.2
+  ],
+  [
+   "blendFunc :0",
+   1084,
+   0.8
+  ],
+  [
+   "bindTexture :0",
+   1052,
+   0.8
+  ],
+  [
+   "updateMatrixWorld vendor/three/three.module.js:7720",
+   983,
+   0.7
+  ],
+  [
+   "drawElements :0",
+   819,
+   0.6
+  ],
+  [
+   "getBoundingClientRect :0",
+   646,
+   0.5
+  ],
+  [
+   "update src/vfx/particles.js:164",
+   494,
+   0.4
+  ],
+  [
+   "(program) :0",
+   456,
+   0.3
+  ],
+  [
+   "bindBuffer :0",
+   431,
+   0.3
+  ],
+  [
+   "(garbage collector) :0",
+   315,
+   0.2
+  ],
+  [
+   "updateEnemy src/enemies/base.js:355",
+   296,
+   0.2
+  ],
+  [
+   "multiplyMatrices vendor/three/three.module.js:6224",
+   237,
+   0.2
+  ],
+  [
+   "mod.update :95",
+   202,
+   0.1
+  ],
+  [
+   "bindVertexArray :0",
+   171,
+   0.1
+  ],
+  [
+   "blendFuncSeparate :0",
+   164,
+   0.1
+  ],
+  [
+   "updateFire src/spells/zones.js:383",
+   160,
+   0.1
+  ],
+  [
+   "update src/enemies.js:572",
+   157,
+   0.1
+  ],
+  [
+   "visuals src/enemies/base.js:437",
+   157,
+   0.1
+  ],
+  [
+   "setFromEuler vendor/three/three.module.js:3413",
+   156,
+   0.1
+  ],
+  [
+   "update src/spells/props.js:31",
+   148,
+   0.1
+  ],
+  [
+   "update src/vfx.js:415",
+   148,
+   0.1
+  ],
+  [
+   "update src/combat/statusfx.js:121",
+   140,
+   0.1
+  ],
+  [
+   "queryRadius src/combat.js:57",
+   130,
+   0.1
+  ],
+  [
+   "update src/ui.js:1533",
+   123,
+   0.1
+  ],
+  [
+   "uniform1f :0",
+   120,
+   0.1
+  ],
+  [
+   "updateNumbers src/ui.js:1311",
+   117,
+   0.1
+  ],
+  [
+   "update src/player.js:1039",
+   114,
+   0.1
+  ],
+  [
+   "updateBars src/ui.js:1362",
+   112,
+   0.1
+  ],
+  [
+   "pixelStorei :0",
+   106,
+   0.1
+  ]
+ ],
+ "h0MB": 88
+}

@@ -1,0 +1,1185 @@
+{
+ "scenario": "fight_spiritcaller",
+ "viewport": [
+  1280,
+  720
+ ],
+ "bootMs": 6956,
+ "config": {
+  "msaa": 0,
+  "finish": false
+ },
+ "warm": [
+  {
+   "ms": 1524.2,
+   "calls": 195,
+   "gl": {
+    "tex": 8,
+    "texBytes": 0,
+    "buf": 104,
+    "bufBytes": 3890356,
+    "compile": 0,
+    "link": 0,
+    "diag": 4
+   }
+  },
+  {
+   "ms": 8.6,
+   "calls": 195,
+   "gl": {
+    "tex": 8,
+    "texBytes": 0,
+    "buf": 17,
+    "bufBytes": 463204,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 8.8,
+   "calls": 195,
+   "gl": {
+    "tex": 8,
+    "texBytes": 0,
+    "buf": 17,
+    "bufBytes": 463204,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 7.5,
+   "calls": 195,
+   "gl": {
+    "tex": 8,
+    "texBytes": 0,
+    "buf": 17,
+    "bufBytes": 463204,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 26.8,
+   "calls": 195,
+   "gl": {
+    "tex": 8,
+    "texBytes": 0,
+    "buf": 18,
+    "bufBytes": 469108,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 25.6,
+   "calls": 195,
+   "gl": {
+    "tex": 8,
+    "texBytes": 0,
+    "buf": 17,
+    "bufBytes": 463204,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  }
+ ],
+ "fightSetup": {
+  "spawned": 12,
+  "spawnMs": 18.2,
+  "newObj3D": 198,
+  "newMats": 1,
+  "newGeos": 1,
+  "gl": {
+   "tex": 0,
+   "texBytes": 0,
+   "buf": 0,
+   "bufBytes": 0,
+   "compile": 0,
+   "link": 0,
+   "diag": 0
+  }
+ },
+ "fightFirstFrames": [
+  {
+   "ms": 64.3,
+   "calls": 228,
+   "gl": {
+    "tex": 20,
+    "texBytes": 0,
+    "buf": 62,
+    "bufBytes": 4547044,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 86.2,
+   "calls": 228,
+   "gl": {
+    "tex": 20,
+    "texBytes": 0,
+    "buf": 61,
+    "bufBytes": 740852,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 13.3,
+   "calls": 228,
+   "gl": {
+    "tex": 20,
+    "texBytes": 0,
+    "buf": 18,
+    "bufBytes": 469108,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  },
+  {
+   "ms": 15,
+   "calls": 228,
+   "gl": {
+    "tex": 20,
+    "texBytes": 0,
+    "buf": 17,
+    "bufBytes": 463204,
+    "compile": 0,
+    "link": 0,
+    "diag": 0
+   }
+  }
+ ],
+ "measure": {
+  "N": 40,
+  "frameMs": {
+   "med": 15.1,
+   "p95": 27605.7,
+   "max": 29782.1,
+   "avg": 1993.99
+  },
+  "calls": {
+   "med": 225,
+   "p95": 237,
+   "max": 237,
+   "avg": 222.05
+  },
+  "tris": {
+   "med": 764194,
+   "p95": 796943,
+   "max": 796945,
+   "avg": 716920.65
+  },
+  "passes": {
+   "shadow": {
+    "calls": 41,
+    "tris": 106158,
+    "transp": 0,
+    "additive": 0,
+    "px": 0,
+    "ms": 4.91,
+    "runs": 1,
+    "n": 40
+   },
+   "scene": {
+    "calls": 174.05,
+    "tris": 610742.65,
+    "transp": 44.98,
+    "additive": 26.2,
+    "px": 7921891.75,
+    "ms": 1986.47,
+    "runs": 0,
+    "n": 40
+   },
+   "sanitize": {
+    "calls": 1,
+    "tris": 1,
+    "transp": 0,
+    "additive": 0,
+    "px": 0,
+    "ms": 0.31,
+    "runs": 0,
+    "n": 40
+   },
+   "bloom": {
+    "calls": 13,
+    "tris": 13,
+    "transp": 0,
+    "additive": 0,
+    "px": 0,
+    "ms": 0.44,
+    "runs": 0,
+    "n": 40
+   },
+   "output": {
+    "calls": 1,
+    "tris": 1,
+    "transp": 0,
+    "additive": 0,
+    "px": 0,
+    "ms": 0.04,
+    "runs": 0,
+    "n": 40
+   }
+  },
+  "mods": {
+   "world": {
+    "avg": 0.239,
+    "max": 1.5
+   },
+   "vfx": {
+    "avg": 0.424,
+    "max": 4.3
+   },
+   "combat": {
+    "avg": 0.107,
+    "max": 1.2
+   },
+   "audio": {
+    "avg": 0,
+    "max": 0
+   },
+   "player": {
+    "avg": 1.569,
+    "max": 27
+   },
+   "spells": {
+    "avg": 1.049,
+    "max": 25.3
+   },
+   "sword": {
+    "avg": 0.037,
+    "max": 0.3
+   },
+   "skills": {
+    "avg": 0.084,
+    "max": 1.3
+   },
+   "enemies": {
+    "avg": 1.094,
+    "max": 8
+   },
+   "story": {
+    "avg": 0.081,
+    "max": 4
+   },
+   "cinematic": {
+    "avg": 0.023,
+    "max": 0.2
+   },
+   "ui": {
+    "avg": 1.419,
+    "max": 13
+   }
+  },
+  "sub": {
+   "world.grass": 0.066,
+   "world.flora": 0.031,
+   "world.structures": 0.01
+  },
+  "simOnlyMs": 6.3,
+  "perSecNew": {
+   "obj3D": 15,
+   "mats": 15,
+   "geos": 9
+  },
+  "heapDeltaMB": 0.93,
+  "glPerFrame": {
+   "tex": 18.1,
+   "texBytes": 0,
+   "buf": 35.9,
+   "bufBytes": 688276.9,
+   "compile": 0,
+   "link": 0,
+   "diag": 0.4
+  },
+  "particles": [
+   {
+    "vfx-additive": {
+     "n": 31,
+     "px": 34219
+    },
+    "vfx-alpha": {
+     "n": 2,
+     "px": 686
+    },
+    "totalScreens": 0.04,
+    "bigQuads": 0
+   },
+   {
+    "vfx-additive": {
+     "n": 146,
+     "px": 38999801
+    },
+    "vfx-alpha": {
+     "n": 14,
+     "px": 6341682
+    },
+    "totalScreens": 49.2,
+    "bigQuads": 57
+   },
+   {
+    "vfx-additive": {
+     "n": 274,
+     "px": 860311
+    },
+    "vfx-alpha": {
+     "n": 56,
+     "px": 146543
+    },
+    "totalScreens": 1.09,
+    "bigQuads": 6
+   },
+   {
+    "vfx-additive": {
+     "n": 404,
+     "px": 4847125
+    },
+    "vfx-alpha": {
+     "n": 241,
+     "px": 2433476
+    },
+    "totalScreens": 7.9,
+    "bigQuads": 38
+   }
+  ],
+  "perFrame": [
+   [
+    14016,
+    4,
+    14009,
+    236
+   ],
+   [
+    5047,
+    1,
+    5040,
+    234
+   ],
+   [
+    16,
+    2,
+    12,
+    235
+   ],
+   [
+    12,
+    3,
+    9,
+    235
+   ],
+   [
+    11,
+    1,
+    7,
+    235
+   ],
+   [
+    10,
+    1,
+    7,
+    233
+   ],
+   [
+    9,
+    1,
+    6,
+    233
+   ],
+   [
+    11,
+    1,
+    9,
+    233
+   ],
+   [
+    13,
+    1,
+    11,
+    233
+   ],
+   [
+    22,
+    6,
+    15,
+    233
+   ],
+   [
+    12,
+    6,
+    9,
+    199
+   ],
+   [
+    15,
+    1,
+    5,
+    199
+   ],
+   [
+    27606,
+    9,
+    27599,
+    208
+   ],
+   [
+    21,
+    1,
+    13,
+    208
+   ],
+   [
+    18,
+    2,
+    11,
+    206
+   ],
+   [
+    11,
+    2,
+    7,
+    206
+   ],
+   [
+    9,
+    1,
+    4,
+    206
+   ],
+   [
+    10,
+    2,
+    6,
+    206
+   ],
+   [
+    9,
+    1,
+    5,
+    206
+   ],
+   [
+    9,
+    2,
+    6,
+    205
+   ],
+   [
+    12,
+    1,
+    5,
+    209
+   ],
+   [
+    8,
+    1,
+    5,
+    210
+   ],
+   [
+    8,
+    2,
+    6,
+    210
+   ],
+   [
+    7,
+    1,
+    4,
+    210
+   ],
+   [
+    29782,
+    2,
+    29776,
+    217
+   ],
+   [
+    2430,
+    5,
+    2399,
+    223
+   ],
+   [
+    20,
+    2,
+    13,
+    223
+   ],
+   [
+    9,
+    1,
+    6,
+    223
+   ],
+   [
+    60,
+    14,
+    51,
+    223
+   ],
+   [
+    108,
+    2,
+    96,
+    223
+   ],
+   [
+    44,
+    7,
+    17,
+    228
+   ],
+   [
+    13,
+    1,
+    7,
+    227
+   ],
+   [
+    18,
+    1,
+    15,
+    226
+   ],
+   [
+    11,
+    1,
+    8,
+    225
+   ],
+   [
+    120,
+    1,
+    114,
+    234
+   ],
+   [
+    18,
+    2,
+    14,
+    234
+   ],
+   [
+    12,
+    1,
+    9,
+    237
+   ],
+   [
+    132,
+    93,
+    103,
+    237
+   ],
+   [
+    45,
+    2,
+    10,
+    237
+   ],
+   [
+    18,
+    7,
+    12,
+    237
+   ]
+  ],
+  "worst": {
+   "calls": 237,
+   "tris": 772728,
+   "pass": {
+    "shadow": {
+     "calls": 40,
+     "tris": 109072,
+     "transp": 0,
+     "additive": 0,
+     "px": 0,
+     "ms": 1.300000000745058,
+     "runs": 1
+    },
+    "scene": {
+     "calls": 190,
+     "tris": 663635,
+     "transp": 60,
+     "additive": 38,
+     "px": 12946272.429313326,
+     "ms": 8.5,
+     "rcalls": 222
+    },
+    "sanitize": {
+     "calls": 1,
+     "tris": 1,
+     "transp": 0,
+     "additive": 0,
+     "px": 0,
+     "ms": 0.09999999962747097,
+     "rcalls": 1
+    },
+    "bloom": {
+     "calls": 13,
+     "tris": 13,
+     "transp": 0,
+     "additive": 0,
+     "px": 0,
+     "ms": 0.2999999998137355,
+     "rcalls": 13
+    },
+    "output": {
+     "calls": 1,
+     "tris": 1,
+     "transp": 0,
+     "additive": 0,
+     "px": 0,
+     "ms": 0,
+     "rcalls": 1
+    }
+   },
+   "byMat": {
+    "ShaderMaterial": 37,
+    "MeshLambertMaterial": 3,
+    "MeshToonMaterial": 66,
+    "MeshBasicMaterial": 24,
+    "ShaderMaterial/T/add": 26,
+    "MeshBasicMaterial/T/add": 9,
+    "SpriteMaterial/T/add": 3,
+    "MeshBasicMaterial/T": 2,
+    "MeshToonMaterial/T": 3,
+    "ShaderMaterial/T": 17
+   },
+   "topObj": [
+    [
+     "flora|MeshToonMaterial",
+     {
+      "calls": 22,
+      "tris": 59692
+     }
+    ],
+    [
+     "wizard|MeshToonMaterial",
+     {
+      "calls": 18,
+      "tris": 13248
+     }
+    ],
+    [
+     "outline|ShaderMaterial",
+     {
+      "calls": 15,
+      "tris": 42751
+     }
+    ],
+    [
+     "SkinnedMesh|MeshToonMaterial",
+     {
+      "calls": 12,
+      "tris": 53331
+     }
+    ],
+    [
+     "Mesh|MeshBasicMaterial",
+     {
+      "calls": 11,
+      "tris": 2919
+     }
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     {
+      "calls": 11,
+      "tris": 7128
+     }
+    ],
+    [
+     "Mesh|ShaderMaterial",
+     {
+      "calls": 10,
+      "tris": 13042
+     }
+    ],
+    [
+     "SkinnedMesh|MeshBasicMaterial",
+     {
+      "calls": 9,
+      "tris": 3116
+     }
+    ],
+    [
+     "flora|ShaderMaterial",
+     {
+      "calls": 8,
+      "tris": 24172
+     }
+    ],
+    [
+     "wizard|MeshBasicMaterial",
+     {
+      "calls": 6,
+      "tris": 932
+     }
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     {
+      "calls": 6,
+      "tris": 3888
+     }
+    ],
+    [
+     "Mesh|MeshToonMaterial",
+     {
+      "calls": 4,
+      "tris": 3208
+     }
+    ],
+    [
+     "fires|ShaderMaterial",
+     {
+      "calls": 3,
+      "tris": 24
+     }
+    ],
+    [
+     "structures|MeshToonMaterial",
+     {
+      "calls": 2,
+      "tris": 7918
+     }
+    ],
+    [
+     "elderwood|ShaderMaterial",
+     {
+      "calls": 2,
+      "tris": 29184
+     }
+    ],
+    [
+     "Sprite|SpriteMaterial",
+     {
+      "calls": 2,
+      "tris": 0
+     }
+    ],
+    [
+     "vfx-rune|ShaderMaterial",
+     {
+      "calls": 2,
+      "tris": 4
+     }
+    ],
+    [
+     "sky|ShaderMaterial",
+     {
+      "calls": 1,
+      "tris": 2208
+     }
+    ],
+    [
+     "farMountains|ShaderMaterial",
+     {
+      "calls": 1,
+      "tris": 2048
+     }
+    ],
+    [
+     "grass_near|MeshLambertMaterial",
+     {
+      "calls": 1,
+      "tris": 65490
+     }
+    ],
+    [
+     "grass_far|MeshLambertMaterial",
+     {
+      "calls": 1,
+      "tris": 47250
+     }
+    ],
+    [
+     "grass_flowers|MeshLambertMaterial",
+     {
+      "calls": 1,
+      "tris": 20352
+     }
+    ],
+    [
+     "terrain|MeshToonMaterial",
+     {
+      "calls": 1,
+      "tris": 115200
+     }
+    ],
+    [
+     "spiritGates|ShaderMaterial",
+     {
+      "calls": 1,
+      "tris": 2720
+     }
+    ],
+    [
+     "altarCrystals|MeshBasicMaterial",
+     {
+      "calls": 1,
+      "tris": 72
+     }
+    ]
+   ],
+   "topTris": [
+    [
+     "terrain|MeshToonMaterial",
+     {
+      "calls": 1,
+      "tris": 115200
+     }
+    ],
+    [
+     "grass_near|MeshLambertMaterial",
+     {
+      "calls": 1,
+      "tris": 65490
+     }
+    ],
+    [
+     "flora|MeshToonMaterial",
+     {
+      "calls": 22,
+      "tris": 59692
+     }
+    ],
+    [
+     "SkinnedMesh|MeshToonMaterial",
+     {
+      "calls": 12,
+      "tris": 53331
+     }
+    ],
+    [
+     "grass_far|MeshLambertMaterial",
+     {
+      "calls": 1,
+      "tris": 47250
+     }
+    ],
+    [
+     "outline|ShaderMaterial",
+     {
+      "calls": 15,
+      "tris": 42751
+     }
+    ],
+    [
+     "elderwood|ShaderMaterial",
+     {
+      "calls": 2,
+      "tris": 29184
+     }
+    ],
+    [
+     "flora|ShaderMaterial",
+     {
+      "calls": 8,
+      "tris": 24172
+     }
+    ],
+    [
+     "plateauDressing|ShaderMaterial",
+     {
+      "calls": 1,
+      "tris": 22808
+     }
+    ],
+    [
+     "plateauDressing|MeshToonMaterial",
+     {
+      "calls": 1,
+      "tris": 22808
+     }
+    ],
+    [
+     "elderMushrooms|MeshToonMaterial",
+     {
+      "calls": 1,
+      "tris": 21840
+     }
+    ],
+    [
+     "grass_flowers|MeshLambertMaterial",
+     {
+      "calls": 1,
+      "tris": 20352
+     }
+    ],
+    [
+     "elderMushroomGlow|MeshBasicMaterial",
+     {
+      "calls": 1,
+      "tris": 14112
+     }
+    ],
+    [
+     "wizard|MeshToonMaterial",
+     {
+      "calls": 18,
+      "tris": 13248
+     }
+    ],
+    [
+     "Mesh|ShaderMaterial",
+     {
+      "calls": 10,
+      "tris": 13042
+     }
+    ]
+   ],
+   "tlist": [
+    [
+     "fires|ShaderMaterial",
+     460800
+    ],
+    [
+     "signLabels|MeshBasicMaterial",
+     460800
+    ],
+    [
+     "water|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-decal|ShaderMaterial",
+     460800
+    ],
+    [
+     "fires|ShaderMaterial",
+     460800
+    ],
+    [
+     "chimneySmoke|ShaderMaterial",
+     460800
+    ],
+    [
+     "Mesh|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ],
+    [
+     "vfx-ring|ShaderMaterial",
+     460800
+    ]
+   ],
+   "i": 36
+  },
+  "casts": [
+   "nature.charged",
+   "water.charged",
+   "nature.roots",
+   "nature.spore"
+  ],
+  "hitches": [
+   [
+    0,
+    14016,
+    0,
+    20,
+    3
+   ],
+   [
+    1,
+    5047,
+    0,
+    20,
+    1
+   ],
+   [
+    12,
+    27606,
+    0,
+    19,
+    5
+   ],
+   [
+    24,
+    29782,
+    0,
+    18,
+    5
+   ],
+   [
+    25,
+    2430,
+    0,
+    17,
+    2
+   ],
+   [
+    34,
+    120,
+    0,
+    18,
+    1
+   ]
+  ]
+ },
+ "scene": {
+  "meshes": 1085,
+  "visible": 420,
+  "instanced": 59,
+  "skinned": 94,
+  "outlines": 71,
+  "castShadow": 81,
+  "lights": [
+   "HemisphereLight:1.3",
+   "DirectionalLight:2.7",
+   "PointLight:0.0",
+   "PointLight:0.0",
+   "PointLight:0.0",
+   "PointLight:0.0",
+   "PointLight:0.0"
+  ],
+  "programs": 142,
+  "textures": 68,
+  "geometries": 214,
+  "uniqueMats": 193,
+  "pr": 1,
+  "canvas": [
+   1280,
+   720
+  ],
+  "rt": {
+   "w": 1280,
+   "h": 720,
+   "type": 1016,
+   "samples": 0
+  },
+  "bloom": {
+   "enabled": true,
+   "mips": 5,
+   "res": [
+    1280,
+    720
+   ],
+   "first": [
+    640,
+    360
+   ]
+  },
+  "shadow": {
+   "size": 2048,
+   "extent": 32,
+   "type": 2
+  },
+  "grass": [
+   {
+    "n": "near",
+    "chunks": 34,
+    "tris": 60180
+   },
+   {
+    "n": "far",
+    "chunks": 33,
+    "tris": 44550
+   },
+   {
+    "n": "flowers",
+    "chunks": 34,
+    "tris": 21624
+   }
+  ],
+  "vfx": {
+   "additive": 416,
+   "alpha": 387,
+   "particles": 803,
+   "emitters": 9,
+   "beams": 1,
+   "trails": 1,
+   "debris": 8,
+   "ghosts": 0,
+   "rings": 11,
+   "domes": 1,
+   "decals": 11,
+   "telegraphs": 0,
+   "runes": 2,
+   "dissolves": 0
+  },
+  "entities": 48,
+  "settings": {
+   "quality": "medium",
+   "grassDensity": 0.6,
+   "shadows": true,
+   "shadowQuality": "medium",
+   "renderScale": 1,
+   "bloom": true,
+   "drawDistance": 0.8,
+   "particleScale": 0.85,
+   "effectQuality": "medium",
+   "showFps": false,
+   "mouseSens": 1,
+   "invertY": false,
+   "volMaster": 0.9,
+   "volMusic": 0.6,
+   "volSfx": 1,
+   "difficulty": "normal",
+   "screenShake": 1,
+   "damageNumbers": true,
+   "holdToCast": true
+  },
+  "perfScale": 1
+ },
+ "shot": "/tmp/v4diag-perf/shot_fight_spiritcaller.png",
+ "logs": []
+}

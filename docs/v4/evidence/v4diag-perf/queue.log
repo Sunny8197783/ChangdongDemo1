@@ -1,0 +1,43 @@
+=== plains --frames 30 --ablate --shot 08:30:06
+ablate {"base":1840,"noShadowPass":1631,"noGrass":1472,"noFlora":1497,"noOutlines":1562,"noTransparent":1708,"noParticles":1905,"noTerrain":1391,"noSkinned":2418,"noBloom":2190,"noSanitize":2693,"msaa4":2925,"scale075":1117,"emptyScene":252,"base2":1940}
+wrote /tmp/v4diag-perf/res_plains.json boot 7756 frame {"med":7.8,"p95":15.8,"max":22.9,"avg":8.53} calls {"med":165,"p95":198,"max":198,"avg":175.13}
+=== mirwen --frames 30 --ablate --shot 08:33:18
+ablate {"base":1259,"noShadowPass":1230,"noGrass":1237,"noFlora":1129,"noOutlines":1091,"noTransparent":1119,"noParticles":1286,"noTerrain":846,"noSkinned":1162,"noBloom":1098,"noSanitize":930,"msaa4":1910,"scale075":735,"emptyScene":146,"base2":1125}
+wrote /tmp/v4diag-perf/res_mirwen.json boot 5286 frame {"med":6.7,"p95":1583.8,"max":6768.4,"avg":285.26} calls {"med":175,"p95":213,"max":213,"avg":180.07}
+=== elderwood --frames 30 --ablate --shot 08:35:20
+ablate {"base":2744,"ratio":{"noShadowPass":1.14,"noGrass":0.92,"noFlora":0.99,"noOutlines":0.94,"noTransparent":0.94,"noParticles":1.01,"noTerrain":0.6,"noSkinned":1.15,"noBloom":0.83,"scale075":0.7,"msaa4":1.6,"emptyScene":0.15}}
+wrote /tmp/v4diag-perf/res_elderwood.json boot 3602 frame {"med":7.5,"p95":2090.5,"max":6672.6,"avg":365.72} calls {"med":190,"p95":208,"max":208,"avg":186.7}
+=== fight_mage --frames 60 --ablate --shot --alloc --simframes 1800 08:39:46
+alloc 10.01 MB/game-s 137250 ms
+ablate {"base":2080,"ratio":{"noShadowPass":0.92,"noGrass":1.07,"noFlora":1.09,"noOutlines":0.87,"noTransparent":0.5,"noParticles":0.64,"noTerrain":0.83,"noSkinned":0.91,"noBloom":0.96,"scale075":0.69,"msaa4":1.61,"emptyScene":0.1}}
+wrote /tmp/v4diag-perf/res_fight_mage.json boot 3878 frame {"med":32.1,"p95":15226.2,"max":21276.9,"avg":1804.87} calls {"med":334,"p95":352,"max":355,"avg":335.47}
+=== fight_sword --frames 60 --shot --alloc --simframes 1200 08:50:32
+alloc 8.98 MB/game-s 42561 ms
+wrote /tmp/v4diag-perf/res_fight_sword.json boot 4006 frame {"med":19.8,"p95":14924.7,"max":31335.5,"avg":2038.96} calls {"med":229,"p95":247,"max":247,"avg":220.05}
+=== fight_ranger --frames 60 --ablate --shot --alloc --simframes 1200 08:54:37
+alloc 11.5 MB/game-s 150324 ms
+ablate {"base":5328,"ratio":{"noShadowPass":1.07,"noGrass":0.81,"noFlora":0.9,"noOutlines":0.93,"noTransparent":0.8,"noParticles":0.71,"noTerrain":0.77,"noSkinned":1.06,"noBloom":0.93,"scale075":0.61,"msaa4":1.83,"emptyScene":0.15}}
+wrote /tmp/v4diag-perf/res_fight_ranger.json boot 6689 frame {"med":89.7,"p95":32221.9,"max":68804.4,"avg":4984.53} calls {"med":349,"p95":394,"max":398,"avg":358.07}
+=== nidhoggra --frames 40 --ablate --shot 09:09:37
+FAIL page.evaluate: Target page, context or browser has been closed
+    at /tmp/v4diag-perf/run.js:172:48 {
+  log: []
+}
+=== hydra --frames 40 --ablate --shot 09:24:37
+ablate {"base":4929,"ratio":{"noShadowPass":1.04,"noGrass":0.99,"noFlora":0.93,"noOutlines":1,"noTransparent":0.42,"noParticles":0.52,"noTerrain":0.92,"noSkinned":0.98,"noBloom":0.9,"scale075":0.74,"msaa4":1.95,"emptyScene":0.06}}
+wrote /tmp/v4diag-perf/res_hydra.json boot 9406 frame {"med":20.5,"p95":6509.5,"max":28080.8,"avg":1235.79} calls {"med":201,"p95":241,"max":241,"avg":201.05}
+=== treant --frames 40 --shot 09:36:42
+wrote /tmp/v4diag-perf/res_treant.json boot 10282 frame {"med":15.8,"p95":12284.9,"max":14513.7,"avg":850.37} calls {"med":187,"p95":222,"max":222,"avg":186.57}
+=== nox --frames 40 --shot 09:38:46
+wrote /tmp/v4diag-perf/res_nox.json boot 12386 frame {"med":13.4,"p95":21924.4,"max":26568.5,"avg":1734.2} calls {"med":201,"p95":215,"max":215,"avg":200.82}
+=== kalis --frames 40 --shot 09:41:32
+wrote /tmp/v4diag-perf/res_kalis.json boot 13354 frame {"med":13.5,"p95":16983.7,"max":22997.6,"avg":1114.12} calls {"med":181,"p95":210,"max":210,"avg":172.43}
+=== golem --frames 40 --shot 09:43:51
+wrote /tmp/v4diag-perf/res_golem.json boot 5892 frame {"med":11.5,"p95":20063.8,"max":21575.6,"avg":1284.34} calls {"med":190,"p95":232,"max":232,"avg":197.57}
+=== fight_paladin --frames 40 --shot 09:47:17
+wrote /tmp/v4diag-perf/res_fight_paladin.json boot 5628 frame {"med":14.3,"p95":12069.4,"max":18632.7,"avg":1374.81} calls {"med":200,"p95":228,"max":228,"avg":202.68}
+=== fight_shadowblade --frames 40 --shot 09:49:39
+wrote /tmp/v4diag-perf/res_fight_shadowblade.json boot 6088 frame {"med":19.6,"p95":13294.2,"max":15854.9,"avg":1138.8} calls {"med":213,"p95":231,"max":235,"avg":213.47}
+=== fight_spiritcaller --frames 40 --shot 09:52:19
+wrote /tmp/v4diag-perf/res_fight_spiritcaller.json boot 6956 frame {"med":15.1,"p95":27605.7,"max":29782.1,"avg":1993.99} calls {"med":225,"p95":237,"max":237,"avg":222.05}
+DONE 09:55:21

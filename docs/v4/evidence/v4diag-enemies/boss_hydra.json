@@ -1,0 +1,75 @@
+{
+ "info": {
+  "name": "삼두 물뱀 레비아탄",
+  "hp": 21850,
+  "meshes": 6,
+  "tris": 13080,
+  "outlineTris": 11248,
+  "instanced": 0,
+  "mats": [
+   "MeshBasicMaterial",
+   "MeshToonMaterial",
+   "ShaderMaterial"
+  ],
+  "parts": [
+   {
+    "id": "head_water",
+    "name": "물의 머리",
+    "hp": 4750,
+    "inv": false
+   },
+   {
+    "id": "head_ice",
+    "name": "얼음의 머리",
+    "hp": 4750,
+    "inv": false
+   },
+   {
+    "id": "head_lightning",
+    "name": "번개의 머리",
+    "hp": 4750,
+    "inv": false
+   }
+  ],
+  "size": [
+   23,
+   17.7,
+   23.1
+  ],
+  "voidShield": 0,
+  "breakMax": 120,
+  "phases": [
+   "세 개의 머리",
+   "심연의 몸통"
+  ]
+ },
+ "shots": [
+  {
+   "kind": "bite",
+   "afterFrames": 61,
+   "tele": 1,
+   "dist": 13,
+   "calls": 126,
+   "tris": 351146,
+   "state": "idle"
+  },
+  {
+   "kind": "bite",
+   "afterFrames": 54,
+   "tele": 0,
+   "dist": 13,
+   "calls": 127,
+   "tris": 351336,
+   "state": "idle"
+  },
+  {
+   "kind": "bite",
+   "afterFrames": 87,
+   "tele": 1,
+   "dist": 13,
+   "calls": 130,
+   "tris": 362464,
+   "state": "idle"
+  }
+ ]
+}

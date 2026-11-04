@@ -1,0 +1,25 @@
+=== hydra
+INFO {"name":"삼두 물뱀 레비아탄","hp":21850,"meshes":6,"tris":13080,"outlineTris":11248,"instanced":0,"mats":["MeshBasicMaterial","MeshToonMaterial","ShaderMaterial"],"parts":[{"id":"head_water","name":"물의 머리","hp":4750,"inv":false},{"id":"head_ice","name":"얼음의 머리","hp":4750,"inv":false},{"id":"head_lightning","name":"번개의 머리","hp":4750,"inv":false}],"size":[23,17.7,23.1],"voidShield":0,"breakMax":120,"phases":["세 개의 머리","심연의 몸통"]}
+ATK 0 {"kind":"bite","afterFrames":61,"tele":1,"dist":13,"calls":126,"tris":351146,"state":"idle"}
+ATK 1 {"kind":"bite","afterFrames":54,"tele":0,"dist":13,"calls":127,"tris":351336,"state":"idle"}
+ATK 2 {"kind":"bite","afterFrames":87,"tele":1,"dist":13,"calls":130,"tris":362464,"state":"idle"}
+=== nox
+INFO {"name":"녹스","hp":7600,"meshes":2,"tris":4254,"outlineTris":0,"instanced":0,"mats":["MeshToonMaterial","MeshBasicMaterial"],"parts":[],"size":[3,3.4,3.1],"voidShield":100,"breakMax":100,"phases":["타락한 기사","그림자 분신"]}
+ATK 0 {"kind":"wave","afterFrames":58,"tele":1,"dist":3.2,"calls":136,"tris":441649,"state":"waveWind"}
+ATK 1 {"kind":"teleportSlash","afterFrames":166,"tele":0,"dist":3.2,"calls":139,"tris":442481,"state":"vanish"}
+ATK 2 {"kind":"teleportSlash","afterFrames":190,"tele":0,"dist":2.8,"calls":142,"tris":429158,"state":"vanish"}
+=== treant
+INFO {"name":"모르그로스","hp":17100,"meshes":3,"tris":3687,"outlineTris":3351,"instanced":0,"mats":["MeshToonMaterial","ShaderMaterial","MeshBasicMaterial"],"parts":[{"id":"bark_chest","name":"가슴 껍질","hp":1235,"inv":false},{"id":"bark_back","name":"등 껍질","hp":1235,"inv":false},{"id":"bark_armR","name":"오른팔 껍질","hp":1235,"inv":false},{"id":"bark_armL","name":"왼팔 껍질","hp":1235,"inv":false},{"id":"heart","name":"수호수의 심장","hp":10260,"inv":true}],"size":[11.6,19.7,12],"voidShield":0,"breakMax":150,"phases":["썩은 껍질","무릎 꿇은 수호수",
+ATK 0 {"kind":"sweep","afterFrames":142,"tele":2,"dist":11,"calls":123,"tris":400794,"state":"idle"}
+ATK 1 {"kind":"sweep","afterFrames":282,"tele":2,"dist":11,"calls":125,"tris":401158,"state":"idle"}
+ATK 2 {"kind":"sweep","afterFrames":274,"tele":1,"dist":11,"calls":123,"tris":401236,"state":"idle"}
+=== kalis
+INFO {"name":"칼리스","hp":23800,"meshes":2,"tris":3656,"outlineTris":0,"instanced":0,"mats":["MeshToonMaterial","MeshBasicMaterial"],"parts":[],"size":[2.4,3.3,2.5],"voidShield":0,"breakMax":120,"phases":["거울의 사도"]}
+ATK 0 {"kind":"slash","afterFrames":82,"tele":1,"dist":3.8,"calls":107,"tris":384422,"state":"idle"}
+ATK 1 {"kind":"slash","afterFrames":159,"tele":1,"dist":1.9,"calls":113,"tris":473460,"state":"idle"}
+ATK 2 {"kind":"volley","afterFrames":140,"tele":0,"dist":3.1,"calls":109,"tris":384064,"state":"idle"}
+=== nidhoggra
+INFO {"name":"니드호그라","hp":72720,"meshes":0,"tris":0,"outlineTris":0,"instanced":0,"mats":[],"parts":[{"id":"headPlate","name":"머리 장막","hp":727200,"inv":false},{"id":"oath_fire","name":"화염 서약","hp":3600,"inv":true},{"id":"oath_ice","name":"빙결 서약","hp":3600,"inv":true},{"id":"oath_lightning","name":"번개 서약","hp":3600,"inv":true},{"id":"oath_wind","name":"바람 서약","hp":3600,"inv":true},{"id":"oath_earth","name":"대지 서약","hp":3600,"inv":true},{"id":"heart","name":"아스트라의 핵","hp":14400,"inv":true}],"size":[0,0,0],"voidShield":0,"break
+ATK 0 {"kind":"breath","afterFrames":151,"tele":1,"dist":26,"calls":112,"tris":267492,"state":"idle"}
+ATK 1 {"kind":"breath","afterFrames":324,"tele":1,"dist":26,"calls":111,"tris":267488,"state":"idle"}
+ATK 2 {"kind":"breath","afterFrames":292,"tele":1,"dist":26,"calls":117,"tris":272674,"state":"idle"}

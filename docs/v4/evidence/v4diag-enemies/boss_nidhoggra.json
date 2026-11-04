@@ -1,0 +1,96 @@
+{
+ "info": {
+  "name": "니드호그라",
+  "hp": 72720,
+  "meshes": 0,
+  "tris": 0,
+  "outlineTris": 0,
+  "instanced": 0,
+  "mats": [],
+  "parts": [
+   {
+    "id": "headPlate",
+    "name": "머리 장막",
+    "hp": 727200,
+    "inv": false
+   },
+   {
+    "id": "oath_fire",
+    "name": "화염 서약",
+    "hp": 3600,
+    "inv": true
+   },
+   {
+    "id": "oath_ice",
+    "name": "빙결 서약",
+    "hp": 3600,
+    "inv": true
+   },
+   {
+    "id": "oath_lightning",
+    "name": "번개 서약",
+    "hp": 3600,
+    "inv": true
+   },
+   {
+    "id": "oath_wind",
+    "name": "바람 서약",
+    "hp": 3600,
+    "inv": true
+   },
+   {
+    "id": "oath_earth",
+    "name": "대지 서약",
+    "hp": 3600,
+    "inv": true
+   },
+   {
+    "id": "heart",
+    "name": "아스트라의 핵",
+    "hp": 14400,
+    "inv": true
+   }
+  ],
+  "size": [
+   0,
+   0,
+   0
+  ],
+  "voidShield": 0,
+  "breakMax": 200,
+  "phases": [
+   "뿌리를 갉는 자",
+   "정령의 족쇄",
+   "세계수의 새벽"
+  ]
+ },
+ "shots": [
+  {
+   "kind": "breath",
+   "afterFrames": 151,
+   "tele": 1,
+   "dist": 26,
+   "calls": 112,
+   "tris": 267492,
+   "state": "idle"
+  },
+  {
+   "kind": "breath",
+   "afterFrames": 324,
+   "tele": 1,
+   "dist": 26,
+   "calls": 111,
+   "tris": 267488,
+   "state": "idle"
+  },
+  {
+   "kind": "breath",
+   "afterFrames": 292,
+   "tele": 1,
+   "dist": 26,
+   "calls": 117,
+   "tris": 272674,
+   "state": "idle"
+  }
+ ]
+}

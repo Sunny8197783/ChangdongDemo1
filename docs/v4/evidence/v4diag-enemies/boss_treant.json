@@ -1,0 +1,88 @@
+{
+ "info": {
+  "name": "모르그로스",
+  "hp": 17100,
+  "meshes": 3,
+  "tris": 3687,
+  "outlineTris": 3351,
+  "instanced": 0,
+  "mats": [
+   "MeshToonMaterial",
+   "ShaderMaterial",
+   "MeshBasicMaterial"
+  ],
+  "parts": [
+   {
+    "id": "bark_chest",
+    "name": "가슴 껍질",
+    "hp": 1235,
+    "inv": false
+   },
+   {
+    "id": "bark_back",
+    "name": "등 껍질",
+    "hp": 1235,
+    "inv": false
+   },
+   {
+    "id": "bark_armR",
+    "name": "오른팔 껍질",
+    "hp": 1235,
+    "inv": false
+   },
+   {
+    "id": "bark_armL",
+    "name": "왼팔 껍질",
+    "hp": 1235,
+    "inv": false
+   },
+   {
+    "id": "heart",
+    "name": "수호수의 심장",
+    "hp": 10260,
+    "inv": true
+   }
+  ],
+  "size": [
+   11.6,
+   19.7,
+   12
+  ],
+  "voidShield": 0,
+  "breakMax": 150,
+  "phases": [
+   "썩은 껍질",
+   "무릎 꿇은 수호수",
+   "뿌리 폭풍"
+  ]
+ },
+ "shots": [
+  {
+   "kind": "sweep",
+   "afterFrames": 142,
+   "tele": 2,
+   "dist": 11,
+   "calls": 123,
+   "tris": 400794,
+   "state": "idle"
+  },
+  {
+   "kind": "sweep",
+   "afterFrames": 282,
+   "tele": 2,
+   "dist": 11,
+   "calls": 125,
+   "tris": 401158,
+   "state": "idle"
+  },
+  {
+   "kind": "sweep",
+   "afterFrames": 274,
+   "tele": 1,
+   "dist": 11,
+   "calls": 123,
+   "tris": 401236,
+   "state": "idle"
+  }
+ ]
+}

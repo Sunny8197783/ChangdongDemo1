@@ -1,0 +1,1862 @@
+[
+ {
+  "id": "lightning.basic",
+  "slot": "basic",
+  "arch": "chain",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 220,
+    "tris": 725699,
+    "programs": 142,
+    "ms": 22,
+    "particles": 36,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 223,
+    "tris": 741259,
+    "programs": 142,
+    "ms": 27,
+    "particles": 32,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 223,
+    "tris": 739997,
+    "programs": 142,
+    "ms": 15,
+    "particles": 22,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 222,
+    "tris": 737941,
+    "programs": 142,
+    "ms": 20,
+    "particles": 9,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 222,
+    "tris": 738999,
+    "programs": 142,
+    "ms": 12,
+    "particles": 10,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 223,
+    "tris": 739037,
+    "programs": 142,
+    "ms": 7,
+    "particles": 29,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "lightning.charged",
+  "slot": "charged",
+  "arch": "chain",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 222,
+    "tris": 729819,
+    "programs": 142,
+    "ms": 5,
+    "particles": 16,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 236,
+    "tris": 750672,
+    "programs": 142,
+    "ms": 29,
+    "particles": 64,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 250,
+    "tris": 779113,
+    "programs": 142,
+    "ms": 36,
+    "particles": 114,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 269,
+    "tris": 801784,
+    "programs": 142,
+    "ms": 19,
+    "particles": 446,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 274,
+    "tris": 789326,
+    "programs": 142,
+    "ms": 35,
+    "particles": 1168,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 247,
+    "tris": 764137,
+    "programs": 142,
+    "ms": 37,
+    "particles": 497,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "lightning.mine",
+  "slot": "quick",
+  "arch": "mine",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 233,
+    "tris": 733921,
+    "programs": 142,
+    "ms": 10,
+    "particles": 45,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 237,
+    "tris": 734391,
+    "programs": 142,
+    "ms": 38,
+    "particles": 56,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 235,
+    "tris": 734349,
+    "programs": 142,
+    "ms": 9,
+    "particles": 37,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 235,
+    "tris": 735069,
+    "programs": 142,
+    "ms": 10,
+    "particles": 9,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 235,
+    "tris": 734431,
+    "programs": 142,
+    "ms": 13,
+    "particles": 14,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 240,
+    "tris": 740149,
+    "programs": 142,
+    "ms": 22,
+    "particles": 406,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "lightning.dash",
+  "slot": "quick",
+  "arch": "blink",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 230,
+    "tris": 731305,
+    "programs": 142,
+    "ms": 5,
+    "particles": 27,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 265,
+    "tris": 785028,
+    "programs": 142,
+    "ms": 9,
+    "particles": 385,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 265,
+    "tris": 808399,
+    "programs": 142,
+    "ms": 6,
+    "particles": 395,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 245,
+    "tris": 765497,
+    "programs": 142,
+    "ms": 4,
+    "particles": 289,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 245,
+    "tris": 765147,
+    "programs": 142,
+    "ms": 15,
+    "particles": 114,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 244,
+    "tris": 764949,
+    "programs": 142,
+    "ms": 7,
+    "particles": 21,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "lightning.ult",
+  "slot": "ultimate",
+  "arch": "rain",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 225,
+    "tris": 728755,
+    "programs": 142,
+    "ms": 112,
+    "particles": 54,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 225,
+    "tris": 728747,
+    "programs": 142,
+    "ms": 7,
+    "particles": 50,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 235,
+    "tris": 732859,
+    "programs": 142,
+    "ms": 12,
+    "particles": 51,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 235,
+    "tris": 732849,
+    "programs": 142,
+    "ms": 8,
+    "particles": 31,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 259,
+    "tris": 745999,
+    "programs": 142,
+    "ms": 14,
+    "particles": 703,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 268,
+    "tris": 751067,
+    "programs": 142,
+    "ms": 18,
+    "particles": 1068,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "earth.basic",
+  "slot": "basic",
+  "arch": "projectile",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 265,
+    "tris": 751477,
+    "programs": 142,
+    "ms": 7,
+    "particles": 1036,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 280,
+    "tris": 782713,
+    "programs": 142,
+    "ms": 13,
+    "particles": 1528,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 281,
+    "tris": 779483,
+    "programs": 142,
+    "ms": 5,
+    "particles": 1423,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 261,
+    "tris": 765125,
+    "programs": 142,
+    "ms": 15,
+    "particles": 1011,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 276,
+    "tris": 771259,
+    "programs": 142,
+    "ms": 20,
+    "particles": 1294,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 273,
+    "tris": 770307,
+    "programs": 142,
+    "ms": 5,
+    "particles": 1305,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "earth.charged",
+  "slot": "charged",
+  "arch": "pillar",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 269,
+    "tris": 753315,
+    "programs": 142,
+    "ms": 8,
+    "particles": 1159,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 255,
+    "tris": 751473,
+    "programs": 142,
+    "ms": 11,
+    "particles": 951,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 271,
+    "tris": 773449,
+    "programs": 142,
+    "ms": 8,
+    "particles": 1621,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 277,
+    "tris": 775599,
+    "programs": 142,
+    "ms": 25,
+    "particles": 1415,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 265,
+    "tris": 768351,
+    "programs": 142,
+    "ms": 6,
+    "particles": 1142,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 250,
+    "tris": 759429,
+    "programs": 142,
+    "ms": 8,
+    "particles": 287,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "earth.spikes",
+  "slot": "quick",
+  "arch": "crawler",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 240,
+    "tris": 737659,
+    "programs": 142,
+    "ms": 6,
+    "particles": 74,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 242,
+    "tris": 738335,
+    "programs": 142,
+    "ms": 7,
+    "particles": 76,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 242,
+    "tris": 737719,
+    "programs": 142,
+    "ms": 7,
+    "particles": 62,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 250,
+    "tris": 744363,
+    "programs": 142,
+    "ms": 5,
+    "particles": 171,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 255,
+    "tris": 749531,
+    "programs": 142,
+    "ms": 6,
+    "particles": 261,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 247,
+    "tris": 744197,
+    "programs": 142,
+    "ms": 5,
+    "particles": 159,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "earth.wall",
+  "slot": "quick",
+  "arch": "wall",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 231,
+    "tris": 732869,
+    "programs": 142,
+    "ms": 22,
+    "particles": 79,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 232,
+    "tris": 732865,
+    "programs": 142,
+    "ms": 11,
+    "particles": 75,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 240,
+    "tris": 736687,
+    "programs": 142,
+    "ms": 19,
+    "particles": 142,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 238,
+    "tris": 736143,
+    "programs": 142,
+    "ms": 13,
+    "particles": 108,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 236,
+    "tris": 734753,
+    "programs": 142,
+    "ms": 16,
+    "particles": 61,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 235,
+    "tris": 733481,
+    "programs": 142,
+    "ms": 7,
+    "particles": 37,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "earth.ult",
+  "slot": "ultimate",
+  "arch": "nova",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 228,
+    "tris": 729283,
+    "programs": 142,
+    "ms": 7,
+    "particles": 46,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 228,
+    "tris": 729283,
+    "programs": 142,
+    "ms": 13,
+    "particles": 46,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 256,
+    "tris": 758979,
+    "programs": 142,
+    "ms": 25,
+    "particles": 561,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 254,
+    "tris": 751759,
+    "programs": 142,
+    "ms": 7,
+    "particles": 547,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 247,
+    "tris": 747553,
+    "programs": 142,
+    "ms": 5,
+    "particles": 398,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 239,
+    "tris": 742363,
+    "programs": 142,
+    "ms": 9,
+    "particles": 336,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "fire.basic",
+  "slot": "basic",
+  "arch": "projectile",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 229,
+    "tris": 731169,
+    "programs": 142,
+    "ms": 9,
+    "particles": 39,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 232,
+    "tris": 746735,
+    "programs": 142,
+    "ms": 9,
+    "particles": 38,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 232,
+    "tris": 745487,
+    "programs": 142,
+    "ms": 6,
+    "particles": 35,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 230,
+    "tris": 745191,
+    "programs": 142,
+    "ms": 4,
+    "particles": 17,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 229,
+    "tris": 744715,
+    "programs": 142,
+    "ms": 5,
+    "particles": 19,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 229,
+    "tris": 744707,
+    "programs": 142,
+    "ms": 6,
+    "particles": 15,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "fire.charged",
+  "slot": "charged",
+  "arch": "lob",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 231,
+    "tris": 758580,
+    "programs": 142,
+    "ms": 8,
+    "particles": 26,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 241,
+    "tris": 791396,
+    "programs": 142,
+    "ms": 17,
+    "particles": 147,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 245,
+    "tris": 810972,
+    "programs": 142,
+    "ms": 12,
+    "particles": 287,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 242,
+    "tris": 758953,
+    "programs": 142,
+    "ms": 11,
+    "particles": 318,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 254,
+    "tris": 769763,
+    "programs": 142,
+    "ms": 9,
+    "particles": 839,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 245,
+    "tris": 763099,
+    "programs": 142,
+    "ms": 5,
+    "particles": 423,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "fire.salamander",
+  "slot": "quick",
+  "arch": "crawler",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 230,
+    "tris": 732621,
+    "programs": 142,
+    "ms": 6,
+    "particles": 43,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 233,
+    "tris": 733303,
+    "programs": 142,
+    "ms": 11,
+    "particles": 48,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 233,
+    "tris": 733297,
+    "programs": 142,
+    "ms": 7,
+    "particles": 51,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 231,
+    "tris": 732633,
+    "programs": 142,
+    "ms": 4,
+    "particles": 49,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 235,
+    "tris": 735589,
+    "programs": 142,
+    "ms": 7,
+    "particles": 143,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 236,
+    "tris": 737761,
+    "programs": 142,
+    "ms": 7,
+    "particles": 169,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "fire.cyclone",
+  "slot": "quick",
+  "arch": "nova",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 234,
+    "tris": 736923,
+    "programs": 142,
+    "ms": 7,
+    "particles": 74,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 235,
+    "tris": 736921,
+    "programs": 142,
+    "ms": 12,
+    "particles": 67,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 243,
+    "tris": 745583,
+    "programs": 142,
+    "ms": 4,
+    "particles": 229,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 240,
+    "tris": 740149,
+    "programs": 142,
+    "ms": 13,
+    "particles": 234,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 227,
+    "tris": 730257,
+    "programs": 142,
+    "ms": 12,
+    "particles": 172,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 226,
+    "tris": 730163,
+    "programs": 142,
+    "ms": 6,
+    "particles": 126,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "fire.ult",
+  "slot": "ultimate",
+  "arch": "rain",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 225,
+    "tris": 730041,
+    "programs": 142,
+    "ms": 6,
+    "particles": 65,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 225,
+    "tris": 730047,
+    "programs": 142,
+    "ms": 11,
+    "particles": 68,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 228,
+    "tris": 730615,
+    "programs": 142,
+    "ms": 13,
+    "particles": 89,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 227,
+    "tris": 729899,
+    "programs": 142,
+    "ms": 6,
+    "particles": 61,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 226,
+    "tris": 729233,
+    "programs": 142,
+    "ms": 6,
+    "particles": 52,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 242,
+    "tris": 749101,
+    "programs": 142,
+    "ms": 9,
+    "particles": 834,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "wind.basic",
+  "slot": "basic",
+  "arch": "projectile",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 230,
+    "tris": 741477,
+    "programs": 142,
+    "ms": 4,
+    "particles": 107,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 234,
+    "tris": 757153,
+    "programs": 142,
+    "ms": 5,
+    "particles": 105,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 233,
+    "tris": 755843,
+    "programs": 142,
+    "ms": 5,
+    "particles": 107,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 232,
+    "tris": 753719,
+    "programs": 142,
+    "ms": 10,
+    "particles": 90,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 248,
+    "tris": 762073,
+    "programs": 142,
+    "ms": 5,
+    "particles": 471,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 246,
+    "tris": 759579,
+    "programs": 142,
+    "ms": 9,
+    "particles": 468,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "wind.charged",
+  "slot": "charged",
+  "arch": "cone",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 235,
+    "tris": 736015,
+    "programs": 142,
+    "ms": 6,
+    "particles": 132,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 244,
+    "tris": 754701,
+    "programs": 142,
+    "ms": 10,
+    "particles": 128,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 258,
+    "tris": 764439,
+    "programs": 142,
+    "ms": 13,
+    "particles": 751,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 260,
+    "tris": 761077,
+    "programs": 142,
+    "ms": 9,
+    "particles": 1005,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 257,
+    "tris": 761389,
+    "programs": 142,
+    "ms": 12,
+    "particles": 1131,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 236,
+    "tris": 751167,
+    "programs": 142,
+    "ms": 8,
+    "particles": 424,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "wind.vortex",
+  "slot": "quick",
+  "arch": "zone",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 233,
+    "tris": 733893,
+    "programs": 142,
+    "ms": 20,
+    "particles": 31,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 234,
+    "tris": 733893,
+    "programs": 142,
+    "ms": 6,
+    "particles": 29,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 242,
+    "tris": 737611,
+    "programs": 142,
+    "ms": 20,
+    "particles": 46,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 239,
+    "tris": 736317,
+    "programs": 142,
+    "ms": 11,
+    "particles": 55,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 239,
+    "tris": 736521,
+    "programs": 142,
+    "ms": 9,
+    "particles": 85,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 231,
+    "tris": 732323,
+    "programs": 142,
+    "ms": 6,
+    "particles": 94,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "wind.gust",
+  "slot": "quick",
+  "arch": "cone",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 226,
+    "tris": 728091,
+    "programs": 142,
+    "ms": 5,
+    "particles": 114,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 227,
+    "tris": 728107,
+    "programs": 142,
+    "ms": 12,
+    "particles": 114,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 242,
+    "tris": 738895,
+    "programs": 142,
+    "ms": 6,
+    "particles": 366,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 241,
+    "tris": 743315,
+    "programs": 142,
+    "ms": 11,
+    "particles": 382,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 229,
+    "tris": 735999,
+    "programs": 142,
+    "ms": 6,
+    "particles": 284,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 229,
+    "tris": 735735,
+    "programs": 142,
+    "ms": 5,
+    "particles": 188,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "wind.ult",
+  "slot": "ultimate",
+  "arch": "zone",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 225,
+    "tris": 732439,
+    "programs": 142,
+    "ms": 6,
+    "particles": 140,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 226,
+    "tris": 732421,
+    "programs": 142,
+    "ms": 12,
+    "particles": 129,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 233,
+    "tris": 736727,
+    "programs": 142,
+    "ms": 11,
+    "particles": 188,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 232,
+    "tris": 736675,
+    "programs": 142,
+    "ms": 11,
+    "particles": 170,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 231,
+    "tris": 736095,
+    "programs": 142,
+    "ms": 14,
+    "particles": 168,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 229,
+    "tris": 735705,
+    "programs": 142,
+    "ms": 6,
+    "particles": 137,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "ice.basic",
+  "slot": "basic",
+  "arch": "volley",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 228,
+    "tris": 735255,
+    "programs": 142,
+    "ms": 16,
+    "particles": 162,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 231,
+    "tris": 750901,
+    "programs": 142,
+    "ms": 7,
+    "particles": 165,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 231,
+    "tris": 749637,
+    "programs": 142,
+    "ms": 7,
+    "particles": 154,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 230,
+    "tris": 747519,
+    "programs": 142,
+    "ms": 11,
+    "particles": 146,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 230,
+    "tris": 747515,
+    "programs": 142,
+    "ms": 10,
+    "particles": 144,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 230,
+    "tris": 747601,
+    "programs": 142,
+    "ms": 10,
+    "particles": 151,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "ice.charged",
+  "slot": "charged",
+  "arch": "projectile",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 222,
+    "tris": 730413,
+    "programs": 142,
+    "ms": 4,
+    "particles": 75,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 242,
+    "tris": 759157,
+    "programs": 142,
+    "ms": 12,
+    "particles": 383,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 243,
+    "tris": 757987,
+    "programs": 142,
+    "ms": 18,
+    "particles": 391,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 235,
+    "tris": 750095,
+    "programs": 142,
+    "ms": 11,
+    "particles": 335,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 231,
+    "tris": 746581,
+    "programs": 142,
+    "ms": 7,
+    "particles": 186,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 231,
+    "tris": 746345,
+    "programs": 142,
+    "ms": 8,
+    "particles": 108,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "ice.nova",
+  "slot": "quick",
+  "arch": "nova",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 224,
+    "tris": 728735,
+    "programs": 142,
+    "ms": 6,
+    "particles": 44,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 224,
+    "tris": 728737,
+    "programs": 142,
+    "ms": 5,
+    "particles": 45,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 232,
+    "tris": 736153,
+    "programs": 142,
+    "ms": 10,
+    "particles": 32,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 229,
+    "tris": 730801,
+    "programs": 142,
+    "ms": 6,
+    "particles": 14,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 228,
+    "tris": 729529,
+    "programs": 142,
+    "ms": 6,
+    "particles": 26,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 226,
+    "tris": 729509,
+    "programs": 142,
+    "ms": 15,
+    "particles": 17,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "ice.pillar",
+  "slot": "quick",
+  "arch": "pillar",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 223,
+    "tris": 726439,
+    "programs": 142,
+    "ms": 9,
+    "particles": 60,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 224,
+    "tris": 726441,
+    "programs": 142,
+    "ms": 13,
+    "particles": 59,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 230,
+    "tris": 728019,
+    "programs": 142,
+    "ms": 10,
+    "particles": 134,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 228,
+    "tris": 727301,
+    "programs": 142,
+    "ms": 6,
+    "particles": 103,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 227,
+    "tris": 726049,
+    "programs": 142,
+    "ms": 12,
+    "particles": 69,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 228,
+    "tris": 727619,
+    "programs": 142,
+    "ms": 5,
+    "particles": 118,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "ice.ult",
+  "slot": "ultimate",
+  "arch": "crawler",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 225,
+    "tris": 727027,
+    "programs": 142,
+    "ms": 5,
+    "particles": 178,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 226,
+    "tris": 727695,
+    "programs": 142,
+    "ms": 6,
+    "particles": 176,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 228,
+    "tris": 727749,
+    "programs": 142,
+    "ms": 5,
+    "particles": 179,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 237,
+    "tris": 730559,
+    "programs": 142,
+    "ms": 21,
+    "particles": 613,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 240,
+    "tris": 733751,
+    "programs": 142,
+    "ms": 6,
+    "particles": 924,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 236,
+    "tris": 732087,
+    "programs": 142,
+    "ms": 7,
+    "particles": 509,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "light.basic",
+  "slot": "basic",
+  "arch": "projectile",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 230,
+    "tris": 732543,
+    "programs": 142,
+    "ms": 8,
+    "particles": 164,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 234,
+    "tris": 748251,
+    "programs": 142,
+    "ms": 12,
+    "particles": 178,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 233,
+    "tris": 746955,
+    "programs": 142,
+    "ms": 12,
+    "particles": 187,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 232,
+    "tris": 744833,
+    "programs": 142,
+    "ms": 5,
+    "particles": 171,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 236,
+    "tris": 744273,
+    "programs": 142,
+    "ms": 5,
+    "particles": 175,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 232,
+    "tris": 743185,
+    "programs": 142,
+    "ms": 7,
+    "particles": 67,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "light.charged",
+  "slot": "charged",
+  "arch": "pillar",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 225,
+    "tris": 728693,
+    "programs": 142,
+    "ms": 5,
+    "particles": 23,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 228,
+    "tris": 740943,
+    "programs": 142,
+    "ms": 14,
+    "particles": 23,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 256,
+    "tris": 761601,
+    "programs": 142,
+    "ms": 13,
+    "particles": 383,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 242,
+    "tris": 755501,
+    "programs": 142,
+    "ms": 7,
+    "particles": 354,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 235,
+    "tris": 751287,
+    "programs": 142,
+    "ms": 4,
+    "particles": 171,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 232,
+    "tris": 749559,
+    "programs": 142,
+    "ms": 4,
+    "particles": 149,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "light.flash",
+  "slot": "quick",
+  "arch": "nova",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 225,
+    "tris": 727719,
+    "programs": 142,
+    "ms": 4,
+    "particles": 52,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 225,
+    "tris": 727713,
+    "programs": 142,
+    "ms": 10,
+    "particles": 49,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 242,
+    "tris": 734489,
+    "programs": 142,
+    "ms": 11,
+    "particles": 49,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 228,
+    "tris": 728979,
+    "programs": 142,
+    "ms": 11,
+    "particles": 32,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 228,
+    "tris": 728309,
+    "programs": 142,
+    "ms": 17,
+    "particles": 21,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 221,
+    "tris": 725701,
+    "programs": 142,
+    "ms": 15,
+    "particles": 15,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "light.sanctuary",
+  "slot": "quick",
+  "arch": "zone",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 220,
+    "tris": 725111,
+    "programs": 142,
+    "ms": 7,
+    "particles": 44,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 222,
+    "tris": 725125,
+    "programs": 142,
+    "ms": 5,
+    "particles": 49,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 227,
+    "tris": 727091,
+    "programs": 142,
+    "ms": 5,
+    "particles": 89,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 226,
+    "tris": 727025,
+    "programs": 142,
+    "ms": 4,
+    "particles": 64,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 225,
+    "tris": 726053,
+    "programs": 142,
+    "ms": 6,
+    "particles": 58,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 223,
+    "tris": 725607,
+    "programs": 142,
+    "ms": 4,
+    "particles": 35,
+    "state": "playing"
+   }
+  ]
+ },
+ {
+  "id": "light.ult",
+  "slot": "ultimate",
+  "arch": "beam",
+  "ok": true,
+  "frames": [
+   {
+    "t": 0.06,
+    "calls": 223,
+    "tris": 725035,
+    "programs": 142,
+    "ms": 12,
+    "particles": 67,
+    "state": "playing"
+   },
+   {
+    "t": 0.18,
+    "calls": 223,
+    "tris": 725069,
+    "programs": 142,
+    "ms": 5,
+    "particles": 72,
+    "state": "playing"
+   },
+   {
+    "t": 0.35,
+    "calls": 232,
+    "tris": 731339,
+    "programs": 142,
+    "ms": 9,
+    "particles": 146,
+    "state": "playing"
+   },
+   {
+    "t": 0.6,
+    "calls": 239,
+    "tris": 735605,
+    "programs": 142,
+    "ms": 12,
+    "particles": 336,
+    "state": "playing"
+   },
+   {
+    "t": 1,
+    "calls": 254,
+    "tris": 744951,
+    "programs": 142,
+    "ms": 6,
+    "particles": 740,
+    "state": "playing"
+   },
+   {
+    "t": 1.6,
+    "calls": 262,
+    "tris": 750881,
+    "programs": 142,
+    "ms": 6,
+    "particles": 1189,
+    "state": "playing"
+   }
+  ]
+ }
+]

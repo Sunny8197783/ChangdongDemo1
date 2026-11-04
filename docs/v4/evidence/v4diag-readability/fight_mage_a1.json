@@ -1,0 +1,1347 @@
+{
+ "hist": {
+  "bokoblin:idle:": 3021,
+  "chuchu:idle:": 2526,
+  "shaman:idle:": 1732,
+  "dummy:idle:": 1263,
+  "voidknight:idle:": 17,
+  "wolf:idle:": 143,
+  "lizard:idle:": 48,
+  "bokoblin:alert:chilled": 32,
+  "voidknight:alert:chilled": 22,
+  "voidknight:stagger:broken": 9,
+  "voidknight:stagger:broken+chilled": 9,
+  "lizard:idle:chilled": 9,
+  "shaman:idle:chilled": 1,
+  "bokoblin:chase:chilled": 145,
+  "shaman:alert:wet": 8,
+  "bokoblin:alert:exposed+chilled": 31,
+  "bokoblin:chase:exposed+burning": 121,
+  "voidknight:stagger:broken+chilled+exposed": 5,
+  "wolf:alert:exposed+chilled": 31,
+  "lizard:alert:exposed": 22,
+  "shaman:alert:exposed+chilled": 11,
+  "voidknight:stagger:broken+exposed+burning": 13,
+  "lizard:alert:exposed+chilled": 7,
+  "shaman:alert:exposed+burning": 7,
+  "bokoblin:chase:exposed+burning+chilled": 51,
+  "voidknight:stagger:broken+exposed+burning+chilled": 13,
+  "shaman:alert:exposed+burning+chilled": 6,
+  "shaman:kite:exposed+burning+chilled": 2,
+  "shaman:vanish:exposed+burning": 16,
+  "wolf:idle:burning": 2,
+  "lizard:chase:exposed+chilled": 2,
+  "bokoblin:alert:exposed+shocked+stunned+burning": 12,
+  "voidknight:stagger:broken+exposed+shocked+stunned": 10,
+  "wolf:alert:exposed+shocked+stunned": 12,
+  "wolf:alert:burning": 35,
+  "lizard:chase:exposed+shocked+stunned+burning": 12,
+  "voidknight:stagger:broken+exposed+shocked+stunned+chilled": 2,
+  "shaman:vanish:exposed+burning+chilled": 2,
+  "bokoblin:alert:exposed+shocked+burning": 1,
+  "voidknight:stagger:broken+exposed+shocked+chilled": 25,
+  "wolf:alert:exposed+shocked": 3,
+  "lizard:chase:exposed+shocked+burning": 33,
+  "shaman:appear:exposed+burning+chilled": 11,
+  "bokoblin:chase:exposed+shocked+burning": 32,
+  "wolf:circle:exposed+shocked": 16,
+  "shaman:cast:exposed+burning+chilled": 34,
+  "wolf:circle:exposed+shocked+chilled": 20,
+  "wolf:circle:burning": 67,
+  "voidknight:chase:broken+exposed+shocked+chilled": 8,
+  "voidknight:chase:broken+exposed+shocked": 3,
+  "lizard:chase:exposed+burning": 53,
+  "voidknight:chase:broken+exposed+burning": 3,
+  "bokoblin:chase:exposed+wet+dazzled": 15,
+  "voidknight:chase:broken+exposed+wet+dazzled": 15,
+  "wolf:circle:exposed+shocked+wet+dazzled": 15,
+  "shaman:cast:exposed+burning": 27,
+  "bokoblin:chase:exposed+wet": 65,
+  "voidknight:chase:broken+exposed+wet": 4,
+  "wolf:circle:exposed+shocked+wet": 21,
+  "voidknight:knockdown:broken+exposed+wet": 2,
+  "shaman:kite:exposed+burning": 88,
+  "voidknight:knockdown:exposed+wet": 2,
+  "lizard:knockdown:exposed+burning": 40,
+  "voidknight:knockdown:exposed": 16,
+  "wolf:crouch:burning": 5,
+  "bokoblin:knockdown:exposed+wet": 22,
+  "bokoblin:knockdown:exposed+burning": 24,
+  "wolf:crouch:wet+dazzled": 9,
+  "wolf:knockdown:exposed+shocked+wet": 3,
+  "voidknight:knockdown:exposed+burning": 2,
+  "wolf:knockdown:exposed+shocked": 39,
+  "wolf:crouch:dazzled": 3,
+  "voidknight:getup:exposed+burning": 18,
+  "wolf:dart:dazzled": 3,
+  "lizard:getup:exposed+burning": 18,
+  "wolf:dart:dazzled+wet": 4,
+  "wolf:dart:dazzled+stunned+shocked": 5,
+  "bokoblin:getup:exposed+wet": 17,
+  "bokoblin:getup:exposed+burning": 16,
+  "wolf:dart:dazzled+stunned+shocked+chilled": 8,
+  "wolf:knockdown:exposed+shocked+burning": 4,
+  "voidknight:chase:exposed+burning": 86,
+  "wolf:getup:exposed+shocked+burning": 16,
+  "wolf:dart:stunned+shocked+chilled": 1,
+  "wolf:dart:stunned+shocked+chilled+wet+dazzled": 6,
+  "wolf:dart:shocked+chilled+wet+dazzled": 1,
+  "wolf:retreat:shocked+chilled+wet+dazzled": 19,
+  "wolf:circle:exposed+shocked+burning": 36,
+  "lizard:lungePrep:exposed+burning": 16,
+  "wolf:circle:shocked+chilled+wet+dazzled": 34,
+  "lizard:lunge:exposed+burning": 23,
+  "wolf:circle:exposed+burning": 28,
+  "bokoblin:chase:exposed+wet+chilled": 3,
+  "bokoblin:chase:exposed+chilled": 23,
+  "shaman:cast:burning": 73,
+  "wolf:circle:shocked+chilled+wet": 75,
+  "bokoblin:chase:burning": 51,
+  "lizard:recover:exposed+burning": 3,
+  "lizard:recover:exposed+burning+chilled": 11,
+  "wolf:circle:exposed+shocked+stunned+burning+chilled": 13,
+  "lizard:recover:exposed+burning+shocked+stunned": 10,
+  "voidknight:chase:burning": 46,
+  "lizard:recover:exposed+burning+shocked+stunned+chilled": 3,
+  "wolf:circle:exposed+shocked+burning+chilled": 20,
+  "lizard:recover:exposed+burning+shocked+chilled": 1,
+  "lizard:chase:exposed+burning+shocked+chilled": 47,
+  "shaman:kite:burning": 66,
+  "wolf:crouch:exposed+shocked+burning+chilled": 40,
+  "bokoblin:chase:burning+chilled": 6,
+  "shaman:vanish:burning": 10,
+  "bokoblin:windup:burning+chilled": 20,
+  "shaman:appear:burning": 11,
+  "voidknight:chase:": 10,
+  "wolf:circle:shocked+wet": 15,
+  "bokoblin:swing:": 12,
+  "voidknight:stagger:broken+burning": 45,
+  "lizard:chase:exposed+shocked+wet": 8,
+  "lizard:strafe:exposed+shocked+burning": 4,
+  "bokoblin:swing:wet+dazzled": 2,
+  "wolf:dart:exposed+shocked+burning+chilled": 2,
+  "wolf:circle:shocked+wet+dazzled": 2,
+  "lizard:strafe:exposed+shocked+wet+dazzled": 2,
+  "bokoblin:swing:dazzled+burning": 10,
+  "wolf:dart:exposed+shocked": 36,
+  "wolf:circle:dazzled+burning": 22,
+  "lizard:strafe:exposed+dazzled+burning": 22,
+  "bokoblin:swing:dazzled+burning+chilled": 12,
+  "bokoblin:swing:burning+chilled": 17,
+  "lizard:strafe:exposed+burning": 27,
+  "voidknight:knockdown:broken+burning": 22,
+  "bokoblin:knockdown:burning+chilled": 22,
+  "wolf:knockdown:burning": 19,
+  "voidknight:getup:broken+burning": 14,
+  "wolf:getup:exposed+shocked": 9,
+  "bokoblin:getup:burning+chilled": 6
+ },
+ "spot": {
+  "x": -19.98343372702757,
+  "z": 45.813865146997294,
+  "sc": 1.4462867378771729
+ },
+ "samples": [
+  {
+   "tScr": [],
+   "t": 3.83,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 36,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 679,
+   "eLostFrac": 0.598,
+   "eSigAvg": 216,
+   "eNoiseAvg": 181,
+   "eBloomAvg": 76,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 4,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 34,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 847,
+   "eLostFrac": 0.739,
+   "eSigAvg": 183,
+   "eNoiseAvg": 197,
+   "eBloomAvg": 92,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 4.17,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 36,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1649,
+   "eLostFrac": 0.551,
+   "eSigAvg": 153,
+   "eNoiseAvg": 85,
+   "eBloomAvg": 94,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 4.33,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 36,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1792,
+   "eLostFrac": 0.753,
+   "eSigAvg": 143,
+   "eNoiseAvg": 146,
+   "eBloomAvg": 84,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 4.5,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 51,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 328,
+   "eLostFrac": 0.954,
+   "eSigAvg": 127,
+   "eNoiseAvg": 218,
+   "eBloomAvg": 85,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 4.67,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 53,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 962,
+   "eLostFrac": 0.966,
+   "eSigAvg": 151,
+   "eNoiseAvg": 243,
+   "eBloomAvg": 99,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 4.83,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 52,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1154,
+   "eLostFrac": 0.821,
+   "eSigAvg": 145,
+   "eNoiseAvg": 161,
+   "eBloomAvg": 76,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 5,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 44,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 457,
+   "eLostFrac": 0.952,
+   "eSigAvg": 248,
+   "eNoiseAvg": 252,
+   "eBloomAvg": 50,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 5.17,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 40,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 242,
+   "eLostFrac": 0.975,
+   "eSigAvg": 138,
+   "eNoiseAvg": 202,
+   "eBloomAvg": 15,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     0.21,
+     -0.27,
+     0.974
+    ]
+   ],
+   "t": 5.5,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 30,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 243,
+   "eLostFrac": 0.551,
+   "eSigAvg": 321,
+   "eNoiseAvg": 200,
+   "eBloomAvg": 9,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     0.19,
+     -0.28,
+     0.974
+    ]
+   ],
+   "t": 5.67,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 29,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 199,
+   "eLostFrac": 0.658,
+   "eSigAvg": 207,
+   "eNoiseAvg": 141,
+   "eBloomAvg": 10,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     0.11,
+     -0.48,
+     0.966
+    ]
+   ],
+   "t": 5.83,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 32,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 320,
+   "eLostFrac": 0.338,
+   "eSigAvg": 73,
+   "eNoiseAvg": 34,
+   "eBloomAvg": 36,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     -0.98,
+     -0.33,
+     0.973
+    ]
+   ],
+   "t": 6,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 36,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 0,
+   "eLostFrac": null,
+   "eSigAvg": null,
+   "eNoiseAvg": null,
+   "eBloomAvg": null,
+   "ePlayerFrac": null,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 7.67,
+   "winders": [
+    "lizard:lungePrep"
+   ],
+   "teles": 0,
+   "vfxObjs": 38,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 0,
+   "eLostFrac": null,
+   "eSigAvg": null,
+   "eNoiseAvg": null,
+   "eBloomAvg": null,
+   "ePlayerFrac": null,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 7.83,
+   "winders": [
+    "lizard:lungePrep"
+   ],
+   "teles": 0,
+   "vfxObjs": 35,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 0,
+   "eLostFrac": null,
+   "eSigAvg": null,
+   "eNoiseAvg": null,
+   "eBloomAvg": null,
+   "ePlayerFrac": null,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 8,
+   "winders": [
+    "lizard:lungePrep"
+   ],
+   "teles": 0,
+   "vfxObjs": 36,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 0,
+   "eLostFrac": null,
+   "eSigAvg": null,
+   "eNoiseAvg": null,
+   "eBloomAvg": null,
+   "ePlayerFrac": null,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     -0.68,
+     -0.71,
+     0.944
+    ]
+   ],
+   "t": 8.17,
+   "winders": [],
+   "teles": 1,
+   "vfxObjs": 34,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 0,
+   "eLostFrac": null,
+   "eSigAvg": null,
+   "eNoiseAvg": null,
+   "eBloomAvg": null,
+   "ePlayerFrac": null,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     -0.29,
+     0.02,
+     0.981
+    ]
+   ],
+   "t": 8.33,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 1,
+   "vfxObjs": 34,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 547,
+   "eLostFrac": 0.823,
+   "eSigAvg": 211,
+   "eNoiseAvg": 230,
+   "eBloomAvg": 101,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     -0.31,
+     0.04,
+     0.982
+    ]
+   ],
+   "t": 8.5,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 1,
+   "vfxObjs": 33,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 576,
+   "eLostFrac": 0.91,
+   "eSigAvg": 192,
+   "eNoiseAvg": 248,
+   "eBloomAvg": 105,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 8.67,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 35,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 627,
+   "eLostFrac": 0.9,
+   "eSigAvg": 147,
+   "eNoiseAvg": 194,
+   "eBloomAvg": 85,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 8.83,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 32,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 718,
+   "eLostFrac": 0.843,
+   "eSigAvg": 141,
+   "eNoiseAvg": 179,
+   "eBloomAvg": 79,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 9,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 31,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 876,
+   "eLostFrac": 0.856,
+   "eSigAvg": 134,
+   "eNoiseAvg": 187,
+   "eBloomAvg": 95,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 9.17,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 33,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 658,
+   "eLostFrac": 0.898,
+   "eSigAvg": 142,
+   "eNoiseAvg": 193,
+   "eBloomAvg": 88,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 9.33,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 52,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 198,
+   "eLostFrac": 0.909,
+   "eSigAvg": 171,
+   "eNoiseAvg": 214,
+   "eBloomAvg": 125,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 9.5,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 52,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 333,
+   "eLostFrac": 0.676,
+   "eSigAvg": 117,
+   "eNoiseAvg": 126,
+   "eBloomAvg": 82,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 9.67,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 54,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 207,
+   "eLostFrac": 0.923,
+   "eSigAvg": 149,
+   "eNoiseAvg": 178,
+   "eBloomAvg": 100,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     0.35,
+     -0.33,
+     0.969
+    ]
+   ],
+   "t": 10.5,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 38,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 795,
+   "eLostFrac": 0.99,
+   "eSigAvg": 284,
+   "eNoiseAvg": 375,
+   "eBloomAvg": 244,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     0.24,
+     -0.44,
+     0.964
+    ]
+   ],
+   "t": 10.67,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 42,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1331,
+   "eLostFrac": 0.988,
+   "eSigAvg": 124,
+   "eNoiseAvg": 244,
+   "eBloomAvg": 154,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [
+    [
+     0.26,
+     -0.49,
+     0.962
+    ]
+   ],
+   "t": 10.83,
+   "winders": [
+    "bokoblin:windup",
+    "wolf:crouch"
+   ],
+   "teles": 1,
+   "vfxObjs": 42,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 4117,
+   "eLostFrac": 0.858,
+   "eSigAvg": 126,
+   "eNoiseAvg": 166,
+   "eBloomAvg": 137,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 11,
+   "winders": [
+    "bokoblin:windup",
+    "wolf:crouch"
+   ],
+   "teles": 0,
+   "vfxObjs": 40,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 2880,
+   "eLostFrac": 0.863,
+   "eSigAvg": 140,
+   "eNoiseAvg": 161,
+   "eBloomAvg": 122,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 11.17,
+   "winders": [
+    "bokoblin:windup",
+    "wolf:crouch"
+   ],
+   "teles": 0,
+   "vfxObjs": 41,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 2660,
+   "eLostFrac": 0.939,
+   "eSigAvg": 142,
+   "eNoiseAvg": 216,
+   "eBloomAvg": 104,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 11.33,
+   "winders": [
+    "bokoblin:windup",
+    "wolf:crouch"
+   ],
+   "teles": 0,
+   "vfxObjs": 40,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 2629,
+   "eLostFrac": 0.963,
+   "eSigAvg": 154,
+   "eNoiseAvg": 225,
+   "eBloomAvg": 89,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 11.5,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 0,
+   "vfxObjs": 55,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 471,
+   "eLostFrac": 0.992,
+   "eSigAvg": 237,
+   "eNoiseAvg": 440,
+   "eBloomAvg": 155,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 11.67,
+   "winders": [
+    "wolf:crouch"
+   ],
+   "teles": 0,
+   "vfxObjs": 57,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 427,
+   "eLostFrac": 0.991,
+   "eSigAvg": 263,
+   "eNoiseAvg": 430,
+   "eBloomAvg": 110,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 12.5,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 41,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 943,
+   "eLostFrac": 0.856,
+   "eSigAvg": 235,
+   "eNoiseAvg": 204,
+   "eBloomAvg": 12,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 12.67,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 40,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 0,
+   "eLostFrac": null,
+   "eSigAvg": null,
+   "eNoiseAvg": null,
+   "eBloomAvg": null,
+   "ePlayerFrac": null,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 12.83,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 40,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 373,
+   "eLostFrac": 0.997,
+   "eSigAvg": 314,
+   "eNoiseAvg": 403,
+   "eBloomAvg": 92,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 13,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 35,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1396,
+   "eLostFrac": 0.937,
+   "eSigAvg": 231,
+   "eNoiseAvg": 269,
+   "eBloomAvg": 136,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 13.17,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 37,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1198,
+   "eLostFrac": 0.929,
+   "eSigAvg": 252,
+   "eNoiseAvg": 264,
+   "eBloomAvg": 115,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 13.33,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 38,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 1424,
+   "eLostFrac": 0.841,
+   "eSigAvg": 208,
+   "eNoiseAvg": 217,
+   "eBloomAvg": 93,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 13.5,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 38,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 865,
+   "eLostFrac": 0.703,
+   "eSigAvg": 311,
+   "eNoiseAvg": 239,
+   "eBloomAvg": 131,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 13.67,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 39,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 769,
+   "eLostFrac": 0.711,
+   "eSigAvg": 192,
+   "eNoiseAvg": 143,
+   "eBloomAvg": 126,
+   "ePlayerFrac": 0,
+   "calls": 1
+  },
+  {
+   "tScr": [],
+   "t": 13.83,
+   "winders": [
+    "shaman:cast"
+   ],
+   "teles": 0,
+   "vfxObjs": 39,
+   "tPix": 0,
+   "tLostFrac": null,
+   "tSigAvg": null,
+   "tNoiseAvg": null,
+   "tBloomAvg": null,
+   "tPlayerFrac": null,
+   "ePix": 723,
+   "eLostFrac": 0.898,
+   "eSigAvg": 186,
+   "eNoiseAvg": 164,
+   "eBloomAvg": 104,
+   "ePlayerFrac": 0,
+   "calls": 1
+  }
+ ],
+ "transitions": [
+  {
+   "type": "shaman",
+   "state": "cast",
+   "frames": 46,
+   "gameT": 1.338
+  },
+  {
+   "type": "wolf",
+   "state": "crouch",
+   "frames": 17,
+   "gameT": 0.533
+  },
+  {
+   "type": "lizard",
+   "state": "lungePrep",
+   "frames": 16,
+   "gameT": 0.5
+  },
+  {
+   "type": "shaman",
+   "state": "cast",
+   "frames": 47,
+   "gameT": 1.339
+  },
+  {
+   "type": "bokoblin",
+   "state": "windup",
+   "frames": 20,
+   "gameT": 0.633
+  },
+  {
+   "type": "wolf",
+   "state": "crouch",
+   "frames": 40,
+   "gameT": 0.976
+  },
+  {
+   "type": "shaman",
+   "state": "cast",
+   "frames": 41,
+   "gameT": 1.333
+  }
+ ],
+ "coverByName": {
+  "Mesh": 316,
+  "grassFire": 43,
+  "grassSmoke": 43,
+  "grassEmbers": 43,
+  "vfx-additive": 43,
+  "vfx-alpha": 43,
+  "vfx-ring": 120,
+  "vfx-decal": 516,
+  "vfx-beam": 58,
+  "vfx-trail": 94,
+  "vfx-debris": 62,
+  "outline": 97,
+  "status-shell": 43,
+  "status-flame": 43,
+  "status-star": 23,
+  "spells.objects.mine": 34,
+  "vfx-dome": 28,
+  "flora/Mesh": 61
+ },
+ "shots": [
+  {
+   "t": 3.83,
+   "info": {
+    "tScr": [],
+    "t": 3.83,
+    "winders": [
+     "shaman:cast"
+    ],
+    "teles": 0,
+    "vfxObjs": 36,
+    "tPix": 0,
+    "tLostFrac": null,
+    "tSigAvg": null,
+    "tNoiseAvg": null,
+    "tBloomAvg": null,
+    "tPlayerFrac": null,
+    "ePix": 679,
+    "eLostFrac": 0.598,
+    "eSigAvg": 216,
+    "eNoiseAvg": 181,
+    "eBloomAvg": 76,
+    "ePlayerFrac": 0,
+    "calls": 1
+   }
+  },
+  {
+   "t": 4,
+   "info": {
+    "tScr": [],
+    "t": 4,
+    "winders": [
+     "shaman:cast"
+    ],
+    "teles": 0,
+    "vfxObjs": 34,
+    "tPix": 0,
+    "tLostFrac": null,
+    "tSigAvg": null,
+    "tNoiseAvg": null,
+    "tBloomAvg": null,
+    "tPlayerFrac": null,
+    "ePix": 847,
+    "eLostFrac": 0.739,
+    "eSigAvg": 183,
+    "eNoiseAvg": 197,
+    "eBloomAvg": 92,
+    "ePlayerFrac": 0,
+    "calls": 1
+   }
+  },
+  {
+   "t": 8.33,
+   "info": {
+    "tScr": [
+     [
+      -0.29,
+      0.02,
+      0.981
+     ]
+    ],
+    "t": 8.33,
+    "winders": [
+     "shaman:cast"
+    ],
+    "teles": 1,
+    "vfxObjs": 34,
+    "tPix": 0,
+    "tLostFrac": null,
+    "tSigAvg": null,
+    "tNoiseAvg": null,
+    "tBloomAvg": null,
+    "tPlayerFrac": null,
+    "ePix": 547,
+    "eLostFrac": 0.823,
+    "eSigAvg": 211,
+    "eNoiseAvg": 230,
+    "eBloomAvg": 101,
+    "ePlayerFrac": 0,
+    "calls": 1
+   }
+  },
+  {
+   "t": 9.17,
+   "info": {
+    "tScr": [],
+    "t": 9.17,
+    "winders": [
+     "shaman:cast"
+    ],
+    "teles": 0,
+    "vfxObjs": 33,
+    "tPix": 0,
+    "tLostFrac": null,
+    "tSigAvg": null,
+    "tNoiseAvg": null,
+    "tBloomAvg": null,
+    "tPlayerFrac": null,
+    "ePix": 658,
+    "eLostFrac": 0.898,
+    "eSigAvg": 142,
+    "eNoiseAvg": 193,
+    "eBloomAvg": 88,
+    "ePlayerFrac": 0,
+    "calls": 1
+   }
+  }
+ ],
+ "dpr": 1,
+ "size": [
+  960,
+  540
+ ],
+ "vfxStats": {
+  "additive": 273,
+  "alpha": 47,
+  "particles": 320,
+  "emitters": 13,
+  "beams": 0,
+  "trails": 3,
+  "debris": 13,
+  "ghosts": 0,
+  "rings": 4,
+  "domes": 0,
+  "decals": 12,
+  "telegraphs": 0,
+  "runes": 0,
+  "dissolves": 0
+ }
+}

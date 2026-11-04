@@ -1,0 +1,21 @@
+const { chromium } = require('playwright'); const http=require('http'),fs=require('fs'),path=require('path');
+const ROOT='/home/user/changdongdemo1'; const port=8100+Math.floor(Math.random()*900);
+const types={'.js':'text/javascript','.html':'text/html','.css':'text/css','.json':'application/json','.png':'image/png'};
+const server=http.createServer((req,res)=>{let p=decodeURIComponent(req.url.split('?')[0]); if(p==='/')p='/index.html'; const f=path.join(ROOT,p); if(!fs.existsSync(f)||fs.statSync(f).isDirectory()){res.writeHead(404);return res.end();} res.writeHead(200,{'Content-Type':types[path.extname(f)]||'application/octet-stream'}); fs.createReadStream(f).pipe(res);}).listen(port);
+(async()=>{const b=await chromium.launch({args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+const p=await b.newPage({viewport:{width:640,height:360}}); p.on('console',m=>{if(['error','warning'].includes(m.type()))console.log('[c]',m.text().slice(0,300))});
+await p.goto(`http://localhost:${port}/?test=1&cls=mage`); await p.waitForFunction(()=>window.game&&game.ready,null,{timeout:90000});
+const r=await p.evaluate(()=>{const g=game; g.freeze(true); g.player.setLook(0,-0.12); g.step(30,1/60); const pp=g.player.object.position; const q=pp.clone(); q.z-=5;
+ const h=g.vfx.telegraph({shape:'circle',pos:q,r:3,dur:5,color:'damage'}); g.step(90,1/60);
+ let m=null; g.scene.traverse(o=>{if(o.name==='vfx-telegraph'&&o.visible) m=o;});
+ const pr=g.renderer.properties.get(m.material); return {prog0: pr.currentProgram?(pr.currentProgram.name+' diag='+JSON.stringify(pr.currentProgram.diagnostics||null).slice(0,300)):'NONE', parent: m&&m.parent===g.scene, layers:m&&m.layers.mask, camLayers:g.camera.layers.mask, matVis:m&&m.material.visible, prog:m&&m.material.uniforms.uProg.value, idx:m&&m.geometry.index&&m.geometry.index.count, drawRange:m&&m.geometry.drawRange, bs:m&&m.geometry.boundingSphere};});
+console.log(JSON.stringify(r));
+await p.evaluate(()=>{document.querySelector('#ui')&&(document.querySelector('#ui').style.display='none'); game.renderNow();}); await p.screenshot({path:'/tmp/v4diag-vfx/tdbg_on.png'});
+await p.evaluate(()=>{game.scene.traverse(o=>{if(o.name==="vfx-telegraph"&&o.visible){o.material.depthTest=false;}}); game.renderNow();}); await p.screenshot({path:'/tmp/v4diag-vfx/tdbg_off.png'});
+const r2=await p.evaluate(()=>{const g=game; let m=null; g.scene.traverse(o=>{if(o.name==='vfx-telegraph'&&o.material.uniforms.uProg.value>0)m=o;});
+ m.visible=true; m.material.depthTest=true; m.material.side=g.THREE.DoubleSide; m.material.needsUpdate=true; const R=g.renderer; const rt=new g.THREE.WebGLRenderTarget(320,180); const sc=new g.THREE.Scene(); const par=m.parent; sc.add(m);
+ R.setRenderTarget(rt); R.setClearColor(0x000000,1); R.clear(); R.render(sc,g.camera); const buf=new Uint8Array(320*180*4); R.readRenderTargetPixels(rt,0,0,320,180,buf); R.setRenderTarget(null); par.add(m);
+ let n=0,mx=0; for(let i=0;i<buf.length;i+=4){const v=buf[i]+buf[i+1]+buf[i+2]; if(v>10)n++; if(v>mx)mx=v;}
+ const u=m.material.uniforms; return {n,mx, alpha:u.uAlpha.value, col:u.uColor.value.getHexString(), fogOn: m.material.fog, sceneFog: !!g.scene.fog, posAttr: m.geometry.attributes.position.count, uv: !!m.geometry.attributes.uv};});
+console.log(JSON.stringify(r2));
+await b.close(); server.close();})();

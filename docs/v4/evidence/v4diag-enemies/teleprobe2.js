@@ -1,0 +1,35 @@
+const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const http = require('http'); const fs = require('fs'); const path = require('path');
+const root = '/home/user/changdongdemo1', OUT = '/tmp/v4diag-enemies';
+const port = 8100 + Math.floor(Math.random() * 900);
+const types = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css' };
+const server = http.createServer((req, res) => { let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/index.html'; const f = path.join(root, p);
+  if (!f.startsWith(root) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(res); }).listen(port);
+(async () => {
+  const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const p = await b.newPage({ viewport: { width: 960, height: 540 } });
+  await p.goto(`http://localhost:${port}/?test=1&cls=sword&level=20&quest=camps&zone=plains`);
+  await p.waitForFunction(() => window.game && window.game.ready, null, { timeout: 120000 });
+  const info = await p.evaluate(() => {
+    game.freeze(true);
+    for (const o of game.enemies.list.slice()) if (o.object) o.object.visible = false;
+    const pp = game.player.entity.object.position;
+    const h = game.vfx.telegraph({ shape: 'circle', pos: pp.clone().add(new game.THREE.Vector3(0, 0, -6)), r: 3, dur: 2, color: 'damage' });
+    game.step(30, 1 / 60, false);
+    const out = [];
+    game.scene.traverse((o) => { if (o.name === 'vfx-telegraph' && o.visible) { const a = o.geometry.attributes.position.array; out.push({ y0: a[1], x0: a[0], z0: a[2], layers: o.layers.mask, parent: o.parent?.type, prog: o.material.uniforms.uProg.value, alpha: o.material.uniforms.uAlpha.value, vis: o.visible }); } });
+    const cam = game.camera; cam.position.set(pp.x + 5, pp.y + 6, pp.z + 2); cam.lookAt(pp.x, pp.y, pp.z - 6); cam.updateMatrixWorld(true);
+    game.renderNow();
+    return { out, pp: pp.toArray(), camLayers: cam.layers.mask, alive: h?.alive };
+  });
+  console.log(JSON.stringify(info));
+  await p.screenshot({ path: `${OUT}/tele_probe_circle.png` });
+  await p.evaluate(() => { game.scene.traverse((o) => { if (o.name && o.name.startsWith('grass_')) o.visible = false; });
+    const pp = game.player.entity.object.position, cam = game.camera; cam.position.set(pp.x, pp.y + 14, pp.z - 2); cam.lookAt(pp.x, pp.y, pp.z - 6); cam.updateMatrixWorld(true); game.renderNow(); });
+  await p.screenshot({ path: `${OUT}/tele_probe_circle_top_nograss.png` });
+  await p.evaluate(() => { const pp = game.player.entity.object.position; game.vfx.telegraph({ shape: 'cone', pos: pp.clone().add(new game.THREE.Vector3(6, 0, -6)), dir: new game.THREE.Vector3(0,0,1), r: 3.2, angle: 114, dur: 0.7, color: 'void' });
+    game.vfx.telegraph({ shape: 'line', pos: pp.clone().add(new game.THREE.Vector3(-6, 0, -8)), dir: new game.THREE.Vector3(0,0,1), len: 3.6, width: 1.2, dur: 0.62, color: 'damage' });
+    game.step(18, 1/60, false); game.renderNow(); });
+  await p.screenshot({ path: `${OUT}/tele_probe_shapes_top_nograss.png` });
+  await b.close(); server.close();
+})().catch((e) => { console.error(e); process.exit(1); });

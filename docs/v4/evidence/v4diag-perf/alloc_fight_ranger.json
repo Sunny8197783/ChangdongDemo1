@@ -1,0 +1,546 @@
+{
+ "frames": 1200,
+ "wallMs": 150324,
+ "heapMBperSec": [
+  90.5,
+  93,
+  93.5,
+  94.5,
+  95.4,
+  95.5,
+  95.9,
+  97.6,
+  96.4,
+  98.8,
+  97.3,
+  99.6,
+  98.3,
+  97.8,
+  94.8,
+  95.2,
+  95.8,
+  96.3,
+  97.2,
+  94.8
+ ],
+ "new": {
+  "obj3D": 121,
+  "mats": 108,
+  "geos": 14
+ },
+ "mods": {
+  "world": {
+   "avg": 0.455,
+   "max": 85.6
+  },
+  "vfx": {
+   "avg": 1.16,
+   "max": 53.1
+  },
+  "combat": {
+   "avg": 0.436,
+   "max": 109.4
+  },
+  "audio": {
+   "avg": 0.004,
+   "max": 1.2
+  },
+  "player": {
+   "avg": 1.873,
+   "max": 123.3
+  },
+  "spells": {
+   "avg": 2.824,
+   "max": 386.1
+  },
+  "sword": {
+   "avg": 0.049,
+   "max": 5.6
+  },
+  "skills": {
+   "avg": 0.038,
+   "max": 2.5
+  },
+  "enemies": {
+   "avg": 1.826,
+   "max": 350.8
+  },
+  "story": {
+   "avg": 0.071,
+   "max": 4.9
+  },
+  "cinematic": {
+   "avg": 0.028,
+   "max": 9.6
+  },
+  "ui": {
+   "avg": 2.451,
+   "max": 389.9
+  }
+ },
+ "slow": [
+  [
+   0,
+   16685
+  ],
+  [
+   30,
+   30902
+  ],
+  [
+   43,
+   62
+  ],
+  [
+   50,
+   54
+  ],
+  [
+   54,
+   31
+  ],
+  [
+   60,
+   2105
+  ],
+  [
+   90,
+   3148
+  ],
+  [
+   96,
+   78
+  ],
+  [
+   114,
+   132
+  ],
+  [
+   120,
+   1702
+  ],
+  [
+   123,
+   207
+  ],
+  [
+   124,
+   202
+  ],
+  [
+   150,
+   3244
+  ],
+  [
+   180,
+   3173
+  ],
+  [
+   193,
+   38
+  ],
+  [
+   194,
+   34
+  ],
+  [
+   198,
+   90
+  ],
+  [
+   210,
+   4678
+  ],
+  [
+   213,
+   28
+  ],
+  [
+   269,
+   141
+  ],
+  [
+   270,
+   50
+  ],
+  [
+   273,
+   61
+  ],
+  [
+   274,
+   32
+  ],
+  [
+   284,
+   26
+  ],
+  [
+   293,
+   61
+  ],
+  [
+   300,
+   2276
+  ],
+  [
+   317,
+   39
+  ],
+  [
+   322,
+   31
+  ],
+  [
+   330,
+   42
+  ],
+  [
+   360,
+   44
+  ]
+ ],
+ "vfx": {
+  "additive": 6974,
+  "alpha": 855,
+  "particles": 7829,
+  "emitters": 33,
+  "beams": 11,
+  "trails": 1,
+  "debris": 58,
+  "ghosts": 0,
+  "rings": 12,
+  "domes": 2,
+  "decals": 12,
+  "telegraphs": 8,
+  "runes": 6,
+  "dissolves": 0
+ },
+ "entities": 47,
+ "allocMBperGameSec": 11.5,
+ "topAlloc": [
+  [
+   "separate src/enemies.js:438",
+   0.642
+  ],
+  [
+   "queryRadius src/combat.js:57",
+   0.48
+  ],
+  [
+   "deform src/player/model.js:134",
+   0.419
+  ],
+  [
+   "assign :0",
+   0.399
+  ],
+  [
+   "updateTornado src/spells/zones.js:462",
+   0.353
+  ],
+  [
+   "update src/vfx/particles.js:164",
+   0.33
+  ],
+  [
+   "updateEnemy src/enemies/base.js:355",
+   0.315
+  ],
+  [
+   "random :0",
+   0.307
+  ],
+  [
+   "updateNumbers src/ui.js:1311",
+   0.304
+  ],
+  [
+   "update src/player/cape.js:85",
+   0.291
+  ],
+  [
+   "burst src/vfx.js:63",
+   0.256
+  ],
+  [
+   "next :0",
+   0.242
+  ],
+  [
+   "raycastEntities src/combat.js:74",
+   0.223
+  ],
+  [
+   "update src/player.js:1039",
+   0.21
+  ],
+  [
+   "update src/combat/statusfx.js:121",
+   0.179
+  ],
+  [
+   "integrate src/enemies/common.js:307",
+   0.177
+  ],
+  [
+   "getParameters vendor/three/three.module.js:20598",
+   0.149
+  ],
+  [
+   "getAim src/player.js:976",
+   0.146
+  ],
+  [
+   "computeBoundingSphere vendor/three/three.module.js:10848",
+   0.142
+  ],
+  [
+   "updateBars src/ui.js:1362",
+   0.132
+  ],
+  [
+   "hypot :0",
+   0.131
+  ],
+  [
+   "mastery src/core/progression.js:392",
+   0.131
+  ],
+  [
+   "getHeight src/world/terrain.js:264",
+   0.119
+  ],
+  [
+   "setFromBufferAttribute vendor/three/three.module.js:4651",
+   0.118
+  ],
+  [
+   "beam src/vfx/beam.js:69",
+   0.109
+  ],
+  [
+   "update src/spells/zones2.js:632",
+   0.108
+  ],
+  [
+   "update src/player/anim.js:97",
+   0.108
+  ],
+  [
+   "_bake src/player/fx.js:190",
+   0.106
+  ],
+  [
+   "dampPose src/enemies/base.js:509",
+   0.104
+  ],
+  [
+   "conformDisc src/spells/assets.js:297",
+   0.095
+  ]
+ ],
+ "cpuTop": [
+  [
+   "uniformMatrix4fv :0",
+   35052,
+   23.2
+  ],
+  [
+   "getProgramInfoLog :0",
+   29405,
+   19.5
+  ],
+  [
+   "getShaderInfoLog :0",
+   21992,
+   14.6
+  ],
+  [
+   "getProgramParameter :0",
+   18865,
+   12.5
+  ],
+  [
+   "bufferSubData :0",
+   11861,
+   7.9
+  ],
+  [
+   "vertexAttribPointer :0",
+   6192,
+   4.1
+  ],
+  [
+   "uniformMatrix3fv :0",
+   4571,
+   3
+  ],
+  [
+   "updateMatrixWorld vendor/three/three.module.js:7720",
+   1675,
+   1.1
+  ],
+  [
+   "bindVertexArray :0",
+   1638,
+   1.1
+  ],
+  [
+   "getBoundingClientRect :0",
+   1566,
+   1
+  ],
+  [
+   "drawElementsInstanced :0",
+   1477,
+   1
+  ],
+  [
+   "uniform3f :0",
+   1388,
+   0.9
+  ],
+  [
+   "drawElements :0",
+   1213,
+   0.8
+  ],
+  [
+   "(garbage collector) :0",
+   883,
+   0.6
+  ],
+  [
+   "update src/vfx/particles.js:164",
+   566,
+   0.4
+  ],
+  [
+   "(program) :0",
+   452,
+   0.3
+  ],
+  [
+   "texSubImage2D :0",
+   436,
+   0.3
+  ],
+  [
+   "updateNumbers src/ui.js:1311",
+   358,
+   0.2
+  ],
+  [
+   "bindTexture :0",
+   342,
+   0.2
+  ],
+  [
+   "e.pose src/enemies/lizard.js:123",
+   273,
+   0.2
+  ],
+  [
+   "multiplyMatrices vendor/three/three.module.js:6224",
+   265,
+   0.2
+  ],
+  [
+   "update vendor/three/three.module.js:18062",
+   247,
+   0.2
+  ],
+  [
+   "visuals src/enemies/base.js:437",
+   245,
+   0.2
+  ],
+  [
+   "spawn src/vfx/particles.js:139",
+   228,
+   0.2
+  ],
+  [
+   "getHeight src/world/terrain.js:264",
+   223,
+   0.1
+  ],
+  [
+   "mod.update :95",
+   215,
+   0.1
+  ],
+  [
+   "updateEnemy src/enemies/base.js:355",
+   209,
+   0.1
+  ],
+  [
+   "update src/combat.js:139",
+   183,
+   0.1
+  ],
+  [
+   "update src/ui/hotbar3.js:144",
+   149,
+   0.1
+  ],
+  [
+   "update src/vfx.js:415",
+   147,
+   0.1
+  ],
+  [
+   "(anon) src/enemies.js:484",
+   145,
+   0.1
+  ],
+  [
+   "queryRadius src/combat.js:57",
+   145,
+   0.1
+  ],
+  [
+   "spawnNumber src/ui.js:257",
+   142,
+   0.1
+  ],
+  [
+   "update src/spells/props.js:137",
+   141,
+   0.1
+  ],
+  [
+   "takenMul src/combat/statuses.js:211",
+   136,
+   0.1
+  ],
+  [
+   "update src/enemies.js:572",
+   134,
+   0.1
+  ],
+  [
+   "update src/spells/projectiles.js:258",
+   126,
+   0.1
+  ],
+  [
+   "update src/vfx/runes.js:131",
+   125,
+   0.1
+  ],
+  [
+   "setFromEuler vendor/three/three.module.js:3413",
+   119,
+   0.1
+  ],
+  [
+   "update src/player.js:1039",
+   113,
+   0.1
+  ]
+ ],
+ "h0MB": 88.4
+}

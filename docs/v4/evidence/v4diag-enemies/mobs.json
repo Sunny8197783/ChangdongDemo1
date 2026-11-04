@@ -1,0 +1,321 @@
+{
+ "bokoblin": {
+  "name": "뿔도깨비",
+  "hp": 140,
+  "radius": 0.55,
+  "height": 1.7,
+  "meshes": 2,
+  "tris": 6705,
+  "outlineTris": 6705,
+  "sprites": 0,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial"
+  ],
+  "bones": 14,
+  "resist": null,
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "chase",
+    "windup"
+   ],
+   "shot": "windup",
+   "dist": 2.21,
+   "telegraphs": 0
+  }
+ },
+ "shaman": {
+  "name": "도깨비 주술사",
+  "hp": 110,
+  "radius": 0.45,
+  "height": 1.5,
+  "meshes": 3,
+  "tris": 4950,
+  "outlineTris": 4782,
+  "sprites": 1,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial",
+   "MeshBasicMaterial+vc"
+  ],
+  "bones": 15,
+  "resist": {
+   "fire": 0.5
+  },
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "kite",
+    "cast"
+   ],
+   "shot": "cast",
+   "dist": 7.04,
+   "telegraphs": 0
+  }
+ },
+ "chuchu": {
+  "name": "말랑이",
+  "hp": 60,
+  "radius": 0.6,
+  "height": 1,
+  "meshes": 3,
+  "tris": 1824,
+  "outlineTris": 884,
+  "sprites": 0,
+  "mats": [
+   "MeshBasicMaterial+vc",
+   "MeshToonMaterial",
+   "ShaderMaterial"
+  ],
+  "bones": 3,
+  "resist": null,
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "chase",
+    "lungePrep"
+   ],
+   "shot": "lungePrep",
+   "dist": 2.37,
+   "telegraphs": 0
+  }
+ },
+ "chuchu:fire": {
+  "name": "불꽃 말랑이",
+  "hp": 60,
+  "radius": 0.6,
+  "height": 1,
+  "meshes": 3,
+  "tris": 1824,
+  "outlineTris": 884,
+  "sprites": 0,
+  "mats": [
+   "MeshBasicMaterial+vc",
+   "MeshToonMaterial",
+   "ShaderMaterial"
+  ],
+  "bones": 3,
+  "resist": {
+   "fire": 0
+  },
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "chase",
+    "lungePrep"
+   ],
+   "shot": "lungePrep",
+   "dist": 2.29,
+   "telegraphs": 0
+  }
+ },
+ "chuchu:shadow": {
+  "name": "그늘 말랑이",
+  "hp": 60,
+  "radius": 0.6,
+  "height": 1,
+  "meshes": 3,
+  "tris": 1824,
+  "outlineTris": 884,
+  "sprites": 0,
+  "mats": [
+   "MeshBasicMaterial+vc",
+   "MeshToonMaterial",
+   "ShaderMaterial"
+  ],
+  "bones": 3,
+  "resist": {
+   "shadow": 0
+  },
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "chase",
+    "lungePrep"
+   ],
+   "shot": "lungePrep",
+   "dist": 2.37,
+   "telegraphs": 0
+  }
+ },
+ "lizard": {
+  "name": "수렁도마뱀",
+  "hp": 160,
+  "radius": 0.55,
+  "height": 1.9,
+  "meshes": 3,
+  "tris": 5695,
+  "outlineTris": 5599,
+  "sprites": 0,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial",
+   "MeshBasicMaterial+vc"
+  ],
+  "bones": 16,
+  "resist": {
+   "water": 0.5
+  },
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "chase",
+    "thrustWind"
+   ],
+   "shot": "thrustWind",
+   "dist": 3.2,
+   "telegraphs": 1
+  }
+ },
+ "shroom": {
+  "name": "포자 버섯병",
+  "hp": 120,
+  "radius": 0.55,
+  "height": 1.4,
+  "meshes": 3,
+  "tris": 5458,
+  "outlineTris": 5362,
+  "sprites": 0,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial",
+   "MeshBasicMaterial+vc"
+  ],
+  "bones": 14,
+  "resist": {
+   "nature": 0.5,
+   "fire": 1.3
+  },
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "kite",
+    "lob"
+   ],
+   "shot": "lob",
+   "dist": 7,
+   "telegraphs": 0
+  }
+ },
+ "wolf": {
+  "name": "타락 늑대",
+  "hp": 110,
+  "radius": 0.55,
+  "height": 1.1,
+  "meshes": 3,
+  "tris": 4069,
+  "outlineTris": 3917,
+  "sprites": 0,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial",
+   "MeshBasicMaterial+vc"
+  ],
+  "bones": 13,
+  "resist": {
+   "shadow": 0.6,
+   "light": 1.25
+  },
+  "voidShield": 0,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "circle",
+    "crouch"
+   ],
+   "shot": "crouch",
+   "dist": 6.19,
+   "telegraphs": 1
+  }
+ },
+ "wraith": {
+  "name": "공허 망령",
+  "hp": 140,
+  "radius": 0.5,
+  "height": 2,
+  "meshes": 3,
+  "tris": 2468,
+  "outlineTris": 2040,
+  "sprites": 0,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial",
+   "MeshBasicMaterial+vc"
+  ],
+  "bones": 14,
+  "resist": {
+   "shadow": 0.5,
+   "light": 1.3
+  },
+  "voidShield": 60,
+  "poiseMax": 0,
+  "breakMax": 0,
+  "windup": {
+   "seen": [
+    "alert",
+    "drift",
+    "cast"
+   ],
+   "shot": "cast",
+   "dist": 7.53,
+   "telegraphs": 0
+  }
+ },
+ "voidknight": {
+  "name": "공허 기사",
+  "hp": 420,
+  "radius": 0.75,
+  "height": 2.5,
+  "meshes": 3,
+  "tris": 5094,
+  "outlineTris": 4966,
+  "sprites": 0,
+  "mats": [
+   "MeshToonMaterial+vc",
+   "ShaderMaterial",
+   "MeshBasicMaterial+vc"
+  ],
+  "bones": 15,
+  "resist": {
+   "shadow": 0.5,
+   "light": 1.3
+  },
+  "voidShield": 100,
+  "poiseMax": 120,
+  "breakMax": 60,
+  "windup": {
+   "seen": [
+    "alert",
+    "guard",
+    "slashWind"
+   ],
+   "shot": "slashWind",
+   "dist": 3.26,
+   "telegraphs": 1
+  }
+ }
+}

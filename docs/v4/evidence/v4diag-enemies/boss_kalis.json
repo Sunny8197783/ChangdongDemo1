@@ -1,0 +1,54 @@
+{
+ "info": {
+  "name": "칼리스",
+  "hp": 23800,
+  "meshes": 2,
+  "tris": 3656,
+  "outlineTris": 0,
+  "instanced": 0,
+  "mats": [
+   "MeshToonMaterial",
+   "MeshBasicMaterial"
+  ],
+  "parts": [],
+  "size": [
+   2.4,
+   3.3,
+   2.5
+  ],
+  "voidShield": 0,
+  "breakMax": 120,
+  "phases": [
+   "거울의 사도"
+  ]
+ },
+ "shots": [
+  {
+   "kind": "slash",
+   "afterFrames": 82,
+   "tele": 1,
+   "dist": 3.8,
+   "calls": 107,
+   "tris": 384422,
+   "state": "idle"
+  },
+  {
+   "kind": "slash",
+   "afterFrames": 159,
+   "tele": 1,
+   "dist": 1.9,
+   "calls": 113,
+   "tris": 473460,
+   "state": "idle"
+  },
+  {
+   "kind": "volley",
+   "afterFrames": 140,
+   "tele": 0,
+   "dist": 3.1,
+   "calls": 109,
+   "tris": 384064,
+   "state": "idle"
+  }
+ ]
+}

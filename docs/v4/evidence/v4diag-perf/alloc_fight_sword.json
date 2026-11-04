@@ -1,0 +1,514 @@
+{
+ "frames": 1200,
+ "wallMs": 42561,
+ "heapMBperSec": [
+  90.1,
+  100.1,
+  92.1,
+  92.7,
+  94.7,
+  94.4,
+  94.9,
+  95.7,
+  96,
+  96.4,
+  95.1,
+  95.1,
+  93.8,
+  97.2,
+  96.1,
+  96.1,
+  95.1,
+  97.7,
+  96.9,
+  95.5
+ ],
+ "new": {
+  "obj3D": 1,
+  "mats": 257,
+  "geos": 1
+ },
+ "mods": {
+  "world": {
+   "avg": 0.243,
+   "max": 9.4
+  },
+  "vfx": {
+   "avg": 0.241,
+   "max": 31.3
+  },
+  "combat": {
+   "avg": 0.17,
+   "max": 11.3
+  },
+  "audio": {
+   "avg": 0.001,
+   "max": 0.1
+  },
+  "player": {
+   "avg": 0.943,
+   "max": 28.1
+  },
+  "spells": {
+   "avg": 0.165,
+   "max": 42.1
+  },
+  "sword": {
+   "avg": 0.183,
+   "max": 23.7
+  },
+  "skills": {
+   "avg": 0.025,
+   "max": 2.5
+  },
+  "enemies": {
+   "avg": 0.927,
+   "max": 31.9
+  },
+  "story": {
+   "avg": 0.055,
+   "max": 4.7
+  },
+  "cinematic": {
+   "avg": 0.018,
+   "max": 2.7
+  },
+  "ui": {
+   "avg": 0.657,
+   "max": 41.9
+  }
+ },
+ "slow": [
+  [
+   0,
+   36
+  ],
+  [
+   30,
+   5678
+  ],
+  [
+   60,
+   17909
+  ],
+  [
+   90,
+   2234
+  ],
+  [
+   120,
+   1289
+  ],
+  [
+   270,
+   1897
+  ],
+  [
+   300,
+   1099
+  ],
+  [
+   330,
+   86
+  ],
+  [
+   580,
+   37
+  ],
+  [
+   584,
+   37
+  ],
+  [
+   660,
+   5759
+  ],
+  [
+   720,
+   848
+  ],
+  [
+   721,
+   27
+  ],
+  [
+   787,
+   47
+  ],
+  [
+   900,
+   834
+  ],
+  [
+   970,
+   34
+  ],
+  [
+   1032,
+   37
+  ],
+  [
+   1037,
+   38
+  ],
+  [
+   1054,
+   45
+  ],
+  [
+   1086,
+   32
+  ],
+  [
+   1110,
+   26
+  ],
+  [
+   1140,
+   43
+  ]
+ ],
+ "vfx": {
+  "additive": 133,
+  "alpha": 31,
+  "particles": 164,
+  "emitters": 8,
+  "beams": 0,
+  "trails": 2,
+  "debris": 0,
+  "ghosts": 0,
+  "rings": 0,
+  "domes": 0,
+  "decals": 12,
+  "telegraphs": 0,
+  "runes": 0,
+  "dissolves": 0
+ },
+ "entities": 47,
+ "allocMBperGameSec": 8.98,
+ "topAlloc": [
+  [
+   "update src/player/cape.js:85",
+   0.674
+  ],
+  [
+   "separate src/enemies.js:438",
+   0.671
+  ],
+  [
+   "_bake src/player/fx.js:190",
+   0.498
+  ],
+  [
+   "assign :0",
+   0.415
+  ],
+  [
+   "deform src/player/model.js:134",
+   0.406
+  ],
+  [
+   "integrate src/enemies/common.js:307",
+   0.304
+  ],
+  [
+   "updateEnemy src/enemies/base.js:355",
+   0.292
+  ],
+  [
+   "hypot :0",
+   0.262
+  ],
+  [
+   "update src/vfx/particles.js:164",
+   0.238
+  ],
+  [
+   "update src/player.js:1039",
+   0.236
+  ],
+  [
+   "next :0",
+   0.171
+  ],
+  [
+   "update src/player/anim.js:97",
+   0.168
+  ],
+  [
+   "raycastEntities src/combat.js:74",
+   0.154
+  ],
+  [
+   "mastery src/core/progression.js:392",
+   0.135
+  ],
+  [
+   "dampPose src/enemies/base.js:509",
+   0.11
+  ],
+  [
+   "getHeight src/world/terrain.js:264",
+   0.101
+  ],
+  [
+   "update src/vfx/ground.js:261",
+   0.088
+  ],
+  [
+   "burst src/vfx.js:63",
+   0.086
+  ],
+  [
+   "update src/enemies.js:572",
+   0.085
+  ],
+  [
+   "get inCombat src/enemies.js:472",
+   0.084
+  ],
+  [
+   "e.pose src/enemies/wolf.js:94",
+   0.081
+  ],
+  [
+   "getAim src/player.js:976",
+   0.08
+  ],
+  [
+   "conform src/vfx/ground.js:108",
+   0.079
+  ],
+  [
+   "getParameters vendor/three/three.module.js:20598",
+   0.075
+  ],
+  [
+   "sin :0",
+   0.068
+  ],
+  [
+   "queryRadius src/combat.js:57",
+   0.066
+  ],
+  [
+   "computeBoundingSphere vendor/three/three.module.js:10848",
+   0.065
+  ],
+  [
+   "visuals src/enemies/base.js:437",
+   0.063
+  ],
+  [
+   "writeBird src/world/ambience.js:128",
+   0.062
+  ],
+  [
+   "rebuildFireVisuals src/world/surface.js:415",
+   0.061
+  ]
+ ],
+ "cpuTop": [
+  [
+   "getProgramInfoLog :0",
+   18042,
+   42
+  ],
+  [
+   "getShaderInfoLog :0",
+   15829,
+   36.9
+  ],
+  [
+   "getProgramParameter :0",
+   3569,
+   8.3
+  ],
+  [
+   "updateMatrixWorld vendor/three/three.module.js:7720",
+   458,
+   1.1
+  ],
+  [
+   "(program) :0",
+   378,
+   0.9
+  ],
+  [
+   "getBoundingClientRect :0",
+   265,
+   0.6
+  ],
+  [
+   "updateEnemy src/enemies/base.js:355",
+   194,
+   0.5
+  ],
+  [
+   "mod.update :95",
+   185,
+   0.4
+  ],
+  [
+   "(garbage collector) :0",
+   154,
+   0.4
+  ],
+  [
+   "update src/enemies.js:572",
+   143,
+   0.3
+  ],
+  [
+   "update src/player.js:1039",
+   102,
+   0.2
+  ],
+  [
+   "multiplyMatrices vendor/three/three.module.js:6224",
+   98,
+   0.2
+  ],
+  [
+   "update src/combat.js:139",
+   79,
+   0.2
+  ],
+  [
+   "update src/player/cape.js:85",
+   72,
+   0.2
+  ],
+  [
+   "visuals src/enemies/base.js:437",
+   65,
+   0.2
+  ],
+  [
+   "setFromEuler vendor/three/three.module.js:3413",
+   64,
+   0.1
+  ],
+  [
+   "update src/vfx.js:415",
+   58,
+   0.1
+  ],
+  [
+   "dampPose src/enemies/base.js:509",
+   57,
+   0.1
+  ],
+  [
+   "update src/ui.js:1533",
+   53,
+   0.1
+  ],
+  [
+   "_bake src/player/fx.js:190",
+   51,
+   0.1
+  ],
+  [
+   "e.pose src/enemies/bokoblin.js:138",
+   48,
+   0.1
+  ],
+  [
+   "applyHumanoid src/enemies/base.js:513",
+   47,
+   0.1
+  ],
+  [
+   "burst src/vfx.js:63",
+   47,
+   0.1
+  ],
+  [
+   "getHudState src/skills/runtime.js:524",
+   45,
+   0.1
+  ],
+  [
+   "update src/vfx/particles.js:164",
+   44,
+   0.1
+  ],
+  [
+   "integrate src/enemies/common.js:307",
+   42,
+   0.1
+  ],
+  [
+   "setFromUnitVectors vendor/three/three.module.js:3564",
+   41,
+   0.1
+  ],
+  [
+   "separate src/enemies.js:438",
+   41,
+   0.1
+  ],
+  [
+   "update src/combat/statusfx.js:121",
+   39,
+   0.1
+  ],
+  [
+   "e.pose src/enemies/lizard.js:123",
+   37,
+   0.1
+  ],
+  [
+   "skillForSlot src/skills/runtime.js:432",
+   37,
+   0.1
+  ],
+  [
+   "update src/sword.js:856",
+   34,
+   0.1
+  ],
+  [
+   "getHeight src/world/terrain.js:264",
+   33,
+   0.1
+  ],
+  [
+   "projectObject vendor/three/three.module.js:29679",
+   32,
+   0.1
+  ],
+  [
+   "setProgram vendor/three/three.module.js:30131",
+   31,
+   0.1
+  ],
+  [
+   "update src/player/anim.js:97",
+   31,
+   0.1
+  ],
+  [
+   "updateBars src/ui.js:1362",
+   30,
+   0.1
+  ],
+  [
+   "bufferSubData :0",
+   30,
+   0.1
+  ],
+  [
+   "tick src/world/surface.js:363",
+   30,
+   0.1
+  ],
+  [
+   "cull src/world/grass.js:331",
+   30,
+   0.1
+  ]
+ ],
+ "h0MB": 88.4
+}

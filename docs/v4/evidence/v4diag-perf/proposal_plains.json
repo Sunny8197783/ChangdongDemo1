@@ -1,0 +1,48 @@
+{
+ "A_current_medium": {
+  "ms": 3820,
+  "rel": 1
+ },
+ "B_noMSAA": {
+  "ms": 2508,
+  "rel": 0.66
+ },
+ "C_noMSAA_fxaa": {
+  "ms": 2576,
+  "rel": 0.67
+ },
+ "D_C_scale085": {
+  "ms": 1974,
+  "rel": 0.52
+ },
+ "E_D_shadow1024_every2": {
+  "ms": 2085,
+  "rel": 0.55
+ },
+ "F_E_bloomHalfRes": {
+  "ms": 1640,
+  "rel": 0.43
+ },
+ "G_F_grass04": {
+  "ms": 1886,
+  "rel": 0.49
+ },
+ "H_G_noParticles_upperBound": {
+  "ms": 1749,
+  "rel": 0.46
+ },
+ "A_again": {
+  "ms": 3701
+ },
+ "flora": {
+  "instances": 74,
+  "outlines": 83,
+  "far": 303,
+  "shadow": 0
+ },
+ "grassChunks": 130,
+ "canvas": [
+  1280,
+  720
+ ]
+}

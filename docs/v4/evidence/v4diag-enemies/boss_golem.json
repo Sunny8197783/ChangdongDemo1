@@ -1,0 +1,54 @@
+{
+ "info": {
+  "name": "고대 바위 골렘",
+  "hp": 2200,
+  "meshes": 3,
+  "tris": 2088,
+  "outlineTris": 0,
+  "instanced": 0,
+  "mats": [
+   "MeshToonMaterial"
+  ],
+  "parts": [],
+  "size": [
+   6.3,
+   6.9,
+   3.6
+  ],
+  "voidShield": 0,
+  "breakMax": 0,
+  "phases": [
+   "각성",
+   "붉은 핵"
+  ]
+ },
+ "shots": [
+  {
+   "kind": "throw",
+   "afterFrames": 341,
+   "tele": 0,
+   "dist": 9.7,
+   "calls": 133,
+   "tris": 320402,
+   "state": "throwWind"
+  },
+  {
+   "kind": "punch",
+   "afterFrames": 214,
+   "tele": 0,
+   "dist": 6.5,
+   "calls": 137,
+   "tris": 323178,
+   "state": "punchWind"
+  },
+  {
+   "kind": "punch",
+   "afterFrames": 202,
+   "tele": 0,
+   "dist": 5.5,
+   "calls": 133,
+   "tris": 320898,
+   "state": "punchWind"
+  }
+ ]
+}

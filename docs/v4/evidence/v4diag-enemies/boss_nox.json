@@ -1,0 +1,55 @@
+{
+ "info": {
+  "name": "녹스",
+  "hp": 7600,
+  "meshes": 2,
+  "tris": 4254,
+  "outlineTris": 0,
+  "instanced": 0,
+  "mats": [
+   "MeshToonMaterial",
+   "MeshBasicMaterial"
+  ],
+  "parts": [],
+  "size": [
+   3,
+   3.4,
+   3.1
+  ],
+  "voidShield": 100,
+  "breakMax": 100,
+  "phases": [
+   "타락한 기사",
+   "그림자 분신"
+  ]
+ },
+ "shots": [
+  {
+   "kind": "wave",
+   "afterFrames": 58,
+   "tele": 1,
+   "dist": 3.2,
+   "calls": 136,
+   "tris": 441649,
+   "state": "waveWind"
+  },
+  {
+   "kind": "teleportSlash",
+   "afterFrames": 166,
+   "tele": 0,
+   "dist": 3.2,
+   "calls": 139,
+   "tris": 442481,
+   "state": "vanish"
+  },
+  {
+   "kind": "teleportSlash",
+   "afterFrames": 190,
+   "tele": 0,
+   "dist": 2.8,
+   "calls": 142,
+   "tris": 429158,
+   "state": "vanish"
+  }
+ ]
+}
