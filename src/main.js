@@ -90,6 +90,7 @@ let composer = null, bloomPass = null;
 
 // raw compile (no target binding): game.render.warm binds the right target itself
 const rawCompile = renderer.compile.bind(renderer);
+const rawCompileAsync = renderer.compileAsync ? renderer.compileAsync.bind(renderer) : null;
 // Every renderer.compile() (modules pre-warm their pools with it) must build the variant that is actually drawn:
 // with no target bound three r160 compiles the tone-mapped sRGB canvas variant, but the scene is drawn into the
 // composer's linear HalfFloat target. Bind that target for the compile when the caller didn't bind one.
@@ -596,16 +597,25 @@ async function prewarm() {
   }
   // (compile visits every material, hidden or not; only lights must be visible to count, as in a real render;
   //  the composer target is bound by the compile wrapper above)
+  const tc = performance.now();
   try {
+    // KHR_parallel_shader_compile: compileAsync lets the title keep animating while the driver links
     if (renderer.compileAsync && !isTest) await renderer.compileAsync(scene, camera);
     else renderer.compile(scene, camera);
   } catch (err) { console.warn('[boot] precompile', err); }
-  finally { for (const o of tmp) scene.remove(o); }
   // threat scene: canvas variant (sRGB output, toneMapped:false materials), never the composer target
   try {
     const th = game.render.threatScene;
-    if (th.children.length) { renderer.setRenderTarget(null); rawCompile(th, game.render.overlayCamera, th); }
+    if (th.children.length) {
+      renderer.setRenderTarget(null);
+      if (renderer.compileAsync && !isTest) await rawCompileAsync(th, game.render.overlayCamera, th);
+      else rawCompile(th, game.render.overlayCamera, th);
+    }
   } catch (err) { console.warn('[boot] threat precompile', err); }
+  // then one real draw per material (64×64 scene target / 1×1 canvas scissor for the threat scene), prewarm objects included
+  try { game.render.bootWarm(); } catch (err) { console.warn('[boot] warm draws', err); }
+  finally { for (const o of tmp) scene.remove(o); }
+  game.bootWarm = { compileMs: +(performance.now() - tc).toFixed(1), ...(game.render.warmStats().boot || {}) };
 }
 
 // First-draw warm-up: a program compiled by renderer.compile() still pays its link wait and the driver's
