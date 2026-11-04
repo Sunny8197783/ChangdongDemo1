@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { elColor } from '../core/elements.js';
 
 const RUNE_FRAG = /* glsl */`
-  uniform sampler2D map; uniform vec3 uColor; uniform float uAlpha, uRot, uTime;
+  uniform sampler2D map; uniform vec3 uColor, uHi; uniform float uAlpha, uRot, uTime;
   varying vec2 vUv;
   void main() {
     vec2 q = vUv * 2.0 - 1.0;
@@ -17,7 +17,7 @@ const RUNE_FRAG = /* glsl */`
     float pulse = 0.85 + 0.15 * sin(uTime * 6.0 + length(q) * 10.0);
     float a = t.r * uAlpha * pulse;
     if (a < 0.004) discard;
-    gl_FragColor = vec4(mix(uColor, vec3(1.0), t.g * 0.45) * a, 1.0);
+    gl_FragColor = vec4(mix(uColor, uHi, t.g * 0.35) * a, 1.0);
   }`;
 const PLAIN_VERT = /* glsl */`
   varying vec2 vUv;
@@ -26,14 +26,14 @@ const SMEAR_VERT = /* glsl */`
   varying vec2 vP;
   void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const SMEAR_FRAG = /* glsl */`
-  uniform vec3 uColor; uniform float uAlpha, uArc, uInner;
+  uniform vec3 uColor, uHi; uniform float uAlpha, uArc, uInner;
   varying vec2 vP;
   void main() {
     float r = length(vP); float a = atan(vP.y, vP.x);
     float t = clamp(a / uArc, 0.0, 1.0);                  // 0 tail .. 1 leading edge
     float band = smoothstep(uInner, uInner + 0.12, r) * (1.0 - smoothstep(0.88, 1.0, r));
     float k = pow(t, 1.6) * band * uAlpha;
-    vec3 col = mix(uColor, vec3(1.0), smoothstep(0.75, 1.0, t) * smoothstep(0.7, 0.95, r));
+    vec3 col = mix(uColor, uHi, smoothstep(0.75, 1.0, t) * smoothstep(0.7, 0.95, r) * 0.6);
     gl_FragColor = vec4(col * k, 1.0);
   }`;
 
@@ -44,12 +44,13 @@ export function createRunes(game, vfx, textures) {
   let serial = 0;
   for (let i = 0; i < 6; i++) {
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: textures.decals.rune }, uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uRot: { value: 0 }, uTime: { value: 0 } },
+      uniforms: { map: { value: textures.decals.rune }, uColor: { value: new THREE.Color() }, uHi: { value: new THREE.Color() }, uAlpha: { value: 0 }, uRot: { value: 0 }, uTime: { value: 0 } },
       vertexShader: PLAIN_VERT, fragmentShader: RUNE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
+    vfx.applyPlayerFx?.(mat, { additive: true, role: 'line' });
     const mesh = new THREE.Mesh(runeGeo, mat);
-    mesh.visible = false; mesh.renderOrder = 6; mesh.name = 'vfx-rune';
+    mesh.visible = false; mesh.renderOrder = 6; mesh.name = 'vfx-rune'; mesh.userData.owner = 'player';
     game.scene.add(mesh);
     const rec = { mesh, active: false, t: 0, dur: 1, r: 2, rot: 0, rotSpeed: 1, born: 0, handle: null };
     rec.handle = { stop() { rec.t = Math.max(rec.t, rec.dur * 0.7); }, get alive() { return rec.active; }, setPos(p) { if (p) rec.mesh.position.copy(p).y += 0.06; } };
@@ -65,7 +66,10 @@ export function createRunes(game, vfx, textures) {
     try { const h = game.world?.getHeight?.(pos.x, pos.z); if (Number.isFinite(h) && Math.abs(pos.y - h) < 2.5) rec.mesh.position.y = h; } catch (_) { /* */ }
     rec.mesh.position.y += 0.07;
     rec.r = o.r ?? 2; rec.dur = Math.max(0.2, o.dur ?? 1.2); rec.rotSpeed = o.rotSpeed ?? 1.2; rec.rot = Math.random() * 6.28; rec.t = 0;
-    rec.mesh.material.uniforms.uColor.value.setHex(typeof o.color === 'number' ? o.color : elColor(o.element || 'light', 'mid'));
+    { const R = vfx.kit?.ramp?.(o.element || 'light'); const u = rec.mesh.material.uniforms;
+      u.uColor.value.setHex(typeof o.color === 'number' ? o.color : (R ? R.mid.getHex() : elColor(o.element || 'light', 'mid')));
+      if (R) u.uHi.value.copy(R.light); else u.uHi.value.copy(u.uColor.value); }
+    rec.el = o.element || 'light';
     rec.active = true; rec.mesh.visible = true; rec.mesh.scale.setScalar(0.01);
     return rec.handle;
   }
@@ -77,10 +81,11 @@ export function createRunes(game, vfx, textures) {
   const smears = [];
   for (let i = 0; i < 4; i++) {
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uArc: { value: ARC }, uInner: { value: 0.35 } },
+      uniforms: { uColor: { value: new THREE.Color() }, uHi: { value: new THREE.Color() }, uAlpha: { value: 0 }, uArc: { value: ARC }, uInner: { value: 0.35 } },
       vertexShader: SMEAR_VERT, fragmentShader: SMEAR_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
-    const mesh = new THREE.Mesh(smearGeo, mat); mesh.visible = false; mesh.renderOrder = 10; mesh.frustumCulled = false; mesh.name = 'vfx-smear';
+    vfx.applyPlayerFx?.(mat, { additive: true, role: 'line' });
+    const mesh = new THREE.Mesh(smearGeo, mat); mesh.visible = false; mesh.renderOrder = 10; mesh.frustumCulled = false; mesh.name = 'vfx-smear'; mesh.userData.owner = 'player';
     game.scene.add(mesh);
     smears.push({ mesh, t: 0, dur: 0.09, active: false, born: 0 });
   }
@@ -101,8 +106,9 @@ export function createRunes(game, vfx, textures) {
       const sc = scale * (weapon === 'wide' ? 1.4 : weapon === 'twin' ? 0.75 : 1);
       s.mesh.scale.set(sc, sc, sc);
       s.mesh.material.uniforms.uInner.value = weapon === 'wide' ? 0.25 : weapon === 'twin' ? 0.6 : 0.4;
-      s.mesh.material.uniforms.uColor.value.setHex(element === 'physical' ? 0xfff4e0 : elColor(element, 'mid'));
-      s.mesh.material.uniforms.uAlpha.value = 1;
+      { const R = vfx.kit?.ramp?.(element); const u = s.mesh.material.uniforms;
+        u.uColor.value.setHex(R ? R.mid.getHex() : elColor(element, 'mid')); if (R) u.uHi.value.copy(R.light); else u.uHi.value.copy(u.uColor.value); }
+      s.mesh.material.uniforms.uAlpha.value = 0.75;
       s.t = 0; s.dur = weapon === 'wide' ? 0.12 : 0.09; s.active = true; s.mesh.visible = true;
     }
   }
@@ -110,7 +116,7 @@ export function createRunes(game, vfx, textures) {
   // ---------------- wind lines ----------------
   let windOn = false, windK = 1, windAcc = 0;
   const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _vd = new THREE.Vector3();
-  const windOpts = { count: 1, shape: 'streak', color: [0xffffff, 0xc8ffe9], dir: _vd, spread: 0.02, speed: 34, speedVar: 6, size: 0.5, sizeEnd: 0.2, life: 0.32, lifeVar: 0.08, velocityStretch: 0.09, alpha: 0.5 };
+  const windOpts = { count: 1, shape: 'streak', color: [0xe6fff4, 0x8fefcb], dir: _vd, spread: 0.02, speed: 34, speedVar: 6, size: 0.5, sizeEnd: 0.2, life: 0.32, lifeVar: 0.08, velocityStretch: 0.09, alpha: 0.5 };
   function windLines(on, intensity = 1) { windOn = !!on; windK = Math.max(0, Math.min(2, intensity)); }
   function updateWind(realDt) {
     if (!windOn || !game.camera) return;
@@ -140,16 +146,44 @@ export function createRunes(game, vfx, textures) {
       r.rot += r.rotSpeed * dt;
       const u = r.mesh.material.uniforms;
       u.uRot.value = r.rot; u.uTime.value += rd;
-      u.uAlpha.value = Math.min(1, r.t / 0.12) * (p > 0.7 ? 1 - (p - 0.7) / 0.3 : 1);
+      u.uAlpha.value = 0.9 * Math.min(1, r.t / 0.12) * (p > 0.7 ? 1 - (p - 0.7) / 0.3 : 1);
     }
     for (const s of smears) {
       if (!s.active) continue;
       s.t += rd;
       const p = s.t / s.dur;
       if (p >= 1) { s.active = false; s.mesh.visible = false; continue; }
-      s.mesh.material.uniforms.uAlpha.value = 1 - p * p;
+      s.mesh.material.uniforms.uAlpha.value = 0.75 * (1 - p * p);
     }
     updateWind(rd);
   }
-  return { runeCircle, smear, windLines, update, active: () => runes.filter((r) => r.active).length, get windOn() { return windOn; } };
+  // v4 budgets: coverage estimate (screens), draw calls, collapse of the oldest circles to linework (§2.6)
+  const _cam = new THREE.Vector3(), _fw = new THREE.Vector3();
+  function coverage() {
+    const cam = game.camera; cam.getWorldPosition(_cam); cam.getWorldDirection(_fw);
+    const e = cam.projectionMatrix.elements; let c = 0;
+    for (const r of runes) {
+      if (!r.active) continue;
+      const p = r.mesh.position, z = Math.max(0.5, (p.x - _cam.x) * _fw.x + (p.y - _cam.y) * _fw.y + (p.z - _cam.z) * _fw.z);
+      const R = r.mesh.scale.x, cosv = Math.max(0.15, Math.abs(p.y - _cam.y) / Math.max(0.5, p.distanceTo(_cam)));
+      let cr = Math.PI * R * R * 0.78 * e[0] * e[5] / (4 * z * z) * cosv;     // the disc is drawn (discard outside r=1)
+      if (vfx._proj) cr = Math.min(cr, vfx._proj.disc(p.x, p.y, p.z, R, 0.5 * cosv));
+      c += cr;
+    }
+    for (const s of smears) if (s.active) { const p = s.mesh.position, z = Math.max(0.5, (p.x - _cam.x) * _fw.x + (p.y - _cam.y) * _fw.y + (p.z - _cam.z) * _fw.z); c += 1.2 * s.mesh.scale.x * s.mesh.scale.x * e[0] * e[5] / (4 * z * z); }
+    return c;
+  }
+  function calls() { let n = 0; for (const r of runes) if (r.active) n++; for (const s of smears) if (s.active) n++; return n; }
+  function collapse(over, toLine) {
+    let n = 0;
+    while (over > 0) {
+      let old = null; for (const r of runes) if (r.active && (!old || r.born < old.born)) old = r;
+      if (!old) break;
+      const left = old.dur - old.t; old.active = false; old.mesh.visible = false; over--; n++;
+      if (left > 0.2) toLine?.(old.mesh.position, old.r, old.el || 'light');
+    }
+    return n;
+  }
+  function warm(group) { group.add(new THREE.Mesh(runeGeo, runes[0].mesh.material)); group.add(new THREE.Mesh(smearGeo, smears[0].mesh.material)); }
+  return { runeCircle, smear, windLines, update, coverage, calls, collapse, warm, active: () => { let n = 0; for (const r of runes) if (r.active) n++; return n; }, get windOn() { return windOn; } };
 }

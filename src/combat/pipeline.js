@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { STATUS_DEFS } from './statuses.js';
 
-const EMPTY = [];
+const EMPTY = Object.freeze([]);
 const TIER_RANK = { light: 0, heavy: 1, crit: 2, reaction: 3, ult: 4, break: 5 };
 const RANK_TIER = ['light', 'heavy', 'crit', 'reaction', 'ult', 'break'];
 
@@ -25,7 +25,7 @@ export function createPipeline(game, C) {
   const healEv = { target: null, amount: 0, source: '' };   // reused payload for HoT heals (fires per frame during regen)
   let hotTokens = 0;
   let lethalSaveReadyT = -1e9;   // light.cap 여명 cooldown (game time)
-  const lastFormula = { base: 0, power: 1, mastery: 1, atkMul: 1, elementDmg: 1, castMul: 1, conditional: 1, flat: 0, reaction: 1, resist: 1, crit: 1, final: 0 };
+  const lastFormula = { base: 0, power: 1, mastery: 1, atkMul: 1, elementDmg: 1, castMul: 1, conditional: 1, flat: 0, reaction: 1, resist: 1, crit: 1, vulnerable: 1, final: 0 };
 
   function sget(k, d) { try { const v = stats()?.get?.(k); return v === undefined || v === null ? d : v; } catch (_) { return d; } }
   function derived() { try { return stats()?.derived?.() || null; } catch (_) { return null; } }
@@ -106,7 +106,7 @@ export function createPipeline(game, C) {
     let amount = hit.amount || 0;
     let crit = false;
     const F = lastFormula;
-    F.base = amount; F.power = 1; F.mastery = 1; F.atkMul = 1; F.elementDmg = 1; F.castMul = 1; F.conditional = 1; F.flat = 0; F.reaction = 1; F.resist = 1; F.crit = 1;
+    F.base = amount; F.power = 1; F.mastery = 1; F.atkMul = 1; F.elementDmg = 1; F.castMul = 1; F.conditional = 1; F.flat = 0; F.reaction = 1; F.resist = 1; F.crit = 1; F.vulnerable = 1;
     if (hit.fixed) {
       // fixed-amount hits (judgment %HP, self damage): no scaling except block / shield
     } else if (fromPlayer && !isPlayerT) {
@@ -134,6 +134,9 @@ export function createPipeline(game, C) {
       else if (hit.rxId) { let rd = 1; try { rd = stats()?.reactionDmg?.(hit.rxId) ?? 1; } catch (_) { /* */ } F.reaction = rd; amount *= rd; }
       const res = t.resist && t.resist[el] != null ? t.resist[el] : 1;
       F.resist = res; amount *= res;
+      // v4 punish window (tells.punish → e.vulnerableUntil in game.enemyTime seconds): × e.vulnerableMul after weakness / resist
+      F.vulnerable = 1;
+      if (t.vulnerableUntil > (game.enemyTime ?? 0) && t.vulnerableMul > 0) { F.vulnerable = t.vulnerableMul; amount *= t.vulnerableMul; }
       if (vsFoe && !isProp && !isTick && !hit.noCrit) {
         const chance = (der?.crit ?? 0.1) + sget('critChance', 0);
         if (hit.crit || Math.random() < chance) { crit = true; F.crit = der?.critMul ?? (1.5 + sget('critMul', 0)); amount *= F.crit; }
@@ -191,7 +194,8 @@ export function createPipeline(game, C) {
     if (vsFoe && !isProp && !tags.includes('finisher')) {
       try { prog()?.addAwakening?.(dmg * 0.12 + (rx ? 4 : 0)); } catch (_) { /* */ }
     }
-    // 11. statuses from the hit
+    // 11. statuses from the hit (v4: hit.appliedStatuses = ids actually applied)
+    hit.appliedStatuses = EMPTY;
     if (!killed && hit.status && !(rx && rx.skipStatus)) {
       let pw = 1; if (fromPlayer) { const der = derived(); pw = isDot ? (hit.powerSnap ?? 1) : (der?.power ?? 1); }
       for (const k in hit.status) {
@@ -200,7 +204,10 @@ export function createPipeline(game, C) {
         if (typeof v === 'number') dur = v;
         else if (v && typeof v === 'object') { dur = v.dur ?? null; stacks = v.stacks || 0; }
         statusSpec.stacks = stacks; statusSpec.source = hit.source ?? null; statusSpec.power = pw; statusSpec.el = el === 'physical' ? (STATUS_DEFS[k]?.element || null) : el;
-        C.applyStatus(t, k, dur ?? STATUS_DEFS[k]?.dur ?? 3, statusSpec);
+        if (C.applyStatus(t, k, dur ?? STATUS_DEFS[k]?.dur ?? 3, statusSpec)) {
+          if (hit.appliedStatuses === EMPTY) hit.appliedStatuses = [];
+          hit.appliedStatuses.push(k);
+        }
       }
     }
     // 12. knockback
@@ -246,7 +253,7 @@ export function createPipeline(game, C) {
     const result = { damage: dmg, reaction: rx?.id || null, crit, killed, blocked: blockMul < 1, tier, backstab: !!hit.backstab };
     game.events.emit('damage', { target: t, amount: dmg, element: el, point, crit, reaction: result.reaction, killed, isPlayer: isPlayerT || t.team === 'player', isProp, source: hit.source, dot: isTick && !rx && !killed, melee: isMelee, tier, skillId: hit.skillId || null,
       backstab: !!hit.backstab, charged: !!(hit.charged || hit.heavy), slot: hit.slot || null, headshot: !!hit.headshot });
-    if (isPlayerT) game.events.emit('playerHurt', { amount: dmg, element: el });
+    if (isPlayerT) game.events.emit('playerHurt', hurtPayload(t, hit, dmg, el, isTick && !rx));
 
     // 14. onHit / onDeath
     if (killed) {
@@ -261,13 +268,43 @@ export function createPipeline(game, C) {
     return result;
   }
 
-  const feelOpts = { target: null, killed: false, dmg: 0, melee: false, playerHurt: false, prop: false, tick: false, crit: false, hitstop: null, hitstopMul: 1, noImpactFx: false, boss: false };
+  const feelOpts = { target: null, killed: false, dmg: 0, melee: false, playerHurt: false, prop: false, tick: false, dot: false, crit: false, hitstop: null, hitstopMul: 1, noImpactFx: false, boss: false, castId: 0 };
   function FEEL(t, hit, killed, dmg, melee, playerHurt, prop, tick, crit) {
     const o = feelOpts;
     o.target = t; o.killed = killed; o.dmg = dmg; o.melee = melee; o.playerHurt = playerHurt; o.prop = prop; o.tick = tick; o.crit = crit;
     o.hitstop = hit.hitstop ?? null; o.hitstopMul = hit.hitstopMul ?? 1; o.noImpactFx = !!hit.noImpactFx; o.boss = !!t.isBoss;
     o.shake = hit.shake ?? null;
+    o.castId = hit.castId || 0; o.dot = !!(hit.isDot || tick);
     return o;
+  }
+
+  // ---------------- playerHurt payload (PLAN §7.5) ----------------
+  const ATTACK_KINDS = { melee: 1, projectile: 1, hazard: 1, surface: 1 };
+  function sourceNameOf(src, hit) {
+    if (hit.sourceName) return hit.sourceName;
+    if (!src || typeof src !== 'object') return '';
+    if (src.nameKo) return src.nameKo;
+    try { const c = game.enemies?.codex?.()?.[src.type || src.kind]; if (c?.nameKo) return c.nameKo; } catch (_) { /* */ }
+    return src.displayName || src.name || '';
+  }
+  function hurtPayload(t, hit, dmg, el, dot) {
+    const src = hit.sourceEntity || hit.source;
+    const so = src && typeof src === 'object' ? src : null;
+    const attack = hit.attack || so?.attack || null;
+    let kind = attack?.kind;
+    if (!ATTACK_KINDS[kind]) kind = hit.projectile ? 'projectile' : dot ? (so?.isSurface ? 'surface' : 'hazard') : 'melee';
+    const surface = attack?.surface || hit.surface || (kind === 'surface' && attack?.id ? String(attack.id).replace(/^surface\./, '') : (so?.surface || undefined));
+    // dir: unit xz vector from the player toward the attacker (the screen-edge damage arc points there)
+    let dx = 0, dz = 0;
+    const sp = so?.object?.position || so?.position || null, tp = t.object?.position;
+    if (sp && tp && sp !== tp) { dx = sp.x - tp.x; dz = sp.z - tp.z; }
+    else if (hit.direction) { dx = -hit.direction.x; dz = -hit.direction.z; }
+    const L = Math.hypot(dx, dz); if (L > 1e-5) { dx /= L; dz /= L; } else { dx = 0; dz = 0; }
+    return {
+      amount: dmg, element: el, source: hit.source ?? null, sourceName: sourceNameOf(so, hit),
+      attackId: attack?.id ?? (dot && hit.statusId ? 'status.' + hit.statusId : null), attackNameKo: attack?.nameKo ?? '', attackKind: kind,
+      appliedStatuses: hit.appliedStatuses || EMPTY, dot: !!dot, surface, dir: { x: dx, z: dz }, time: game.time, attack: attack || null,
+    };
   }
 
   // ---------------- healing ----------------
