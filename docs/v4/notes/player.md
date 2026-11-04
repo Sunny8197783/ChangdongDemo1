@@ -113,12 +113,17 @@ PL1 timings (enemy time): perfect press at −0.177 s → pending, the absorbed 
 lasts 0.60 s real (timeScale 0.5, comp 2); combat boom 6.600 m / FOV 66.0 (base 62); boss hint 1.5 → 9.90 m; story revive 2.0 s → 137.5 / 274 HP.
 Real v3 sword combo: a dodge pressed 4 frames into **c4 (fire)** is still locked at +0.25 s → `dodgeRejected {locked}` at +0.28 s (melee's ML1 lock ≤ 0.25 s fixes it).
 
-## Tests
-- `node tools/playtest4.js player`: **58 passed, 0 failed** (≈ 52 s; 3 boots: mage main page, sword combo page, story + `witch=0` page).
+## Tests (final run, `tells-b.2` + `core-b` merged)
+- `node tools/playtest4.js player`: **59 passed, 0 failed** (≈ 52 s; 3 boots: mage main page, sword combo page, story + `witch=0` page).
 - `node tools/playtest3.js player`: **226 passed, 0 failed** (section updated per §7.9: §5.8 kit numbers per class; the rig perf check counts drawn
   triangles of the v4 merge, ≤ 3 skinned draws, ≤ 30k tris, proxy ≤ 6k — v3 asserted ≤ 51 draws / ≤ 40.2k capacity triangles).
-- `node tools/bootcheck.js`: 15 configs `playing`, exit 0 (404s only for the configs that rename modules away).
-- Legacy `playtest.js --quick`, `playtest2.js`, full `playtest3.js`: see the final run in the commit log / report.
+- `node tools/playtest3.js` (all sections): **1273 passed, 0 failed, 1 skipped**.
+- `node tools/bootcheck.js`: every config `playing`, exit 0 (404s only for the configs that rename modules away).
+- `node tools/playtest.js --quick`: all legacy checks PASS, exit 0.
+- `node tools/playtest2.js`: exit 0; one logged FAIL `sword: wind combo hitstop on the first hit of each castId` (a legacy non-melee hit without a castId gets
+  no hitstop under vfx-b's volley rule; the same FAIL is in `docs/v4/notes/vfx.md` before any player change — vfx / core, not player).
+- `node tools/playtest4.js core` (core's section, for information): 130 / 2 — `C5 stubs: tellCommit at lock` and the 1-overlay-call threat check fail
+  because the real tells (`tells-b.2`) are merged here; core's.
 
 ## Integration notes (I checks)
 - C6: the player group is now `byGroup.player` 3–4 + 1 calls; the rune circles, barrier and ghosts live in the main scene with `userData.owner = 'player'`
