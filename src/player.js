@@ -78,10 +78,14 @@ export function createPlayer(game) {
   const anim = new Animator(rig);
   const springs = new Springs(cg.chains);
   const footIK = new FootIK(rig);
-  const chargeCircle = new RuneCircle(scene, 1.15);
-  const sigil = new RuneCircle(scene, 1.9);
-  const ghosts = new Afterimages(scene, root, 5);
-  const barrier = new Barrier(scene);
+  // private player-FX materials → vfx.applyPlayerFx once at construction (side effect only, §5.4 / rule 12)
+  const pfx = (m, o) => { try { game.vfx?.applyPlayerFx?.(m, o); } catch (err) { /* vfx stub */ } };
+  const chargeCircle = new RuneCircle(scene, 1.15, pfx);
+  const sigil = new RuneCircle(scene, 1.9, pfx);
+  const ghosts = new Afterimages(scene, root, 5, pfx);
+  const barrier = new Barrier(scene, pfx);
+  if (rig.haloMat) pfx(rig.haloMat, { additive: true, role: 'fill' });
+  const WARD_COL = new THREE.Color(0.55, 1, 0.65), WARD_COL2 = new THREE.Color(0.78, 0.95, 0.8);
 
   // ---------- entity ----------
   const velocity = new THREE.Vector3();
@@ -286,11 +290,11 @@ export function createPlayer(game) {
     rig.haloMat.color.copy(elemColor);
     rig.light.color.copy(elemColor);
     rig.moteMat.color.setHex(lightOf(el));
-    chargeCircle.setColor(elemColor); sigil.setColor(elemColor);
-    if (kit.defend.type !== 'ward') barrier.setColor(elemColor);
+    gemLight.setHex(lightOf(el));
+    chargeCircle.setColor(elemColor, gemLight); sigil.setColor(elemColor, gemLight);
+    if (kit.defend.type !== 'ward') barrier.setColor(elemColor, gemLight);
     entity.resist = el === 'fire' ? { fire: 0.35 } : undefined; // attuned to fire: own grass fires barely singe
     gear.gemMat.color.copy(elemColor).multiplyScalar(1.2);
-    gemLight.setHex(lightOf(el));
     gear.edgeMat.uniforms.uColor.value.copy(elemColor);
     if (changed && game.state === 'playing') {
       gemFlare = Math.max(gemFlare, 0.6);
@@ -711,7 +715,7 @@ export function createPlayer(game) {
     const t = kit.defend.type;
     game.audio?.play?.(t === 'barrier' || t === 'ward' ? 'barrier_up' : 'block', { position: pos });
     if (isMelee()) { swordDrawn = true; api.swordIdleT = 0; }
-    if (t === 'ward') barrier.setColor(v1.set(0.55, 1, 0.65));
+    if (t === 'ward') barrier.setColor(WARD_COL, WARD_COL2);
     return true;
   }
   /** → 'ok' | 'cooldown' | 'stamina' */
@@ -939,7 +943,7 @@ export function createPlayer(game) {
     entity.name = c ? CLASS_DEFS[c].nameKo : '바람결의 젊은이';
     swordDrawn = false; drawnW = 0;
     weaponVisibility();
-    barrier.setColor(kit.defend.type === 'ward' ? v1.set(0.55, 1, 0.65) : elemColor);
+    if (kit.defend.type === 'ward') barrier.setColor(WARD_COL, WARD_COL2); else barrier.setColor(elemColor, gemLight);
     R.refresh(prev !== null || R._init);
     resetKitState();
     fidgetNext = 8 + Math.random() * 6; fidgetKind = null;

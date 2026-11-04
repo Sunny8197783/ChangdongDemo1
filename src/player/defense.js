@@ -1,4 +1,6 @@
 // Defense visuals: mage 마력 방벽 (hex-pattern arcane dome with hit ripples) and the sword guard glint.
+// v4: private player-FX material patched through game.vfx.applyPlayerFx (fx callback); highlights blend toward the
+// element ramp's light step instead of white (rule 5).
 import * as THREE from 'three';
 
 const VS = /* glsl */`
@@ -10,7 +12,7 @@ const VS = /* glsl */`
     gl_Position = projectionMatrix * mv;
   }`;
 const FS = /* glsl */`
-  uniform vec3 uColor; uniform float uW, uTime, uFlash, uHitT; uniform vec3 uHitDir;
+  uniform vec3 uColor, uColor2; uniform float uW, uTime, uFlash, uHitT; uniform vec3 uHitDir;
   varying vec3 vN; varying vec3 vV; varying vec3 vLocal;
   // hex grid distance (0 at cell edge, ~0.5 at center)
   float hexDist(vec2 p) {
@@ -35,25 +37,28 @@ const FS = /* glsl */`
     float ring = uHitT > 0.0 ? smoothstep(0.25, 0.0, abs(d - (1.0 - uHitT) * 2.4)) * uHitT : 0.0;
     float scan = 0.5 + 0.5 * sin(lat * 10.0 - uTime * 4.0);
     float bottom = smoothstep(-0.35, 0.05, n.y);
-    float a = (line * (0.35 + 0.4 * scan) + fres * 0.75 + ring * 1.4 + uFlash * 0.8) * uW * bottom;
-    vec3 col = mix(uColor, vec3(1.0), line * 0.25 + ring * 0.5 + uFlash * 0.6);
+    float a = min(1.2, line * (0.35 + 0.4 * scan) + fres * 0.75 + ring * 1.1 + uFlash * 0.6) * uW * bottom;
+    vec3 col = mix(uColor, uColor2, clamp(line * 0.35 + ring * 0.6 + uFlash * 0.6, 0.0, 1.0));
     gl_FragColor = vec4(col * a, 1.0);
   }`;
 
+const _tint = new THREE.Color(0x9fc8e8);
 export class Barrier {
-  constructor(scene) {
+  constructor(scene, fx = null) {
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color(0x9fdcff) }, uW: { value: 0 }, uTime: { value: 0 }, uFlash: { value: 0 }, uHitT: { value: 0 }, uHitDir: { value: new THREE.Vector3(0, 0, 1) } },
+      uniforms: { uColor: { value: new THREE.Color(0x9fdcff) }, uColor2: { value: new THREE.Color(0xc8ecff) }, uW: { value: 0 }, uTime: { value: 0 }, uFlash: { value: 0 }, uHitT: { value: 0 }, uHitDir: { value: new THREE.Vector3(0, 0, 1) } },
       vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide, toneMapped: false,
     });
+    if (fx) fx(this.mat, { additive: true, role: 'fill' });
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1.35, 32, 20), this.mat);
     this.mesh.visible = false; this.mesh.renderOrder = 8; this.mesh.frustumCulled = false;
-    this.mesh.userData.noGhost = true;
+    this.mesh.userData.noGhost = true; this.mesh.userData.owner = 'player';
     scene.add(this.mesh);
     this.w = 0; this.flash = 0; this.hitT = 0;
   }
-  setColor(c) { this.mat.uniforms.uColor.value.copy(c).lerp(new THREE.Color(0xbfe8ff), 0.45); }
+  /** c: element mid step; c2: its light step (highlights, ripples). */
+  setColor(c, c2) { this.mat.uniforms.uColor.value.copy(c).lerp(_tint, 0.3); this.mat.uniforms.uColor2.value.copy(c2 || c); }
   hit(dirWorld, perfect) { this.mat.uniforms.uHitDir.value.copy(dirWorld); this.hitT = 1; if (perfect) this.flash = 1; }
   update(dt, active, center, t) {
     this.w += ((active ? 1 : 0) - this.w) * (1 - Math.exp(-(active ? 18 : 9) * dt));
