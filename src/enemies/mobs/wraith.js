@@ -81,7 +81,7 @@ export function wraithDef() {
   glow.push(P('rig', T(0.16, 0.01, 12, 3), WR.void, [0, -0.2, 0], [Math.PI / 2, 0, 0], [1, 1, 1], { glowK: 1.0 }));
   return {
     type: 'wraith', bones, parts, glow, hipY: HIP, headTop: 2.3, lieY: 0.3, sphere: [1.2, 1.6], kind: 'humanoid',
-    outline: { t: 0.017, color: 0x120c1e }, proxyMin: 0.08, jawOpen: 0.4,
+    outline: { t: 0.017, color: 0x36225c }, proxyMin: 0.08, jawOpen: 0.4,
     springs: [
       { bone: 'hem1', axis: 'x', k: 60, d: 5, gain: [0.16, 0], sway: 0.1, swayHz: 0.7, min: -1.0, max: 0.6 },
       { bone: 'hem2', axis: 'x', k: 60, d: 5, gain: [0.16, 0], sway: 0.1, swayHz: 0.55, min: -1.0, max: 0.6 },

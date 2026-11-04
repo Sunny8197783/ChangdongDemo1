@@ -121,7 +121,7 @@ export function shamanDef(opts = {}) {
   ];
   return {
     type: 'shaman', key: 'shaman:' + el, element: el, bones, parts, glow, hipY: HIP, headTop: 1.55, lieY: 0.26, sphere: [0.9, 1.5], kind: 'humanoid',
-    outline: { t: 0.016, color: 0x1e1430 }, proxyMin: 0.07, lids: { open: 0.35, closed: 1.0 }, jawOpen: 0.3,
+    outline: { t: 0.016, color: 0x34205e }, proxyMin: 0.07, lids: { open: 0.35, closed: 1.0 }, jawOpen: 0.3,
     springs: [
       { bone: 'hemR', axis: 'x', k: 80, d: 6, gain: [0.14, 0], sway: 0.05, swayHz: 0.7, min: -0.9, max: 0.4 },
       { bone: 'hemL', axis: 'x', k: 80, d: 6, gain: [0.14, 0], sway: 0.05, swayHz: 0.8, min: -0.9, max: 0.4 },

@@ -5,7 +5,7 @@
 // crouch (glow). Variant 'alpha': bigger mane and a white scar.
 import { P, S, C, K, CAP, TUBE, both, eye, quadruped, bone, curve, mixInto } from './rig.js';
 
-const WF = { fur: 0x5e5a72, furDark: 0x58546e, stripe: 0x4c4864, pale: 0xb9b3c8, paleDark: 0xa49eb6, mane: 0x5a5572, sheen: 0x7a7692, claw: 0xe0dae8, nose: 0x1e1a26,
+const WF = { fur: 0x66627c, furDark: 0x58546e, stripe: 0x4c4864, pale: 0xb9b3c8, paleDark: 0xa49eb6, mane: 0x5a5572, sheen: 0x7a7692, claw: 0xe0dae8, nose: 0x1e1a26,
   mouth: 0x3a1a2a, void: 0xb06aff, eye: 0xffb347, scar: 0xece8f4, inner: 0x9a7a96 };
 
 export function wolfDef(opts = {}) {

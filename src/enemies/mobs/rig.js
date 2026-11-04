@@ -60,7 +60,7 @@ export function materials() {
 // One program; colours are uniforms (one material per colour, same program). uRes = the scene render target size (game.post.sceneRes).
 const OUTLINE_RES = { value: new THREE.Vector2(1280, 720) };
 const OUTLINE_VS = /* glsl */`
-  uniform float uPx; uniform float uMinW; uniform vec2 uRes;
+  uniform float uPx; uniform float uMinW; uniform vec2 uRes; uniform float uPull;
   #include <common>
   #include <skinning_pars_vertex>
   #include <fog_pars_vertex>
@@ -73,6 +73,8 @@ const OUTLINE_VS = /* glsl */`
     vec3 on = normalize(objectNormal);
     transformed += on * uMinW;
     vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+    // pull the hull a few cm toward the camera so the line survives where the feet / hem meet the floor (not buried in the ground)
+    mvPosition.xyz *= max(0.0, 1.0 - uPull / max(0.25, length(mvPosition.xyz)));
     vec4 clip = projectionMatrix * mvPosition;
     vec2 d = (projectionMatrix * vec4(normalize(normalMatrix * on), 0.0)).xy;
     float L = length(d);
@@ -93,7 +95,7 @@ export function outlineMat(t = 0.022, color = 0x1a1410) {
   let m = M.outlines.get(k);
   if (!m) {
     m = new THREE.ShaderMaterial({
-      uniforms: { ...THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), color: { value: new THREE.Color(color) }, uPx: { value: 1.6 }, uMinW: { value: t * 0.3 }, uRes: OUTLINE_RES },
+      uniforms: { ...THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), color: { value: new THREE.Color(color) }, uPx: { value: 1.6 }, uMinW: { value: t * 0.3 }, uRes: OUTLINE_RES, uPull: { value: 0.03 } },
       vertexShader: OUTLINE_VS, fragmentShader: OUTLINE_FS, side: THREE.BackSide, fog: true,
     });
     m.name = 'mob4.outline';
@@ -476,7 +478,9 @@ export function defineType(def) {
   const glowParts = def.parts.filter((q) => q.f.glow).concat(def.glow || []);
   const size = (q) => { const e = primExt(q.spec); return Math.max(e[0] * q.s[0], e[1] * q.s[1], e[2] * q.s[2]); };
   const lodParts = bodyParts.filter((q) => q.f.lod || (!q.f.noLod && !q.f.small && size(q) >= (def.lodMin ?? 0.09)));
-  const proxyParts = bodyParts.filter((q) => q.f.proxy || (!q.f.noProxy && !q.f.small && q.spec.k !== 'card' && size(q) >= (def.proxyMin ?? 0.12)));
+  // silhouette-only proxy: big parts; no cards, trims (tori) or thin parts (their hull would paint over them at close range)
+  const thin = (q) => { const e = primExt(q.spec); return Math.min(e[0] * q.s[0], e[1] * q.s[1], e[2] * q.s[2]) < 0.03; };
+  const proxyParts = bodyParts.filter((q) => q.f.proxy || (!q.f.noProxy && !q.f.small && q.spec.k !== 'card' && q.spec.k !== 'tor' && !thin(q) && size(q) >= (def.proxyMin ?? 0.12)));
   const body = assemble(def, R, bodyParts, 'body');
   const lod = assemble(def, R, lodParts, 'lod');
   const proxy = assemble(def, R, proxyParts, 'proxy');

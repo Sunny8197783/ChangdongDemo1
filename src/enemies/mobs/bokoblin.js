@@ -34,7 +34,7 @@ export function bokoblinDef() {
     mixInto(out, BK.skin, BK.belly, (n.z * 0.9 - 0.25 - l.y * 0.6) * 1.6);
     // two slanted stripes on each pec (front only)
     const ax = Math.abs(l.x), u = ax * 0.8 + (l.y - 0.45);
-    if (n.z > 0.25 && ax > 0.08 && ax < 0.36 && l.y > 0.32 && l.y < 0.62 && (Math.abs(u - 0.12) < 0.03 || Math.abs(u - 0.22) < 0.03)) mixInto(out, BK.paint, BK.paint, 0);
+    if (n.z > 0.25 && ax < 0.4 && l.y > 0.3 && l.y < 0.66 && Math.abs(u - 0.16) < 0.065) mixInto(out, BK.paint, BK.paint, 0);   // one broad chevron band
   };
   add(P('spine', S(0.42, 16, 12), torsoCol, [0, 0.3, 0], [0, 0, 0], [1.12, 1.0, 0.88], { blend: { axis: '+y', band: 0.06 } }));
   add(...both([P('spine', S(0.2, 10, 8), BK.skin, [-0.36, 0.5, 0], [0, 0, 0], [1.15, 0.92, 1])]));      // shoulder masses

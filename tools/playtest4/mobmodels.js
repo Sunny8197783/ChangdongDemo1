@@ -135,6 +135,7 @@ module.exports = async function mobmodels(PT) {
       for (let tr = 0; tr < 3; tr++) {
         const def = MM.defFor(type, opts); def.key = (def.key || def.type) + '#fs' + tr;
         const TT = Rig.defineType(def);
+        window.PT.gpuSync();       // empty the GPU command queue first: we time CPU-side work, not SwiftShader rasterising earlier frames
         const t0 = performance.now();
         const fm = Rig.instantiate(TT, { game: g });
         window.MMT.place(fm, 7);
@@ -142,7 +143,7 @@ module.exports = async function mobmodels(PT) {
         fm.update(1 / 60);
         g.renderNow();
         const first0 = performance.now() - t0;
-        const again = []; for (let i = 0; i < 3; i++) { const a = performance.now(); g.renderNow(); again.push(performance.now() - a); }
+        const again = []; for (let i = 0; i < 3; i++) { window.PT.gpuSync(); const a = performance.now(); g.renderNow(); again.push(performance.now() - a); }
         again.sort((a, b) => a - b);
         trials.push(first0 - again[1]);
         fm.dispose(); TT.geo.dispose(); TT.proxyGeo.dispose(); TT.glowGeo?.dispose(); Rig.builtTypes().delete(TT.key);
@@ -369,13 +370,13 @@ module.exports = async function mobmodels(PT) {
             let e = -1;
             if (dir === 'L') { for (let x = x0; x <= x1; x++) if (M[a * w + x]) { e = x; break; } }
             else if (dir === 'R') { for (let x = x1; x >= x0; x--) if (M[a * w + x]) { e = x; break; } }
-            else if (dir === 'T') { for (let y = y0; y <= y1; y++) if (M[y * w + a]) { e = y; break; } }
+            else if (dir === 'B') { for (let y = y0; y <= y1; y++) if (M[y * w + a]) { e = y; break; } }   // readPixels rows run bottom-up
             else { for (let y = y1; y >= y0; y--) if (M[y * w + a]) { e = y; break; } }
             if (e < 0) continue;
             rows++;
             let ok = false;
             for (let s = 0; s <= 3 && !ok; s++) {
-              const kk = dir === 'L' ? a * w + e + s : dir === 'R' ? a * w + e - s : dir === 'T' ? (e + s) * w + a : (e - s) * w + a;
+              const kk = dir === 'L' ? a * w + e + s : dir === 'R' ? a * w + e - s : dir === 'B' ? (e + s) * w + a : (e - s) * w + a;
               if (kk >= 0 && kk < n && O[kk]) ok = true;
             }
             if (ok) hit++;
