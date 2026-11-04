@@ -441,9 +441,9 @@ module.exports = async function tells(PT) {
     const hz = TL.hazard({ pos: X.front(10), r: 2, dur: 3, kind: 'fire', nameKo: '불길' });
     PT.step(0.4);
     const ch = TL.debug.spritesApi.recs.filter((s) => s.active && s.kind === 'safe');
-    const y0 = ch[0].y; PT.step(0.1);
+    const y0 = ch.map((s) => s.y); PT.step(0.1);
     PT.check('safe: rising vertical chevrons over a ring', ch.length === 6 && ch.every((s) => s.cell === 'chevron') && TL.debug.pool().zones === 2);
-    PT.check('safe chevrons rise', ch[0].y > y0 || ch[0].alpha < 0.2);
+    PT.check('safe chevrons rise (≥ 4 of 6 higher after 0.1 s; the others wrapped)', ch.filter((s, i) => s.y > y0[i]).length >= 4);
     PT.check('safe + hazard render', px() > 600);
     const F = TL.footprints();
     PT.check('footprints include the safe zone and the hazard (circles)', F.n === 2 && F.data[2] === 1 && F.data[10] === 1, Array.from(F.data.slice(0, 16)));
@@ -568,7 +568,7 @@ module.exports = async function tells(PT) {
       g.settings.set('colorblind', cb, { persist: false });
       const h = TL.attack(e1, { id: 'cb', tell: 'parry', cls: 'check', windup: 2, melee: false, sound: false, body: false, icon: false, shape: shp });
       PT.step(0.5);
-      const d = PT.pixels.diff((on) => TL.debug.setVisible(on));
+      const d = PT.pixels.diff((on) => TL.debug.setVisible(on), { thr: 8 });
       const rim = TL.debug.decals.uniforms.uRim.value[1].clone();
       h.stop(); PT.step(0.3);
       return { d, rim };
