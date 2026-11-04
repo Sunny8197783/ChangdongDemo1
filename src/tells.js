@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { THREAT, threatColor } from './core/threat.js';
 import { hitTest, shapeDistance, makeShape, setShape, setDir, syncRef, centroid, writeFootprint, TELL_CODE, SHAPE_FAMILY, FOOT_KIND, TELL_KINDS } from './tells/shapes.js';
 import { MIN, LOCK, tellDuration, isMelee, lockFor, startSound, PERFECT_WIN, TEACH, STALE_AFTER } from './tells/timing.js';
-import { createDecals, STYLE } from './tells/decals.js';
+import { createDecals, STYLE, RIBBON } from './tells/decals.js';
 import { createSprites } from './tells/icons.js';
 import { createRims, rimSources, RIM_SLOTS } from './tells/body.js';
 import { createZones } from './tells/zones.js';
@@ -75,7 +75,7 @@ export function createTells(game) {
       this.targetsPlayer = spec.targetsPlayer !== false;
       this.melee = isMelee(spec);
       this.nameKo = '';
-      this.S = null; this.decal = null; this.icon = null; this.glint = null; this.glintT = -1; this.wave = null;
+      this.S = null; this.decal = null; this.ribbon = null; this.icon = null; this.glint = null; this.glintT = -1; this.wave = null;
       this.follow = !!spec.shape?.follow;
       this.rec = null;                 // active() record
     }
@@ -99,11 +99,12 @@ export function createTells(game) {
     setPos(v) { if (this.S && v && !this.locked) { this.S.px = v.x; this.S.py = v.y || 0; this.S.pz = v.z; reshape(this); } return this; }
     setDir(v) { if (this.S && v && !this.locked) { setDir(this.S, v.x, v.z); this.S.dirExplicit = true; reshape(this); } return this; }
     setEnd(v) { if (this.S && v && !this.locked) { this.S.ex = v.x; this.S.ez = v.z; this.S.hasEnd = true; reshape(this); } return this; }
-    extend(sec) { if (this.alive && sec > 0) { this.dur += sec; if (this.decal) this.decal.dur = this.dur; } return this; }
+    extend(sec) { if (this.alive && sec > 0) { this.dur += sec; if (this.decal) this.decal.dur = this.dur; if (this.ribbon) this.ribbon.dur = this.dur; } return this; }
     stop(reason = 'cancel') {
       if (!this.alive) return;
       this.alive = false; this.done = true;
       if (this.decal) decals.end(this.decal, false);
+      if (this.ribbon) decals.end(this.ribbon, false);
       drop(this);
       emit('tellEnd', { enemy: this.enemy, id: this.id, reason });
     }
@@ -118,7 +119,8 @@ export function createTells(game) {
   }
   function reshape(h) {
     syncRef(h.S);
-    if (h.decal) { h.decal.S === h.S || copyShape(h.decal.S, h.S); decals.layout(h.decal); }
+    if (h.decal) { copyShape(h.decal.S, h.S); decals.layout(h.decal); }
+    if (h.ribbon) { copyShape(h.ribbon.S, h.S); decals.layout(h.ribbon); }
   }
   function copyShape(D, S) {
     D.kind = S.kind; D.px = S.px; D.py = S.py; D.pz = S.pz; D.dx = S.dx; D.dz = S.dz; D.r = S.r; D.inner = S.inner; D.angle = S.angle;
@@ -188,6 +190,16 @@ export function createTells(game) {
         decals.layout(rec);
         h.decal = rec;
         rec.onFree = (r) => { if (h.decal === r) h.decal = null; };
+        // P1: vertical rising-edge ribbon on large AoE rims (readable at grazing camera angles)
+        if ((h.S.kind === 'circle' || h.S.kind === 'ring') && h.S.r > RIBBON.minR) {
+          const rb = decals.alloc('ribbon');
+          if (rb) {
+            copyShape(rb.S, h.S);
+            rb.tell = rec.tell; rb.mode = 'tell'; rb.clock = 'enemy'; rb.start = t0; rb.dur = dur; rb.lockAt = h.lockAt; rb.owner = h;
+            decals.layout(rb); h.ribbon = rb;
+            rb.onFree = (r) => { if (h.ribbon === r) h.ribbon = null; };
+          }
+        }
       }
     }
     // icons from windup start: ⚠ unblockable, ⤒ jump; '!' on every tell with strong emphasis
@@ -197,7 +209,7 @@ export function createTells(game) {
       if (s) {
         s.cell = h.tell === 'unblockable' ? 'warn' : h.tell === 'jump' ? 'jump' : 'bang';
         const c = threatColor(h.tell, assist().colorblind);
-        s.col.setHex(c.rim); s.outl.setHex(c.edge); s.size = 0.55; s.minPx = 22; s.alpha = 1;
+        s.col.setHex(c.rim); s.outl.setHex(c.edge); s.size = 0.6; s.minPx = 26; s.alpha = 1;
         h.icon = s; placeIcon(h);
       }
     }
@@ -259,6 +271,7 @@ export function createTells(game) {
   const glints = [];
   function onHit(h) {
     if (h.decal && !h.decal.fading) decals.end(h.decal, true);
+    if (h.ribbon && !h.ribbon.fading) decals.end(h.ribbon, true);
     if (h.tell === 'jump' && !h.wave) startWave(h);
   }
   function startWave(h) {
@@ -523,7 +536,7 @@ export function createTells(game) {
     debug: {
       setVisible(on) { root.visible = !!on; },
       pixelsOf,
-      pool() { return { active: decals.count(['radial', 'linear']), max: 16, zones: decals.count(['zone']), markers: decals.count(['marker']), waves: decals.count(['wave']), sprites: sprites.count() }; },
+      pool() { return { ribbons: decals.count(['ribbon']), active: decals.count(['radial', 'linear']), max: 16, zones: decals.count(['zone']), markers: decals.count(['marker']), waves: decals.count(['wave']), sprites: sprites.count() }; },
       rims() { return rims.count(); },
       sprites: (kind) => sprites.count(kind),
       live: () => live.length,

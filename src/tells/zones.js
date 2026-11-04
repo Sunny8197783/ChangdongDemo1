@@ -38,7 +38,7 @@ export function createZones(game, decals, sprites) {
       rec.owner = Z;
     }
     if (kind === 'safe') {
-      for (let i = 0; i < SAFE_CHEVRONS; i++) { const s = sprites.alloc('safe'); if (!s) break; s.cell = 'chevron'; colorOf(s, 'safe'); s.size = 0.45; s.minPx = 10; Z.sprites.push(s); }
+      for (let i = 0; i < SAFE_CHEVRONS; i++) { const s = sprites.alloc('safe'); if (!s) break; s.cell = 'chevron'; colorOf(s, 'safe'); s.size = 0.55; s.minPx = 14; Z.sprites.push(s); }
     }
     zones.push(Z);
     const api = {

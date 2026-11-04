@@ -23,11 +23,14 @@ export const FAMILIES = {                 // name → {cap, segAcross, segAlong,
   zone: { cap: 8, sx: 28, sz: 28, order: 0 },
   wave: { cap: 4, sx: 48, sz: 48, order: 3 },
   marker: { cap: 12, sx: 8, sz: 8, order: 4 },
+  ribbon: { cap: 6, sx: 96, sz: 1, order: 5 },     // P1: 0.35 m vertical rising-edge ribbon on AoE rims > 6 m
 };
+export const RIBBON = { minR: 6, height: 0.35, alpha: 0.55 };
 export const ATTACK_POOL = 16;            // §5.2: pool 16 shared by the radial + linear attack decals
 /** Style bits (iT.w). */
 export const STYLE = { noFront: 4, solid: 8, noChevron: 16, marker: 32 };
 
+const RIBBON_H = '0.35', RIBBON_A = '0.55';
 const VERT = /* glsl */`
   attribute vec4 iO;   // origin x, y, z, flat (1 = flat at y)
   attribute vec4 iF;   // forward x, z, along min, along max
@@ -62,6 +65,18 @@ const VERT = /* glsl */`
     return mix(mix(a, b, f.x), mix(d, e, f.x), f.y);
   }
   void main() {
+    vS = iS; vT = iT; vD = iD; vE = iE;
+    if (iO.w > 1.5) {                   // ribbon: x = angle around the rim, z = height (grows with the progress)
+      float th = (position.x * 0.5 + 0.5) * 6.2831853;
+      float hgt = (position.z * 0.5 + 0.5) * ${RIBBON_H} * max(0.25, iD.x);
+      vec2 rxz = iO.xz + vec2(sin(th), cos(th)) * iS.z;
+      float rh = iO.w > 2.5 ? iO.y : (uUseHF > 0.5 ? hfAt(rxz) : iO.y);
+      vec3 rw = vec3(rxz.x, rh + uLift + hgt, rxz.y);
+      vP = vec2(position.z * 0.5 + 0.5, 0.0); vW = rw;
+      vec4 rmv = viewMatrix * vec4(rw, 1.0); vViewZ = rmv.z;
+      gl_Position = projectionMatrix * rmv;
+      return;
+    }
     float across = position.x * iS.x;
     float along = mix(iF.z, iF.w, position.z * 0.5 + 0.5);
     vec2 F = iF.xy; vec2 R = vec2(F.y, -F.x);
@@ -75,7 +90,6 @@ const VERT = /* glsl */`
     vec4 mv = viewMatrix * vec4(w, 1.0);
     vViewZ = mv.z;
     gl_Position = projectionMatrix * mv;
-    vS = iS; vT = iT; vD = iD; vE = iE;
   }`;
 
 const FRAG = /* glsl */`
@@ -100,6 +114,14 @@ const FRAG = /* glsl */`
   void main() {
     int kind = int(vS.y + 0.5);
     int tc = int(vT.z + 0.5);
+    if (kind == 6) {                    // rising-edge ribbon: rim hue, fading upward
+      vec3 rc = min(uRim[tc] * (1.0 + uLockGain * vD.z), vec3(1.0));
+      float ra = (1.0 - vP.x) * ${RIBBON_A} * mix(0.6, 1.0, vD.w) * vD.y;
+      if (ra < 0.004) discard;
+      gl_FragColor = vec4(rc, ra);
+      #include <colorspace_fragment>
+      return;
+    }
     int st = int(vT.w + 0.5);
     vec2 p = vP;
     float mpp = max(length(fwidth(p)) * 0.7071, 1e-4);   // metres per pixel
@@ -383,9 +405,9 @@ export function createDecals(game) {
         let flash = 0;
         if (locked) { const k = (now - lockT) / THREAT_FRONT.lockFlashSec; flash = k < 1 ? 1 - k : 0; }
         const q = r.q, b = n * STRIDE;
-        A[b] = q.ox; A[b + 1] = r.oy; A[b + 2] = q.oz; A[b + 3] = r.flat;
+        A[b] = q.ox; A[b + 1] = r.oy; A[b + 2] = q.oz; A[b + 3] = name === 'ribbon' ? 2 + (r.flat || !useHF ? 1 : 0) : r.flat;
         A[b + 4] = q.fx; A[b + 5] = q.fz; A[b + 6] = q.aMin; A[b + 7] = q.aMax;
-        A[b + 8] = q.half; A[b + 9] = SHAPE_CODE[r.S.kind]; A[b + 10] = q.p0; A[b + 11] = q.p1;
+        A[b + 8] = q.half; A[b + 9] = name === 'ribbon' ? 6 : SHAPE_CODE[r.S.kind]; A[b + 10] = q.p0; A[b + 11] = q.p1;
         A[b + 12] = q.p2; A[b + 13] = q.p3; A[b + 14] = r.tell; A[b + 15] = r.style;
         A[b + 16] = prog; A[b + 17] = alpha; A[b + 18] = flash; A[b + 19] = locked;
         A[b + 20] = r.mode === 'tell' ? r.perfectFrac : 2; A[b + 21] = snap; A[b + 22] = q.coneRot; A[b + 23] = r.slot;

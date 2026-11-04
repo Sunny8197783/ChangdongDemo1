@@ -461,6 +461,15 @@ module.exports = async function tells(PT) {
     g.scene.remove(orb); PT.step(0.3);
     PT.check('marker ends when the orb is removed', TL.debug.pool().markers === 0);
     mk.stop(); X.clear();
+    // P1: rising-edge ribbon on AoE rims > 6 m, visible at a grazing camera angle
+    PT.look(0, -0.05); PT.step(0.05);
+    const hb = TL.attack(X.fake(pp.x, pp.z - 12), { id: 'rb', tell: 'danger', cls: 'bossAoE', windup: 2, melee: false, sound: false, body: false, icon: false, shape: { kind: 'circle', pos: X.front(12), r: 8 } });
+    PT.step(1.0);
+    const rbPx = PT.pixels.diff((on) => { TL.debug.decals.fams.ribbon.mesh.visible = on; }).changed;
+    PT.check('P1 ribbon: AoE r > 6 m gets a 0.35 m rising-edge ribbon (visible at a grazing angle)', TL.debug.pool().ribbons === 1 && rbPx > 200, { ribbons: TL.debug.pool().ribbons, px: rbPx });
+    hb.stop(); PT.step(0.3);
+    PT.check('ribbon ends with its tell', TL.debug.pool().ribbons === 0);
+    X.clear();
   });
 
   await pg.run('T4 settings: teaching slow motion, strong emphasis', () => {
@@ -600,6 +609,23 @@ module.exports = async function tells(PT) {
     PT.check('renderThumb(kind, size) returns a rendered image per kind', Object.values(out).every((v) => v > 150), out);
     window.__tellThumb = await TL.renderThumb('danger', 160);
   });
+
+  // ==================================================================================================== static greps (rule 5 / rule 6)
+  {
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(PT.root, 'src', 'tells');
+    const files = ['src/tells.js', ...fs.readdirSync(dir).filter((f) => f.endsWith('.js')).map((f) => 'src/tells/' + f)];
+    const white = [], korean = [], emissive = [];
+    for (const f of files) {
+      const txt = fs.readFileSync(path.join(PT.root, f), 'utf8');
+      if (/0xffffff\b|#ffffff\b|#fff\b/i.test(txt)) white.push(f);
+      if (f !== 'src/tells/text.js' && /[\uAC00-\uD7A3]/.test(txt.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))) korean.push(f);
+      const m = txt.match(/emissive(?:Intensity|Mul)?\s*[:=]\s*([\d.]+)/gi) || [];
+      for (const x of m) if (parseFloat(x.split(/[:=]/)[1]) > 1.2) emissive.push(f + ': ' + x);
+    }
+    PT.check('rule 5: no 0xffffff effect colours and no emissive multiplier > 1.2 in src/tells*', white.length === 0 && emissive.length === 0, { white, emissive });
+    PT.check('rule 6: Korean world text only in src/tells/text.js', korean.length === 0, korean);
+  }
 
   await pg.close();
 };
