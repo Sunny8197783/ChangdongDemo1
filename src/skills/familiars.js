@@ -3,7 +3,7 @@
 // Instance colours are written at construction (setColorAt + needsUpdate, CONTRACT §23), the material is created once
 // (prewarmed by the boot compile; never flips transparent/blending), no shadows, no lights, no per-frame allocation.
 import * as THREE from 'three';
-import { elColor } from '../core/elements.js';
+import { elFx as fxRamp } from '../core/elements.js';
 
 const MAX_WISPS = 3;
 const MAX_BOLTS = 10;
@@ -15,7 +15,8 @@ const SHOT_EVERY = 1.6, RANGE = 18, BOLT_SPEED = 20;
 export function createFamiliars(game) {
   const E = game.events;
   const geo = new THREE.IcosahedronGeometry(0.17, 1);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  // base colour left at the material default: the per-instance colours (element ramp steps, never white) carry the look
+  const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const mesh = new THREE.InstancedMesh(geo, mat, TOTAL);
   mesh.name = 'skills.familiars';
   mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = false;
@@ -34,17 +35,26 @@ export function createFamiliars(game) {
   const wisps = [];
   for (let i = 0; i < MAX_WISPS; i++) wisps.push({ el: null, active: false, shotT: 0.4 + i * 0.5, pos: new THREE.Vector3(), spawnT: 0, phase: i * 2.1, sparkT: 0 });
   const bolts = [];
-  for (let i = 0; i < MAX_BOLTS; i++) bolts.push({ active: false, el: null, pos: new THREE.Vector3(), target: null, life: 0, dmg: 0, status: false, wobble: 0 });
+  for (let i = 0; i < MAX_BOLTS; i++) bolts.push({ active: false, el: null, pos: new THREE.Vector3(), target: null, life: 0, dmg: 0, status: false, wobble: 0, castId: 0 });
   const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), aim = new THREE.Vector3();
   const near = [];
   let t = 0, anyActive = false;
   const c1 = new THREE.Color(), c2 = new THREE.Color();
 
+  // v4 (§3.6): colours from the element ramp {hi, light, mid, dark}: wisp core = light→mid, halo = dark, bolt = light, glow = mid
   function setColors(i, el, haloK) {
-    c1.setHex(elColor(el, 'mid')); c2.setHex(elColor(el, 'core'));
-    c1.lerp(c2, 0.35); mesh.setColorAt(I_CORE + i, c1);
-    c2.setHex(elColor(el, 'edge')).multiplyScalar(haloK); mesh.setColorAt(I_HALO + i, c2);
+    const R = fxRamp(el);
+    c1.setHex(R.mid); c2.setHex(R.light);
+    c1.lerp(c2, 0.5); mesh.setColorAt(I_CORE + i, c1);
+    c2.setHex(R.dark).multiplyScalar(haloK * 1.6); mesh.setColorAt(I_HALO + i, c2);
     mesh.instanceColor.needsUpdate = true;
+  }
+  /** element spark / burst: the kit motif when the vfx kit exists, else a pooled burst in ramp colours */
+  function fxSpark(el, at, n, castId, burst = false) {
+    const kit = game.vfx?.kit;
+    if (kit?.motif) { try { kit.motif(el, burst ? 'burst' : 'spark', { pos: at, r: burst ? 0.6 : 0.4, n, castId, owner: 'player' }); return; } catch (_) { /* fall back */ } }
+    const R = fxRamp(el);
+    try { game.vfx?.burst?.(at, { count: n, color: [R.light, R.mid], shape: burst ? 'spark' : 'soft', speed: burst ? 2.5 : 0.3, spread: 1, size: burst ? 0.09 : 0.07, sizeEnd: 0, life: burst ? 0.45 : 0.5, drag: burst ? 3 : 2, gravity: burst ? 0 : -0.6, castId, owner: 'player' }); } catch (_) { /* */ }
   }
   /** Set the familiar elements (≤ MAX_WISPS). Emits familiarSpawn / familiarEnd per change. */
   function setElements(list) {
@@ -56,7 +66,7 @@ export function createFamiliars(game) {
         w.active = true; w.el = el; w.spawnT = 0; w.shotT = 0.6 + i * 0.5;
         setColors(i, el, 0.55);
         playerAnchor(w.pos);
-        try { game.vfx?.burst?.(w.pos, { count: 14, color: [elColor(el, 'hex'), 0xffffff], shape: 'spark', speed: 2.5, spread: 1, size: 0.09, sizeEnd: 0, life: 0.45, drag: 3 }); } catch (_) { /* */ }
+        fxSpark(el, w.pos, 10, game.nextCastId ? game.nextCastId() : 0, true);
         E.emit('familiarSpawn', { element: el });
       }
     }
@@ -85,12 +95,14 @@ export function createFamiliars(game) {
     const def = game.skills?.defs?.get?.(w.el + '.basic');
     const base = def?.params?.dmg ?? 12;
     b.active = true; b.el = w.el; b.pos.copy(w.pos); b.target = target; b.life = 2.2; b.wobble = Math.random() * 6.28;
+    b.castId = game.nextCastId ? game.nextCastId() : 0;   // one familiar bolt = one cast
     b.dmg = base * (def?.params?.n ? Math.min(2, def.params.n) : 1) * 0.5;
     b.status = !!game.stats?.get?.('familiarStatus');
     b.statusBlock = def?.params?.status || null;
     const i = bolts.indexOf(b);
-    c1.setHex(elColor(w.el, 'core')); mesh.setColorAt(I_BOLT + i, c1);
-    c2.setHex(elColor(w.el, 'mid')).multiplyScalar(0.6); mesh.setColorAt(I_GLOW + i, c2);
+    const R = fxRamp(w.el);
+    c1.setHex(R.light); mesh.setColorAt(I_BOLT + i, c1);
+    c2.setHex(R.mid).multiplyScalar(0.6); mesh.setColorAt(I_GLOW + i, c2);
     mesh.instanceColor.needsUpdate = true;
     try { game.audio?.play?.('cast_' + w.el, { position: w.pos, volume: 0.25, pitch: 1.6 }); } catch (_) { /* */ }
     return true;
@@ -100,12 +112,13 @@ export function createFamiliars(game) {
     if (tg?.alive && C?.dealDamage) {
       const full = !!game.stats?.get?.('familiarFullReactions');
       const hit = { amount: b.dmg, element: b.el, source: game.player?.entity || 'player', point: b.pos.clone(), tags: ['familiar'], skillId: 'familiar', tier: 'light',
-        reactionMul: full ? 1 : 0.5 };
+        reactionMul: full ? 1 : 0.5, castId: b.castId };
       if (b.status && b.statusBlock && C.STATUS_DEFS) hit.status = b.statusBlock;
       try { C.dealDamage(tg, hit); } catch (_) { /* */ }
       if (b.status && b.statusBlock && !C.STATUS_DEFS) for (const k in b.statusBlock) { try { C.applyStatus?.(tg, k, b.statusBlock[k]?.dur || 3); } catch (_) { /* */ } }
     }
-    try { game.vfx?.impact?.(b.pos, { element: b.el, scale: 0.5 }); } catch (_) { /* */ }
+    if (game.vfx?.kit?.motif) fxSpark(b.el, b.pos, 6, b.castId, false);
+    else { try { game.vfx?.impact?.(b.pos, { element: b.el, scale: 0.5, castId: b.castId, owner: 'player' }); } catch (_) { /* */ } }
     b.active = false; b.target = null;
   }
 
@@ -133,7 +146,8 @@ export function createFamiliars(game) {
       w.sparkT -= dt;
       if (w.sparkT <= 0) {
         w.sparkT = 0.2;
-        try { game.vfx?.burst?.(w.pos, { count: 1, color: [elColor(w.el, 'hex'), 0xffffff], shape: 'soft', speed: 0.3, spread: 1, size: 0.07, sizeEnd: 0, life: 0.5, drag: 2, gravity: -0.6 }); } catch (_) { /* */ }
+        // sparkle trail: 1 pooled particle in ramp colours (the kit spark is too dense for a 5 Hz trail)
+        { const R = fxRamp(w.el); try { game.vfx?.burst?.(w.pos, { count: 1, color: [R.light, R.mid], shape: 'soft', speed: 0.3, spread: 1, size: 0.07, sizeEnd: 0, life: 0.5, drag: 2, gravity: -0.6, owner: 'player' }); } catch (_) { /* */ } }
       }
       if (game.state === 'playing') {
         w.shotT -= dt;
