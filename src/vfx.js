@@ -437,7 +437,8 @@ export function createVFX(game) {
 
   // ---------- kit ----------
   const projector = createProjector(game);
-  const kit = createKit(game, { shared: duck.shared, cast, screenH, time: uTime, proj: projector, emit: (pos, o) => burst(pos, o, false) });
+  let otherCover = 0;   // enemy-owned kit coverage of the frame (enemy / world linework, FM, ribbons, bolts)
+  const kit = createKit(game, { shared: duck.shared, cast, screenH, time: uTime, proj: projector, emit: (pos, o) => burst(pos, o, false), onOtherCover: (c) => { otherCover += c; } });
 
   // ---------- legacy ground / trail / beam entry points → kit ----------
   const DEADH = { stop() {}, setEnds() {}, setPos() {}, setPosition() {}, alive: false, t: 1, dur: 1 };
@@ -582,6 +583,7 @@ export function createVFX(game) {
       P.update(fdt, gh, game.time, proj);
       O.update(fdt, gh, game.time, proj);
       projector.begin();
+      otherCover = 0;
       const k = kit.update(fdt);
       debrisFx.update(fdt);
       updateShells(fdt);
@@ -599,7 +601,7 @@ export function createVFX(game) {
       // budgets: coverage (largest contributor shrinks first) and draw calls (oldest persistent visuals collapse)
       const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() }, rd);
       P.material.uniforms.uSoftMul.value = st.softMul; P.material.uniforms.uSizeMul.value = st.sizeMul;
-      covState.player = P.coverage + k.cover + runes.coverage(); covState.enemy = O.coverage; covState.frame++;
+      covState.player = P.coverage + k.cover + runes.coverage(); covState.enemy = O.coverage + otherCover; covState.frame++;
       covState.parts.soft = P.softCoverage; covState.parts.particles = P.coverage - P.softCoverage; covState.parts.linework = k.lwCover; covState.parts.kit = k.cover; covState.parts.runes = runes.coverage();
       if (covState.player > covState.peak) covState.peak = covState.player;
       let calls = (P.count > 0 ? 1 : 0) + k.calls + runes.calls() + debrisFx.calls();

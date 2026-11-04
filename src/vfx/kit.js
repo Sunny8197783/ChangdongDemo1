@@ -64,7 +64,7 @@ export function createKit(game, deps) {
   const toColor = (out, c, fb) => { if (c == null) return out.copy(fb); if (c.isColor) return out.copy(c); return out.setHex(c); };
 
   const glyphs = createGlyphAtlas();
-  const hooks = { shared, ramp, screenH, time, proj, outlinesOn: () => (game.quality?.budget?.fxDetail ?? 1) >= 1, onKill: null };
+  const hooks = { shared, ramp, screenH, time, proj, onOtherCover: deps.onOtherCover || null, outlinesOn: () => (game.quality?.budget?.fxDetail ?? 1) >= 1, onKill: null };
   const lw = createLinework(game, glyphs, hooks);
   const fm = createFxMesh(game, hooks);
   const rb = createRibbons(game, hooks);
