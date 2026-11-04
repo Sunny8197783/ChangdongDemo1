@@ -183,7 +183,16 @@ module.exports = async function world(PT) {
       const c2 = W.debug.flora().culls;
       PT.check('flora re-cull: none while still, ≤ every 4th frame while turning', c1 === c0 && c2 - c1 <= 10 && c2 - c1 >= 5, { still: c1 - c0, turning40: c2 - c1 });
       PT.check('grass receiveShadow off at medium', W.grass.layers.every((L) => L.mesh.receiveShadow === false));
-      PT.check('terrain never casts shadows', (() => { let ok = true; W.terrainMesh.traverse((o) => { if (o.castShadow) ok = false; }); return ok; })());
+      PT.check('terrain never casts shadows', (() => { let ok = true; W.terrainMesh.traverse((o) => { if (o.castShadow && o.name !== 'worldShadowHook') ok = false; }); return ok; })());
+      // shadow-only casters (flora families, village proxy) reach the shadow pass through the hook, never the main pass
+      {
+        const R = g.renderer, o = R.renderBufferDirect.bind(R); let main = 0, shadow = 0; let inShadow = false;
+        const sm = R.shadowMap, smo = sm.render.bind(sm);
+        sm.render = (...a) => { inShadow = true; try { return smo(...a); } finally { inShadow = false; } };
+        R.renderBufferDirect = function (c, sc, geo, m, ob, gr) { if (/^floraShadow_|villageShadowProxy/.test(ob.name)) { if (inShadow) shadow++; else main++; } return o(c, sc, geo, m, ob, gr); };
+        try { PT.tp(-20, 45); PT.step(0.1); g.step(1, 1 / 60, true); g.renderNow(); } finally { R.renderBufferDirect = o; sm.render = smo; }
+        PT.check('shadow-only casters draw in the shadow pass only', shadow >= 1 && main === 0, { shadow, main });
+      }
     });
 
     await pg.run('heightField', () => {

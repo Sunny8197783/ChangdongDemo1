@@ -1,9 +1,11 @@
 # world — requests to other owners (v4)
 
-- **core** (main.js `applyShadowMode`): world's flora shadow casters are shadow-only InstancedMeshes on **layer 1**
-  (`flora.js SHADOW_LAYER`), seen by the sun's shadow camera only. `applyShadowMode` resets `sun.shadow.camera.layers.mask = 1`
-  on every settings change; world re-ORs bit 1 each frame (only while bit 0 is set, i.e. shadows on), so it works today —
-  please make `SHADOW_LAYERS_ALL = 0b11` so the two never fight.
+- **core** (main.js `applyShadowMode`): three r160's `WebGLShadowMap.renderObject` tests casters against the **view** camera's
+  layers, not `light.shadow.camera.layers`, so `sun.shadow.camera.layers.mask = 0` ("shadows off" → see nothing) does not hide
+  any caster. World's shadow-only casters (flora families, village proxy) live on layer 1 and are switched in by a hook caster
+  (`worldShadowHook`, first in the traversal, `onBeforeShadow` enables layer 1 on the view camera; the sky's `onBeforeRender`
+  disables it). If core wants a real "shadows off", skip the shadow render (`shadowMap.needsUpdate = false` after one clear)
+  rather than the mask; please keep the view camera's layer 1 free for this (no `camera.layers.enableAll()`).
 - **core** (harness `PT.draws().byGroup` / `PT.fragments({owner:'world'})`): everything not enemies/player/fx/tells/ui is
   attributed to `world`, including the village NPCs (ux `src/story/npcs.js`, ~19 scene + 12 shadow calls, ~50k shadow
   tris in S-village; still drawn from the plains spot 100 m away) and the training dummies (mobs, 8 calls). For C6 please

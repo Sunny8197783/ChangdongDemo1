@@ -40,22 +40,27 @@ World-owned counts use `world.debug.owns()` (NPCs = ux, training dummies = mobs 
 
 | Metric | S-plains | S-village | S-mirwen | S-elderwood | Budget |
 |---|---|---|---|---|---|
-| World scene + shadow calls, max yaw | **105 + 3** | 94 + 4 | 98 + 3 | 92 + 4 | S-plains ≤ 110 + 14; others: total − player 12 − ui 4 (159 / 144 / 144) |
-| World shadow tris | 10k | 35k → proxy (see below) | 7k | 14k | ≤ 20k |
-| All owners scene + shadow (v3 player 34 + 15 still in) | 147 + 21 | 171 + 35 | 158 + 36 | 156 + 39 | C6 at integration |
+| World scene + shadow calls, max yaw | **105 + 7** | 94 + 6 | 98 + 6 | 92 + 7 | S-plains ≤ 110 + 14; others: total − player 12 − ui 4 (159 / 144 / 144) |
+| World shadow tris | 13k | 14k (village proxy 9k; was 35k with the full village mesh) | 12k | 17k | ≤ 20k |
+| All owners scene + shadow (v3 player 34 + 15 still in) | 147 + 25 | 171 + 37 | 158 + 39 | 156 + 42 | C6 at integration |
 | LOD0 terrain chunk draws (max) | 14 | 16 | 13 | 14 | ≤ 24 and < 64 |
 | World uploads per frame while turning 60°/s (max) | 21.6 KB | 18.8 KB | 19.3 KB | 17.1 KB | ≤ 60 KB |
 | All-owner GL uploads while turning (max / p95) | 171 / 11 KB | 171 / 12 KB | 175 / 16 KB | 20 / 17 KB | ≤ 60 KB (the max frames are other owners' full-capacity vfx particle uploads, see requests) |
 | World transparents ÷ screen (max yaw) | 0.01 | 0.02 | **0.04** (was 1.37: water 0.52 + mist 0.60) | 0.005 | ≤ 0.5 |
 | World scene fragments ÷ screen (max yaw) | 1.62 (v3 3.61) | 1.47 | 1.50 | 1.63 | S-* scene ≤ 2.2 all owners |
 
-- **noTerrain, S-elderwood, 960×540, ABAB median**: v3 0.60 → **0.84–0.86** with the terrain shading removed and its depth kept
-  (gate). Plain hide 0.78–0.83 (since the sky now draws last, hiding the terrain makes the sky shade the hole — v3's ablation
+- **noTerrain, S-elderwood, 960×540, ABAB median**: v3 0.60 → **0.86–0.92** with the terrain shading removed and its depth kept
+  (gate; three runs 0.864 / 0.918 / final in the report). Plain hide 0.78–0.86 (since the sky now draws last, hiding the terrain makes the sky shade the hole — v3's ablation
   never paid that); MeshBasic vertex-colour terrain 0.96 (the remaining terrain cost is the grain fetch + shadow).
   Three non-world point lights (vfx, v3) are hidden for this measurement (§2.2 medium = 0); with them visible the ratio is ~0.70.
   SwiftShader pair spread is ±20 % on the shared 4-CPU machine (other agents), so single runs can land ±0.05.
 - S-plains draw-call breakdown at 0° (world only): terrain 14 chunks + 1 far, flora 33 (12 sets × near/far/outline), grass 3,
   village 8 (from 100 m), gates 6, structures 3, ambience 3, fire barrels 3, sky 1, far mountains 1, water 1, world tree 2, beacon 0.
+  Shadow pass (world): flora families 3 (deciduous / pine / rock far-LOD casters), fire barrels 1, structures 1, windmill sails 1,
+  the layer hook 1 (degenerate, 0 px); the village proxy 1 when the village is in the shadow box.
+- Shadow-only casters: three r160 tests shadow casters against the VIEW camera's layers (WebGLShadowMap.renderObject), so the
+  shadow camera's layer mask (core `applyShadowMode`) has no effect; world uses a degenerate hook caster whose `onBeforeShadow`
+  enables layer 1 on the view camera for the shadow pass and the sky's `onBeforeRender` disables it before the next list build.
 - Programs: beacon adds 2 (prewarmed); terrain v4 replaces the toon terrain program 1:1; flora sets keep their v3 program keys + `|awinst`.
 - heightField: 0.00024 m GPU, 0 CPU texel error.
 - Flora re-culls: 0 while still, 10 per 40 turning frames (every 4th frame).
