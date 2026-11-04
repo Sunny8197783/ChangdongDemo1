@@ -14,6 +14,7 @@ import * as Rig from './rig.js';
 import { buildBokoblin, buildShaman, buildChuchu, buildDummy } from '../models.js';
 import { buildLizard, buildShroom, buildWolf, buildWraith, buildVoidKnight } from '../models2.js';
 import { bokoblinDef } from './bokoblin.js';
+import { shamanDef } from './shaman.js';
 
 /** type → (opts) => def (rig.defineType input). Filled by the species files as they land. */
 const FACTORIES = {};
@@ -25,6 +26,7 @@ export function registerType(type, defFor, { variants = null } = {}) {
 }
 
 registerType('bokoblin', () => bokoblinDef());
+registerType('shaman', (o) => shamanDef(o), { variants: ['fire', 'ice'] });
 
 const V3 = {
   bokoblin: () => buildBokoblin(), shaman: (o) => buildShaman(o?.element || o?.variant || 'fire'), chuchu: (o) => buildChuchu(o?.variant || 'normal'),

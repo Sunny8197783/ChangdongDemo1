@@ -312,6 +312,7 @@ function assemble(def, R, list, mode) {
       if (colFn) { _c.setHex(0xffffff); colFn(local, nl, _c, _v); } else _c.copy(_c2);
       if (def.paint && mode !== 'glow') def.paint(_v, _n, _c, q, local);
       if (q.f.dark) _c.multiplyScalar(q.f.dark);
+      if (q.f.glowK) _c.multiplyScalar(Math.min(1.2, q.f.glowK));
       col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b;
       if (parentBi >= 0 && parentBi !== undefined) {
         const dd = bSg * local.getComponent(bAx);
