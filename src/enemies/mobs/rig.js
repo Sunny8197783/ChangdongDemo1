@@ -90,11 +90,15 @@ function tubeGeo(spec, d) {
   const radii = spec.radii.length === nPts ? spec.radii : pts.map((_, i) => spec.radii[0] + (spec.radii[1] - spec.radii[0]) * (i / (nPts - 1)));
   const n = seg(spec.n, d, 3), comp = spec._comp ? 1 / Math.cos(Math.PI / n) : 1;
   const pos = [], idx = [];
-  const tan = new THREE.Vector3(), nor = new THREE.Vector3(), bin = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const tan = new THREE.Vector3(), nor = new THREE.Vector3(), bin = new THREE.Vector3(), prevT = new THREE.Vector3(), qq = new THREE.Quaternion();
   for (let i = 0; i < nPts; i++) {
     tan.subVectors(pts[Math.min(nPts - 1, i + 1)], pts[Math.max(0, i - 1)]).normalize();
-    if (Math.abs(tan.dot(up)) > 0.95) up.set(1, 0, 0); else up.set(0, 1, 0);
-    nor.crossVectors(tan, up).normalize(); bin.crossVectors(nor, tan).normalize();
+    if (i === 0) {   // parallel-transport frame (no flips along curved horns / tails)
+      const up = Math.abs(tan.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+      nor.crossVectors(tan, up).normalize();
+    } else { qq.setFromUnitVectors(prevT, tan); nor.applyQuaternion(qq).normalize(); }
+    prevT.copy(tan);
+    bin.crossVectors(nor, tan).normalize();
     const r = radii[i] * comp;
     for (let j = 0; j < n; j++) {
       const a = j / n * TAU, ca = Math.cos(a), sa = Math.sin(a);
@@ -199,7 +203,7 @@ export function eye(bone, p, r, o = {}) {
   const ir = r * (o.irisK ?? 0.62);
   const irisPart = P(bone, S(ir, 8, 6), o.iris ?? 0x6a4a2a, at(0.78), [0, yaw, 0], [1, o.slit ? 1.05 : 1, 0.38], { ...flags, glow: !!o.glowIris });
   parts.push(irisPart);
-  const pr = r * (o.pupilK ?? 0.3);
+  const pr = r * (o.pupilK ?? 0.36);
   parts.push(P(bone, S(pr, 6, 4), o.pupil ?? 0x120c0a, at(0.98), [0, yaw, 0], o.slit ? [0.32, 2.1, 0.3] : [1, 1, 0.35], flags));
   const hs = o.hiSide ?? 1;
   parts.push(P(bone, S(r * 0.17, 4, 3), 0xfdf6ea, at(1.02, r * 0.3, -hs * r * 0.22), [0, 0, 0], [1, 1, 0.5], flags));
@@ -331,9 +335,10 @@ function assemble(def, R, list, mode) {
   if (mode === 'body' || mode === 'lod') ambientOcclusion(def, out);
   return out;
 }
+const AO_KINDS = { sph: 1, cap: 1, cyl: 1, box: 1, cone: 1, oct: 1, ico: 1, lathe: 1 };
 /** Crevice AO baked into vertex colours (−25 % value where a vertex sits on another part's surface), + ground-contact darkening. */
 function ambientOcclusion(def, A) {
-  const casters = A.chunks.filter((c) => c.q.f.ao !== false && !c.q.f.small && Math.max(...c.ext) >= (def.aoMin ?? 0.07));
+  const casters = A.chunks.filter((c) => c.q.f.ao !== false && !c.q.f.small && c.q.f.aoCast !== false && AO_KINDS[c.q.spec.k] && Math.max(...c.ext) >= (def.aoMin ?? 0.07));
   const v = new THREE.Vector3(), q = new THREE.Vector3();
   const strength = def.aoStrength ?? 0.25;
   for (const ch of A.chunks) {
@@ -406,7 +411,7 @@ export function defineType(def) {
   const glowParts = def.parts.filter((q) => q.f.glow).concat(def.glow || []);
   const size = (q) => { const e = primExt(q.spec); return Math.max(e[0] * q.s[0], e[1] * q.s[1], e[2] * q.s[2]); };
   const lodParts = bodyParts.filter((q) => q.f.lod || (!q.f.noLod && !q.f.small && size(q) >= (def.lodMin ?? 0.09)));
-  const proxyParts = bodyParts.filter((q) => q.f.proxy || (!q.f.noProxy && !q.f.small && size(q) >= (def.proxyMin ?? 0.12)));
+  const proxyParts = bodyParts.filter((q) => q.f.proxy || (!q.f.noProxy && !q.f.small && q.spec.k !== 'card' && size(q) >= (def.proxyMin ?? 0.12)));
   const body = assemble(def, R, bodyParts, 'body');
   const lod = assemble(def, R, lodParts, 'lod');
   const proxy = assemble(def, R, proxyParts, 'proxy');
@@ -431,6 +436,7 @@ export function defineType(def) {
     verts: { body: body.vCount, lod: lod.vCount, proxy: proxy.vCount, glow: glow ? glow.vCount : 0 },
     bytes: [geo, proxyGeo, glowGeo].reduce((s, g) => s + (g ? Object.values(g.attributes).reduce((a, at) => a + at.array.byteLength, 0) + g.index.array.byteLength : 0), 0),
     eyes, buildMs: 0, instances: 0,
+    partTris: body.chunks.map((c) => [c.q.bone + ':' + c.q.spec.k, c.ix.length / 3]),
   };
   TT.buildMs = +(performance.now() - t0).toFixed(2);
   TYPES.set(TT.key, TT);
@@ -610,6 +616,7 @@ export function instantiate(TT, opts = {}) {
   model._jawOpen = def.jawOpen ?? 0.35;
   if (opts.scale && opts.scale !== 1) root.scale.setScalar(opts.scale);
   TT.instances++;
+  if (def.lids && B.lidL) { B.lidL.scale.y = def.lids.open; B.lidR.scale.y = def.lids.open; }
   def.onInstance?.(model, B, anchors);
   applyPose(model, 'idle', 0, 1);
   return model;
@@ -721,3 +728,41 @@ export function stats() {
   for (const [k, T2] of TYPES) out[k] = { tris: T2.tris, verts: T2.verts, kb: Math.round(T2.bytes / 1024), buildMs: T2.buildMs, instances: T2.instances };
   return out;
 }
+
+// =====================================================================================================================
+// authoring helpers
+// =====================================================================================================================
+const _up = new THREE.Vector3();
+/** Euler [x,y,z] that turns the primitive's `axis` ('y' cylinders/cones/capsules, 'z' tori) onto direction d. */
+export function orient(d, axis = 'y') {
+  _v.set(d[0], d[1], d[2]).normalize();
+  _up.set(axis === 'z' ? 0 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0);
+  _q.setFromUnitVectors(_up, _v); _e.setFromQuaternion(_q);
+  return [_e.x, _e.y, _e.z];
+}
+/** Point + tangent on a polyline at u ∈ [0,1]. */
+export function along(pts, u) {
+  const n = pts.length - 1, f = Math.min(n - 1e-6, Math.max(0, u * n)), i = Math.floor(f), t = f - i;
+  const a = pts[i], b = pts[i + 1];
+  return { p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t], d: [b[0] - a[0], b[1] - a[1], b[2] - a[2]] };
+}
+/** A ring band (torus) around a polyline (horn bands, wraps) at u. */
+export function bandAt(boneName, pts, u, R, t, color, flags = {}) {
+  const { p, d } = along(pts, u);
+  return P(boneName, T(R, t, 10, 4), color, p, orient(d, 'z'), [1, 1, 1], { small: true, ...flags });
+}
+/** Smooth quadratic-bezier polyline from a → c with control b, n points. */
+export function curve(a, b, c, n = 5) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), u = 1 - t;
+    out.push([u * u * a[0] + 2 * u * t * b[0] + t * t * c[0], u * u * a[1] + 2 * u * t * b[1] + t * t * c[1], u * u * a[2] + 2 * u * t * b[2] + t * t * c[2]]);
+  }
+  return out;
+}
+/** Hex lerp → THREE.Color (linear), for vertex-colour painters. */
+export function mixInto(out, a, b, t) { _c.setHex(a); _c2.setHex(b); out.copy(_c).lerp(_c2, t < 0 ? 0 : t > 1 ? 1 : t); return out; }
+/** Vertical gradient painter: c0 at local y0 → c1 at y1. */
+export const grad = (c0, c1, y0, y1, axis = 'y') => (l, n, out) => mixInto(out, c0, c1, ((axis === 'y' ? l.y : axis === 'z' ? l.z : l.x) - y0) / (y1 - y0));
+/** Belly painter: base colour on the back, belly colour where the local normal faces +z (front) and down. */
+export const belly = (base, bel, k = 0.55) => (l, n, out) => mixInto(out, base, bel, (n.z * 0.8 - n.y * 0.4 - (1 - k)) / k);
