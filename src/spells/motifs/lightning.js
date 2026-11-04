@@ -40,7 +40,7 @@ export function install(kit, game) {
   /** trail: soft plasma orb (`mid` body, crisp `light` rim) + a thin violet streak ribbon. */
   M.trail = (s) => {
     const sc = s.scale ?? 1;
-    const out = [kit.mesh('lightning.orb', { follow: s.follow, pos: s.pos, scale: 0.55 * sc, life: s.life ?? Infinity, tIn: 0.06, tOut: 0.1, erode: false, castId: s.castId })];
+    const out = [kit.mesh('lightning.orb', { follow: s.follow, pos: s.pos, scale: 0.55 * sc, life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, erode: false, castId: s.castId })];
     if (s.follow) out.push(kit.ribbon({ follow: s.follow, width: 0.08 * sc, taper: 1, life: 0.14, maxLen: s.len ?? 1.4, el: 'lightning', castId: s.castId, tailSat: 0.4 }));
     return H(out);
   };
@@ -48,8 +48,8 @@ export function install(kit, game) {
   M.burst = (s) => {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
     const rnd = rng((s.castId || 1) * 19 + 11), a0 = rnd() * TAU;
-    for (let i = 0; i < 3; i++) { const a = a0 + i * TAU / 3 + rnd() * 0.4; out.push(bolt(s.pos, v3(s.pos.x + Math.cos(a) * r * 1.2, s.pos.y + (rnd() - 0.3) * r * 0.6, s.pos.z + Math.sin(a) * r * 1.2), s.castId, { forks: 1, width: 0.06, life: 0.05, seed: (s.castId || 1) * 3 + i })); }
-    out.push(kit.line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.hi, color2: R.light, rot: 0.785 }));
+    for (let i = 0; i < 3; i++) { const a = a0 + i * TAU / 3 + rnd() * 0.4; out.push(bolt(s.pos, v3(s.pos.x + Math.cos(a) * r * 1.7, s.pos.y + 0.2 + rnd() * r * 0.5, s.pos.z + Math.sin(a) * r * 1.7), s.castId, { forks: 1, width: 0.07, life: 0.06, seed: (s.castId || 1) * 3 + i })); }
+    out.push(kit.line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot: 0.785 }));
     out.push(kit.line({ shape: 'ticks', n: 12, r2: 0.7, el: 'lightning', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.05, width: 0.025, life: 0.32, tIn: 0.0, tOut: 0.2, scaleIn: 'expand', spin: 2, castId: s.castId }));
     if (gp && s.decal !== false) out.push(kit.decal('lichtenberg', gp, r * 0.8, s.decalLife ?? 0.6, { el: 'lightning', castId: s.castId, alpha: 0.32 }));
     kit.spark(s.pos, 'lightning', Math.min(8, s.n ?? 6), null, { castId: s.castId, speed: 7, life: 0.2 });

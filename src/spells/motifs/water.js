@@ -41,7 +41,7 @@ export function install(kit, game) {
   );
   M.trail = (s) => {
     const sc = s.scale ?? 1;
-    const out = [kit.mesh('water.droplet', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 1.1 * sc, life: s.life ?? Infinity, tIn: 0.06, tOut: 0.1, erode: true, castId: s.castId })];
+    const out = [kit.mesh('water.droplet', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 1.1 * sc, life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, erode: true, castId: s.castId })];
     if (s.follow) out.push(kit.ribbon({ follow: s.follow, width: 0.1 * sc, taper: 1, life: 0.18, maxLen: s.len ?? 1.0, el: 'water', castId: s.castId, tailSat: 0.35 }));
     return H(out);
   };
@@ -49,7 +49,7 @@ export function install(kit, game) {
   M.burst = (s) => {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
     out.push(...crown(s.pos, Math.min(8, s.n ?? 6), s.castId, 3 + r * 0.8));
-    out.push(kit.line({ shape: 'ring', el: 'water', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.95, width: 0.04, life: 0.45, tIn: 0, tOut: 0.3, scaleIn: 'expand', castId: s.castId, color: R.light }));
+    out.push(kit.line({ shape: 'ring', el: 'water', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.72, width: 0.04, life: 0.45, tIn: 0, tOut: 0.3, scaleIn: 'expand', castId: s.castId, color: R.mid, color2: R.light }));
     out.push(kit.line({ shape: 'ring', el: 'water', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.6, width: 0.022, life: 0.55, tIn: 0.08, tOut: 0.3, scaleIn: 'expand', castId: s.castId, color: R.hi, alpha: 0.6 }));
     if (gp && s.decal !== false) out.push(kit.decal('ripple', gp, r * 1.2, s.decalLife ?? 0.9, { el: 'water', castId: s.castId, alpha: 0.3 }));
     return H(out);

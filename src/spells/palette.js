@@ -35,7 +35,7 @@ export function elementOfHex(hex) {
   if (memo.size < 512) memo.set(hex, r);
   return r;
 }
-/** The `hi` glint of the element a colour belongs to (replaces v3 0xffffff cores). */
+/** The `hi` glint of the element a colour belongs to (replaces the v3 pure-white cores). */
 export const glint = (hex) => hiOf(elementOfHex(typeof hex === 'number' ? hex : 0x8A8274));
 /** Physical `hi` (the only neutral highlight in the ramps). */
 export const GLINT = FX.physical.hi;

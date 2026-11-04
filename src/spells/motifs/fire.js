@@ -57,7 +57,7 @@ export function install(kit, game) {
   /** trail: soft toon flame body (swept tongues, thin hi core) + tapered ribbon. setDir is driven by the caller. */
   M.trail = (s) => {
     const sc = s.scale ?? 1;
-    const out = [kit.mesh('fire.comet', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.9 * sc, life: s.life ?? Infinity, tIn: 0.08, tOut: 0.12, erode: true, castId: s.castId, spin: 0 })];
+    const out = [kit.mesh('fire.comet', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.9 * sc, life: s.life ?? Infinity, tIn: 0.12, tOut: 0.12, erode: true, castId: s.castId, spin: 0 })];
     if (s.follow) out.push(kit.ribbon({ follow: s.follow, width: 0.2 * sc, taper: 0.95, life: 0.22, maxLen: s.len ?? 1.2 * sc + 0.4, el: 'fire', castId: s.castId, tailSat: 0.25 }));
     return H(out);
   };
@@ -66,7 +66,7 @@ export function install(kit, game) {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null;
     const base = gp || s.pos, out = [];
     const rnd = rng((s.castId || 1) * 31 + 3);
-    out.push(kit.line({ shape: 'crescent', el: 'fire', pos: s.pos, plane: 'billboard', r: r * 0.8, width: 0.05, life: 0.1, tIn: 0.0, tOut: 0.06, castId: s.castId, color: R.hi, color2: R.light, rot: rnd() * TAU }));
+    out.push(kit.line({ shape: 'crescent', el: 'fire', pos: s.pos, plane: 'billboard', r: r * 0.8, width: 0.05, life: 0.1, tIn: 0.0, tOut: 0.06, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot: rnd() * TAU }));
     out.push(kit.line({ shape: 'ring', el: 'fire', pos: base, plane: gp ? 'ground' : 'billboard', r: r * 1.1, width: 0.035, life: 0.32, tIn: 0.0, tOut: 0.22, scaleIn: 'expand', castId: s.castId, alpha: 0.8 }));
     const n = s.petals ?? 8, y0 = rnd() * TAU;
     for (let i = 0; i < n; i++) {

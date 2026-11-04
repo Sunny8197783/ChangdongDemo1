@@ -52,6 +52,7 @@ export function createLooks(S) {
   const game = S.game;
   let cur = null, kitReal = null, K = null, installed = false;
   const MY = {};                 // el → motif table (magic's 5 elements)
+  const standins = new Set();    // 'el:kind' registered by magic as stand-ins (melee may overwrite)
   let FB = null;                 // caster stand-ins for the melee elements
   let ROWS = {};
   const issued = { id: 0, used: 0 };
@@ -72,6 +73,9 @@ export function createLooks(S) {
       MY.fire = Fire.install(K, game).M; MY.ice = Ice.install(K, game).M; MY.lightning = Lightning.install(K, game).M;
       MY.wind = Wind.install(K, game).M; MY.water = Water.install(K, game).M;
       installArrows(K); FB = createFallbacks(K, game);
+      // caster stand-ins become the kit's motifs for earth / nature / light / shadow only while melee has not registered its own
+      // (sword runs after spells in ORDER and overwrites them; hitFeel / impact presets then never fall to the generic fallback)
+      for (const el of ['earth', 'nature', 'light', 'shadow']) for (const kind in FB[el]) if (!k.hasMotif(el, kind)) { const fn = FB[el][kind]; k.registerMotif(el, kind, (spec) => fn(spec)); standins.add(el + ':' + kind); }
       ROWS = createRows(api);
       installed = true;
     } catch (err) { warnOnce('install', err); installed = false; }
@@ -87,20 +91,25 @@ export function createLooks(S) {
   const on = () => installed && !!game.vfx?.kit && game.vfx.kit === kitReal;
 
   // ------------------------------------------------------------------ budget facade over the kit
+  // casts by castId (ring of 64): deferred visuals that run outside a context (objects, summons, vfx hit feel) still meet the cast budget
+  const byId = new Map();
+  const ctxOf = (s) => cur || (s && s.castId ? byId.get(s.castId) : null) || null;
   function facade(k) {
-    const can = () => {
-      const c = cur; if (!c) return true;
+    const can = (s) => {
+      const c = ctxOf(s); if (!c) return true;
       if (c.h >= c.cap.handles) { c.refused++; return false; }
       c.h++; return true;
     };
+    const mid = (s) => { const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = k.ramp(el).light; return s; };
     const F = Object.create(k);
-    F.line = (s) => (can() ? stampCast(s) && k.line(s) : DEAD);
-    F.mesh = (n, s) => (can() ? stampCast(s) && k.mesh(n, s) : DEAD);
-    F.ribbon = (s) => (can() ? stampCast(s) && k.ribbon(s) : DEAD);
-    F.bolt = (s) => (can() ? stampCast(s) && k.bolt(s) : DEAD);
-    F.decal = (kind, p, r, life, o = {}) => (can() ? (o.castId == null && cur && (o.castId = cur.castId), k.decal(kind, p, r, life, o)) : DEAD);
+    // v4 palette discipline: linework bodies in the element `mid` step (saturated), `light` for the secondary / rims, `hi` only where a row asks for a glint
+    F.line = (s) => (can(s) ? stampCast(s) && k.line(mid(s)) : DEAD);
+    F.mesh = (n, s) => (can(s) ? stampCast(s) && k.mesh(n, s) : DEAD);
+    F.ribbon = (s) => { if (!can(s)) return DEAD; stampCast(s); s.tailSat = Math.max(0.75, s.tailSat ?? 0.85); return k.ribbon(s); };
+    F.bolt = (s) => { if (!can(s)) return DEAD; stampCast(s); if (s.core == null && !s.owner) s.core = k.ramp(s.el || 'lightning').light; return k.bolt(s); };
+    F.decal = (kind, p, r, life, o = {}) => { if (!can(o)) return DEAD; if (o.castId == null && cur) o.castId = cur.castId; if (o.color == null && o.el) o.color = k.ramp(o.el).mid; return k.decal(kind, p, r, life, o); };
     F.spark = (p, el, n, dir, o = {}) => {
-      const c = cur;
+      const c = ctxOf(o);
       if (c) { tickWindow(c); const left = c.cap.particles - c.p; n = Math.min(n, left); if (n <= 0) return; c.p += n; if (o.castId == null) o.castId = c.castId; }
       k.spark(p, el, n, dir, o);
     };
@@ -122,6 +131,7 @@ export function createLooks(S) {
       t0: now(), data: {},
     };
     issued.used = Math.max(issued.used, castId);
+    if (castId) { byId.set(castId, c); if (byId.size > 64) byId.delete(byId.keys().next().value); }
     const prev = cur; cur = c;
     return prev;
   }
@@ -148,16 +158,17 @@ export function createLooks(S) {
     try {
       const mine = MY[el]?.[kind];
       if (mine) return mine(spec);
-      if (kitReal.hasMotif?.(el, kind)) return kitReal.motif(el, kind, spec);        // melee's earth / nature / light / shadow
+      if (kitReal.hasMotif?.(el, kind)) return kitReal.motif(el, kind, spec);   // melee's earth / nature / light / shadow (or magic's stand-in until melee registers)
       const f = FB?.[el]?.[kind];
       if (f) return f(spec);
       return kitReal.motif(el, kind, spec);                                           // vfx generic (marks the cast 'generic')
     } catch (err) { warnOnce('motif:' + el + ':' + kind, err); return null; }
   }
-  /** Element motif source for lookOf: 'magic' | 'melee' | 'standin' | 'generic'. */
+  /** Element motif source for lookOf: 'magic' | 'melee' | 'standin' | 'generic' ('standin' = magic registered it; melee overwrites it when present). */
   function motifSource(el) {
     if (MY[el]) return 'magic';
-    if (kitReal?.hasMotif?.(el, 'burst')) return 'melee';
+    if (kitReal?.hasMotif?.(el, 'burst') && !standins.has(el + ':burst')) return 'melee';
+    if (kitReal?.hasMotif?.(el, 'burst') && game.sword?.lookOf) return 'melee';
     if (FB?.[el]) return 'standin';
     return 'generic';
   }
@@ -192,7 +203,7 @@ export function createLooks(S) {
     const sc = o.scale || 1;
     if (key === 'arrow') {
       const R = rampOf(el);
-      return [K.mesh(el + '.arrow', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: 1.05 * sc, life: Infinity, tIn: 0.02, tOut: 0.08, erode: false }),
+      return [K.mesh(el + '.arrow', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: 1.05 * sc, life: Infinity, tIn: 0.12, tOut: 0.08, erode: false }),
         K.ribbon({ follow: p.proxy, width: 0.07 * sc, taper: 1, life: 0.3, maxLen: 3.2, el, colors: { head: R.light, edge: R.light }, tailSat: 0.3 })].filter(Boolean);
     }
     if (key === 'meteor') return null;   // rows handle the meteor
@@ -226,6 +237,7 @@ export function createLooks(S) {
     if (!on()) return null;
     const c = cur, el = o.el || c?.el || 'physical';
     if (c?.row?.zone) { const res = c.row.zone(kind, pos, r, life, o); if (res !== undefined) return toArr(res); }
+    if (kind === 'lane' && o.dir) return lane(el, pos, o, life);
     return toArr(motif(el, 'zone', { pos, r, life: life ?? 4, follow: o.follow }));
   }
   // ---- archetype-level hooks (archetypes.js calls them; rows may override each by name)
@@ -274,6 +286,15 @@ export function createLooks(S) {
     motif(el, 'spark', { pos: b.clone(), n: 5 });
     return out;
   }
+  /** Rune circles: U / F casts keep the v3 sigils the user likes; everything else gets the element's own glyph circle
+   *  (crisp LW, distinct per element: the shared rune texture made every element's zone / summon / buff silhouette identical). */
+  function sigil(pos, o, raw) {
+    const c = cur;
+    if (!on() || !c || c.tier === 'U' || c.tier === 'F' || c.row?.keepSigil) return raw(pos, o);
+    const el = c.el || 'physical', r = Math.max(0.6, Math.min(4, (o.radius ?? 2) * 0.85));
+    return K.line({ shape: 'glyph', glyph: EL9.includes(el) ? el : 'hexagram', el, pos: v1.set(pos.x, S.height(pos.x, pos.z) + 0.05, pos.z).clone(), plane: 'ground', r, width: 0.04,
+      life: Math.min(1.2, o.duration ?? 0.8), tIn: 0.28, tOut: 0.3, spin: Math.sign(o.spin ?? 1) * 0.9, alpha: 0.8 });
+  }
   /** props.spikes eruption (ice): rows decide (ice.ult wave front); default = one FM prism within the cast budget. */
   function spike(x, y, z, o = {}) {
     if (!on()) return false;
@@ -288,6 +309,19 @@ export function createLooks(S) {
     if (!on()) return null;
     const r = rowHook('aura', el, obj, dur); if (r !== undefined) return toArr(r);
     return toArr(motif(el, 'aura', { follow: obj, pos: obj.position, life: dur }));
+  }
+  /** Lane surfaces (ice road / tailwind / frost ground): linework stations along the strip + tiny prisms (ice). */
+  function lane(el, pos, o, life) {
+    const d = v1.set(o.dir.x, 0, o.dir.z).normalize().clone(), len = o.len || 12, w = o.width || 3, out = [];
+    const n = Math.max(2, Math.min(4, Math.round(len / 3.2)));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n, p = new THREE.Vector3(pos.x + d.x * len * t, 0, pos.z + d.z * len * t); p.y = S.height(p.x, p.z) + 0.05;
+      if (el === 'ice') out.push(K.line({ shape: 'poly', sides: 6, el: 'ice', pos: p, plane: 'ground', r: w * 0.42, width: 0.04, life, tIn: 0.15 + i * 0.06, tOut: 0.4, alpha: 0.4, rot: Math.atan2(d.z, d.x) }));
+      else out.push(K.line({ shape: el === 'wind' ? 'spiral' : 'dots', turns: 0.7, arms: 2, n: 14, el, pos: p, plane: 'ground', r: w * 0.42, width: 0.035, life, tIn: 0.15 + i * 0.06, tOut: 0.4, spin: el === 'wind' ? 2 : 0.5, alpha: 0.32 }));
+    }
+    if (el === 'ice') for (let i = 0; i < 2; i++) { const t = (i + 1) / 3, p = new THREE.Vector3(pos.x + d.x * len * t + d.z * w * 0.5, 0, pos.z + d.z * len * t - d.x * w * 0.5); p.y = S.height(p.x, p.z);
+      out.push(K.mesh('ice.stub', { pos: p, scale: 0.55, life, tIn: 0.2 + i * 0.1, tOut: 0.4, erode: true })); }
+    return out.filter(Boolean);
   }
   const toArr = (x) => (x == null ? null : Array.isArray(x) ? x.filter(Boolean) : [x]);
   const stopAll = (list, fade = true) => { if (!list) return; for (const h of list) { try { h?.stop?.(fade); } catch (_) { /* */ } } };
@@ -367,7 +401,7 @@ export function createLooks(S) {
     const c = cur;
     if (o.follow && c && !c.trail) {
       c.trail = true;
-      h.rb = K.ribbon({ follow: o.follow, width: Math.min(0.22, (o.size ?? 0.2) * 0.9), taper: 1, life: 0.3, maxLen: 3, el: c.el, alpha: 0.6 });
+      h.rb = K.ribbon({ follow: o.follow, followOff: o.offset, width: Math.min(0.12, (o.size ?? 0.2) * 0.6), taper: 1, life: 0.22, maxLen: 1.6, el: c.el, alpha: 0.55 });
     }
     return h;
   }
@@ -400,11 +434,57 @@ export function createLooks(S) {
     if (!from || !to) return null;
     const c = cur, el = c?.el || colEl(o.color) || 'physical';
     const jag = o.jagged ?? 0.3, w = o.width ?? 0.12;
+    // hand → target lines start 1.2 m out from the caster's hand (nothing drawn right in front of the camera)
+    const pp = game.player?.object?.position;
+    if (pp && Math.hypot(from.x - pp.x, from.z - pp.z) < 1.5) { const L2 = from.distanceTo(to); if (L2 > 3) from = from.clone().lerp(to, Math.min(0.3, 1.2 / L2)); }
     if (el === 'lightning' || jag > 0.2) {
       return K.bolt({ from, to, forks: Math.min(2, o.branches ?? (c?.tier === 'B' ? 1 : 2)), width: Math.min(0.12, Math.max(0.05, w * 0.6)), halo: Math.min(0.35, w + 0.12),
         life: Math.min(0.1, o.duration ?? 0.08), afterglow: 0.25, el, seed: (c?.castId || 1) * 7 + (c ? c.h : 0) });
     }
-    return K.bolt({ from, to, forks: 0, jagged: 0, width: Math.min(0.12, Math.max(0.05, w * 0.25)), halo: Math.min(0.6, w * 0.55 + 0.1), life: Math.max(0.1, o.duration ?? 0.3), afterglow: 0.15, el });
+    const dur = o.duration ?? 0.3;
+    if (dur <= 0.6 && el !== 'light') {   // short vines / ink lines / water ropes: a tapered ribbon (body in mid, crisp light edge)
+      return K.ribbon({ points: [from, from.clone().lerp(to, 0.5).setY((from.y + to.y) / 2 + 0.12), to], width: Math.min(0.3, Math.max(0.12, w)), taper: 0.6, life: Math.max(0.2, dur), el, alpha: 0.85 });
+    }
+    return K.bolt({ from, to, forks: 0, jagged: 0, width: Math.min(0.12, Math.max(0.05, w * 0.25)), halo: Math.min(0.6, w * 0.55 + 0.1), life: Math.max(0.1, dur), afterglow: 0.15, el });
+  }
+
+  // ------------------------------------------------------------------ boot warm-up (first cast ≤ 8 ms: the JS paths of every look run once at boot)
+  function warmup() {
+    if (!on()) return 0;
+    const far = new THREE.Vector3(0, -400, 0), dir = new THREE.Vector3(0, 0, 1), proxy = new THREE.Object3D();
+    proxy.position.copy(far); game.scene.add(proxy);
+    const t0 = performance.now(); let n = 0;
+    const prev = cur;
+    try {
+      for (const el of EL9) for (const kind of ['cast', 'trail', 'burst', 'spark', 'zone', 'pillar', 'wave', 'aura', 'summon']) {
+        cur = null; motif(el, kind, { pos: far.clone(), follow: kind === 'trail' || kind === 'aura' ? proxy : undefined, dir, r: 2, h: 3, life: 0.05, castId: 0 }); n++;
+      }
+      begin({ skillId: 'fire.rising', castId: -1 });
+      const far2 = far.clone().setX(4);
+      for (const el of EL9) {
+        cur.el = el; cur.h = 0; cur.p = 0; cur.burst = 0;
+        fx('burst', [far.clone(), { count: 10, shape: 'spark', color: 0x8899aa }]); fx('shockwave', [far.clone(), { radius: 2, duration: 0.05 }]);
+        fx('beam', [far.clone(), far2.clone(), { duration: 0.05, jagged: 0.5 }]); fx('beam', [far.clone(), far2.clone(), { duration: 0.05, jagged: 0.02 }]); fx('beam', [far.clone(), far2.clone(), { duration: 1, jagged: 0.02 }]);
+        fx('groundDecal', ['scorch', far.clone(), 2, 0.05]); fx('decal', [far.clone(), { radius: 2, duration: 0.05 }]); fx('debris', [far.clone(), { count: 6 }]);
+        fx('telegraph', [{ pos: far.clone(), r: 2, dur: 0.05 }]); fx('emitter', [{ follow: proxy, size: 0.2 }]).stop();
+        impact(far.clone(), { el, r: 1 }); nova(el, far.clone(), 3); wave(far.clone(), dir, 4, 60); strike(el, far.clone(), 2, {}); blink(el, far.clone(), far2.clone());
+        n++;
+      }
+      for (const id in ROWS) {
+        const row = ROWS[id];
+        begin({ skillId: id, castId: -1 });
+        const fake = { element: cur.el, pos: far.clone(), vel: dir.clone(), proxy, meshKey: 'orb' };
+        for (const k of ['cast', 'impact', 'target']) { try { row[k]?.(k === 'target' ? { pos: far.clone(), r: 2, dur: 0.1 } : far.clone(), 2, {}); } catch (_) { /* */ } }
+        try { row.body?.(fake, { mesh: 'orb', scale: 1 }); } catch (_) { /* */ }
+        try { row.zone?.('fire', far.clone(), 3, 0.05, { follow: proxy }); } catch (_) { /* */ }
+        try { row.nova?.(cur.el, far.clone(), 4); row.wave?.(far.clone(), dir, 5, 60); row.strike?.(cur.el, far.clone(), 2, {}); } catch (_) { /* */ }
+        n++;
+      }
+    } finally { cur = prev; }
+    try { kitReal.clear?.(); } catch (_) { /* */ }
+    game.scene.remove(proxy);
+    byId.delete(-1);
+    return { n, ms: +(performance.now() - t0).toFixed(1) };
   }
 
   // ------------------------------------------------------------------ cast lock (player dodge buffer, §5.8)
@@ -416,7 +496,7 @@ export function createLooks(S) {
     const def = game.skills?.def?.(id);
     if (!def) return null;
     if (!on()) return 'legacy';
-    const el = def.element || 'physical';
+    const el = def.element || S.game.spells?.element || 'fire';   // breadth.finisher: the attuned element
     if (motifSource(el) === 'generic') return 'generic';
     if (ROWS[id]) return 'bespoke';
     if (def.slot === 'finisher') return 'archetype';
@@ -446,7 +526,7 @@ export function createLooks(S) {
 
   const api = {
     adopt, install, on, begin, end, within, swap, bind, stamp, motif, motifSource, castFx, body, impact, target, zone, fx, stopAll, toArr,
-    crawl, crawlTick, nova, wave, strike, blink, aura, rowHook, spike,
+    crawl, crawlTick, nova, wave, strike, blink, aura, rowHook, spike, sigil, warmup,
     lock, castLock, lookOf, tierOf: tierOfDef, skillOfSpell, takeIssued, CAPS, BESPOKE_IDS, MAGIC_ELEMENTS,
     get cur() { return cur; }, get kit() { return K; }, get rows() { return ROWS; }, get installed() { return installed; },
     S, game, DEAD, UP,

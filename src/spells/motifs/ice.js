@@ -40,7 +40,7 @@ export function install(kit, game) {
   );
   M.trail = (s) => {
     const sc = s.scale ?? 1;
-    const out = [kit.mesh(s.shape === 'lance' ? 'ice.lance' : 'ice.shard', { follow: s.follow, pos: s.pos, dir: s.dir, scale: (s.shape === 'lance' ? 0.8 : 1.1) * sc, life: s.life ?? Infinity, tIn: 0.06, tOut: 0.1, erode: true, castId: s.castId, spin: s.shape === 'lance' ? 0 : 5, spinAxis: v3(0, 0, 1) })];
+    const out = [kit.mesh(s.shape === 'lance' ? 'ice.lance' : 'ice.shard', { follow: s.follow, pos: s.pos, dir: s.dir, scale: (s.shape === 'lance' ? 0.8 : 1.1) * sc, life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, erode: true, castId: s.castId, spin: s.shape === 'lance' ? 0 : 5, spinAxis: v3(0, 0, 1) })];
     if (s.follow) out.push(kit.ribbon({ follow: s.follow, width: (s.shape === 'lance' ? 0.16 : 0.1) * sc, taper: 1, life: 0.16, maxLen: s.len ?? (s.shape === 'lance' ? 3 : 1.1), el: 'ice', castId: s.castId, tailSat: 0.2 }));
     return H(out);
   };
@@ -48,7 +48,7 @@ export function install(kit, game) {
   M.burst = (s) => {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos, 0) : null, out = [];
     const rot = ((s.castId || 0) * 0.61) % TAU;
-    out.push(kit.line({ shape: 'star', points: 6, r2: 0.16, el: 'ice', pos: s.pos, plane: 'billboard', r: r * 0.55, width: 0.04, life: 0.1, tIn: 0, tOut: 0.05, castId: s.castId, color: R.hi, color2: R.light, rot }));
+    out.push(kit.line({ shape: 'star', points: 6, r2: 0.16, el: 'ice', pos: s.pos, plane: 'billboard', r: r * 0.55, width: 0.04, life: 0.1, tIn: 0, tOut: 0.05, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot }));
     out.push(kit.line({ shape: 'poly', sides: 6, el: 'ice', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.9, width: 0.03, life: 0.4, tIn: 0.0, tOut: 0.25, scaleIn: 'expand', castId: s.castId, rot }));
     if (gp) {
       const n = s.prisms ?? 6;
@@ -63,7 +63,7 @@ export function install(kit, game) {
   M.zone = (s) => {
     const r = Math.max(0.6, Math.min(s.r ?? 3, 10)), life = s.life ?? 4, gp = groundAt(game, s.pos), out = [];
     const rot = ((s.castId || 0) * 0.61) % TAU;
-    out.push(kit.decal('frost', gp, r, life, { el: 'ice', castId: s.castId, alpha: 0.3, rot }));
+    out.push(kit.decal('frost', gp, r * 0.62, life, { el: 'ice', castId: s.castId, alpha: 0.3, rot }));
     out.push(kit.line({ shape: 'poly', sides: 6, el: 'ice', pos: gp, plane: 'ground', r: r * 1.02, width: 0.03, life, tIn: 0.25, tOut: 0.5, alpha: 0.35, castId: s.castId, rot }));
     const n = Math.min(6, s.prisms ?? 6), rnd = rng((s.castId || 1) * 7);
     for (let i = 0; i < n; i++) { const a = rot + (i / n) * TAU, rr = r * (0.8 + rnd() * 0.15); out.push(prismAt(groundAt(game, v3(gp.x + Math.cos(a) * rr, 0, gp.z + Math.sin(a) * rr), 0), 0.3 + rnd() * 0.25, life, s.castId, { a, lean: 0.25, stub: i % 2 === 0, tIn: 0.2 + i * 0.04 })); }

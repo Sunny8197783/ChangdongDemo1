@@ -165,5 +165,11 @@ export function createProps(game) {
   }
 
   let onNewSigil = null;
-  return { pillars, spikes, sigil, gust, setCharge, update, height, chargeGroup, sigilPool, set onNewSigil(fn) { onNewSigil = fn; } };
+  /** Remove every live prop (tests: playtest4 magic isolates casts). */
+  function clear() {
+    pillars.items.length = 0; spikes.items.length = 0; pillars.mesh.count = 0; spikes.mesh.count = 0; pillars.outline.count = 0; spikes.outline.count = 0;
+    for (const s of sigils.splice(0)) { scene.remove(s); sigilPool.push(s); }
+    for (const g of gusts.splice(0)) { scene.remove(g); gustPool.push(g); }
+  }
+  return { pillars, spikes, sigil, gust, setCharge, update, height, chargeGroup, sigilPool, clear, set onNewSigil(fn) { onNewSigil = fn; } };
 }

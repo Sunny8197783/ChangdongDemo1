@@ -997,7 +997,7 @@ export function createArchetypes(S, api, { summons, structures }) {
         if (p.puddles && d - lastPuddle > 3.5) { lastPuddle = d; api.zones.spawn('water', pos, { radius: 2.2, duration: 8 }); }
         if (p.crossWater && onWater(pos)) { try { game.world?.addPlatform?.({ id: 'surf', shape: 'disc', center: pos.clone(), r: 2.2, top: (game.world.waterLevel || pos.y) + 0.1, life: p.crossWater }); } catch (_) { /* */ } }
         ghostT -= 1 / 60;
-        if ((p.afterimages || el === 'fire' || el === 'wind') && ghostT <= 0) { ghostT = game.settings?.values?.effectQuality === 'high' ? 0.04 : 0.075; try { pl()?.spawnGhost?.(colOf(el, 'mid'), 0.35, 0.6); } catch (_) { /* */ } }
+        if ((p.afterimages || el === 'fire' || el === 'wind') && ghostT <= 0) { ghostT = L?.on() ? 0.22 : game.settings?.values?.effectQuality === 'high' ? 0.04 : 0.075; try { pl()?.spawnGhost?.(colOf(el, 'mid'), 0.35, 0.6); } catch (_) { /* */ } }
         if (el === 'fire') fx('burst', v4.copy(pos).setY(pos.y + 1.2), { count: 6, shape: 'ember', color: [0xffe080, 0xff5a10], speed: 3, spread: 1, size: 0.35, sizeEnd: 0, life: 0.5, drag: 1 });
         if (el === 'water') fx('burst', v4.copy(pos).setY(pos.y + 0.3), { count: 8, shape: 'droplet', color: [glint(0x6fc8ff), 0x6fc8ff], speed: 4, up: 3, spread: 1, size: 0.18, life: 0.5, gravity: 9 });
       },

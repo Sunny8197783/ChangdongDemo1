@@ -190,6 +190,8 @@ export function createSpells(game) {
   try {
     const kids = game.scene?.children || [];
     if (S.props.spikes) S.props.spikes.override = (x, y, z, o) => L.spike(x, y, z, o);
+    const rawSigil = S.props.sigil;
+    S.props.sigil = (pos, o = {}) => L.sigil(pos, o, rawSigil);
     for (const s of S.props.sigilPool || []) L.adopt(s, { role: 'line' });
     S.props.onNewSigil = (s) => L.adopt(s, { role: 'line' });
     for (let i = sceneN0; i < kids.length; i++) { const o = kids[i]; if (o?.name?.startsWith?.('kit-')) continue; L.adopt(o, { entity: /^spells\.summon\.(treant|totem|clone)/.test(o.name || '') }); }
@@ -579,6 +581,7 @@ export function createSpells(game) {
   function prewarm() {
     try { objects.prewarm(); zones2.prewarm(); summons.prewarm(); structures.prewarm(); arch.prewarm(); } catch (err) { console.warn('[spells] prewarm', err); }
     warmed = false;
+    try { L.warmStats = L.warmup(); } catch (err) { console.warn('[spells] look warm-up', err); }
     // v4: pooled rune circles are not in the scene until used: hand them to the boot compile + warm draw (main removes them again)
     const out = [];
     for (const s of S.props.sigilPool || []) if (!s.parent) { s.visible = true; s.scale.setScalar(1); out.push(s); }
@@ -652,6 +655,12 @@ export function createSpells(game) {
     /** v4 (§7.4.7): seconds of non-cancellable cast recovery (0 when free) — read by the player's dodge buffer. */
     get castLock() { return fin ? Math.max(0.05, L.castLock()) : L.castLock(); },
     looks: L,
+    /** Test hook (playtest4 magic): remove every live spell visual / zone / object / summon / projectile. */
+    clearFx() {
+      clearV3();
+      try { S.zones.clear?.(); S.projectiles.clear?.(); S.support.stop?.(true); S.props.clear?.(); timers.length = 0; realTimers.length = 0; } catch (err) { console.warn('[spells] clearFx', err); }
+      try { game.vfx?.kit?.clear?.(); game.vfx?.clear?.(); } catch (_) { /* */ }
+    },
     _S: S,
   };
   return api;

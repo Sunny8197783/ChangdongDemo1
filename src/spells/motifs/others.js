@@ -50,7 +50,7 @@ export function createFallbacks(kit, game) {
   // ---------------------------------------------------------------- earth: strata chunks, cracks, chips
   F.earth = {
     cast: glyphCast('earth', 'earth', { shape: 'poly', sides: 4, width: 0.02, spin: -0.8 }),
-    trail: (s) => H(chunk('earth', { follow: s.follow, pos: s.pos, scale: 0.7 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.05, tOut: 0.1, erode: true, castId: s.castId, spin: 4, spinAxis: v3(1, 0, 0) }),
+    trail: (s) => H(chunk('earth', { follow: s.follow, pos: s.pos, scale: 0.7 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, erode: true, castId: s.castId, spin: 4, spinAxis: v3(1, 0, 0) }),
       s.follow ? kit.ribbon({ follow: s.follow, width: 0.12 * (s.scale ?? 1), taper: 1, life: 0.15, maxLen: 0.9, el: 'earth', castId: s.castId, alpha: 0.5 }) : null),
     burst: (s) => {
       const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [], rnd = rng((s.castId || 1) * 41);
@@ -81,7 +81,7 @@ export function createFallbacks(kit, game) {
   const vine = (pts, castId, o = {}) => kit.ribbon({ points: pts, width: o.width ?? 0.08, taper: 0.9, life: o.life ?? 0.9, el: 'nature', castId, alpha: 0.85, edge: 0.9 });
   F.nature = {
     cast: glyphCast('nature', 'nature', { shape: 'dots', n: 10, width: 0.02, spin: -1.4 }),
-    trail: (s) => H(shard('nature', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.55 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.05, tOut: 0.1, castId: s.castId }),
+    trail: (s) => H(shard('nature', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.55 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, castId: s.castId }),
       s.follow ? kit.ribbon({ follow: s.follow, width: 0.08 * (s.scale ?? 1), taper: 1, life: 0.2, maxLen: 1.2, el: 'nature', castId: s.castId, alpha: 0.6 }) : null),
     burst: (s) => {
       const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
@@ -107,12 +107,12 @@ export function createFallbacks(kit, game) {
   // ---------------------------------------------------------------- light: ivory rays, halo rings with ticks, 4-point glints, motes
   F.light = {
     cast: glyphCast('light', 'light', { shape: 'ticks', n: 12, r2: 0.8, width: 0.015, spin: -0.8 }),
-    trail: (s) => H(shard('light', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.6 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.05, tOut: 0.1, castId: s.castId }),
+    trail: (s) => H(shard('light', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.6 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, castId: s.castId }),
       s.follow ? kit.ribbon({ follow: s.follow, width: 0.07 * (s.scale ?? 1), taper: 1, life: 0.18, maxLen: 1.6, el: 'light', castId: s.castId, alpha: 0.6 }) : null),
     burst: (s) => {
       const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, R = kit.ramp('light');
       kit.spark(s.pos, 'light', Math.min(6, s.n ?? 4), null, { castId: s.castId, shape: 'mote', gravity: -0.5, speed: 1.5, life: 0.6 });
-      return H(kit.line({ shape: 'star', points: 4, r2: 0.1, el: 'light', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.03, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.hi, color2: R.light }),
+      return H(kit.line({ shape: 'star', points: 4, r2: 0.1, el: 'light', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.03, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6 }),
         kit.line({ shape: 'ticks', n: 16, r2: 0.84, el: 'light', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.05, width: 0.02, life: 0.45, tIn: 0.05, tOut: 0.25, scaleIn: 'expand', castId: s.castId }),
         kit.line({ shape: 'ring', el: 'light', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.85, width: 0.025, life: 0.4, tIn: 0.04, tOut: 0.25, scaleIn: 'expand', castId: s.castId }));
     },
@@ -130,7 +130,7 @@ export function createFallbacks(kit, game) {
   // ---------------------------------------------------------------- shadow: dark crescents with violet rims, ink ribbons, wisps inward
   F.shadow = {
     cast: glyphCast('shadow', 'shadow', { shape: 'crescent', width: 0.02, spin: -1.6 }),
-    trail: (s) => H(shard('shadow', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.6 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.05, tOut: 0.1, castId: s.castId }),
+    trail: (s) => H(shard('shadow', { follow: s.follow, pos: s.pos, dir: s.dir, scale: 0.6 * (s.scale ?? 1), life: s.life ?? Infinity, tIn: 0.12, tOut: 0.1, castId: s.castId }),
       s.follow ? kit.ribbon({ follow: s.follow, width: 0.12 * (s.scale ?? 1), taper: 1, life: 0.22, maxLen: 1.4, el: 'shadow', castId: s.castId, alpha: 0.75, colors: { head: kit.ramp('shadow').dark, tail: kit.ramp('shadow').mid, edge: kit.ramp('shadow').light } }) : null),
     burst: (s) => {
       const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, R = kit.ramp('shadow');

@@ -32,7 +32,7 @@ export function install(kit, game) {
   M.trail = (s) => {
     const sc = s.scale ?? 1;
     const q = s.dir ? qFwd(s.dir) : undefined;
-    const out = [kit.mesh('wind.crescent', { follow: s.follow, pos: s.pos, quat: q, scale: 0.85 * sc, life: s.life ?? Infinity, tIn: 0.06, tOut: 0.12, erode: true, castId: s.castId, alpha: 0.85 })];
+    const out = [kit.mesh('wind.crescent', { follow: s.follow, pos: s.pos, quat: q, scale: 0.85 * sc, life: s.life ?? Infinity, tIn: 0.12, tOut: 0.12, erode: true, castId: s.castId, alpha: 0.85 })];
     if (s.follow) out.push(kit.ribbon({ follow: s.follow, width: 0.09 * sc, taper: 1, life: 0.2, maxLen: s.len ?? 1.6, el: 'wind', castId: s.castId, alpha: 0.6, tailSat: 0.2 }));
     return H(out);
   };
@@ -41,7 +41,7 @@ export function install(kit, game) {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
     const rot = ((s.castId || 0) * 0.9) % TAU;
     out.push(kit.line({ shape: 'spiral', turns: 0.7, arms: 3, r2: 0.1, el: 'wind', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.1, width: 0.04, life: 0.42, tIn: 0, tOut: 0.25, scaleIn: 'expand', spin: 3, castId: s.castId, rot }));
-    out.push(kit.line({ shape: 'crescent', el: 'wind', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.2, tIn: 0, tOut: 0.1, castId: s.castId, color: R.hi, color2: R.light, rot: rot + 1 }));
+    out.push(kit.line({ shape: 'crescent', el: 'wind', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.2, tIn: 0, tOut: 0.1, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot: rot + 1 }));
     for (let i = 0; i < 2; i++) { const a = rot + i * Math.PI; out.push(stream(arcPoints(s.pos, r * 0.7, a, a + 2.2, 8, 0.1), s.castId, { width: 0.08, life: 0.3 })); }
     leaves(s.pos, Math.min(6, s.n ?? 5), s.castId);
     return H(out);
