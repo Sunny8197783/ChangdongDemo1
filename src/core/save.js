@@ -59,6 +59,8 @@ export function createSave(game) {
     sectionNames() { return [...sections.keys()]; },
     /** Test / debug: the sections object a save would write now, and feeding one back (round trip without storage). */
     sectionsSnapshot,
+    /** Test / debug: the full object save() would write (no storage access). */
+    snapshot,
     loadSections(obj) {
       loadedSections = obj && typeof obj === 'object' ? obj : {};
       for (const [name, s] of sections) loadSection(name, s, loadedSections[name]);
