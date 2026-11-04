@@ -155,7 +155,9 @@ export function createBolts(game, hooks) {
       for (let k = 1; k < r.blocks.length; k++) { if (glow) r.batch.clear(r.blocks[k]); else write(r, k, r.fork[k - 1], r.userScale * 0.7, al, false); }
       const mx = (r.from.x + r.to.x) * 0.5, my = (r.from.y + r.to.y) * 0.5, mz = (r.from.z + r.to.z) * 0.5;
       const z = Math.max(0.5, (mx - _cam.x) * _fw.x + (my - _cam.y) * _fw.y + (mz - _cam.z) * _fw.z);
-      const c = r.len * (glow ? r.width : Math.max(r.halo, r.width) * 0.45) * (1 + 0.4 * (r.blocks.length - 1)) * p00 * p11 / (4 * z * z) * al;
+      const bw = (glow ? r.width : Math.max(r.halo, r.width) * 0.45) * r.userScale;
+      let c = r.len * bw * (1 + 0.4 * (r.blocks.length - 1)) * p00 * p11 / (4 * z * z) * al;
+      if (hooks.proj) c = hooks.proj.poly(r.main, PTS, bw) * (1 + 0.4 * (glow ? 0 : r.blocks.length - 1)) * al;
       r.cov = c; if (!r.enemy) cover += c; else hooks.onOtherCover?.(c, r);
     }
     let calls = 0;

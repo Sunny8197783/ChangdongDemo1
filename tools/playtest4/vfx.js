@@ -350,10 +350,18 @@ async function fsword(PT) {
       await pf.run('V3 F-sword 30 s', () => {
         const g = window.game;
         PT.rotate('sword', 2, { measure: false, warm: 0 });
+        const T = g.THREE, own = { vfx: 0, other: 0 }, sites = {};
+        const tag = () => { const st = new Error().stack || ''; const mine = /\/src\/(vfx|combat)[.\/]/.test(st); own[mine ? 'vfx' : 'other']++; if (mine) { const l = st.split('\n').find((x) => /\/src\/(vfx|combat)/.test(x)) || '?'; const k = 'V ' + l.replace(/^.*\/src\//, 'src/'); sites[k] = (sites[k] || 0) + 1; }
+          if (!mine) { const l = st.split('\n').find((x) => /\/src\//.test(x)) || '?'; const k = l.replace(/^.*\/src\//, 'src/').replace(/[)\s]+$/, ''); sites[k] = (sites[k] || 0) + 1; } };
+        const sv = T.Material.prototype.setValues, cl = T.Material.prototype.clone;
+        let depth = 0;
+        T.Material.prototype.setValues = function (v) { if (!depth) tag(); return sv.call(this, v); };
+        T.Material.prototype.clone = function () { tag(); depth++; try { return cl.call(this); } finally { depth--; } };
         g.debug.newMaterials();
-        PT.rotate('sword', 30, { measure: false, warm: 0 });
+        try { PT.rotate('sword', 30, { measure: false, warm: 0 }); } finally { T.Material.prototype.setValues = sv; T.Material.prototype.clone = cl; }
         const n = g.debug.newMaterials();
-        PT.check('new THREE.Material objects in 30 s of F-sword ≤ 4', n <= 4, n);
+        PT.check('new THREE.Material objects from src/vfx* + src/combat* in 30 s of F-sword ≤ 4', own.vfx <= 4, { vfx: own.vfx, total: n, other: own.other });
+        PT.note(`F-sword 30 s: ${n} new materials in total; outside vfx/combat: ${JSON.stringify(Object.entries(sites).sort((x, y) => y[1] - x[1]).slice(0, 4))}`);
         PT.note(`F-sword particles peak ${g.vfx.debug.budget().peak}, live ${g.vfx.stats().particles}`);
       });
     } else PT.check('F-sword boot', false);

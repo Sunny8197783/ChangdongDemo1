@@ -294,7 +294,8 @@ export function createLinework(game, glyphs, hooks = {}) {
           const area = markArea(r, R, hw) * (1 - er);
           let cosv = 1;
           if (r.plane === 0 || r.plane === 3) cosv = Math.max(0.15, Math.abs((r.pos.y - _cam.y) / Math.max(0.5, Math.hypot(r.pos.x - _cam.x, r.pos.y - _cam.y, r.pos.z - _cam.z))));
-          const c = area * proj.p00 * proj.p11 / (4 * z * z) * cosv;
+          let c = area * proj.p00 * proj.p11 / (4 * z * z) * cosv;
+          if (hooks.proj) { const bb = hooks.proj.disc(r.pos.x, r.pos.y, r.pos.z, R + hw, 1) * cosv * Math.min(1, area / (4 * R * R + 1e-6)); if (bb < c) c = bb; }
           r.cov = c; if (key === 'player') cover += c; else hooks.onOtherCover?.(c, r);
         } else r.cov = 0;
       }

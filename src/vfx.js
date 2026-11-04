@@ -15,7 +15,7 @@ import { createDissolve } from './vfx/dissolve.js';
 import { createRunes } from './vfx/runes.js';
 import { createDuck } from './vfx/duck.js';
 import { createKit, BIT } from './vfx/kit.js';
-import { createCastTable, createBudget } from './vfx/coverage.js';
+import { createCastTable, createBudget, createProjector } from './vfx/coverage.js';
 import { elementOfColor, isReservedHue } from './vfx/enemystyle.js';
 
 const NORMAL_SHAPES = { smoke: 1, puff: 1, leaf: 1, rock: 1, petal: 1, feather: 1, raven: 1, dust: 1 };
@@ -279,9 +279,40 @@ export function createVFX(game) {
   }
 
   // ---------- entity flash: one cached flash material set per entity (WeakMap), or the entity's shared e.flashUniform ----------
-  const flashSets = new WeakMap();
+  const flashSets = new WeakMap();      // object → {meshes:[{m, orig, flash}], mats:[flashRec]}
+  const flashOf = new WeakMap();        // source material → its flash clone
   const flashing = [];
   let flashClones = 0;
+  // flash sets are built when an entity registers (combat.register → prepareFlash), not mid-fight
+  const flashQueue = [];
+  function prepareFlash(entity) { if (entity && !entity.flashUniform && flashQueue.length < 256) flashQueue.push(entity); }
+  function buildQueuedFlash() {
+    for (let i = 0; i < flashQueue.length && i < 4; i++) { const e = flashQueue.shift(); const obj = e?.object; if (obj?.traverse && !flashSets.has(obj)) flashSetOf(obj); }
+  }
+  function flashSetOf(obj) {
+    let set = flashSets.get(obj);
+    if (set) return set;
+    set = { meshes: [], mats: [] };
+    obj.traverse((m) => {
+      if (!m.isMesh || m.name === 'outline' || !m.material || m.isInstancedMesh) return;
+      const own = (mat) => {
+        if (!mat || !mat.emissive) return mat;
+        let c = flashOf.get(mat);          // one flash clone per SOURCE material, shared by every entity that uses it
+        if (!c) {
+          c = mat.clone(); flashClones++;
+          c.onBeforeCompile = mat.onBeforeCompile; c.customProgramCacheKey = mat.customProgramCacheKey;
+          c.userData.flashRec = { mat: c, e: mat.emissive.getHex(), ei: mat.emissiveIntensity };
+          flashOf.set(mat, c);
+        }
+        if (!set.mats.includes(c.userData.flashRec)) set.mats.push(c.userData.flashRec);
+        return c;
+      };
+      const orig = m.material;
+      set.meshes.push({ m, orig, flash: Array.isArray(orig) ? orig.map(own) : own(orig) });
+    });
+    flashSets.set(obj, set);
+    return set;
+  }
   function flashEntity(entity, color, duration = 0.1) {
     const obj = entity?.object || entity;
     if (!obj) return;
@@ -293,24 +324,7 @@ export function createVFX(game) {
       return;
     }
     if (!obj.traverse) return;
-    let set = flashSets.get(obj);
-    if (!set) {
-      set = { meshes: [], mats: [] };
-      obj.traverse((m) => {
-        if (!m.isMesh || m.name === 'outline' || !m.material || m.isInstancedMesh) return;
-        const own = (mat) => {
-          if (!mat || !mat.emissive) return mat;
-          const c = mat.clone(); flashClones++;
-          c.onBeforeCompile = mat.onBeforeCompile; c.customProgramCacheKey = mat.customProgramCacheKey;
-          set.mats.push({ mat: c, e: mat.emissive.getHex(), ei: mat.emissiveIntensity });
-          return c;
-        };
-        const orig = m.material;
-        const fl = Array.isArray(orig) ? orig.map(own) : own(orig);
-        set.meshes.push({ m, orig, flash: fl });
-      });
-      flashSets.set(obj, set);
-    }
+    const set = flashSetOf(obj);
     let f = flashing.find((x) => x.set === set);
     if (!f) {
       f = { fu: null, set, t: 0, dur: 0.1, color: new THREE.Color() }; flashing.push(f);
@@ -422,7 +436,10 @@ export function createVFX(game) {
   }
 
   // ---------- kit ----------
-  const kit = createKit(game, { shared: duck.shared, cast, screenH, time: uTime, emit: (pos, o) => burst(pos, o, false) });
+  const projector = createProjector(game);
+  // (exposed to runes.js for its coverage estimate)
+  let otherCover = 0;   // enemy-owned kit coverage of the frame (enemy / world linework, FM, ribbons, bolts)
+  const kit = createKit(game, { shared: duck.shared, cast, screenH, time: uTime, proj: projector, emit: (pos, o) => burst(pos, o, false), onOtherCover: (c) => { otherCover += c; } });
 
   // ---------- legacy ground / trail / beam entry points → kit ----------
   const DEADH = { stop() {}, setEnds() {}, setPos() {}, setPosition() {}, alive: false, t: 1, dur: 1 };
@@ -500,7 +517,7 @@ export function createVFX(game) {
   }
 
   // ---------- coverage, budgets, call cap ----------
-  const covState = { player: 0, enemy: 0, world: 0, calls: 0, otherCalls: 0, frame: 0, peak: 0, callsPeak: 0, collapsedTotal: 0 };
+  const covState = { parts: { soft: 0, particles: 0, linework: 0, kit: 0, runes: 0 }, player: 0, enemy: 0, world: 0, calls: 0, otherCalls: 0, frame: 0, peak: 0, callsPeak: 0, collapsedTotal: 0 };
   function collapseOldest(over) {
     // R10 / §2.6: over the player-FX call budget the oldest persistent visuals collapse to linework only
     let n = 0;
@@ -524,7 +541,7 @@ export function createVFX(game) {
 
   const api = {
     textures, FRAMES,
-    burst, emitter, flash, flashSprite, lightPulse, screenFlash, shake, kick, fovKick, flashEntity, spawnAfterimage, glowMaterial, glowSprite, after,
+    burst, emitter, flash, flashSprite, prepareFlash, lightPulse, screenFlash, shake, kick, fovKick, flashEntity, spawnAfterimage, glowMaterial, glowSprite, after,
     trail, shockwave, ring: shockwave, dome, decal, beam,
     debris: (pos, o) => (pos ? debrisFx.debris(pos, pScale < 1 && o?.count > 1 ? { ...o, count: Math.max(1, Math.round(o.count * pScale)) } : o) : null),
     hitstop: (s, o) => game.hitstop?.(s, o),
@@ -566,12 +583,15 @@ export function createVFX(game) {
       const gh = game.world?.getHeight;
       P.update(fdt, gh, game.time, proj);
       O.update(fdt, gh, game.time, proj);
+      projector.begin();
+      otherCover = 0;
       const k = kit.update(fdt);
       debrisFx.update(fdt);
       updateShells(fdt);
       updateLights(fdt);
       updateGhosts(fdt);
       updateFlashes(rd);
+      if (flashQueue.length) buildQueuedFlash();
       if (sf.t < sf.dur) { sf.t += rd; const p = Math.min(1, sf.t / sf.dur); overlay.style.opacity = String(sf.a * (1 - p) * (1 - p)); }
       else if (overlay.style.opacity !== '0') overlay.style.opacity = '0';
       feel.update(rd);
@@ -582,7 +602,8 @@ export function createVFX(game) {
       // budgets: coverage (largest contributor shrinks first) and draw calls (oldest persistent visuals collapse)
       const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() }, rd);
       P.material.uniforms.uSoftMul.value = st.softMul; P.material.uniforms.uSizeMul.value = st.sizeMul;
-      covState.player = P.coverage + k.cover + runes.coverage(); covState.enemy = O.coverage; covState.frame++;
+      covState.player = P.coverage + k.cover + runes.coverage(); covState.enemy = O.coverage + otherCover; covState.frame++;
+      covState.parts.soft = P.softCoverage; covState.parts.particles = P.coverage - P.softCoverage; covState.parts.linework = k.lwCover; covState.parts.kit = k.cover; covState.parts.runes = runes.coverage();
       if (covState.player > covState.peak) covState.peak = covState.player;
       let calls = (P.count > 0 ? 1 : 0) + k.calls + runes.calls() + debrisFx.calls();
       for (const s of shells) if (s.active && s.mesh.visible) calls++;
@@ -600,6 +621,7 @@ export function createVFX(game) {
   installPresets(api, game);
   const tele = createTelegraphs(game, api);
   const dis = createDissolve(game, api);
+  api._proj = projector;
   const runes = createRunes(game, api, textures);
   api.hitFeel = feel.hitFeel;
   api.feelStats = feel.stats;
@@ -619,7 +641,7 @@ export function createVFX(game) {
   // ---------- debug (PLAN §7.4.3) ----------
   api.debug = {
     /** runtime estimate (screens) by owner; tests measure the truth with PT.fragments({owner}). */
-    coverage() { return { screens: +covState.player.toFixed(3), byOwner: { player: +covState.player.toFixed(3), enemy: +covState.enemy.toFixed(3), world: 0 }, estimate: true, peak: +covState.peak.toFixed(3), calls: covState.calls, callsPeak: covState.callsPeak }; },
+    coverage() { return { parts: { ...covState.parts }, screens: +covState.player.toFixed(3), byOwner: { player: +covState.player.toFixed(3), enemy: +covState.enemy.toFixed(3), world: 0 }, estimate: true, peak: +covState.peak.toFixed(3), calls: covState.calls, callsPeak: covState.callsPeak }; },
     byCast(id) { return cast.get(id); },
     calls() { return { player: covState.calls, other: covState.otherCalls, cap: budget.st.callCap, peak: covState.callsPeak, collapsed: covState.collapsedTotal }; },
     budget() { return { ...budget.st, limits: { total: P.limit, additive: P.addLimit, other: O.limit }, live: { player: P.count, additive: P.addCount, other: O.count }, peak: P.peak }; },

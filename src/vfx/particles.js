@@ -17,10 +17,10 @@ const VERT = /* glsl */`
   #include <fog_pars_vertex>
   void main() {
     vec4 mv = modelViewMatrix * vec4(iPos.xyz, 1.0);
-    vec2 corner = position.xy;
     float code = iMisc.y;
     float styled = step(255.5, code); code -= styled * 256.0;
     float soft = step(127.5, code); code -= soft * 128.0;
+    vec2 corner = soft > 0.5 ? position.xy : sign(position.xy) * 0.5;
     float add = step(63.5, code); code -= add * 64.0;
     float zc = max(-mv.z, 0.05);
     float size = iPos.w * mix(uSizeMul, uSoftMul, soft);
@@ -42,7 +42,7 @@ const VERT = /* glsl */`
     mv.xy += q;
     gl_Position = projectionMatrix * mv;
     vec2 cell = vec2(mod(code, uCols), floor(code / uCols));
-    vec2 uv = position.xy + 0.5;
+    vec2 uv = corner + 0.5;
     vUv = (cell + vec2(uv.x, 1.0 - uv.y)) / uCols;
     vUv.y = 1.0 - vUv.y;
     vCol = iCol; vAdd = add; vStyled = styled;
@@ -89,8 +89,12 @@ export class ParticleSystem {
     this.cx = new Float32Array(capacity); this.cz = new Float32Array(capacity);
     this.dropped = 0; this.spawned = 0; this.coverage = 0; this.softCoverage = 0; this.peak = 0;
     const quad = new THREE.InstancedBufferGeometry();
-    quad.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3));
-    quad.setIndex([0, 1, 2, 0, 2, 3]);
+    // P1: octagon inscribed in the unit quad (flat sides on the quad edges, contains the r = 0.5 circle): soft sprites draw ~17 %
+    // fewer fragments; every other frame snaps the 8 vertices to the 4 quad corners in the vertex shader (a plain quad)
+    const oct = [];
+    for (let k = 0; k < 8; k++) { const a = (k + 0.5) * Math.PI / 4, r = 0.5 / Math.cos(Math.PI / 8); oct.push(Math.cos(a) * r, Math.sin(a) * r, 0); }
+    quad.setAttribute('position', new THREE.Float32BufferAttribute(oct, 3));
+    quad.setIndex([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7]);
     const mk = (n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * n), n); a.setUsage(THREE.DynamicDrawUsage); return a; };
     this.aPos = mk(4); this.aVel = mk(4); this.aCol = mk(4); this.aMisc = mk(2);
     quad.setAttribute('iPos', this.aPos); quad.setAttribute('iVel', this.aVel);
@@ -161,7 +165,7 @@ export class ParticleSystem {
     const duck = this.duck, ct = this.castTable;
     const softMul = this.material.uniforms.uSoftMul.value, sizeMul = this.material.uniforms.uSizeMul.value;
     let cov = 0, covSoft = 0;
-    const k4 = proj ? proj.p00 * proj.p11 * 0.25 * 0.7 : 0;
+    const k4 = proj ? proj.p00 * proj.p11 * 0.25 * 0.7 : 0;   // (soft sprites: octagon ≈ 0.83 of the quad, × discard)
     let i = 0;
     while (i < this.count) {
       const o = i * FIELDS;

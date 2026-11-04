@@ -45,7 +45,7 @@ class BoltHandle extends Handle {
 const DEAD = Object.freeze({ alive: false, stop() { return this; }, setPos() { return this; }, setDir() { return this; }, setScale() { return this; }, setAlpha() { return this; }, push() { return this; }, setEnds() { return this; } });
 
 export function createKit(game, deps) {
-  const { shared, cast, emit, screenH, time } = deps;
+  const { shared, cast, emit, screenH, time, proj } = deps;
   const warned = new Set();
   const warnOnce = (k, ...a) => { if (!warned.has(k)) { warned.add(k); console.warn('[kit]', k, ...a); } };
 
@@ -64,7 +64,7 @@ export function createKit(game, deps) {
   const toColor = (out, c, fb) => { if (c == null) return out.copy(fb); if (c.isColor) return out.copy(c); return out.setHex(c); };
 
   const glyphs = createGlyphAtlas();
-  const hooks = { shared, ramp, screenH, time, outlinesOn: () => (game.quality?.budget?.fxDetail ?? 1) >= 1, onKill: null };
+  const hooks = { shared, ramp, screenH, time, proj, onOtherCover: deps.onOtherCover || null, outlinesOn: () => (game.quality?.budget?.fxDetail ?? 1) >= 1, onKill: null };
   const lw = createLinework(game, glyphs, hooks);
   const fm = createFxMesh(game, hooks);
   const rb = createRibbons(game, hooks);
