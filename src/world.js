@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildTerrain, buildDistantMountains, LAYOUT, WATER_LEVEL, BOUNDS, CELL, ORIGIN, SIZE, NV, HEIGHTFIELD_GLSL } from './world/terrain.js';
 import { buildSky, SKY } from './world/sky.js';
 import { buildGrass } from './world/grass.js';
-import { buildFlora } from './world/flora.js';
+import { buildFlora, SHADOW_LAYER as FLORA_SHADOW_LAYER } from './world/flora.js';
 import { OCC } from './world/prefab.js';
 import { buildStructures } from './world/structures.js';
 import { buildWater, WATER_BOX } from './world/water.js';
@@ -27,7 +27,10 @@ import { buildPlateau } from './world/plateau.js';
 /** World clamp: the r 170 circle plus the plateau / ledge AABBs (they reach past the circle). */
 const CLAMP_BOXES = [TF.plateau, TF.ledge].map((D) => ({ x0: D.x - D.r - 2, x1: D.x + D.r + 2, z0: D.z - D.r - 2, z1: D.z + D.r + 2 }));
 
-const SHADOW_Q = { low: { size: 1024, extent: 26 }, medium: { size: 2048, extent: 32 }, high: { size: 2048, extent: 44 } };
+// v4 (PLAN §2.2 / task item 7): map size per preset (settings.shadowSize 1024 low/medium, 2048 high), extent ±32 m,
+// casters within SHADOW_CASTER_D m of the receivers along the light (the sun sits that far up its direction).
+const SHADOW_Q = { low: { size: 1024, extent: 32 }, medium: { size: 1024, extent: 32 }, high: { size: 2048, extent: 32 } };
+const SHADOW_CASTER_D = 60;
 
 export function createWorld(game) {
   const { scene, renderer } = game;
@@ -58,13 +61,14 @@ export function createWorld(game) {
   let texel = 1, floraRef = null;
   function applyShadowQuality(q) {
     const Q = SHADOW_Q[q] || SHADOW_Q.medium;
-    if (sun.shadow.mapSize.x !== Q.size) {
-      sun.shadow.mapSize.set(Q.size, Q.size);
+    const size = game.settings?.values?.shadowSize || Q.size;
+    if (sun.shadow.mapSize.x !== size) {
+      sun.shadow.mapSize.set(size, size);
       if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
     }
-    Object.assign(sun.shadow.camera, { left: -Q.extent, right: Q.extent, top: Q.extent, bottom: -Q.extent, near: 5, far: 320 });
+    Object.assign(sun.shadow.camera, { left: -Q.extent, right: Q.extent, top: Q.extent, bottom: -Q.extent, near: 1, far: SHADOW_CASTER_D + 50 });
     sun.shadow.camera.updateProjectionMatrix();
-    texel = (Q.extent * 2) / Q.size;
+    texel = (Q.extent * 2) / size;
     floraRef?.setShadowRadius?.(Q.extent * 1.5);
   }
   applyShadowQuality(S0.shadowQuality || 'medium');
@@ -449,19 +453,35 @@ export function createWorld(game) {
 
   // ---------------------------------------------------------------- graphics settings (live)
   let drawDist = S0.drawDistance ?? 0.8;
+  // v4 preset keys: grassDensity, grassNearFade, grassReceiveShadow, treeDist, floraOutlineDist, shadowSize (+ v3 drawDistance,
+  // shadowQuality); game.quality.budget.{grassMul, floraMul, floraOutlineDist} are read live every frame (applyBudget).
+  const WORLD_KEYS = ['grassDensity', 'drawDistance', 'shadowQuality', 'shadowSize', 'grassNearFade', 'grassReceiveShadow', 'treeDist', 'floraOutlineDist', 'quality', '*'];
   function applySettings(key) {
     const v = game.settings?.values || {};
-    if (key === '*' || key === 'grassDensity') grass.setDensity(v.grassDensity ?? 0.6);
-    if (key === '*' || key === 'drawDistance') { drawDist = v.drawDistance ?? 0.8; grass.setDrawDistance(drawDist); flora.setDrawDistance(drawDist); }
-    if (key === '*' || key === 'shadowQuality') applyShadowQuality(v.shadowQuality || 'medium');
+    const all = key === '*' || key === 'quality';
+    if (all || key === 'grassDensity') { if (!bossLOD) grass.setDensity(v.grassDensity ?? 0.4); }
+    if (all || key === 'drawDistance') { drawDist = v.drawDistance ?? 0.8; grass.setDrawDistance(drawDist); if (!bossLOD) flora.setDrawDistance(drawDist); }
+    if (all || key === 'shadowQuality' || key === 'shadowSize') applyShadowQuality(v.shadowQuality || 'medium');
+    if (all || key === 'grassNearFade') grass.setFadeMul(v.grassNearFade ?? 0.7);
+    if (all || key === 'grassReceiveShadow') grass.setReceiveShadow(!!v.grassReceiveShadow);
+    budgetSeen.floraMul = -1;   // re-apply ranges
   }
+  const budgetSeen = { grassMul: -1, floraMul: -1, outline: -1, tree: -1 };
+  function applyBudget() {
+    const B = game.quality?.budget, v = game.settings?.values || {};
+    const gm = B?.grassMul ?? 1, fm = B?.floraMul ?? 1;
+    const od = Math.min(B?.floraOutlineDist ?? 99, v.floraOutlineDist ?? 35), td = v.treeDist ?? (150 + 250 * drawDist);
+    if (gm !== budgetSeen.grassMul) { budgetSeen.grassMul = gm; grass.setDensityMul(gm); }
+    if (fm !== budgetSeen.floraMul || od !== budgetSeen.outline || td !== budgetSeen.tree) {
+      budgetSeen.floraMul = fm; budgetSeen.outline = od; budgetSeen.tree = td;
+      flora.setRange({ treeDist: td, outlineDist: od, mul: fm });
+    }
+  }
+  let bossLOD = false;
   applySettings('*');
-  game.events.on('settingsChanged', ({ key }) => {
-    if (['grassDensity', 'drawDistance', 'shadowQuality', '*'].includes(key)) applySettings(key);
-  });
+  game.events.on('settingsChanged', ({ key }) => { if (WORLD_KEYS.includes(key)) applySettings(key); });
 
   // ---------------- v3 API (CONTRACT §13)
-  let bossLOD = false;
   Object.assign(world, {
     zones: zones.zones, getZoneAt: zones.getZoneAt, zoneById: zones.byId,
     bossArenas, bossArena: bossArenas.golem,
@@ -482,7 +502,7 @@ export function createWorld(game) {
     setBossFightLOD(on) {
       bossLOD = !!on;
       const v = game.settings?.values || {};
-      grass.setDensity(on ? Math.min(0.25, v.grassDensity ?? 0.6) : (v.grassDensity ?? 0.6));
+      grass.setDensity(on ? Math.min(0.25, v.grassDensity ?? 0.4) : (v.grassDensity ?? 0.4));
       flora.setDrawDistance(on ? Math.min(0.3, drawDist) : drawDist);
       flora.setShadowRadius?.(on ? 24 : (SHADOW_Q[v.shadowQuality || 'medium'] || SHADOW_Q.medium).extent * 1.5);
     },
@@ -528,6 +548,28 @@ export function createWorld(game) {
     }
     world._staticRoots = roots;
   }
+  // ---------------- v4 (task item 5/6): always-drawn / village-only / zone transparents culled by camera distance.
+  // Each entry: objects + anchor points [x, z, …] + reach R: visible iff the camera is within R of an anchor (xz).
+  // Entries remember the visibility they set; objects other code hides (elderwood LOD, act gates) stay hidden.
+  const VM = VILLAGE.mask, villageR = Math.max(VM.rx, VM.rz) * 1.1;
+  const distCull = [];
+  const addCull = (objs, pts, R) => { objs = objs.filter(Boolean); if (objs.length && pts.length) distCull.push({ objs, pts, R2: R * R, on: true }); };
+  addCull([village.smoke, village.glow, village.crystals, village.pond], [VM.x, VM.z], villageR + 15);
+  for (const o of worldTree.meshes || []) if (o && (o.name === 'worldTreeMotes' || o.frustumCulled === false)) addCull([o], [worldTree.data.position.x, worldTree.data.position.z], villageR + 15);
+  addCull(structures.signs || [], structures.signSpots || [], 45);
+  if (structures.fires?.positions?.length) addCull([structures.fires.group], structures.fires.positions.flatMap((p) => [p.x, p.z]), 90);
+  for (const o of mirwen.meshes || []) if (o?.name === 'mirwenMist') addCull([o], [mirwen.center.x, mirwen.center.z], mirwen.radius + 25);
+  function applyDistCull(cam) {
+    const cx = cam.position.x, cz = cam.position.z;
+    for (let i = 0; i < distCull.length; i++) {
+      const D = distCull[i], P = D.pts;
+      let on = false;
+      for (let k = 0; k < P.length; k += 2) { const dx = P[k] - cx, dz = P[k + 1] - cz; if (dx * dx + dz * dz < D.R2) { on = true; break; } }
+      if (on === D.on) continue;
+      D.on = on;
+      for (let j = 0; j < D.objs.length; j++) D.objs[j].visible = on;
+    }
+  }
   Object.defineProperty(world, 'act', { get: () => act, enumerable: true });
   Object.defineProperty(world, 'bossFightLOD', { get: () => bossLOD, enumerable: true });
   let acc4 = 1, acc1 = 1;
@@ -557,7 +599,8 @@ export function createWorld(game) {
       const ty = Math.round((fx * ly.x + focus.y * ly.y + fz * ly.z) / texel) * texel;
       const tz = fx * lz.x + focus.y * lz.y + fz * lz.z;
       sun.target.position.set(lx.x * tx + ly.x * ty + lz.x * tz, lx.y * tx + ly.y * ty + lz.y * tz, lx.z * tx + ly.z * ty + lz.z * tz);
-      sun.position.copy(sun.target.position).addScaledVector(sunDir, 160);
+      sun.position.copy(sun.target.position).addScaledVector(sunDir, SHADOW_CASTER_D);
+      { const SL = sun.shadow.camera.layers; if ((SL.mask & 1) && !(SL.mask & (1 << FLORA_SHADOW_LAYER))) SL.mask |= 1 << FLORA_SHADOW_LAYER; }   // shadow-only casters (core resets the mask on settings changes)
       sun.target.updateMatrixWorld();
       cam.updateMatrixWorld();
       sky.update(cam, t);
@@ -565,6 +608,8 @@ export function createWorld(game) {
       water.update(t);
       structures.update(t);
       ambience.update(t, cam);
+      applyBudget();
+      applyDistCull(cam);
       flora.update(cam, focus);
       village.update(t, cam, dt);
       worldTree.update(t);

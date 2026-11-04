@@ -138,7 +138,7 @@ export function buildFires(game, positions) {
   let near = -1;
 
   return {
-    group, lights,
+    group, lights, positions,
     update(t) {
       uTime.value = t;
       embers.material.uniforms.uScale.value = smoke.material.uniforms.uScale.value = game.renderer.domElement.height / 720;

@@ -265,7 +265,12 @@ export function buildElderwood(game, world, { uTime }) {
   });
   walls.instanceColor.needsUpdate = true; wallGlow.instanceColor.needsUpdate = true;
   walls.name = 'rotWalls'; walls.receiveShadow = true; walls.castShadow = false; wallGlow.name = 'rotWallGlow';
-  walls.frustumCulled = false; wallOut.frustumCulled = false; wallGlow.frustumCulled = false;
+  // v4: frustum-culled against one sphere around every gap (instance matrices animate inside it)
+  {
+    const bs = new THREE.Sphere().setFromPoints(rotWalls.map((w) => w.position));
+    bs.radius += Math.max(...rotWalls.map((w) => w.span)) * 0.6 + 4;
+    for (const m of [walls, wallOut, wallGlow]) { m.boundingSphere = bs.clone(); m.frustumCulled = true; }
+  }
   group.add(walls, wallOut, wallGlow);
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
   function wallMatrix(w, i, k, t) {
@@ -359,7 +364,8 @@ export function buildElderwood(game, world, { uTime }) {
         if (cp) {
           const d = Math.hypot(cp.x - api.center.x, cp.z - api.center.z) - api.radius;
           const near = d < 115, mid = d < 140;
-          glowMesh.visible = near; mushGlow.visible = near; wallGlow.visible = near; spores.visible = near;
+          glowMesh.visible = near; mushGlow.visible = near; wallGlow.visible = near;
+          spores.visible = d < 25;   // v4: world transparents budget — spores only inside / at the edge of the wood
           mush.visible = mid; walls.visible = mid;
         }
       }
