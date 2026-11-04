@@ -294,7 +294,7 @@ module.exports = async function tells(PT) {
   await pg.run('T2 threat scene wins (branch form)', () => {
     const g = game, T = g.THREE, X = window.TX, TL = g.tells;
     X.reset();
-    PT.note(`kit-p0a: ${g.vfx?.kit ? 'present' : 'absent (legacy particles used)'}`);
+    PT.note(`kit-p0a: ${g.vfx?.kit ? 'present (kit linework + legacy particles over the decals)' : 'absent (legacy particles used)'}`);
     const c = X.front(5.5), e = X.fake(c.x, c.z - 30);
     const mk = (sh) => TL.attack(e, { id: 't2', tell: 'danger', cls: 'check', windup: 3, melee: false, sound: false, body: false, icon: false, shape: sh });
     const h = mk({ kind: 'circle', pos: c, r: 3 });
@@ -302,7 +302,7 @@ module.exports = async function tells(PT) {
     PT.step(0.6);
     const tellPx = () => PT.pixels.diff((on) => TL.debug.setVisible(on)).changed;
     // (a) legacy particles over the decals (additive + alpha), sampled over several frames
-    const vfxObjs = []; g.scene.traverse((o) => { if (/^vfx-/.test(o.name)) vfxObjs.push(o); });
+    const vfxObjs = []; g.scene.traverse((o) => { if (/^(vfx|kit)/i.test(o.name) || o.userData?.owner === 'player') vfxObjs.push(o); });
     const setVfx = (on) => vfxObjs.forEach((o) => { o.visible = on; });
     const ratios = [];
     for (let k = 0; k < 4; k++) {
@@ -310,12 +310,17 @@ module.exports = async function tells(PT) {
         g.vfx.burst?.(c.clone().add(new T.Vector3((i - 3) * 0.8, 0.4, (k - 1.5) * 0.7)), { count: 40, color: [0xff7a30, 0xffe08a], speed: 2.5, size: 0.9, sizeEnd: 0.3, life: 0.8, additive: i % 2 === 0, up: 1 });
         g.vfx.burst?.(c.clone().add(new T.Vector3((i - 3) * 0.6, 0.2, 1)), { count: 30, color: [0x4aa8ff, 0x9ad8ff], speed: 1.5, size: 1.2, sizeEnd: 0.6, life: 0.9, up: 0.5 });
       }
+      // kit-p0a linework (player rings / stars on the ground) over the same decals
+      const K = g.vfx.kit;
+      if (K?.line) for (let i = 0; i < 4; i++) {
+        try { K.line({ shape: i % 2 ? 'ring' : 'star', points: 6, pos: c.clone().add(new T.Vector3((i - 1.5) * 1.2, 0, 0)), plane: 'ground', r: 1.6 + i * 0.4, width: 0.12, el: ['fire', 'ice', 'lightning', 'nature'][i], life: 1.5, owner: 'player', role: 'line' }); } catch (_) { /* */ }
+      }
       g.step(6, 1 / 60, false);
       const on = tellPx(); setVfx(false); const off = tellPx(); setVfx(true);
       ratios.push(+(on / Math.max(1, off)).toFixed(3));
     }
     const pcount = g.vfx.stats?.()?.particles ?? null;
-    PT.check('telegraph pixels with legacy particles ÷ particles hidden ≥ 0.95 in every sample', ratios.every((r) => r >= 0.95), { ratios, particles: pcount });
+    PT.check('telegraph pixels with player VFX (legacy particles + kit linework) ÷ hidden ≥ 0.95 in every sample', ratios.every((r) => r >= 0.95), { ratios, particles: pcount });
     PT.step(1.0);
     // (b) grass on ÷ off
     const grass = []; g.scene.traverse((o) => { if (/^grass_/.test(o.name)) grass.push(o); });
