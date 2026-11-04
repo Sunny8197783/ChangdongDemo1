@@ -35,6 +35,7 @@
 
 ## mobs / bosses
 - Start every attack with `const h = game.tells.attack(e, spec)` (§7.4.4). Extras the real module supports:
+  `spec.el` (element name; or `e.element`) → faint element glyph in the decal fill (P1; physical/unknown → none, `spec.glyph:false` opts out),
   `spec.shape.follow` (decal origin follows the enemy until the lock; capsule/conecap ends move with it), `spec.body:false` (no rim clone),
   `spec.icon:false|true`, `spec.sound:false`, `spec.anchor` (`'weapon'|'head'|'hand'|'mouth'|'core'` or an Object3D → glint at lock).
 - **Jump tells**: pass `spec.shockwave = {speed: 12, band: 0.25, maxR}`; after the hit, `h.shockwaveR()` is the travelling ring's radius (−1 when done) and

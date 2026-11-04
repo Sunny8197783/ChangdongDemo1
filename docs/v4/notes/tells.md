@@ -1,11 +1,11 @@
 # tells — v4 notes
 
 Owner: tells (`src/tells.js`, `src/tells/*`, `tools/playtest4/tells.js`, `docs/v4/notes/tells.md`, `docs/v4/requests/tells.md`).
-Branch `v4/tells` (from `core-p0a`), worktree `/home/user/wt4/tells`. Merged read-only: `world-p0a`, `world-b`, `kit-p0a` (vfx). `core-b` did not exist at the final run, so the core
+Branch `v4/tells` (from `core-p0a`), worktree `/home/user/wt4/tells`. Merged read-only: `world-p0a`, `world-b`, `kit-p0a`, then `vfx-b` (vfx). `core-b` did not exist at the final run, so the core
 render path is the `core-p0a` version (v3 composer chain, global hitstop).
 
 Tags: **`tells-p0a`** (attack / handle / hitTest / canAttack / punish / events + the instanced decal), `tells-b` (before `kit-p0a`
-appeared), **`tells-b.2`** (this state: `kit-p0a` merged, T2 re-run with kit linework over the decals).
+appeared), **`tells-b.2`** (this state: `kit-p0a` + `vfx-b` merged, T2 re-run with kit linework over the decals, P1 element glyph).
 
 ## What exists
 
@@ -43,10 +43,17 @@ Local shape SDF per fragment (circle, ring, cone = pie SDF, line = box, capsule 
 dark outer band `max(0.12 m, 3 px)` α 0.75 outside the true edge · rim `max(0.18 m, 3 px | strong 5 px)` α 0.95 inside the edge (parry: 12 dashes per circle / 1 m dashes on
 straight edges; unblockable: double rim), ×1.5 after the lock, lock flash = own hue × (1 + 0.35) clamped (never toward white) for 0.1 s · fill 0.16 (strong 0.28, hazard hatch
 0.18, safe 0.12) · region behind the linear front 0.32 · front line 0.12 m (≥ 1 px) in a lighter rim tint, `#FFF4F0` once `remaining ≤ 0.20 s × assist.perfectMul` · 3 flat
-chevrons scrolling 0.6 Hz toward the hit on directional shapes · end: 0.5 fill for 2 frames, fade 0.12 s. Colours are uniform arrays indexed by tell kind, refreshed from
+chevrons scrolling 0.6 Hz toward the hit on directional shapes · P1 faint element glyph (below) · end: 0.5 fill for 2 frames, fade 0.12 s. Colours are uniform arrays indexed by tell kind, refreshed from
 `threatColor(kind, assist.colorblind)` when the preset changes (shapes unchanged). Placement: grid quads mapped in the vertex shader (orientation-preserving, normals +y,
 DoubleSide), height from `world.heightField` (same triangle interpolation as `getHeight`, texelFetch), lift 0.06 m; flat at `pos.y` when the shape stands > 1 m above the terrain.
 Fallback without `heightField`: per-decal 24×24 CPU height grid rows in one R32F texture, rebuilt only when the decal moves > 0.1 m (same program, same families).
+P1 element glyph: `attack()` reads `spec.el ?? spec.element ?? e.element ?? e.el` (`fire, ice, lightning, wind, water, earth, nature, light, shadow`;
+aliases holy→light, void/dark→shadow, thunder/electric→lightning, frost→ice, poison→nature; `spec.glyph:false` opts out; physical/unknown → none) and stores
+`(atlas index + 1) × 64` in the style bits (no new attribute, no extra upload). The fragment samples the vfx kit glyph SDF atlas (`game.vfx.kit.glyph(el).tex`,
+bound once on first use; a 1×1 blank R8 texture is bound before, so the program is the same with or without the kit) with `textureGrad` (gradients taken
+before any branch) and analytic SDF AA; drawn under the chevrons/front/rim at α 0.20 in the rim hue 45 % toward `#FFF4F0`: circle (centre, r ≤ 0.45 R, ≤ 2 m),
+cone (0.55 R along the axis), line/capsule (mid-length); not on rings, conecaps, hazards, safe zones, markers, waves. Measured (T4, r 3 circle at 6 m, 960×540):
+1,195 px changed, mean ΔRGB 13, max 34; decal footprint vs no glyph 14,270 / 14,230 px (+0.3 %); still 4 tells programs.
 Soft occlusion: scene point from `post.sceneDepth` (`projInv`, `camWorld`), occluder only when nearer by > 0.3 m **and** > 1.0 m above the decal plane → α × 0.40.
 
 ### Body tells
@@ -75,7 +82,7 @@ hazards, winding-up bodies r + 1 m) · `renderThumb(kind, size)` (`danger, parry
 | `tells.update` CPU (same load) | median < 0.1 ms, p95 0.1 ms | — |
 | T1 changed px at 8 m, 960×540, grass on | circle 61.8k, ring 166.8k, cone 32.7k, line 39.3k, capsule 34.7k, conecap 35.2k | ≥ 600 (v3: 0) |
 | heightField conformance (6 m decal, 5 spots, vertices + cell midpoints) | max 0.008 m | ≤ 0.1 m |
-| T2 telegraph px with player VFX over the decals ÷ hidden (kit-p0a linework + legacy particles) | 1.018 / 1.013 / 1.005 / 1.000 (before kit-p0a: 1.06–1.07) | ≥ 0.95 |
+| T2 telegraph px with player VFX over the decals ÷ hidden (vfx-b linework + ~710 legacy particles) | 1.027 / 1.012 / 1.001 / 1.001 (before kit-p0a: 1.06–1.07) | ≥ 0.95 |
 | T2 grass on ÷ off | 0.997–0.998 | ≥ 0.95 |
 | T2 behind a 2.6 m wall (median per-pixel contribution ratio) | 0.418 (mean 0.437: the wall's lowest metre is not an occluder by rule) | 0.40 ± 0.05 |
 | T2 rim colour bloom on vs off | ΔRGB max 1 | ≤ 8 |
@@ -89,7 +96,7 @@ Integration-only (I) checks to verify at wave C: T2 with real looks (R-mage, R-s
 main scene (ratios > 1 because particles behind the decal raise the per-pixel diff); enemy-body-visible rows depend on mobs adopting `tells.attack` + rim sources.
 
 ## Tests on this branch
-- `node tools/playtest4.js tells`: **95 passed, 0 failed, 0 skipped** (110 s; T1–T4, the no-heightField fallback page, rule 5/6 greps), with world-b + kit-p0a merged. `TELLS_ONLY=<regex>` runs a subset (development only).
+- `node tools/playtest4.js tells`: **101 passed, 0 failed, 0 skipped** (83 s; T1–T4, P1 glyph, the no-heightField fallback page, rule 5/6 greps), with world-b + kit-p0a + vfx-b merged. `TELLS_ONLY=<regex>` runs a subset (development only).
 - `node tools/bootcheck.js` (15/15 configs reach their state; only the expected 404s of the two renamed-directory configs), `tools/playtest.js --quick`: pass.
 - `tools/playtest2.js`: passed fully before `kit-p0a`; with `kit-p0a` merged one check fails — `sword: wind combo hitstop on every hit` (vfx's v4 hitstop
   0.025 s vs the v3 `≥ 0.03` assertion). That expectation is core's to rewrite (§7.9 row 1, `hitstopLog`); it is not caused by tells.
@@ -98,7 +105,8 @@ main scene (ratios > 1 because particles behind the decal raise the per-pixel di
 
 ## P1
 - **Done**: 0.35 m vertical rising-edge ribbon on circle/ring AoE rims > 6 m (same program, `ribbon` family, height grows with the progress; 1 call).
-- **Cut**: the faint element glyph in the fill (needs the vfx glyph atlas from `kit-p0a`, which did not exist; fallback = no glyph, nothing else depends on it).
+- **Done**: faint element glyph in the fill (vfx kit glyph atlas; see the decal section). Fallback without the kit: no glyph (retried at most once per second), same program.
+- **Cut**: nothing.
 
 ## Known issues / notes
 - `kit-p0a`'s `vfx.telegraph` forwards **every** call to `tells.telegraph`, including the player-cast `fx('telegraph')` AoE previews of spells/sword archetypes, which
@@ -106,5 +114,7 @@ main scene (ratios > 1 because particles behind the decal raise the per-pixel di
 - Mobs/bosses still use `ctx.tele` (→ the adapter, timed on `game.time`) and `ctx.telegraphs.show` rings (main scene) until they adopt `tells.attack` (requests).
 - `tools/playtest3.js combat` "natural P0 triggers … magma" (vfx-owned section, changed by `kit-p0a`) failed in 2 of 4 runs on this branch after the kit merge (passes on retry);
   it does not involve tells (no `tells.attack` callers exist yet).
+- The glyph atlas (1024² R8, owned by vfx) is bound to the decal material on the first elemental tell; if vfx has not drawn a glyph yet that first frame
+  uploads it once (≈ 1 MB + mips). Mobs/bosses must pass `spec.el` (or set `e.element`) to get glyphs.
 - `canAttack`'s off-screen test uses the camera frustum with the enemy's upper-body sphere; it recomputes the frustum per call (cheap, allocation-free).
 - Thumbnails and the `공격 기회!` text use the system Korean font of the canvas; on machines without one the text cell falls back to the browser's default sans-serif.
