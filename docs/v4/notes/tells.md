@@ -98,9 +98,8 @@ main scene (ratios > 1 because particles behind the decal raise the per-pixel di
 ## Tests on this branch
 - `node tools/playtest4.js tells`: **101 passed, 0 failed, 0 skipped** (83 s; T1–T4, P1 glyph, the no-heightField fallback page, rule 5/6 greps), with world-b + kit-p0a + vfx-b merged. `TELLS_ONLY=<regex>` runs a subset (development only).
 - `node tools/bootcheck.js` (15/15 configs reach their state; only the expected 404s of the two renamed-directory configs), `tools/playtest.js --quick`: pass.
-- `tools/playtest2.js`: passed fully before `kit-p0a`; with `kit-p0a` merged one check fails — `sword: wind combo hitstop on every hit` (vfx's v4 hitstop
-  0.025 s vs the v3 `≥ 0.03` assertion). That expectation is core's to rewrite (§7.9 row 1, `hitstopLog`); it is not caused by tells.
-- `tools/playtest3.js` (all sections): before kit-p0a 1260 passed, 0 failed, 1 skipped; final run with kit-p0a: see the report.
+- `tools/playtest2.js`: pass (79 checks; the kit-p0a hitstop failure is gone with vfx-b).
+- `tools/playtest3.js` (all sections, vfx-b merged): **1266 passed, 0 failed, 1 skipped** (937 s).
 - No playtest3 section is owned by tells (§7.1), so no legacy expectations changed (rule 9).
 
 ## P1
@@ -112,8 +111,7 @@ main scene (ratios > 1 because particles behind the decal raise the per-pixel di
 - `kit-p0a`'s `vfx.telegraph` forwards **every** call to `tells.telegraph`, including the player-cast `fx('telegraph')` AoE previews of spells/sword archetypes, which
   therefore show as red danger decals in the threat scene until magic/melee pass `owner:'player'` (the adapter then skips the decal) or stop calling it (requests/vfx).
 - Mobs/bosses still use `ctx.tele` (→ the adapter, timed on `game.time`) and `ctx.telegraphs.show` rings (main scene) until they adopt `tells.attack` (requests).
-- `tools/playtest3.js combat` "natural P0 triggers … magma" (vfx-owned section, changed by `kit-p0a`) failed in 2 of 4 runs on this branch after the kit merge (passes on retry);
-  it does not involve tells (no `tells.attack` callers exist yet).
+- `tools/playtest3.js combat` "natural P0 triggers … magma" (vfx-owned section) was flaky after the `kit-p0a` merge; it passed in the final run with `vfx-b`.
 - The glyph atlas (1024² R8, owned by vfx) is bound to the decal material on the first elemental tell; if vfx has not drawn a glyph yet that first frame
   uploads it once (≈ 1 MB + mips). Mobs/bosses must pass `spec.el` (or set `e.element`) to get glyphs.
 - `canAttack`'s off-screen test uses the camera frustum with the enemy's upper-body sphere; it recomputes the frustum per call (cheap, allocation-free).
