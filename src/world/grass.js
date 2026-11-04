@@ -285,7 +285,7 @@ export function buildGrass(game, terrain, wind, opts = {}) {
   // units = clumps per patch at density 1 (≈37 blades/m² near, 7.5 far, 1.1 flowers/m² — same as v1 at 'high')
   const defs = [
     { name: 'near', S: 4, units: 197, blades: 3, segs: 3, width: 0.075, widthGrow: 0.004, height: [0.38, 0.78], fade: [14, 21], maxChunks: 220, seed: 11 },
-    { name: 'far', S: 10, units: 375, blades: 2, segs: 2, width: 0.1, widthGrow: 0.012, height: [0.4, 0.82], fade: [38, 56], maxChunks: 220, seed: 12 },
+    { name: 'far', S: 10, units: 375, blades: 2, segs: 1, width: 0.1, widthGrow: 0.012, height: [0.4, 0.82], fade: [38, 56], maxChunks: 220, seed: 12 },
     { name: 'flowers', flower: true, S: 8, units: 71, fade: [30, 44], maxChunks: 160, seed: 13 },
   ];
   const layers = defs.map((d) => makeLayer(game, shared, d));
@@ -310,17 +310,20 @@ export function buildGrass(game, terrain, wind, opts = {}) {
   }
 
   // ---------------------------------------------------------------- settings (live)
-  let density = 0.6, drawDist = 0.8;
+  // v4: density = settings.grassDensity (0.25/0.4/0.85) × budget.grassMul; fade distances × settings.grassNearFade
+  // (0.6/0.7/1.0); receiveShadow per preset (off at low/medium); chunks beyond the fade end are skipped on the CPU.
+  let density = 0.6, drawDist = 0.8, fadeMul = 1, densMul = 1;
   function applySettings() {
+    const dens0 = density * densMul;
     for (const Ly of layers) {
       const L = Ly.L;
-      const dscale = L.name === 'near' ? 0.75 + 0.25 * drawDist : 0.55 + 0.45 * drawDist;
-      const dens = L.name === 'flowers' ? Math.min(1, 0.35 + density * 0.65) : Math.max(0.04, density);
+      const dscale = (L.name === 'near' ? 0.75 + 0.25 * drawDist : 0.55 + 0.45 * drawDist) * fadeMul;
+      const dens = L.name === 'flowers' ? Math.min(1, 0.35 + dens0 * 0.65) : Math.max(0.04, dens0);
       Ly.fadeNow = [L.fade[0] * dscale, L.fade[1] * dscale];
       Ly.uniforms.uFade.value.set(Ly.fadeNow[0], Ly.fadeNow[1]);
       const units = Math.max(1, Math.round(Ly.geo.userData.units * dens));
       Ly.geo.setDrawRange(0, units * Ly.geo.userData.indexPerUnit);
-      Ly.mesh.visible = density > 0.001;
+      Ly.mesh.visible = dens0 > 0.001;
     }
   }
   applySettings();
@@ -335,7 +338,7 @@ export function buildGrass(game, terrain, wind, opts = {}) {
     const cx = cam.position.x, cz = cam.position.z;
     for (const Ly of layers) {
       if (!Ly.mesh.visible) { Ly.geo.instanceCount = 0; continue; }
-      const S = Ly.L.S, n = Ly.n, R = Ly.fadeNow[1] + S * 0.75;
+      const S = Ly.L.S, n = Ly.n, R = Ly.fadeNow[1];   // nearest chunk point beyond the fade end = every blade faded out
       const i0 = Math.max(0, Math.floor((cx - R - W0) / S)), i1 = Math.min(n - 1, Math.floor((cx + R - W0) / S));
       const j0 = Math.max(0, Math.floor((cz - R - W0) / S)), j1 = Math.min(n - 1, Math.floor((cz + R - W0) / S));
       let c = 0; const arr = Ly.chunkArr, R2 = R * R;
@@ -361,6 +364,11 @@ export function buildGrass(game, terrain, wind, opts = {}) {
   return {
     shared, layers, stats,
     setDensity(v) { density = Math.max(0, Math.min(1, v)); applySettings(); },
+    /** v4: fade-distance factor (settings.grassNearFade) and governor density multiplier (budget.grassMul). */
+    setFadeMul(v) { const f = Math.max(0.3, Math.min(1.2, v ?? 1)); if (f !== fadeMul) { fadeMul = f; applySettings(); } },
+    setDensityMul(v) { const f = Math.max(0, Math.min(1, v ?? 1)); if (f !== densMul) { densMul = f; applySettings(); } },
+    setReceiveShadow(on) { for (const Ly of layers) Ly.mesh.receiveShadow = !!on; },
+    get density() { return density * densMul; }, get fadeMul() { return fadeMul; },
     setDrawDistance(v) { drawDist = Math.max(0, Math.min(1, v)); applySettings(); },
     update(t, cam, playerPos) {
       shared.uTime.value = t;

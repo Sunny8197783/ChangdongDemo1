@@ -37,14 +37,14 @@ class DebrisSet {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
     this.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.castShadow = false; this.mesh.name = 'vfx-debris';
+    this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.castShadow = false; this.mesh.name = 'vfx-debris'; this.mesh.userData.owner = 'player';
     const om = new THREE.ShaderMaterial({
       uniforms: { thickness: { value: 0.06 }, color: { value: new THREE.Color(outlineColor) } },
-      vertexShader: OUTLINE_VERT, fragmentShader: OUTLINE_FRAG, side: THREE.BackSide,
+      vertexShader: OUTLINE_VERT, fragmentShader: OUTLINE_FRAG, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     this.outline = new THREE.InstancedMesh(geometry, om, CAP);
     this.outline.instanceMatrix = this.mesh.instanceMatrix; // share matrices
-    this.outline.count = 0; this.outline.frustumCulled = false; this.outline.name = 'outline';
+    this.outline.count = 0; this.outline.frustumCulled = false; this.outline.name = 'vfx-debris-outline'; this.outline.userData.owner = 'player';
     scene.add(this.mesh); scene.add(this.outline);
     // state: pos(3) vel(3) axis(3) angle spin size life age
     this.S = new Float32Array(CAP * 14); this.n = 0; this.cursor = 0;
@@ -99,22 +99,28 @@ class DebrisSet {
     }
     this.mesh.count = this.outline.count = this.n;
     this.mesh.visible = this.outline.visible = this.n > 0;
-    if (this.n) { this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; }
+    if (this.n) {
+      const im = this.mesh.instanceMatrix, ic = this.mesh.instanceColor;
+      im.clearUpdateRanges(); im.addUpdateRange(0, this.n * 16); im.needsUpdate = true;
+      ic.clearUpdateRanges(); ic.addUpdateRange(0, this.n * 3); ic.needsUpdate = true;
+    }
   }
 }
 
 export class Debris {
   constructor(game) {
     this.game = game;
-    const rock = toonMat(0xffffff, { flatShading: true });
-    const ice = toonMat(0xffffff, { flatShading: true, emissive: 0x2a6f88, emissiveIntensity: 0.6, transparent: true, opacity: 0.92 });
-    const crystal = toonMat(0xffffff, { flatShading: true, emissive: 0x6a3fb0, emissiveIntensity: 0.8 });
+    // neutral base × per-instance colour; v4 R10: player FX never write depth (transparent pass, alpha 1 for solid rocks)
+    const rock = toonMat(0xf4f1ea, { flatShading: true });
+    const ice = toonMat(0xf4f1ea, { flatShading: true, emissive: 0x12325e, emissiveIntensity: 0.6, transparent: true, opacity: 0.92 });
+    const crystal = toonMat(0xf4f1ea, { flatShading: true, emissive: 0x241052, emissiveIntensity: 0.8 });
+    for (const m of [rock, ice, crystal]) { m.transparent = true; m.depthWrite = false; }
     this.sets = {
       rock: new DebrisSet(game.scene, rockGeo(), rock, 0x2a1d12),
       ice: new DebrisSet(game.scene, shardGeo(), ice, 0x1d4a66),
       crystal: new DebrisSet(game.scene, shardGeo(), crystal, 0x2b1a4a),
     };
-    this.defaults = { rock: 0x8a6e4e, ice: 0xc8f4ff, crystal: 0xd8b8ff };
+    this.defaults = { rock: 0x8a6e4e, ice: 0x8fdcf5, crystal: 0xb49bff };
   }
 
   debris(pos, opts = {}) {
@@ -137,4 +143,5 @@ export class Debris {
   }
 
   count() { let n = 0; for (const k in this.sets) n += this.sets[k].n; return n; }
+  calls() { let n = 0; for (const k in this.sets) if (this.sets[k].n) n += 2; return n; }
 }

@@ -177,7 +177,7 @@ export function buildMirwen(game, world, { uTime }) {
   group.add(foam);
 
   // ---------------- drifting twilight mist motes over the lake (GPU animated points)
-  const NM = 90;
+  const NM = 48;   // v4: world transparents budget (fewer, smaller, round-discarded mist sprites)
   const mp = new Float32Array(NM * 3), ms = new Float32Array(NM * 2);
   for (let i = 0; i < NM; i++) {
     const a = rnd() * 6.28, rr = Math.sqrt(rnd());
@@ -201,13 +201,13 @@ export function buildMirwen(game, world, { uTime }) {
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
         bool firefly = aSeed.y > 0.82;
-        gl_PointSize = (firefly ? 60.0 : 1500.0 + aSeed.x * 900.0) * uScale / -mv.z;
-        vA = firefly ? 0.6 + 0.4 * sin(uTime * 3.0 + aSeed.x * 30.0) : 0.05;
+        gl_PointSize = (firefly ? 60.0 : 800.0 + aSeed.x * 500.0) * uScale / -mv.z;
+        vA = firefly ? 0.6 + 0.4 * sin(uTime * 3.0 + aSeed.x * 30.0) : 0.065;
         if (firefly) vK = -1.0;
       }`,
     fragmentShader: /* glsl */`
       varying float vA; varying float vK;
-      void main(){ vec2 d = gl_PointCoord - 0.5; float m = smoothstep(0.5, 0.0, length(d));
+      void main(){ vec2 d = gl_PointCoord - 0.5; float m = smoothstep(0.5, 0.0, length(d)); if (m < 0.02) discard;
         vec3 c = vK < 0.0 ? vec3(0.6, 1.0, 0.85) * 1.4 : mix(vec3(0.72, 0.82, 1.0), vec3(0.85, 0.78, 1.0), vK);
         gl_FragColor = vec4(c * m * vA, 1.0); }`,
   }));
