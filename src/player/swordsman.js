@@ -2,6 +2,7 @@
 // buckler, pauldrons, breastplate, bracers, hood/cowl + headband. Toggled against the mage gear by setOutfit().
 import * as THREE from 'three';
 import { toonMat } from '../core/utils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mk, grp, latheTexture, folds, hex, COLORS, mergeStatic } from './model.js';
 
 export const SW = {
@@ -152,11 +153,13 @@ export function buildSwordGear(rig) {
     vertexShader: EDGE_VS, fragmentShader: EDGE_FS, transparent: true, depthWrite: false,
     blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
   });
+  // both blade faces in ONE mesh (v4 draw budget): the two edge strips baked at ±z
   const eg = edgeGlowGeo(BLADE.len, 0.072, BLADE.y0);
-  for (const z of [0.0125, -0.0125]) {
-    const e = new THREE.Mesh(eg, gear.edgeMat); e.position.z = z; e.userData.noGhost = true; e.userData.noMerge = true;
-    e.frustumCulled = false; e.renderOrder = 4; sword.add(e);
-  }
+  const egs = [0.0125, -0.0125].map((z) => { const q = eg.clone(); q.translate(0, 0, z); return q; });
+  const egm = mergeGeometries(egs, false) || eg;
+  const e = new THREE.Mesh(egm, gear.edgeMat); e.userData.noGhost = true; e.userData.noMerge = true;
+  e.frustumCulled = false; e.renderOrder = 4; sword.add(e);
+  gear.edge = e;
   // tip / socket markers (world positions sampled for trails & hit tests)
   gear.tip = grp(sword, 0, BLADE.y0 + BLADE.len, 0, 'swordTip');
   gear.mid = grp(sword, 0, BLADE.y0 + BLADE.len * 0.45, 0, 'swordMid');

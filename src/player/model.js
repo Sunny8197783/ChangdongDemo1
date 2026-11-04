@@ -127,9 +127,12 @@ class Skirt {
     this._sig = NaN; this._settled = 0;
     const mat = toonMat(0xffffff, { map: skirtTexture(), side: THREE.DoubleSide });
     this.mesh = mk(geo, mat, parent, { outline: 0.014 });
-    this.mesh.userData.noMerge = true; this.mesh.userData.skin = 'skirt'; this.mesh.userData.noSkin = true;
+    this.mesh.userData.noMerge = true; this.mesh.userData.skin = 'skirt'; this.mesh.userData.noSkin = true; this.mesh.userData.skinDynamic = true;
     this.mesh.frustumCulled = false;
+    this.sink = null;
   }
+  /** v4 merge: write the deformed positions into the merged rig buffer (vertex offset) with a live-range upload. */
+  bindSink(array, offset, attr) { this.sink = { array, offset, attr }; }
   /** legL/legR: leg pitch (neg = forward); vx,vz: model-space velocity; flare 0..1; t time */
   deform(legL, legR, vx, vz, vy, flare, t, flutter) {
     if (!this.mesh.visible || (this.mesh.parent && !this.mesh.parent.visible)) return;
@@ -139,7 +142,9 @@ class Skirt {
       if (++this._settled > 2 && (this._settled & 3) !== 0) return;   // still animate the idle wave at 1/4 rate
     } else this._settled = 0;
     this._sig = sig;
-    const p = this.geo.attributes.position.array;
+    const sk = this.sink;
+    const p = sk ? sk.array : this.geo.attributes.position.array;
+    const o3 = sk ? sk.offset * 3 : 0;
     const n = this.h.length;
     const bx = THREE.MathUtils.clamp(-vx * 0.022, -0.22, 0.22);
     const bz = THREE.MathUtils.clamp(-vz * 0.022, -0.26, 0.22);
@@ -155,12 +160,13 @@ class Skirt {
       const rad = 1 + h2 * (wave * fl + flare * 0.32);
       const legPush = (-legL * (0.5 + 0.5 * s) + -legR * (0.5 - 0.5 * s)) * 0.42 * h15;
       const r = R[i] * rad;
-      const i3 = i * 3;
+      const i3 = o3 + i * 3;
       p[i3] = r * s + bx * h2;
       p[i3 + 2] = r * c + legPush + bz * h2;
-      p[i3 + 1] = B[i3 + 1] + lift * h2 * (0.6 + 0.4 * (s2[i] * cC + c2[i] * sC) * flutter);
+      p[i3 + 1] = B[i * 3 + 1] + lift * h2 * (0.6 + 0.4 * (s2[i] * cC + c2[i] * sC) * flutter);
     }
-    this.geo.attributes.position.needsUpdate = true;
+    if (sk) { sk.attr.addUpdateRange(o3, n * 3); sk.attr.needsUpdate = true; }
+    else this.geo.attributes.position.needsUpdate = true;
   }
 }
 

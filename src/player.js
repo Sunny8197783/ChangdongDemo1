@@ -7,6 +7,7 @@ import { clamp, lerp, damp, dampAngle, angleDiff, rand } from './core/utils.js';
 import { elColor } from './core/elements.js';
 import { CLASS_DEFS, familyOf, styleOf } from './core/classes.js';
 import { buildWizard, skinMerge } from './player/model.js';
+import { mergeRig } from './player/merge.js';
 import { Cape } from './player/cape.js';
 import { RuneCircle, Afterimages } from './player/fx.js';
 import { Animator, CAST_DUR } from './player/anim.js';
@@ -66,12 +67,17 @@ export function createPlayer(game) {
   });
   try { alignMergeKeys(root, cg); } catch (err) { console.warn('[player] alignMergeKeys', err); }
   scene.add(root);
-  // Perf: the whole rig (≈170 draw calls) → a handful of rigidly skinned meshes (see model.js skinMerge)
-  try { rig.skin = skinMerge(root); } catch (err) { console.warn('[player] skinMerge failed, using per-part meshes', err); }
+  const cape = new Cape(scene, rig.torso, rig.capeAnchors, 9, 0.112);
+  // Perf (PLAN §2.6): the whole rig (≈300 parts, every class's gear) + cape → body + outline + shadow proxy (see player/merge.js);
+  // v3 per-material skinMerge stays as the fallback
+  if (rig.gemCore) { rig.gemCore.visible = false; }
+  try {
+    rig.skin = mergeRig(root, { cape, skirt: rig.skirt, slots: { gem: rig.gemMat, mote: rig.moteMat, weaponGem: gear.gemMat }, exclude: new Set(rig.gemCore ? [rig.gemCore] : []) });
+  } catch (err) { console.warn('[player] mergeRig failed, using the v3 skinMerge', err); rig.skin = null; }
+  if (!rig.skin) { try { rig.skin = skinMerge(root); } catch (err) { console.warn('[player] skinMerge failed, using per-part meshes', err); } }
   const anim = new Animator(rig);
   const springs = new Springs(cg.chains);
   const footIK = new FootIK(rig);
-  const cape = new Cape(scene, rig.torso, rig.capeAnchors, 9, 0.112);
   const chargeCircle = new RuneCircle(scene, 1.15);
   const sigil = new RuneCircle(scene, 1.9);
   const ghosts = new Afterimages(scene, root, 5);
@@ -83,6 +89,7 @@ export function createPlayer(game) {
     id: 'player', team: 'player', alive: true, object: root, radius: 0.4, height: 1.8,
     hp: 100, maxHp: 100, mass: 1, velocity, grounded: true, statuses: {}, name: '바람결의 젊은이',
     isPlayer: true, invulnerable: false,
+    flashUniform: rig.skin?.flash,          // vfx.flashEntity tints the merged body through this uniform (no material clones)
     onBeforeDamage(hit) { return beforeDamage(hit); },
     onHit(result, hit) { onHit(result, hit); },
     onDeath(result, hit) { onDeath(result, hit); },
@@ -928,6 +935,7 @@ export function createPlayer(game) {
     cls = c;
     kit = kitOf(c);
     setClassOutfit(rig, cg, cape, c);
+    try { rig.skin?.refresh?.(); } catch (err) { console.warn('[player] rig refresh', err); }
     entity.name = c ? CLASS_DEFS[c].nameKo : '바람결의 젊은이';
     swordDrawn = false; drawnW = 0;
     weaponVisibility();
@@ -1860,6 +1868,7 @@ export function createPlayer(game) {
       wind.set(0.7 - hv.x * 0.05, 0, 0.35 - hv.z * 0.05);
       if (gliding) wind.y = 3;
       cape.update(dt, groundAtFeet, wind, clamp(wGlide + wSprint * 0.5 + (grounded ? 0 : 0.3), 0, 1.5));
+      rig.skin?.update?.();
 
       // ---------- camera ----------
       updateCamera(realDt);
