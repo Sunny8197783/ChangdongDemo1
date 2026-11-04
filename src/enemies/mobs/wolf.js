@@ -5,7 +5,7 @@
 // crouch (glow). Variant 'alpha': bigger mane and a white scar.
 import { P, S, C, K, CAP, TUBE, both, eye, quadruped, bone, curve, mixInto } from './rig.js';
 
-const WF = { fur: 0x5e5a72, furDark: 0x4a465e, stripe: 0x37334a, pale: 0xb9b3c8, paleDark: 0x9a94ac, mane: 0x48435c, claw: 0xe0dae8, nose: 0x1e1a26,
+const WF = { fur: 0x5e5a72, furDark: 0x58546e, stripe: 0x4c4864, pale: 0xb9b3c8, paleDark: 0xa49eb6, mane: 0x5a5572, sheen: 0x7a7692, claw: 0xe0dae8, nose: 0x1e1a26,
   mouth: 0x3a1a2a, void: 0xb06aff, eye: 0xffb347, scar: 0xece8f4, inner: 0x9a7a96 };
 
 export function wolfDef(opts = {}) {
@@ -18,7 +18,8 @@ export function wolfDef(opts = {}) {
   // body colour: dark back stripe on top, pale chest blaze + belly underneath, slate flanks
   const coat = (l, n, out, v) => {
     out.setHex(WF.fur);
-    if (n.y > 0.55 && Math.abs(v.x) < 0.12) mixInto(out, WF.fur, WF.stripe, (n.y - 0.55) * 4);
+    if (n.y > 0.3) mixInto(out, WF.fur, WF.sheen, (n.y - 0.3) * 1.5);                                   // light catches the top coat
+    if (n.y > 0.55 && Math.abs(v.x) < 0.09) mixInto(out, out.getHex(), WF.stripe, (n.y - 0.55) * 4);
     if (n.y < -0.35) mixInto(out, WF.fur, WF.paleDark, (-n.y - 0.35) * 2.5);
     if (v.z > 0.25 && n.z > 0.2 && v.y < 0.66) mixInto(out, WF.fur, WF.pale, (n.z - 0.2) * 2.2);        // chest blaze
     if (alpha && n.x > 0.5 && v.z > -0.5 && v.z < -0.1 && Math.abs(v.y - 0.66 - (v.z + 0.3) * 0.6) < 0.02) out.setHex(WF.scar);   // flank scar

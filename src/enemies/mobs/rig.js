@@ -15,7 +15,7 @@
 // jaw, lidL/lidR, thumb/fingers per hand, spring bones; smooth 2-bone weights in a 6 cm band at shoulders, elbows, hips, knees, waist.
 import * as THREE from 'three';
 import { toonMat } from '../../core/utils.js';
-import { Spring, skinOutlineMat } from '../common.js';
+import { Spring } from '../common.js';
 import * as Settings from '../../core/settings.js';
 
 const TAU = Math.PI * 2;
@@ -55,12 +55,58 @@ export function materials() {
   MATS = { body, shell, glow, outlines: new Map() };
   return MATS;
 }
-/** Outline material: the shared skinned inverted-hull material of common.js (same program as the v3 outlines). */
+// Outline proxy material: skinned inverted hull pushed along the projected normal by a constant pixel width (crisp ~1.6 px linework at
+// every distance, unlike the v3 world-space hull that falls below 1 px at gameplay range) + a small world push against z-fighting.
+// One program; colours are uniforms (one material per colour, same program). uRes = the scene render target size (game.post.sceneRes).
+const OUTLINE_RES = { value: new THREE.Vector2(1280, 720) };
+const OUTLINE_VS = /* glsl */`
+  uniform float uPx; uniform float uMinW; uniform vec2 uRes;
+  #include <common>
+  #include <skinning_pars_vertex>
+  #include <fog_pars_vertex>
+  void main() {
+    #include <beginnormal_vertex>
+    #include <skinbase_vertex>
+    #include <skinnormal_vertex>
+    vec3 transformed = vec3(position);
+    #include <skinning_vertex>
+    vec3 on = normalize(objectNormal);
+    transformed += on * uMinW;
+    vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+    vec4 clip = projectionMatrix * mvPosition;
+    vec2 d = (projectionMatrix * vec4(normalize(normalMatrix * on), 0.0)).xy;
+    float L = length(d);
+    if (L > 1e-5) clip.xy += d / L * uPx * 2.0 / uRes * clip.w;
+    gl_Position = clip;
+    #include <fog_vertex>
+  }`;
+const OUTLINE_FS = /* glsl */`
+  uniform vec3 color;
+  #include <common>
+  #include <fog_pars_fragment>
+  void main() {
+    gl_FragColor = vec4(color, 1.0);
+    #include <fog_fragment>
+  }`;
 export function outlineMat(t = 0.022, color = 0x1a1410) {
   const M = materials(), k = t.toFixed(4) + ':' + color;
   let m = M.outlines.get(k);
-  if (!m) { m = skinOutlineMat(t, color); M.outlines.set(k, m); }
+  if (!m) {
+    m = new THREE.ShaderMaterial({
+      uniforms: { ...THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), color: { value: new THREE.Color(color) }, uPx: { value: 1.6 }, uMinW: { value: t * 0.3 }, uRes: OUTLINE_RES },
+      vertexShader: OUTLINE_VS, fragmentShader: OUTLINE_FS, side: THREE.BackSide, fog: true,
+    });
+    m.name = 'mob4.outline';
+    M.outlines.set(k, m);
+  }
   return m;
+}
+/** Keep the outline pixel width right: the scene render target size (game.post.sceneRes) or the drawing buffer. */
+function syncOutlineRes() {
+  const g = GAME; if (!g) return;
+  const sr = g.post?.sceneRes?.value;
+  if (sr && sr.x > 0) { if (OUTLINE_RES.value.x !== sr.x || OUTLINE_RES.value.y !== sr.y) OUTLINE_RES.value.set(sr.x, sr.y); return; }
+  const c = g.renderer?.domElement; if (c && (OUTLINE_RES.value.x !== c.width || OUTLINE_RES.value.y !== c.height)) OUTLINE_RES.value.set(c.width, c.height);
 }
 export function allMaterials() { const M = materials(); return [M.body, M.shell, M.glow, ...M.outlines.values()]; }
 
@@ -130,6 +176,21 @@ function cardGeo(spec, d) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   return g;
 }
+/** Lathe surfaces: normals point away from the axis and every triangle winds front-facing outward (whatever the profile order). */
+function orientOutward(g) {
+  const p = g.attributes.position, nA = g.attributes.normal, ix = g.index.array;
+  let dot = 0;
+  for (let i = 0; i < p.count; i++) dot += nA.getX(i) * p.getX(i) + nA.getZ(i) * p.getZ(i);
+  if (dot < 0) for (let i = 0; i < nA.count; i++) nA.setXYZ(i, -nA.getX(i), -nA.getY(i), -nA.getZ(i));
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let t = 0; t < ix.length; t += 3) {
+    a.fromBufferAttribute(p, ix[t]); b.fromBufferAttribute(p, ix[t + 1]); c.fromBufferAttribute(p, ix[t + 2]);
+    b.sub(a); c.sub(a); b.cross(c);
+    n.fromBufferAttribute(nA, ix[t]).add(_v.fromBufferAttribute(nA, ix[t + 1])).add(_v.fromBufferAttribute(nA, ix[t + 2]));
+    if (b.dot(n) < 0) { const k = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = k; }
+  }
+  return g;
+}
 /** Build a primitive at detail d (1 = authoring). comp = circumscribe low-poly circles (outline proxy). */
 function primGeo(sp, d, comp) {
   let g;
@@ -143,7 +204,7 @@ function primGeo(sp, d, comp) {
     case 'tor': g = new THREE.TorusGeometry(sp.R, sp.t, seg(sp.m, d, 3), seg(sp.n, d, 4), sp.arc); break;
     case 'oct': g = new THREE.OctahedronGeometry(sp.r, 0); break;
     case 'ico': g = new THREE.IcosahedronGeometry(sp.r, sp.d); break;
-    case 'lathe': { const n = seg(sp.n, d, 5); g = new THREE.LatheGeometry(sp.pts.map((p) => new THREE.Vector2(p[0] * cf(n), p[1])), n); break; }
+    case 'lathe': { const n = seg(sp.n, d, 5); g = orientOutward(new THREE.LatheGeometry(sp.pts.map((p) => new THREE.Vector2(p[0] * cf(n), p[1])), n)); break; }
     case 'tube': g = tubeGeo({ ...sp, _comp: comp }, d); break;
     case 'card': g = cardGeo(sp, d); break;
     case 'fn': g = sp.fn(d, comp); break;
@@ -366,7 +427,10 @@ function ambientOcclusion(def, A) {
 function geometryFrom(parts, { color = true, colorFloat = false } = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(parts.pos, 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(parts.nrm, 3));
+  // normals as normalized Int8 (3 B instead of 12 B per vertex: smaller first-sight upload)
+  const n8 = new Int8Array(parts.nrm.length);
+  for (let i = 0; i < n8.length; i++) n8[i] = Math.max(-127, Math.min(127, Math.round(parts.nrm[i] * 127)));
+  g.setAttribute('normal', new THREE.BufferAttribute(n8, 3, true));
   if (color) {
     if (colorFloat) g.setAttribute('color', new THREE.BufferAttribute(parts.col, 3));
     else {
@@ -430,7 +494,12 @@ export function defineType(def) {
   for (const g of [geo, lodView, proxyGeo, glowGeo]) if (g) g.boundingSphere = sphere;
   const inverses = R.world.map((w) => new THREE.Matrix4().copy(w).invert());
   // eye-group extents (bind space) for the 6 px readability check
-  const eyes = body.chunks.filter((c) => c.q.f.eyeball).map((c) => { const p = new THREE.Vector3().setFromMatrixPosition(c.Mb); return { bone: c.q.bone, p, r: c.q.spec.r * Math.max(c.q.s[0], c.q.s[1]) }; });
+  const eyes = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, n: 0 };
+  for (const A2 of [body, glow]) if (A2) for (const c of A2.chunks) {
+    if (!c.q.f.eyeball) continue;
+    eyes.n++;
+    for (let i = 0; i < c.n; i++) { const x = c.pos[i * 3], y = c.pos[i * 3 + 1]; if (x < eyes.minX) eyes.minX = x; if (x > eyes.maxX) eyes.maxX = x; if (y < eyes.minY) eyes.minY = y; if (y > eyes.maxY) eyes.maxY = y; }
+  }
   const TT = {
     type: def.type, key: def.key || def.type, def, geo, lodView, proxyGeo, glowGeo, bodyCount, lodCount, sphere, inverses, boneSpecs: bones, boneIdx: R.idx,
     tris: { body: body.tris, lod: lod.tris, proxy: proxy.tris, glow: glow ? glow.tris : 0, shadow: lod.tris },
@@ -658,13 +727,15 @@ function setLod(st, m, on) {
   st.lod = on;
   m.proxy.visible = !on && st.outline;
 }
-function lodDistances() {
+const _dist = { lod: 25, outline: 25 };
+/** LOD / outline distances from the live quality budget (preset enemyLodDist × budget.enemyLodMul; outlines ≤ budget.enemyOutlineDist). Reused object. */
+export function lodDistances() {
   const g = GAME, q = g?.quality, b = q?.budget;
   const preset = Settings.PRESETS?.[q?.preset] || Settings.PRESETS?.medium;
   const base = preset?.enemyLodDist ?? 25;
-  const lodD = base * (b?.enemyLodMul ?? 1);
-  const olD = Math.min(b?.enemyOutlineDist ?? preset?.enemyOutlineDist ?? 25, lodD);
-  return [lodD, olD];
+  _dist.lod = base * (b?.enemyLodMul ?? 1);
+  _dist.outline = Math.min(b?.enemyOutlineDist ?? preset?.enemyOutlineDist ?? 25, _dist.lod);
+  return _dist;
 }
 const _wp = new THREE.Vector3();
 function updateModel(m, st, springs, dt, rnd) {
@@ -673,13 +744,14 @@ function updateModel(m, st, springs, dt, rnd) {
   if (!(dt > 0)) return;
   if (dt > 0.1) dt = 0.1;
   st.t += dt;
+  syncOutlineRes();
   const def = m._def;
   // ---- LOD + outline distance (hysteresis 1 m)
   const cam = g?.camera;
   if (cam) {
     const e = m.root.matrixWorld.elements, cp = cam.position;
     const dx = e[12] - cp.x, dy = e[13] - cp.y, dz = e[14] - cp.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const [lodD, olD] = lodDistances();
+    const D = lodDistances(), lodD = D.lod, olD = D.outline;
     const h = st.lod ? -1 : 1;
     const lodOn = d > lodD + h;
     st.outline = d < olD - (m.proxy.visible ? -1 : 1);

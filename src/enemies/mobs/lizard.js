@@ -115,8 +115,9 @@ export function lizardDef() {
     anchors: { weapon: ['weapon', [0, 0, 1.7]], head: ['neck', [0, 0.32, 0.05]], hand: ['handR', [0, -0.04, 0.02]], mouth: ['jaw', [0, -0.03, 0.45]], core: ['spine', [0, 0.3, 0.25]] },
     aliases: { weapon: 'weapon', frill: 'frill', tail3: 'tail3', tail4: 'tail4' },
     features: { face: true, hands: true, aoVertexColors: true, lod: true, digitigrade: true, tailBones: 4, frillFlare: true, slitPupils: true, teeth: true, shellPauldron: true },
+    onInstance(m) { for (const s of m._springs) if (s.bone === 'frill') m._frill = s; },
     afterPose(m, name, t) {
-      const fr = m._springs.find((s) => s.bone === 'frill');
+      const fr = m._frill;
       const k = name === 'windup' ? Math.min(1, t) : name === 'hold' ? 1 : 0;
       if (fr) fr.off = -0.75 * k;                       // flare on windup
       m.bones.all.frill.scale.set(1 + 0.25 * k, 1 + 0.35 * k, 1);

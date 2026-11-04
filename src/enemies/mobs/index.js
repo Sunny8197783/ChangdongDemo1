@@ -51,6 +51,9 @@ export function legacyModel(type, opts = {}) { const f = V3[type]; return f ? f(
 
 const warnOnce = (() => { const seen = new Set(); return (k, ...a) => { if (seen.has(k)) return; seen.add(k); console.warn('[mobmodels]', ...a); }; })();
 
+/** The species definition (rig.defineType input) for a type, without building it. */
+export function defFor(type, opts = {}) { const F = FACTORIES[type]; return F ? F.defFor(opts) : null; }
+
 /** Build (once) and return the cached type record, or null when no v4 factory exists. */
 export function buildType(type, opts = {}) {
   const F = FACTORIES[type];
@@ -108,7 +111,8 @@ export function buildAll() {
 export const stats = () => Rig.stats();
 
 let _warmObj = null;
-function warmObject() {
+/** The tiny skinned object that carries every mob material (prewarm warms it; tests draw it once in view). */
+export function warmObject() {
   if (_warmObj) return _warmObj;
   const S = Rig.S;
   const base = { type: '__warm', bones: [Rig.bone('rig', null, [0, 0.5, 0])], sphere: [0.5, 1], headTop: 1, kind: 'prop',

@@ -42,7 +42,7 @@ export function chuchuDef(opts = {}) {
   const bones = [
     bone('rig', null, [0, 0, 0]), bone('core', 'rig', [0, 0.38, -0.05]), bone('eyes', 'rig', [0, 0.5, 0]), bone('blink', 'eyes', [0, 0, 0]),
     bone('mouthSmile', 'rig', [0, 0.3, 0.665]), bone('mouthO', 'rig', [0, 0.29, 0.665]), bone('eyesX', 'rig', [0, 0.5, 0.62]),
-    bone('crown', 'rig', [0, 0.86, -0.02]),
+    bone('crown', 'rig', [0, 0.86, -0.02]), bone('podR', 'rig', [-0.52, 0.18, 0.12]), bone('podL', 'rig', [0.52, 0.18, 0.12]),
   ];
   const parts = [], glow = [], add = (...a) => parts.push(...a), gl = (...a) => glow.push(...a);
   // shell: belly gradient + a lighter squash-ring band at the widest point
@@ -52,6 +52,8 @@ export function chuchuDef(opts = {}) {
     if (l.y < 0.05) out.multiplyScalar(0.82);
   };
   add(P('rig', FN(shellGeo, [0.68, 0.45, 0.68]), shellCol, [0, 0, 0], [0, 0, 0], [1, 1, 1], { lod: true, proxy: true, aoCast: false }));
+  // pseudopods (the slime's hands): two shell nubs that stretch on the lunge
+  for (const s2 of ['R', 'L']) add(P('pod' + s2, S(0.12, 8, 6), shellCol, [0, 0, 0], [0, 0, s2 === 'R' ? 0.5 : -0.5], [1.15, 0.7, 0.9], { aoCast: false }));
   // ---------------- inner (glow mesh: unlit): core crystal, eyes, mouths, shine, variant crown
   const k = el ? 1.12 : 0.85;
   const coreSpec = {
@@ -68,7 +70,7 @@ export function chuchuDef(opts = {}) {
   gl(...coreSpec[variant]());
   // eyes (dark ovals + 2 highlights) on the blink bone
   for (const sx of [-1, 1]) {
-    gl(P('blink', S(0.11, 10, 8), 0x14141c, [sx * 0.21, 0.0, 0.6], [0, sx * 0.3, 0], [0.9, 1.25, 0.5]));
+    gl(P('blink', S(0.11, 10, 8), 0x14141c, [sx * 0.21, 0.0, 0.6], [0, sx * 0.3, 0], [0.9, 1.25, 0.5], { eyeball: true }));
     gl(P('blink', S(0.036, 5, 4), 0xf4f8ff, [sx * 0.21 + 0.035, 0.07, 0.655], [0, 0, 0], [1, 1, 0.5]));
     gl(P('blink', S(0.018, 4, 3), 0xf4f8ff, [sx * 0.21 - 0.03, -0.04, 0.66], [0, 0, 0], [1, 1, 0.5]));
     // x x eyes (death), hidden by default (bone scale 0)
@@ -106,7 +108,7 @@ export function chuchuDef(opts = {}) {
     ],
     anchors: { core: ['core', [0, 0, 0]], head: ['crown', [0, 0.1, 0]], mouth: ['mouthO', [0, 0, 0.02]], hand: ['core', [0, 0, 0.3]], weapon: ['mouthO', [0, 0, 0.02]] },
     aliases: { core: 'core', eyes: 'eyes' },
-    features: { face: true, hands: false, handsEquivalent: 'none (slime)', aoVertexColors: true, lod: true, innerCore: true, mouthStates: 3, crown: variant },
+    features: { face: true, hands: true, handsEquivalent: 'pseudopods', aoVertexColors: true, lod: true, innerCore: true, mouthStates: 3, crown: variant },
     onInstance(m, B) { B.mouthO.scale.setScalar(0.001); B.eyesX.scale.setScalar(0.001); m._blinkNext = 3 + Math.random() * 3; m._blinkT = 0; },
     update(m, dt) {
       // seeded-ish blink on the private blink bone (behaviour code may scale `eyes` too; both multiply)
@@ -133,6 +135,7 @@ export function chuchuDef(opts = {}) {
       A.mouthO.scale.setScalar(o ? 1 : 0.001); A.mouthSmile.scale.setScalar(o || dead ? 0.001 : 1);
       A.eyesX.scale.setScalar(dead ? 1 : 0.001); A.eyes.scale.setScalar(dead ? 0.001 : 1);
       A.core.position.y = 0.38 + (name === 'idle' ? Math.sin(t * 4) * 0.04 : 0);
+      const pod = name === 'strike' ? 1.35 : k > 0 ? 0.8 : 1; A.podR.scale.set(pod, 1, 1); A.podL.scale.set(pod, 1, 1);
     },
   };
 }

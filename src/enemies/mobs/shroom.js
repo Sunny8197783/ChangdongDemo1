@@ -93,12 +93,12 @@ export function shroomDef() {
     for (let i = -1; i <= 1; i++) {
       const a = i * 0.55;
       add(P('knee' + s2, TUBE(curve([0, -0.14, 0.05], [Math.sin(a) * 0.12, -0.17, 0.05 + Math.cos(a) * 0.12], [Math.sin(a) * 0.2, -0.2, 0.04 + Math.cos(a) * 0.2], 4), [0.04, 0.03, 0.018, 0.006], 5),
-        SR.root, [0, 0, 0], [0, 0, 0], [1, 1, 1], { small: true, dark: 0.9 }));
+        SR.root, [0, 0, 0], [0, 0, 0], [1, 1, 1], { proxy: true, dark: 0.9 }));
     }
   }
   return {
     type: 'shroom', bones, parts, glow, hipY: HIP, headTop: 1.55, lieY: 0.22, sphere: [0.8, 1.3], kind: 'humanoid',
-    outline: { t: 0.018, color: 0x2a1410 }, proxyMin: 0.1, lids: { open: 0.55, closed: 1.0 }, jawOpen: 0.4,
+    outline: { t: 0.018, color: 0x2a1410 }, proxyMin: 0.06, lids: { open: 0.55, closed: 1.0 }, jawOpen: 0.4,
     springs: [
       { bone: 'cap', axis: 'x', k: 90, d: 5, gain: [0.08, 0], vy: -0.04, sway: 0.025, swayHz: 0.6, min: -0.5, max: 0.5 },
       { bone: 'capTilt', axis: 'z', k: 90, d: 5, gain: [0, 0.08], sway: 0.025, swayHz: 0.5, min: -0.5, max: 0.5 },

@@ -31,7 +31,7 @@ export function dummyDef() {
   add(P('neck', K(0.13, 0.26, 8), DM.straw, [0, 0.57, 0]), P('neck', T(0.12, 0.025, 10, 3), DM.rope, [0, 0.47, 0], [Math.PI / 2, 0, 0]));
   add(P('neck', T(0.16, 0.022, 12, 3), DM.rope, [0, 0.03, 0], [Math.PI / 2, 0, 0], [1, 1, 1], { small: true }));
   for (const sx of [-1, 1]) {
-    add(P('neck', C(0.045, 0.045, 0.02, 10), DM.stitch, [sx * 0.09, 0.3, 0.255], [Math.PI / 2 - 0.2, 0, 0], [1, 1, 1], { small: true }));     // button eyes
+    add(P('neck', C(0.045, 0.045, 0.02, 10), DM.stitch, [sx * 0.09, 0.3, 0.255], [Math.PI / 2 - 0.2, 0, 0], [1, 1, 1], { small: true, eyeball: true }));     // button eyes
     add(P('neck', S(0.012, 4, 3), DM.sack, [sx * 0.09 + 0.015, 0.315, 0.27], [0, 0, 0], [1, 1, 1], { small: true }));
     add(P('neck', B(0.08, 0.016, 0.02), DM.stitch, [sx * 0.09, 0.38, 0.235], [-0.3, 0, sx * -0.25], [1, 1, 1], { small: true }));             // painted brows
   }
