@@ -75,3 +75,9 @@ Branch `v4/mobmodels` (from `core-p0a`), worktree `/home/user/wt4/mobmodels`. Ta
 ## Integration notes (I checks)
 - The F-* aggregate / C6 numbers apply once mobs uses `createModel` (docs/v4/requests/mobmodels.md); until then the game still draws the v3 models.
 - `enemies.js`' v3 LOD loop (outlines 45 m, shadows 70 m) must skip `e.model.v4` models (their `update()` owns LOD and outline distance).
+
+## Test results at `mobmodels-b` (this branch; tells/vfx kit on their core stubs; only `core-p0a` merged — no newer dependency tag existed)
+- `node tools/playtest4.js mobmodels --sheets`: **126 passed, 0 failed** (sheets written); `node tools/playtest4.js mobmodels`: **117 passed, 0 failed, 1 skipped** (sheets).
+  Includes static rule 5 (no `0xffffff`, glow/emissive ≤ 1.2) and rule 1 (imports) greps over `src/enemies/mobs/*`.
+- `node tools/bootcheck.js`: exit 0 (all configs `playing`). `node tools/playtest.js --quick`: all legacy checks PASS. `node tools/playtest2.js`: exit 0.
+  `node tools/playtest3.js enemies`: 138 passed, 0 failed, 1 skipped (its rule-9 grep also scans `src/enemies/mobs/*`: loops written as `i <= 4`).

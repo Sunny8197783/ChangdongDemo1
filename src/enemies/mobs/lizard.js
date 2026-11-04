@@ -34,7 +34,7 @@ export function lizardDef() {
   add(P('armL', T(0.2, 0.018, 12, 3), LZ.shellDark, [0.02, 0.03, 0], [Math.PI / 2, 0, -0.35], [1.15, 1.2, 1], { small: true }));
   add(P('spine', T(0.3, 0.028, 16, 4), LZ.leather, [0, 0.38, 0.0], [Math.PI / 2, -0.5, 0], [1, 0.85, 1]));   // strap
   // dorsal frill (spring + flare): 5 spines with a membrane
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i <= 4; i++) {
     const a = (i - 2) * 0.22, h = 0.3 - Math.abs(i - 2) * 0.05;
     add(P('frill', TUBE([[Math.sin(a) * 0.03, 0, i * -0.07], [Math.sin(a) * 0.05, h * 0.6, i * -0.07 - 0.04], [Math.sin(a) * 0.06, h, i * -0.07 - 0.1]], [0.025, 0.016, 0.004], 4), LZ.frill, [0, 0, 0], [0, 0, 0], [1, 1, 1], { small: true }));
   }
@@ -67,7 +67,7 @@ export function lizardDef() {
   for (const [s2, x] of [['R', -1], ['L', 1]]) add(P('lid' + s2, S(0.068, 8, 6, { phS: 0, phL: Math.PI }), LZ.back, [0, -0.03, 0], [0, x * 0.85, 0], [1, 1, 0.75], { small: true, ao: false }));
   add(P('jaw', TUBE([[0, -0.04, 0.0], [0, -0.06, 0.2], [0, -0.05, 0.38], [0, -0.03, 0.48]], [0.12, 0.1, 0.065, 0.035], 8), (l, n, out) => mixInto(out, LZ.side, LZ.belly, -n.y),
     [0, 0, 0], [0, 0, 0], [1.05, 0.55, 1], { blend: { axis: '+z', band: 0.05 } }));
-  for (let i = 0; i < 5; i++) add(...both([P('jaw', K(0.012, 0.04, 4), LZ.bone, [-(0.085 - i * 0.012), -0.02, 0.12 + i * 0.07], [0, 0, 0], [1, 1, 1], { small: true })]));
+  for (let i = 0; i <= 4; i++) add(...both([P('jaw', K(0.012, 0.04, 4), LZ.bone, [-(0.085 - i * 0.012), -0.02, 0.12 + i * 0.07], [0, 0, 0], [1, 1, 1], { small: true })]));
   add(P('neck', B(0.16, 0.03, 0.3), LZ.mouth, [0, 0.02, 0.35], [0, 0, 0], [1, 1, 1], { small: true, ao: false }));
   // ---------------------------------------------------------------- arms + 3-claw hands
   for (const s2 of ['R', 'L']) {

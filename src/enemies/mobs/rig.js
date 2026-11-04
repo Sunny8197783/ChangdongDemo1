@@ -44,12 +44,13 @@ function flashable(m, key) {
   m.customProgramCacheKey = function () { return key; };
   return m;
 }
+const VC_BASE = new THREE.Color(1, 1, 1);
 let MATS = null;
 export function materials() {
   if (MATS) return MATS;
-  const body = flashable(toonMat(0xffffff, { vertexColors: true }), 'toonRim+dis+mob4');
+  const body = flashable(toonMat(VC_BASE, { vertexColors: true }), 'toonRim+dis+mob4');   // base = neutral multiplier for the vertex colours
   body.name = 'mob4.body';
-  const shell = flashable(toonMat(0xffffff, { vertexColors: true, transparent: true, opacity: 0.84 }), 'toonRim+dis+mob4');
+  const shell = flashable(toonMat(VC_BASE, { vertexColors: true, transparent: true, opacity: 0.84 }), 'toonRim+dis+mob4');
   shell.name = 'mob4.shell'; shell.depthWrite = true;
   const glow = new THREE.MeshBasicMaterial({ vertexColors: true }); glow.name = 'mob4.glow';
   MATS = { body, shell, glow, outlines: new Map() };
@@ -363,7 +364,7 @@ function assemble(def, R, list, mode) {
     const blend = q.f.blend, parentBi = blend ? R.idx.get(def.bones[bi].parent) : -1;
     const bAx = blend ? AXIS[blend.axis[1]] : 0, bSg = blend ? (blend.axis[0] === '-' ? -1 : 1) : 1, band = blend?.band ?? 0.06;
     const colFn = typeof q.color === 'function' ? q.color : null;
-    if (!colFn) _c2.setHex(q.color ?? 0xffffff);
+    if (!colFn) { if (q.color == null) _c2.setRGB(1, 1, 1); else _c2.setHex(q.color); }
     for (let i = 0; i < n; i++) {
       local.fromBufferAttribute(pa, i).applyMatrix4(Mp);
       nl.fromBufferAttribute(na, i).applyMatrix3(nMp).normalize();
@@ -372,7 +373,7 @@ function assemble(def, R, list, mode) {
       pos[i * 3] = _v.x; pos[i * 3 + 1] = _v.y; pos[i * 3 + 2] = _v.z;
       _n.fromBufferAttribute(na, i).applyMatrix3(nMb).normalize();
       nrm[i * 3] = _n.x; nrm[i * 3 + 1] = _n.y; nrm[i * 3 + 2] = _n.z;
-      if (colFn) { _c.setHex(0xffffff); colFn(local, nl, _c, _v); } else _c.copy(_c2);
+      if (colFn) { _c.setRGB(1, 1, 1); colFn(local, nl, _c, _v); } else _c.copy(_c2);
       if (def.paint && mode !== 'glow') def.paint(_v, _n, _c, q, local);
       if (q.f.dark) _c.multiplyScalar(q.f.dark);
       if (q.f.glowK) _c.multiplyScalar(Math.min(1.2, q.f.glowK));

@@ -50,6 +50,22 @@ function installMMT() {
 }
 
 module.exports = async function mobmodels(PT) {
+  // ------------------------------------------------------------------ static: PLAN §7.2 rule 5 (no 0xffffff effect colours, emissive ≤ 1.2) + rule 1 imports
+  {
+    const fs = require('fs'), root = path.resolve(__dirname, '..', '..'), dir = path.join(root, 'src/enemies/mobs');
+    const bad5 = [], bad1 = [];
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+      fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((l, i) => {
+        if (/0x[fF]{6}\b|#[fF]{6}\b/.test(l)) bad5.push(`${f}:${i + 1}`);
+        const m = /emissiveIntensity:\s*([\d.]+)/.exec(l); if (m && +m[1] > 1.2) bad5.push(`${f}:${i + 1} emissive ${m[1]}`);
+        const k = /glowK:\s*([\d.]+)/.exec(l); if (k && +k[1] > 1.2) bad5.push(`${f}:${i + 1} glowK ${k[1]}`);
+        const im = /^\s*import\s.*from\s+'([^']+)'/.exec(l);
+        if (im && !(im[1] === 'three' || im[1].startsWith('three/addons/') || im[1].startsWith('./') || /^\.\.\/(common|models|models2)\.js$/.test(im[1]) || im[1].startsWith('../../core/'))) bad1.push(`${f}:${i + 1} ${im[1]}`);
+      });
+    }
+    PT.check('rule 5: no 0xffffff colours and no emissive/glow multiplier > 1.2 in src/enemies/mobs/*', bad5.length === 0, bad5);
+    PT.check('rule 1: mobs/* import only own files, ../common.js, src/core/* and three', bad1.length === 0, bad1);
+  }
   // ================================================================== page 1: S-plains (contract, build cost, draws, budgets, features, eyes)
   const pg = await PT.bootScene('S-plains', { w: 640, h: 360 });
   PT.check('boot: game.ready', pg.ready, pg.params);
