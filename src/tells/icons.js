@@ -5,6 +5,7 @@
 // Reserved shapes (diamond sparkle, rising chevron) are drawn only here (threat scene), never by player effects.
 import * as THREE from 'three';
 import { TELLS_TEXT_KO } from './text.js';
+import { setRange } from './decals.js';
 
 export const SPRITE_CAP = 64;
 const STRIDE = 20;
@@ -139,6 +140,7 @@ export function createSprites(game) {
   }
   function free(s) { if (s) { s.active = false; s.owner = null; } }
   let live = 0;
+  const range = { start: 0, count: 0 };
   function frame() {
     let n = 0;
     for (let i = 0; i < recs.length; i++) {
@@ -154,7 +156,7 @@ export function createSprites(game) {
     }
     live = n;
     geo.instanceCount = n; mesh.visible = n > 0;
-    if (n > 0) { ib.clearUpdateRanges?.(); ib.addUpdateRange(0, n * STRIDE); ib.needsUpdate = true; }
+    if (n > 0) { setRange(ib, range, n * STRIDE); ib.needsUpdate = true; }
   }
   function count(kind) { let n = 0; for (const s of recs) if (s.active && (!kind || s.kind === kind)) n++; return n; }
   return { mesh, material, atlas, recs, alloc, free, frame, count, get live() { return live; } };

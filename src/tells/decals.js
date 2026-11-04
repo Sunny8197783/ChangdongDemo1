@@ -201,6 +201,16 @@ const FRAG = /* glsl */`
   }`;
 
 
+/**
+ * addUpdateRange(0, count) without a fresh range object per frame (r160 pushes a new {start, count} each call; three
+ * clears the list after the upload, so one reused record is equivalent and allocation-free).
+ */
+export function setRange(buf, range, count) {
+  range.start = 0; range.count = count;
+  const R = buf.updateRanges;
+  if (R) { R.length = 0; R[0] = range; } else buf.addUpdateRange(0, count);
+}
+
 function gridGeometry(sx, sz) {
   const g = new THREE.PlaneGeometry(2, 2, sx, sz);
   g.rotateX(-Math.PI / 2);                    // normals +y; (x, z) in [−1, 1]
@@ -277,9 +287,10 @@ export function createDecals(game) {
     root.add(mesh);
     const recs = [];
     for (let i = 0; i < F.cap; i++) recs.push(makeRec(name, slot++));
-    fams[name] = { name, F, geo, ib, arr, mesh, recs, live: 0 };
+    fams[name] = { name, F, geo, ib, arr, mesh, recs, live: 0, range: { start: 0, count: 0 } };
   }
   root.updateMatrixWorld(true);
+  const famList = Object.keys(fams);
 
   function makeRec(fam, gslot) {
     return { fam, slot: gslot, active: false, S: makeShape(), q: { ox: 0, oz: 0, fx: 0, fz: 1, aMin: 0, aMax: 0, half: 0, p0: 0, p1: 0, p2: 0, p3: 0, coneRot: 0, fillLen: 1 },
@@ -348,7 +359,8 @@ export function createDecals(game) {
   function frame(tE, tG, tR, dtR, perfectMul) {
     uniforms.uTime.value = tR;
     uniforms.uHasDepth.value = P.sceneDepth?.value ? 1 : 0;
-    for (const name in fams) {
+    for (let fi = 0; fi < famList.length; fi++) {
+      const name = famList[fi];
       const fam = fams[name], A = fam.arr;
       let n = 0;
       for (let i = 0; i < fam.recs.length; i++) {
@@ -382,7 +394,7 @@ export function createDecals(game) {
       fam.live = n;
       fam.geo.instanceCount = n;
       fam.mesh.visible = n > 0;
-      if (n > 0) { fam.ib.clearUpdateRanges?.(); fam.ib.addUpdateRange(0, n * STRIDE); fam.ib.needsUpdate = true; }
+      if (n > 0) { setRange(fam.ib, fam.range, n * STRIDE); fam.ib.needsUpdate = true; }
     }
     if (gridDirty) { gridTex.needsUpdate = true; gridDirty = false; }
     void perfectMul;

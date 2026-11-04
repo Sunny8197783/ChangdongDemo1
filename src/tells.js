@@ -361,7 +361,7 @@ export function createTells(game) {
     // rims: ≤ 4 calls, nearest enemies by remaining time
     rimCand.length = 0;
     for (let i = 0; i < live.length; i++) { const h = live[i]; if (h.alive && h.enemy && h.spec.body !== false && h.enemy.object) rimCand.push(h); }
-    rimCand.sort(byRemaining);
+    sortByRemaining(rimCand);
     rimEnemies.length = 0;
     for (let i = 0; i < rimCand.length && rimEnemies.length < RIM_SLOTS; i++) if (rimEnemies.indexOf(rimCand[i].enemy) < 0) rimEnemies.push(rimCand[i].enemy);
     let slot = 0;
@@ -388,8 +388,10 @@ export function createTells(game) {
     buildFootprints(pp);
     legacyTick();
   }
-  function byRemaining(a, b) { return a.remaining - b.remaining; }
-  function firstHandleOf(e) { let best = null; for (const h of live) if (h.alive && h.enemy === e && (!best || h.remaining < best.remaining)) best = h; return best; }
+  function sortByRemaining(a) {          // insertion sort (small arrays, no allocation)
+    for (let i = 1; i < a.length; i++) { const x = a[i], r = x.remaining; let j = i - 1; while (j >= 0 && a[j].remaining > r) { a[j + 1] = a[j]; j--; } a[j + 1] = x; }
+  }
+  function firstHandleOf(e) { let best = null; for (let i = 0; i < live.length; i++) { const h = live[i]; if (h.alive && h.enemy === e && (!best || h.remaining < best.remaining)) best = h; } return best; }
 
   function buildFootprints(pp) {
     const D = FOOT.data;
@@ -404,7 +406,9 @@ export function createTells(game) {
         if (p) { cand.d[cand.n] = Math.max(0, Math.hypot(p.x - px, p.z - pz) - ((h.enemy.radius ?? 0.6) + 1)); cand.type[cand.n] = 2; cand.ref[cand.n] = h; cand.n++; }
       }
     }
-    for (const Z of zones.zones) {
+    const ZL = zones.zones;
+    for (let zi = 0; zi < ZL.length; zi++) {
+      const Z = ZL[zi];
       if (Z.stopped || !Z.S || cand.n >= CAND_MAX) continue;
       cand.d[cand.n] = shapeDistance(Z.S.ref, _pp); cand.type[cand.n] = 3; cand.ref[cand.n] = Z; cand.n++;
     }
@@ -504,6 +508,13 @@ export function createTells(game) {
     hazard: (o) => zones.zone('hazard', o),
     safe: (o) => zones.zone('safe', o),
     telegraph,
+    /** The hazard zone holding pos (ground XZ), or null → {kind, nameKo, tell:'hazard'} for ux's "standing in a hazard" cue. */
+    hazardAt(pos, pad = 0) {
+      if (!pos) return null;
+      const ZL = zones.zones;
+      for (let i = 0; i < ZL.length; i++) { const Z = ZL[i]; if (!Z.stopped && Z.kind === 'hazard' && Z.S && hitTest(Z.S.ref, pos, pad)) return Z.info || (Z.info = { kind: Z.hazardKind, nameKo: Z.nameKo, tell: 'hazard' }); }
+      return null;
+    },
     active() { return ACTIVE; },
     footprints() { return FOOT; },
     update, preOverlay,
@@ -520,7 +531,7 @@ export function createTells(game) {
       seen: () => ({ ...seen }),
       resetSeen() { seen = {}; },
       occlusion(on) { decals.uniforms.uOccOn.value = on ? 1 : 0; },
-      decals, sprites, rims, zones, root,
+      decals, spritesApi: sprites, rimsApi: rims, zones, root,
       heightAt: (x, z) => decals.heightAt(x, z),
       reset() {
         for (let i = live.length - 1; i >= 0; i--) live[i].stop('cancel');

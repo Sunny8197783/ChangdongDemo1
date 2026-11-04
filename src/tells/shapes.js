@@ -127,24 +127,23 @@ export function centroid(S, out) {
   return out;
 }
 
+function putFoot(data, b, x, z, kind, r, dx, dz, param, len) {
+  data[b] = x; data[b + 1] = z; data[b + 2] = kind; data[b + 3] = r; data[b + 4] = dx; data[b + 5] = dz; data[b + 6] = param; data[b + 7] = len;
+}
 /** Writes the footprint(s) of shape S at data[o…]; returns the number of footprints written (0–2). */
 export function writeFootprint(S, data, o, max) {
   if (max <= 0) return 0;
   const k = S.kind;
-  const put = (i, x, z, kind, r, dx, dz, param, len) => {
-    const b = o + i * 8;
-    data[b] = x; data[b + 1] = z; data[b + 2] = kind; data[b + 3] = r; data[b + 4] = dx; data[b + 5] = dz; data[b + 6] = param; data[b + 7] = len;
-  };
-  if (k === 'circle') { put(0, S.px, S.pz, FOOT_KIND.circle, S.r, S.dx, S.dz, 0, 0); return 1; }
-  if (k === 'ring') { put(0, S.px, S.pz, FOOT_KIND.ring, S.r, S.dx, S.dz, S.inner, 0); return 1; }
-  if (k === 'cone') { put(0, S.px, S.pz, FOOT_KIND.cone, S.r, S.dx, S.dz, S.angle, 0); return 1; }
-  if (k === 'line') { put(0, S.px, S.pz, FOOT_KIND.line, S.width / 2, S.dx, S.dz, 0, S.len); return 1; }
+  if (k === 'circle') { putFoot(data, o + 0 * 8, S.px, S.pz, FOOT_KIND.circle, S.r, S.dx, S.dz, 0, 0); return 1; }
+  if (k === 'ring') { putFoot(data, o + 0 * 8, S.px, S.pz, FOOT_KIND.ring, S.r, S.dx, S.dz, S.inner, 0); return 1; }
+  if (k === 'cone') { putFoot(data, o + 0 * 8, S.px, S.pz, FOOT_KIND.cone, S.r, S.dx, S.dz, S.angle, 0); return 1; }
+  if (k === 'line') { putFoot(data, o + 0 * 8, S.px, S.pz, FOOT_KIND.line, S.width / 2, S.dx, S.dz, 0, S.len); return 1; }
   let vx = S.ex - S.px, vz = S.ez - S.pz; const L = Math.sqrt(vx * vx + vz * vz);
   if (L > 1e-5) { vx /= L; vz /= L; } else { vx = S.dx; vz = S.dz; }
-  put(0, S.px, S.pz, FOOT_KIND.capsule, S.width / 2, vx, vz, 0, L);
+  putFoot(data, o + 0 * 8, S.px, S.pz, FOOT_KIND.capsule, S.width / 2, vx, vz, 0, L);
   if (k === 'conecap' && max > 1) {
     const cx = S.dirExplicit ? S.dx : vx, cz = S.dirExplicit ? S.dz : vz;
-    put(1, S.ex, S.ez, FOOT_KIND.cone, S.r, cx, cz, S.angle, 0); return 2;
+    putFoot(data, o + 1 * 8, S.ex, S.ez, FOOT_KIND.cone, S.r, cx, cz, S.angle, 0); return 2;
   }
   return 1;
 }

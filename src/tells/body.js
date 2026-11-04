@@ -108,7 +108,8 @@ export function createRims(game) {
   /** Copy matrices from the sources (tells.preOverlay, after the main render). */
   function sync() {
     shared.uHasDepth.value = P.sceneDepth?.value ? 1 : 0;
-    for (const s of slots) {
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
       if (!s.active) continue;
       const src = s.src, c = s.clone;
       let vis = src.visible;
@@ -118,7 +119,7 @@ export function createRims(game) {
       if (c.isSkinnedMesh) c.bindMatrixInverse.copy(src.bindMatrixInverse);
     }
   }
-  function count() { let n = 0; for (const s of slots) if (s.active && s.clone?.visible !== false) n++; return n; }
+  function count() { let n = 0; for (let i = 0; i < slots.length; i++) { const s = slots[i]; if (s.active && s.clone && s.clone.visible !== false) n++; } return n; }
   const materials = [];
   for (const s of slots) materials.push(s.matSkin, s.matStatic);
   return { root, slots, assign, release, sync, count, materials };
@@ -133,7 +134,7 @@ export function rimSources(e, out) {
     if (r) { const a = Array.isArray(r) ? r : [r]; for (let i = 0; i < a.length && out.length < 2; i++) if (a[i]?.isMesh) out.push(a[i]); if (out.length) return out; }
   } catch (_) { /* */ }
   const cached = e.__tellsRimSrc;
-  if (cached) { for (const m of cached) out.push(m); return out; }
+  if (cached) { for (let i = 0; i < cached.length; i++) out.push(cached[i]); return out; }
   const list = [];
   const meshes = e.model?.skin?.meshes;
   if (meshes) for (const k in meshes) { const m = meshes[k]; if (m?.isMesh) list.push(m); }
