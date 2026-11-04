@@ -23,3 +23,4 @@
   - 재개: Workflow({scriptPath, resumeFromRunId: 'wf_e69257f0-71f'})
   - 구성: WaveA(core → tag core-p0a) → WaveB(11 owner, /home/user/wt4/<owner>, branch v4/<owner>) → Integrate(§7.10, --perf 게이트, 시트 리뷰) → Review(6 렌즈) → Verify(반박 검증) → Fix(최대 2회 + 재통합)
 - (3) 검증·푸시·재배포: 대기
+- 2026-11-04 15:4x: 5시간 사용량 한도로 구현 run 중단(완료: core wave A, world, mobmodels; 태그 tells-b, vfx-b 생성됨). 18:23 UTC 같은 run id로 재개(task wbqcx1u4b).
