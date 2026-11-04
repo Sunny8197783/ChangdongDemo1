@@ -679,6 +679,8 @@ export function buildSurface(game, world, terrain, field, grass) {
     barrels,
     /** Spots of all explosive barrels (homes). */
     barrelSpots() { return barrels.map((b) => b.home.clone()); },
+    /** v4: the live barrel prop records (world.js keeps their Object3Ds dynamic). */
+    barrelList() { return barrels; },
     addBarrel(pos) { const b = makeBarrel(pos); if (game.combat?.register) game.combat.register(b); return b; },
     update(dt, realDt) {
       const t = game.realTime;

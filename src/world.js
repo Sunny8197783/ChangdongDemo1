@@ -1,7 +1,7 @@
 // World module: terrain, sky, lighting, grass, flora, water, camps, boss arena, ambience,
 // v2: 바람결 마을 (village), 세계수 아스트라 (world tree), terrain interaction (surface), live graphics settings.
 import * as THREE from 'three';
-import { buildTerrain, buildDistantMountains, LAYOUT, WATER_LEVEL, BOUNDS, CELL } from './world/terrain.js';
+import { buildTerrain, buildDistantMountains, LAYOUT, WATER_LEVEL, BOUNDS, CELL, ORIGIN, SIZE, NV, HEIGHTFIELD_GLSL } from './world/terrain.js';
 import { buildSky, SKY } from './world/sky.js';
 import { buildGrass } from './world/grass.js';
 import { buildFlora } from './world/flora.js';
@@ -31,6 +31,7 @@ const SHADOW_Q = { low: { size: 1024, extent: 26 }, medium: { size: 2048, extent
 
 export function createWorld(game) {
   const { scene, renderer } = game;
+  const rootStart = scene.children.length;   // every root added from here on is world-owned (v4: static-matrix pass in init)
   const S0 = game.settings?.values || {};
   const sunDir = new THREE.Vector3(0.85, 0.55, -0.1).normalize(); // 3/4 side light relative to the north-bound travel direction
   const wind = { dir2: new THREE.Vector2(0.8, -0.6).normalize(), dir: new THREE.Vector3(0.8, 0, -0.6).normalize(), strength: 1 };
@@ -306,6 +307,18 @@ export function createWorld(game) {
     pathway: paths.main,
     sunDirection: sunDir, sun, hemi,
     terrainMesh: terrain.mesh, heightTexture: terrain.heightTex,
+    /**
+     * v4 (PLAN §7.4.2, world-p0a): the terrain height field for GPU consumers (instanced telegraph decals).
+     * tex = R32F DataTexture (NearestFilter), res.x × res.z texels; texel (i, j) holds getHeight at
+     * (origin.x + i·texel, origin.z + j·texel) exactly (vertex-centred, uv of texel centre = ((p − origin)/texel + 0.5)/res).
+     * Exact reconstruction = the same triangle interpolation getHeight uses: `glsl` defines
+     * `float awHeightField(sampler2D tex, vec2 xz)` (texelFetch ×4). A plain bilinear tap is within a few cm on
+     * gentle ground but not on cliffs; use the GLSL helper.
+     */
+    heightField: {
+      tex: terrain.heightTex, origin: { x: ORIGIN, z: ORIGIN }, size: { x: SIZE, z: SIZE }, texel: CELL,
+      res: { x: NV, z: NV }, format: 'R32F', filter: 'nearest', glsl: HEIGHTFIELD_GLSL,
+    },
     /** Optional: brighten arena runes (0..1), e.g. during the boss fight. */
     setArenaGlow(v) { structures.runes.uBoost.value = v; },
     /** Optional: altar crystal brightness (1 normal, 2+ ceremony). */
@@ -477,6 +490,27 @@ export function createWorld(game) {
     { g: plateau.group, c: plateau.center, r: plateau.radius },
     { g: plateau.ledgeGroup, c: plateau.ledgeCenter, r: plateau.ledgeRadius },
   ];
+  /**
+   * v4 (PLAN §2.7): every static world object composes its matrix once (matrixAutoUpdate = false + one updateMatrix()).
+   * Kept dynamic: lights (+ the sun target), the camera-following sky dome, the windmill sails, the floating arena
+   * crystals, the mirror door, and the Object3Ds of combat props (barrels, rot walls, the door prop: knock-back moves them).
+   */
+  function freezeStaticMatrices() {
+    const keep = new Set([village.sails, sky.mesh, sun.target, ...(structures.crystals || [])].filter(Boolean));
+    for (const b of surface.barrelList?.() || []) if (b?.object) keep.add(b.object);
+    for (const w of elderwood.rotWalls || []) if (w?.prop?.object) keep.add(w.prop.object);
+    if (plateau.door?.prop?.object) keep.add(plateau.door.prop.object);
+    plateau.ledgeGroup?.traverse?.((o) => { if (o.name === 'mirrorDoor') keep.add(o); });
+    const roots = scene.children.slice(rootStart, rootEnd);
+    for (const r of roots) {
+      r.traverse((o) => {
+        if (keep.has(o) || o.isLight || o.isCamera || o.userData?.dynamic) return;
+        o.updateMatrix(); o.matrixAutoUpdate = false;
+      });
+      r.updateMatrixWorld(true);
+    }
+    world._staticRoots = roots;
+  }
   Object.defineProperty(world, 'act', { get: () => act, enumerable: true });
   Object.defineProperty(world, 'bossFightLOD', { get: () => bossLOD, enumerable: true });
   let acc4 = 1, acc1 = 1;
@@ -492,12 +526,7 @@ export function createWorld(game) {
       if (plateau.door.state === 'closed' && plateau.door.prop) { try { game.combat?.register?.(plateau.door.prop); } catch (_) { /* */ } }
       village.refreshCrystals?.();
       // material pre-warm happens in main.js boot (after all module inits, with the composer target bound)
-      // static world groups: compose their local matrices once instead of every frame (windmill sails animate)
-      const keep = new Set([village.sails].filter(Boolean));
-      for (const g of [village.group, worldTree.group, flora.group]) {
-        g?.traverse?.((o) => { if (keep.has(o)) return; o.updateMatrix(); o.matrixAutoUpdate = false; });
-        g?.updateMatrixWorld?.(true);
-      }
+      freezeStaticMatrices();
     },
     update(dt, realDt) {
       const t = game.realTime;
@@ -571,5 +600,6 @@ export function createWorld(game) {
       else { OCC.uOccA.value.set(0, -999, 0); OCC.uOccB.value.set(0, -999, 1); }
     },
   });
+  const rootEnd = scene.children.length;
   return world;
 }

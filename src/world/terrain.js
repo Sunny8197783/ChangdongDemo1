@@ -553,3 +553,21 @@ export const TERRAIN_GLSL = /* glsl */`
     return h00 + (h10 - h00) * f.x + (h11 - h10) * f.y;
   }
 `;
+
+/**
+ * v4 (world.heightField.glsl): exact terrain height at world xz from the R32F height texture passed as `tex`
+ * (vertex-centred texels, triangle interpolation identical to getHeight). Usable in vertex and fragment shaders.
+ */
+export const HEIGHTFIELD_GLSL = /* glsl */`
+  float awHeightField(sampler2D tex, vec2 xz){
+    vec2 g = (xz - vec2(${ORIGIN.toFixed(4)})) / ${CELL.toFixed(6)};
+    g = clamp(g, vec2(0.0), vec2(${(SEG - 1e-4).toFixed(4)}));
+    ivec2 c = ivec2(floor(g)); vec2 f = g - vec2(c);
+    float h00 = texelFetch(tex, c, 0).r;
+    float h10 = texelFetch(tex, c + ivec2(1,0), 0).r;
+    float h01 = texelFetch(tex, c + ivec2(0,1), 0).r;
+    float h11 = texelFetch(tex, c + ivec2(1,1), 0).r;
+    if (f.y >= f.x) return h00 + (h11 - h01) * f.x + (h01 - h00) * f.y;
+    return h00 + (h10 - h00) * f.x + (h11 - h10) * f.y;
+  }
+`;
