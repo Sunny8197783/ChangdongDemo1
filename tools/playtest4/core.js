@@ -648,6 +648,25 @@ async function c7(PT) {
   PT.check('C7: title benchmark picks a start level (0/1/2) and applies it', r.tb && [0, 1, 2].includes(r.tb.level) && r.lvl === r.tb.level && r.tb.frames >= 2 && typeof r.tb.headroom === 'number' &&
     (r.tb.level === 0 || r.hist?.reason === 'titleBenchmark'), { tb: r.tb, lvl: r.lvl, hist: r.hist });
   PT.note(`C7 benchmark (SwiftShader, 640×360): ${r.text}; title: L${r.tb?.level} misses ${r.tb?.misses} headroom ${r.tb?.headroom}`);
+  await pg.run('debug hooks (§7.7)', () => {
+    const g = game, D = g.debug;
+    PT.step(0.2, true);
+    const gv = D.governor();
+    PT.check('debug.governor() → {level, scale, T, misses, ema, history} + simulate', gv && 'level' in gv && 'scale' in gv && gv.T > 0 && 'misses' in gv && 'ema' in gv && Array.isArray(gv.history) &&
+      typeof gv.simulate === 'function' && typeof D.governor.simulate === 'function', gv);
+    const pf = D.perf();
+    PT.check('debug.perf() → per-module median ms (120-frame ring)', pf && ['world', 'player', 'enemies', 'vfx', 'ui', 'render'].every((k) => typeof pf[k] === 'number') && pf.frames > 0, pf);
+    D.firstDraws(); PT.step(0.1, true);
+    const fd0 = D.firstDraws();
+    const T = g.THREE, m = new T.Mesh(new T.TorusKnotGeometry(0.4, 0.1), new T.MeshLambertMaterial({ color: 0x3355aa, emissive: 0x112233 }));
+    m.position.copy(g.player.object.position).add(new T.Vector3(0, 1.5, -3)); g.scene.add(m);
+    PT.step(0.05, true); const fd1 = D.firstDraws();
+    g.scene.remove(m); m.geometry.dispose(); m.material.dispose();
+    PT.check('debug.firstDraws() counts programs drawn for the first time', fd0 === 0 && fd1 >= 1, { fd0, fd1 });
+    D.newMaterials(); const mm = new T.MeshBasicMaterial(); mm.dispose(); const nm = D.newMaterials();
+    PT.check('debug.newMaterials() counts materials since the last call', nm === 1, nm);
+    PT.check('debug forwarders exist (fragments, overdraw, coverage, tells, forceAttack, lookOf, hitstopLog)', ['fragments', 'overdraw', 'coverage', 'tells', 'forceAttack', 'lookOf', 'hitstopLog'].every((k) => typeof D[k] === 'function'));
+  });
   PT.check('C7 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
 }

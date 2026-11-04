@@ -331,7 +331,7 @@ export function createQuality(game, { renderSize } = {}) {
             try { game.renderNow?.(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } catch (_) { /* */ }
             syncs.push(performance.now() - t0);
           }
-          if (t < seconds) { requestAnimationFrame(step); return; }
+          if (t < seconds || (dts.length < 4 && t < seconds * 4)) { requestAnimationFrame(step); return; }
           api.benchCam = null;
           const sorted = dts.slice().sort((a, b) => a - b);
           const p10 = sorted.length ? sorted[Math.floor(sorted.length * 0.1)] : 1 / 60;
