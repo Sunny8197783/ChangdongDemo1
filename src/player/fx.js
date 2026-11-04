@@ -100,6 +100,7 @@ export class RuneCircle {
     this.group.add(this.outer, this.inner);
     this.group.visible = false; this.group.renderOrder = 5;
     this.outer.frustumCulled = this.inner.frustumCulled = false;
+    this.outer.userData.owner = this.inner.userData.owner = 'player';
     scene.add(this.group);
     this.w = 0; this.spin = 0;
   }
