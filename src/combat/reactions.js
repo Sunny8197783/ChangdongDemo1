@@ -217,7 +217,7 @@ export const REACTION_DEFS = [
 export const FAMILIES = {
   burst: { nameKo: '폭발', color: '#ff7a3a' }, control: { nameKo: '제어', color: '#8fd8ff' }, spread: { nameKo: '확산', color: '#7fffc8' },
   surface: { nameKo: '표면', color: '#e0b870' }, blessing: { nameKo: '축복', color: '#ffe08a' }, curse: { nameKo: '저주', color: '#b98bff' },
-  universal: { nameKo: '보편', color: '#ffffff' },
+  universal: { nameKo: '보편', color: '#f4f1ea' },
 };
 
 // fill defaults (name / desc / fx carried to variants) and index
@@ -344,7 +344,7 @@ export function createReactions(game, C) {
       f.pos.x += Math.sin(f.t * 1.3) * 0.6; f.pos.z += Math.cos(f.t * 1.1) * 0.6;
     },
     frostflower(f) {
-      fx('burst', f.pos, { count: 8, shape: 'snow', color: [0xffffff, 0x9fe8ff], disc: true, radius: 0.4, speed: f.r * 1.3, drag: 2, size: 0.18, life: 0.7 });
+      fx('burst', f.pos, { count: 8, shape: 'snow', color: [0xe8fbff, 0x8fdcf5], disc: true, radius: 0.4, speed: f.r * 1.3, drag: 2, size: 0.18, life: 0.7 });
       fx('shockwave', f.pos, { color: 0x9fe8ff, radius: f.r, duration: 0.5, thickness: 0.12, opacity: 0.6 });
       aoe(f.pos, f.r, f.team, null, (e) => C.applyStatus(e, 'chilled', 3, { source: f.src, el: 'ice' }));
     },
@@ -549,7 +549,7 @@ export function createReactions(game, C) {
     flashfreeze(c) { try { W()?.surface?.freeze?.(c.point, 3); } catch (_) { /* */ } return null; },
     evaporate(c) {
       if (!spawnZone('steam', c.point, { radius: 4, duration: 4 })) {
-        fx('burst', c.point, { count: 18, shape: 'smoke', color: [0xffffff, 0xdfe8f0], alpha: 0.5, additive: false, speed: 2.2, radius: 1.5, size: 1.4, sizeEnd: 3.4, life: 3, drag: 1.5, gravity: -0.5 });
+        fx('burst', c.point, { count: 8, shape: 'smoke', color: [0xe3f6ff, 0xcfd8e0], alpha: 0.3, additive: false, speed: 2.2, radius: 1.5, size: 1.0, sizeEnd: 1.8, life: 1.6, drag: 1.5, gravity: -0.5 });
       }
       return null;
     },
@@ -601,7 +601,7 @@ export function createReactions(game, C) {
       try { c.obj?.convert?.('obsidian'); } catch (_) { /* */ }
       let ok = false;
       try { if (W()?.addPlatform) { W().addPlatform({ id: 'obsidian', shape: 'disc', center: c.point.clone(), r: c.obj?.radius || 3, top: (W().getHeight?.(c.point.x, c.point.z) ?? c.point.y) + 0.3, life: 6 }); ok = true; } } catch (_) { /* */ }
-      fx('burst', c.point, { count: 14, shape: 'smoke', color: [0xffffff, 0xcfd8e0], alpha: 0.5, additive: false, speed: 2, up: 2, size: 1, sizeEnd: 2.6, life: 1.6 });
+      fx('burst', c.point, { count: 8, shape: 'smoke', color: [0xe3f6ff, 0xcfd8e0], alpha: 0.3, additive: false, speed: 2, up: 2, size: 0.9, sizeEnd: 1.8, life: 1.2 });
       return { platform: ok };
     },
     bloom(c) {
