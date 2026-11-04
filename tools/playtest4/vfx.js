@@ -31,6 +31,14 @@ module.exports = async function (PT) {
   const t0 = Date.now();
   const root = PT.root;
 
+  const part = process.env.VFX_PART || 'all';   // dev: 'quick' | 'fsword' | 'f' | 'all'
+  if (part === 'all' || part === 'quick') await functional(PT, root);
+  if (part === 'all' || part === 'fsword') await fsword(PT);
+  if (part === 'all' || part === 'f') await fscenes(PT);
+  PT.note(`vfx section ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+};
+
+async function functional(PT, root) {
   // ================================================================== V4 + V2 + V3 (functional, shader-checked)
   const pg = await PT.boot('&cls=mage&prod=0&shaderCheck=1', { w: 640, h: 360 });
   PT.check('V: boot (shader check on)', pg.ready, pg.bootMs);
@@ -332,8 +340,9 @@ module.exports = async function (PT) {
   PT.check('grep rule 5 clean in src/vfx* and src/combat* (no 0xffffff / #ffffff, emissive ≤ 1.2, uBoost ≤ 1)', gr.hits.length === 0, gr.hits.slice(0, 10));
   PT.check('V: no console errors (shader check on)', pg.errors().length === 0, pg.errors().slice(0, 6));
   await pg.close();
-  if (process.env.VFX_QUICK) return;   // dev: functional checks only
+}
 
+async function fsword(PT) {
   // ================================================================== V3: new materials in a 30 s F-sword run
   {
     const pf = await PT.bootScene('F-sword', { w: 640, h: 360 });
@@ -350,7 +359,9 @@ module.exports = async function (PT) {
     } else PT.check('F-sword boot', false);
     await pf.close();
   }
+}
 
+async function fscenes(PT) {
   // ================================================================== V1: F-mage / F-ranger coverage + calls (prod=1, 640×360)
   for (const cls of PT.flags.full ? ['mage', 'ranger', 'sword', 'paladin', 'spiritcaller', 'shadowblade'] : ['mage', 'ranger']) {
     const ps = await PT.bootScene('F-' + cls, { w: 640, h: 360 });
@@ -377,5 +388,4 @@ module.exports = async function (PT) {
     PT.check(`F-${cls}: no console errors`, ps.errors().length === 0, ps.errors().slice(0, 4));
     await ps.close();
   }
-  PT.note(`vfx section ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-};
+}

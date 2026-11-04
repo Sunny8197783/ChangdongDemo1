@@ -61,7 +61,7 @@ const DRAW = {
     for (const y of [92, 128, 164]) { const w = 98 - Math.abs(y - 128) * 0.9; x.beginPath(); x.moveTo(128 - w + 8, y); x.lineTo(128 + w - 8, y); x.stroke(); }
   },
   nature(x) { // 5-leaf
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0, n5 = 5; k < n5; k++) {
       x.save(); x.translate(128, 128); x.rotate(k * TAU / 5);
       x.beginPath(); x.moveTo(0, -10); x.bezierCurveTo(30, -40, 24, -80, 0, -104); x.bezierCurveTo(-24, -80, -30, -40, 0, -10); x.stroke();
       x.beginPath(); x.moveTo(0, -18); x.lineTo(0, -86); x.stroke();
@@ -115,7 +115,7 @@ const DRAW = {
       x.stroke();
       branch(cx, cy, a + 0.5, len * 0.62, depth + 1); branch(cx, cy, a - 0.55, len * 0.58, depth + 1);
     };
-    for (let k = 0; k < 5; k++) branch(128, 128, k * TAU / 5 + 0.3, 56, 0);
+    for (let k = 0, n5 = 5; k < n5; k++) branch(128, 128, k * TAU / 5 + 0.3, 56, 0);
   },
   frosthex(x) {
     const R = 26, h = R * Math.sqrt(3);
@@ -126,7 +126,7 @@ const DRAW = {
     }
   },
   flower5(x) {
-    for (let k = 0; k < 5; k++) { x.save(); x.translate(128, 128); x.rotate(k * TAU / 5); x.beginPath(); x.ellipse(0, -56, 28, 46, 0, 0, TAU); x.stroke(); x.restore(); }
+    for (let k = 0, n5 = 5; k < n5; k++) { x.save(); x.translate(128, 128); x.rotate(k * TAU / 5); x.beginPath(); x.ellipse(0, -56, 28, 46, 0, 0, TAU); x.stroke(); x.restore(); }
     ring(x, 16);
   },
   feather(x) {
