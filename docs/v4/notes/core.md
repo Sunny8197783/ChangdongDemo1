@@ -195,7 +195,8 @@ Integration-only rows (C6, C8: GPU ratios, long frames, allocation, soak) are me
 - `node tools/bootcheck.js`: all **17** configs OK (15 v3 configs + `@noTells` + `&stub=tells`: stub true, mobs attack, the stub's shaped attack shows the fixed v3 decal), exit 0.
 - `node tools/playtest.js --quick`: all checks PASS, exit 0.
 - `node tools/playtest2.js`: 75 PASS, 0 FAIL, exit 0 (hitstop and settings expectations updated per §7.9, see (17)).
-- `node tools/playtest3.js` (all sections): see the line below (run at the end of wave B).
+- `node tools/playtest3.js` (all sections): **1260 passed, 0 failed, 1 skipped** (1270 s). No playtest3 expectation changed in wave B (core section unchanged since core-p0a).
+- After the last governor fix (lock keeps the level): `PT4_CORE_ONLY=c2,c7` re-run 22/0.
 
 ## Measured at core-p0a (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; v3 render path still in place)
 
