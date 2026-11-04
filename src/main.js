@@ -140,14 +140,15 @@ const game = {
     const legacy = opts == null;
     const tier = opts?.tier || (legacy ? 'legacy' : null), target = opts?.target || null;
     let sec = Math.max(0, +s || 0);
-    const exempt = tier === 'ult' || tier === 'break' || tier === 'parry' || tier === 'kill' || (legacy && sec >= 0.1);
+    // legacy no-option calls (v3 callers) keep their v3 meaning: a global freeze outside the per-target budget
+    const exempt = legacy || tier === 'ult' || tier === 'break' || tier === 'parry' || tier === 'kill';
     sec = Math.min(sec, tier === 'break' || tier === 'parry' ? 0.12 : legacy ? 0.16 : 0.10);
     const fpsLow = hsFrameDt > 1 / 50 + 1e-6;   // the current frame's real delta (below 50 fps)
     if (fpsLow && sec > 0) sec = Math.max(sec, Math.min(0.12, (sec >= 0.1 ? 4 : 3) * (hsFrameDt || 1 / 60)));
-    let granted = sec > 0;
-    if (granted && !exempt && hsBudgetUsed(this.realTime) + sec > HS_BUDGET + 1e-9) granted = false;
+    let granted = sec > 0, reason = null;
+    if (granted && !exempt && hsBudgetUsed(this.realTime, target) + sec > HS_BUDGET + 1e-9) { granted = false; reason = 'budget'; }
     if (granted) {
-      hsBudgetPush(this.realTime, sec);
+      if (!exempt) hsBudgetPush(this.realTime, sec, target);
       const global = legacy || tier === 'ult' || tier === 'kill';
       if (global) {
         this._hitstop = Math.max(this._hitstop, sec);
@@ -157,7 +158,7 @@ const game = {
       if (target) target.hitstopUntil = Math.max(target.hitstopUntil || 0, until);
       if (target !== this.player?.entity) this.playerHitstopUntil = Math.max(this.playerHitstopUntil || 0, until);
     }
-    hitstopLogPush(this.realTime, sec, tier, granted, target);
+    hitstopLogPush(this.realTime, sec, tier, granted, target, reason);
     return granted;
   },
   /** true while `e` is frozen by a per-entity hitstop (enemies skip their update; player animation pauses for the player). */
@@ -214,28 +215,30 @@ const game = {
   },
 };
 window.game = game;
-// ---------- hitstop budget: ≤ 80 ms frozen per rolling second (exempt tiers excluded), ring of granted requests ----------
+// ---------- hitstop budget: a target may be frozen ≤ 80 ms per rolling second (exempt tiers excluded) ----------
+// ring of granted budgeted requests {t, sec, target}; requests without a target share one key (null)
 const HS_BUDGET = 0.08;
-const HS_T = new Float64Array(64), HS_S = new Float64Array(64); let hsBHead = 0;
+const HS_T = new Float64Array(64), HS_S = new Float64Array(64), HS_K = new Array(64).fill(null); let hsBHead = 0;
 let hsFrameDt = 1 / 60;
-function hsBudgetPush(t, sec) { HS_T[hsBHead] = t; HS_S[hsBHead] = sec; hsBHead = (hsBHead + 1) & 63; }
-function hsBudgetUsed(now) {
-  // frozen time inside [now − 1, now]: each request covers [t, t + sec]
+function hsBudgetPush(t, sec, target) { HS_T[hsBHead] = t; HS_S[hsBHead] = sec; HS_K[hsBHead] = target || null; hsBHead = (hsBHead + 1) & 63; }
+function hsBudgetUsed(now, target) {
+  // frozen time of `target` inside [now − 1, now + sec]: each request covers [t, t + sec]
+  const k = target || null;
   let sum = 0;
-  for (let i = 0; i < 64; i++) { const t = HS_T[i], s = HS_S[i]; if (s <= 0 || t + s < now - 1) continue; sum += Math.min(t + s, now + 1) - Math.max(t, now - 1); }
+  for (let i = 0; i < 64; i++) { const t = HS_T[i], s = HS_S[i]; if (s <= 0 || HS_K[i] !== k || t + s < now - 1) continue; sum += Math.min(t + s, now + 1) - Math.max(t, now - 1); }
   return sum;
 }
 // ---------- hitstop log (game.debug.hitstopLog: the last 64 requests, reused records) ----------
-const HS_LOG = Array.from({ length: 64 }, () => ({ t: 0, sec: 0, tier: null, granted: false, target: null }));
-let hsHead = 0, hsCount = 0;
-function hitstopLogPush(t, sec, tier, granted, target) {
+const HS_LOG = Array.from({ length: 64 }, () => ({ t: 0, sec: 0, tier: null, granted: false, target: null, seq: 0, reason: null }));
+let hsHead = 0, hsCount = 0, hsSeq = 0;
+function hitstopLogPush(t, sec, tier, granted, target, reason = null) {
   const r = HS_LOG[hsHead]; hsHead = (hsHead + 1) % HS_LOG.length; if (hsCount < HS_LOG.length) hsCount++;
-  r.t = t; r.sec = sec; r.tier = tier; r.granted = granted;
+  r.t = t; r.sec = sec; r.tier = tier; r.granted = granted; r.seq = ++hsSeq; r.reason = reason;
   r.target = target ? (target.type || target.kind || target.id || 'entity') : null;
 }
 function hitstopLog() {
   const out = [];
-  for (let i = 0; i < hsCount; i++) { const r = HS_LOG[(hsHead - hsCount + i + HS_LOG.length) % HS_LOG.length]; out.push({ t: r.t, sec: r.sec, tier: r.tier, granted: r.granted, target: r.target }); }
+  for (let i = 0; i < hsCount; i++) { const r = HS_LOG[(hsHead - hsCount + i + HS_LOG.length) % HS_LOG.length]; out.push({ t: r.t, sec: r.sec, tier: r.tier, granted: r.granted, target: r.target, seq: r.seq, reason: r.reason }); }
   return out;
 }
 // Core services exist BEFORE any module factory runs (CONTRACT §2, PLAN v4 §7.3).

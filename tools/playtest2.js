@@ -59,10 +59,43 @@ function installHelpers() {
     PT.step(0.3);
     return picks;
   };
-  // hitstop probe: record game._hitstop at every damage event (combat sets it before emitting)
-  // (DoT / zone ticks are excluded: they intentionally don't freeze the frame)
-  PT.ticks = 0;
-  g.events.on('damage', (p) => { if (!p || p.isPlayer || !PT.probe) return; if (p.dot) { PT.ticks++; return; } PT.hitstops.push((p.melee ? 'm' : 's') + Math.max(0, +(g._hitstop || 0).toFixed(3))); });
+  // hitstop probe (v4, PLAN §7.9): at every damage event, the hitstop granted for this hit in game.debug.hitstopLog()
+  // (combat calls hitFeel → game.hitstop before it emits 'damage') and the hit's castId (captured from combat.dealDamage).
+  // v4 expectation: the first hit of each castId logs a granted hitstop ≥ 0.025 s; DoT ticks (and, with the v4 vfx kit,
+  // later hits of the same castId) log none. Hits without a castId (legacy callers) each count as their own cast.
+  PT.ticks = 0; PT.tickHs = 0; PT.hits = [];
+  let curCid = null, lastSeq = 0;
+  const C = g.combat;
+  if (C?.dealDamage) { const orig = C.dealDamage; C.dealDamage = function (t, hit) { const prev = curCid; curCid = hit?.castId ?? null; try { return orig.apply(this, arguments); } finally { curCid = prev; } }; }
+  // largest granted hitstop logged since the previous damage event (log records carry a monotonic seq)
+  const newHs = () => {
+    let best = 0;
+    // granted, or dropped only by the 80 ms per-target budget (§2.5: over-budget requests are dropped by design)
+    for (const r of g.debug?.hitstopLog?.() || []) if ((r.seq ?? 0) > lastSeq) { lastSeq = r.seq; if (r.granted || r.reason === 'budget') best = Math.max(best, r.sec); }
+    return best;
+  };
+  g.events.on('damage', (p) => {
+    if (!p || p.isPlayer || !PT.probe) { newHs(); return; }
+    const hs = newHs();
+    if (p.dot) { PT.ticks++; if (hs > 0) PT.tickHs++; return; }
+    PT.hits.push({ m: !!p.melee, cid: curCid, hs: +hs.toFixed(3), act: +Math.max(0, g._hitstop || 0).toFixed(3) });
+    PT.hitstops.push((p.melee ? 'm' : 's') + hs.toFixed(3));
+  });
+  /** v4 §7.9: first hit per castId logs a hitstop ≥ 0.025 s (granted, or dropped by the 80 ms budget); with the v4 kit later
+   *  hits of the same castId log none; ticks none. */
+  PT.hitstopOk = () => {
+    const first = new Set(), bad = [];
+    const v4 = !!g.vfx?.kit;
+    for (const h of PT.hits) {
+      const isFirst = h.cid == null || !first.has(h.cid);
+      if (h.cid != null) first.add(h.cid);
+      // legacy hits without a castId keep the v3 rule (spell volleys share one global freeze): a running freeze counts
+      if (isFirst && !(h.hs >= 0.025) && !(h.cid == null && h.act >= 0.02)) bad.push(['first', h]);
+      if (!isFirst && v4 && h.hs > 0) bad.push(['repeat', h]);
+    }
+    if (PT.tickHs > 0) bad.push(['ticks', PT.tickHs]);
+    return { ok: PT.hits.length > 0 && bad.length === 0, bad: bad.slice(0, 6), n: PT.hits.length, casts: first.size };
+  };
 }
 
 (async () => {
@@ -164,11 +197,11 @@ function installHelpers() {
       approach();
       // basic: real LMB combo clicks
       const dmg0 = PT.counts.damage || 0;
-      PT.probe = true; PT.hitstops.length = 0;
+      PT.probe = true; PT.hitstops.length = 0; PT.hits.length = 0; PT.tickHs = 0;
       for (let i = 0; i < 12 && S.trainStep === 'basic'; i++) { PT.click(0, 0.05, 0.35); }
       PT.probe = false;
       PT.check('training basic (5 hits)', !!S.S?.trainDone?.basic || S.trainStep !== 'basic', { step: S.trainStep, dmg: (PT.counts.damage || 0) - dmg0 });
-      PT.check('every melee hit had hitstop', PT.hitstops.length > 0 && PT.hitstops.every((h) => +h.slice(1) >= 0.03), PT.hitstops.slice(0, 12));
+      { const r = PT.hitstopOk(); PT.check('first hit of each castId had a granted hitstop ≥ 0.025 s (v4 §7.9)', r.ok, { ...r, hs: PT.hitstops.slice(0, 12) }); }
       steps.push(S.trainStep);
       // charged: hold RMB
       for (let i = 0; i < 3 && S.trainStep === 'charged'; i++) { approach(); PT.heal(); PT.click(2, 1.0, 1.2); }
@@ -365,16 +398,17 @@ function installHelpers() {
         game.sword.setElement(el); PT.step(0.1);
         const r = {};
         for (const kind of ['combo', 'heavy', 'ultimate']) {
-          prep(); PT.hitstops.length = 0; PT.ticks = 0; PT.probe = true;
+          prep(); PT.hitstops.length = 0; PT.hits.length = 0; PT.ticks = 0; PT.tickHs = 0; PT.probe = true;
           const dmg0 = PT.counts.damage || 0;
           if (kind === 'combo') { for (let s = 0; s < 4; s++) PT.click(0, 0.05, 0.32); PT.step(0.6); }
           else if (kind === 'heavy') PT.click(2, 1.0, 1.4);
           else { PT.press({ KeyF: true }, 0.05, 3.5); }
           PT.probe = false;
           const hits = (PT.counts.damage || 0) - dmg0;
-          r[kind] = { hits, ticks: PT.ticks, minHitstop: PT.hitstops.length ? Math.min(...PT.hitstops.map((h) => +h.slice(1))) : 0 };
+          const hr = PT.hitstopOk();
+          r[kind] = { hits, ticks: PT.ticks, casts: hr.casts, minHitstop: PT.hitstops.length ? Math.min(...PT.hitstops.map((h) => +h.slice(1))) : 0 };
           PT.check(`${el} ${kind} dealt damage`, hits > 0, hits);
-          PT.check(`${el} ${kind} hitstop on every hit`, PT.hitstops.length > 0 && PT.hitstops.every((h) => +h.slice(1) >= 0.03), { hs: PT.hitstops.slice(0, 12), ticks: PT.ticks });
+          PT.check(`${el} ${kind} hitstop on the first hit of each castId`, hr.ok, { ...hr, hs: PT.hitstops.slice(0, 12), ticks: PT.ticks });
         }
         out[el] = r;
       }
@@ -429,11 +463,13 @@ function installHelpers() {
       PT.check('grassDensity lowers triangles', out.grass10.tris < out.base.tris * 0.98, { base: out.base.tris, low: out.grass10.tris });
       S.set('grassDensity', 1); game.step(10, 1 / 60); out.grass100 = frame();
       PT.check('grassDensity raises triangles', out.grass100.tris > out.grass10.tris, out.grass100.tris);
-      const pr0 = R.getPixelRatio(); S.set('renderScale', 0.5); PT.step(0.1); out.scale = [pr0, R.getPixelRatio()];
-      PT.check('renderScale changes pixel ratio', R.getPixelRatio() < pr0, out.scale);
+      // v4 (§2.4): renderScale bounds the render size (scene pass allocation/viewport), the canvas pixel ratio stays
+      const C4 = game.composer, rw0 = C4.viewport.w; S.set('renderScale', 0.5); PT.step(0.1, true); game.renderNow?.(); out.scale = [rw0, C4.viewport.w, R.getPixelRatio()];
+      PT.check('renderScale lowers the render size', C4.viewport.w < rw0 && C4.state.allocW < R.domElement.width, out.scale);
       S.set('renderScale', 1);
       S.set('shadows', false); game.step(2, 1 / 60); frame(); const ns = frame();   // 1st frame renders the clearing shadow pass
-      PT.check('shadows off', (!R.shadowMap.enabled || game.world?.sun?.shadow?.camera?.layers?.mask === 0) && ns.calls < out.grass100.calls, { calls: ns.calls, before: out.grass100.calls });
+      // v4: shadows off = one clearing pass with no casters, then the map is never re-rendered (no program-key flip)
+      PT.check('shadows off', (!R.shadowMap.enabled || R.shadowMap.needsUpdate === false) && ns.calls < out.grass100.calls, { calls: ns.calls, before: out.grass100.calls });
       S.set('shadows', true); game.step(2, 1 / 60); frame();
       S.set('shadowQuality', 'high'); game.step(2, 1 / 60); frame(); S.set('shadowQuality', 'medium');
       S.set('bloom', false); PT.check('bloom off', !game.bloomPass.enabled); S.set('bloom', true);
