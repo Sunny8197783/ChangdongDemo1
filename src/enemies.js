@@ -4,11 +4,11 @@
 import * as THREE from 'three';
 import { rand, pick } from './core/utils.js';
 import { Telegraphs } from './enemies/common.js';
-import { updateEnemy, alert as alertEnemy, recoil as recoilEnemy } from './enemies/base.js';
+import { updateEnemy, alert as alertEnemy, recoil as recoilEnemy, shapeHit } from './enemies/base.js';
 import { createBokoblin } from './enemies/bokoblin.js';
 import { createShaman } from './enemies/shaman.js';
 import { createChuchu } from './enemies/chuchu.js';
-import { createGolem } from './enemies/golem.js';
+import * as GolemMod from './enemies/golem.js';
 import { createDummy } from './enemies/dummy.js';
 import { createLizard } from './enemies/lizard.js';
 import { createShroom } from './enemies/shroom.js';
@@ -17,14 +17,15 @@ import { createWraith } from './enemies/wraith.js';
 import { createVoidKnight } from './enemies/voidknight.js';
 import { EnemyProjectiles } from './enemies/projectiles.js';
 import { Loot } from './enemies/loot.js';
-import { buildGolem, buildChuchu, CHU_VARIANTS } from './enemies/models.js';
-import { buildLizard, buildShroom, buildWolf, buildWraith, buildVoidKnight } from './enemies/models2.js';
+import { buildGolem } from './enemies/models.js';
+import * as MobModels from './enemies/mobs/index.js';
+import * as Codex from './enemies/codex.js';
 import { scaling as zoneScaling, applyScaling, difficultyOf, XP_VALUES } from './enemies/scaling.js';
 import { createThreat } from './enemies/threat.js';
 import { createEncounters } from './enemies/encounters.js';
 
 const FACTORIES = {
-  bokoblin: createBokoblin, shaman: createShaman, chuchu: createChuchu, golem: createGolem, dummy: createDummy,
+  bokoblin: createBokoblin, shaman: createShaman, chuchu: createChuchu, golem: (c, p, o) => GolemMod.createGolem(c, p, o), dummy: createDummy,
   lizard: createLizard, shroom: createShroom, wolf: createWolf, wraith: createWraith, voidknight: createVoidKnight,
 };
 const CAMP_MIX = [
@@ -36,6 +37,9 @@ const CAMP_MIX = [
 const GOLEM_INFO = { title: '봉인의 수문장', sub: '고대 유적을 지키는 바위의 파수꾼', phases: [{ name: '각성' }, { at: 0.5, name: '붉은 핵' }] };
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
+const _cone = { kind: 'cone', pos: { x: 0, z: 0 }, dir: { x: 0, z: 1 }, r: 2, angle: 1 };
+const _circ = { kind: 'circle', pos: { x: 0, z: 0 }, r: 2 };
+const _frustum = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sph = new THREE.Sphere();
 const warned = {};
 const warnOnce = (k, ...a) => { if (warned[k]) return; warned[k] = true; console.warn('[enemies]', ...a); };
 
@@ -45,6 +49,7 @@ export function createEnemies(game) {
   const camps = [];        // {id, index, members:[], cleared}
   let boss = null, bossSpawnT = -1, phase = 'camps', kills = 0, playTime = 0, campsCleared = 0;
   const tokens = new Set();
+  let rangedToken = null;
   const threat = createThreat(game, all);
   const run = { combo: 0, maxCombo: 0, comboT: 0, reactions: 0 };
 
@@ -82,19 +87,25 @@ export function createEnemies(game) {
     },
     /** Telegraph decal (vfx.telegraph, CONTRACT §20) with difficulty telegraphMul; fallback = the v2 ground ring. */
     tele(o) {
-      const D = difficultyOf(game);
-      if (D.telegraphMul && D.telegraphMul !== 1 && o.dur) o.dur *= D.telegraphMul;
+      // v4: difficulty.telegraphMul is a legacy alias fixed at 1 (tells applies assist.tellMul once) — never multiplied here
       try { const h = game.vfx?.telegraph?.(o); if (h) return h; } catch (err) { warnOnce('tele', 'telegraph failed', err?.message); }
       const col = typeof o.color === 'number' ? o.color : o.color === 'void' ? 0x9a5cff : 0xff3a22;
       const it = ctx.telegraphs.show(o.pos, o.r ?? (o.len ? o.len * 0.5 : 2), o.dur ?? 1, col);
       return { stop() { it.t = Math.max(it.t, it.dur); }, setPos() {}, setDir() {}, get alive() { return it.active; } };
     },
+    /** ≤ 1 ranged cast at a time (§4.0). */
+    takeRangedToken(e) {
+      if (rangedToken === e) return true;
+      if (rangedToken && rangedToken.alive && !rangedToken.dying && !rangedToken.removed) return false;
+      rangedToken = e; return true;
+    },
+    releaseRangedToken(e) { if (rangedToken === e) rangedToken = null; },
     takeToken(e) {
       if (tokens.has(e)) return true;
       if (tokens.size >= 2) return false;
       tokens.add(e); e.token = true; return true;
     },
-    releaseToken(e) { tokens.delete(e); e.token = false; },
+    releaseToken(e) { tokens.delete(e); e.token = false; if (rangedToken === e) rangedToken = null; },
     alertCamp(e) {
       for (const o of all) {
         if (o === e || o.aggro || o.dying || o.isDummy || o.isBoss) continue;
@@ -104,15 +115,16 @@ export function createEnemies(game) {
       }
     },
     /** True if the target is in front of e within range (half-angle in radians) and vertically close. */
+    // v4 hitbox = decal (§4.0): one shared hit test (tells.hitTest, pad 0.15); the v3 +radius and d < 1 m shortcut are gone
     meleeCheck(e, range, halfAngle) {
       const pe = ctx.target || game.player?.entity; if (!pe || pe.alive === false) return false;
       const p = e.object.position, pp = ctx.playerPos;
-      const dx = pp.x - p.x, dz = pp.z - p.z, d = Math.hypot(dx, dz);
-      if (d > range + (pe.radius || 0.4) || Math.abs(pp.y - p.y) > 2.2 + e.height * 0.3) return false;
-      let a = Math.atan2(dx, dz) - e.facing; a = Math.atan2(Math.sin(a), Math.cos(a));
-      return Math.abs(a) < halfAngle || d < 1.0;
+      if (Math.abs(pp.y - p.y) > 2.2 + e.height * 0.3) return false;
+      _cone.pos.x = p.x; _cone.pos.z = p.z; _cone.dir.x = Math.sin(e.facing); _cone.dir.z = Math.cos(e.facing); _cone.r = range; _cone.angle = halfAngle;
+      return shapeHit(ctx, _cone, pp);
     },
     hitPlayer(e, h) {
+      if (e?.noDamage) return null;
       const pe = ctx.target || game.player?.entity; if (!pe || pe.alive === false) return null;
       // spirit decoys / water clones without HP absorb one hit
       if (pe.isDecoy || typeof pe.hp !== 'number') { try { pe.onDecoyHit?.(e); } catch (_) { /* */ } pe.alive = false; return { damage: 0, absorbed: true }; }
@@ -121,6 +133,7 @@ export function createEnemies(game) {
       const r = game.combat.dealDamage(pe, {
         amount: h.amount, element: h.element || 'physical', source: e, point: ctx.playerCenter.clone(),
         direction: _v.clone(), knockback: h.knockback ?? 6, launch: h.launch ?? 0, status: h.status || undefined, heavy: h.amount >= 20,
+        attack: h.attack || undefined, sourceName: e.name,
       });
       // the blow bounced off the player's guard → attacker recoils (parries are handled by onParried)
       if (r?.blocked && !r.parried && game.player?.blocking) recoilEnemy(ctx, e, pe);
@@ -130,22 +143,24 @@ export function createEnemies(game) {
     slam(center, radius, h, source, fx = 1) {
       const vfx = game.vfx;
       _v2.copy(center); _v2.y = ctx.groundH(center.x, center.z) + 0.15;
-      vfx.shockwave(_v2, { color: h.element === 'void' ? 0xb36bff : 0xf0d6a0, radius: radius * 1.15, duration: 0.45, opacity: 0.85, thickness: 0.35 });
-      vfx.burst(_v2, { count: Math.round(18 * fx), color: [0xd9c094, 0x9a8460], speed: 5 * fx, spread: 0.35, dir: _v.set(0, 1, 0), size: 0.8 * fx, sizeEnd: 1.8 * fx, life: 0.9, shape: 'smoke', additive: false, drag: 2.2, ground: true });
-      vfx.debris?.(_v2, { count: Math.round(6 * fx), size: 0.3 * fx, speed: 6, material: 'rock' });
+      _circ.pos.x = center.x; _circ.pos.z = center.z; _circ.r = radius;
+      const shape = h.shape || _circ, handle = h.handle && h.handle.contains ? h.handle : null;
+      vfx.shockwave(_v2, { owner: 'enemy', color: h.element === 'void' ? 0xb36bff : 0xf0d6a0, radius: radius * 1.15, duration: 0.45, opacity: 0.85, thickness: 0.35 });
+      vfx.burst(_v2, { owner: 'enemy', count: Math.round(18 * fx), color: [0xd9c094, 0x9a8460], speed: 5 * fx, spread: 0.35, dir: _v.set(0, 1, 0), size: 0.8 * fx, sizeEnd: 1.8 * fx, life: 0.9, shape: 'smoke', additive: false, drag: 2.2, ground: true });
+      vfx.debris?.(_v2, { owner: 'enemy', count: Math.round(6 * fx), size: 0.3 * fx, speed: 6, material: 'rock' });
       vfx.groundDecal?.('crack', _v2, radius * 0.8, 6);
       vfx.shake(0.25 * fx);
       ctx.audio('land', { position: _v2, volume: 0.8, pitch: 0.6 });
       const hitOne = (ent, pp) => {
         if (!ent || ent.alive === false) return;
-        const d = Math.hypot(pp.x - center.x, pp.z - center.z);
-        if (d > radius + (ent.radius || 0.4)) return;
-        if (h.jumpAvoid && pp.y - ctx.groundH(pp.x, pp.z) > 0.9) return;
+        if (!(handle ? handle.contains(pp) : shapeHit(ctx, shape, pp))) return;
+        if (h.jumpAvoid && pp.y - ctx.groundH(pp.x, pp.z) > 0.6) return;
         if (ent.isDecoy || typeof ent.hp !== 'number') { ent.alive = false; return; }
         _v.set(pp.x - center.x, 0, pp.z - center.z); if (_v.lengthSq() < 1e-4) _v.set(0, 0, 1); _v.normalize();
         game.combat.dealDamage(ent, { amount: h.amount, element: h.element || 'physical', source, point: pp.clone().setY(pp.y + 1), direction: _v.clone(),
-          knockback: h.knockback ?? 8, launch: h.launch ?? 4, heavy: true, status: h.status || undefined });
+          knockback: h.knockback ?? 8, launch: h.launch ?? 4, heavy: true, status: h.status || undefined, attack: h.attack || undefined, sourceName: source?.name });
       };
+      if (source?.noDamage) return;
       const pe = game.player?.entity;
       if (pe) hitOne(pe, ctx.realPlayerPos);
       const T = threat.tauntTarget;
@@ -153,15 +168,15 @@ export function createEnemies(game) {
     },
     dust(pos, s = 1) {
       _v2.copy(pos); _v2.y += 0.1;
-      game.vfx.burst(_v2, { count: Math.round(8 * s) + 2, color: [0xd9c4a0, 0xb09a78], speed: 2.2 * s, spread: 0.4, dir: _v.set(0, 1, 0), size: 0.4 * s, sizeEnd: 1.0 * s, life: 0.6, shape: 'smoke', additive: false, drag: 2.5 });
+      game.vfx.burst(_v2, { owner: 'enemy', count: Math.round(8 * s) + 2, color: [0xd9c4a0, 0xb09a78], speed: 2.2 * s, spread: 0.4, dir: _v.set(0, 1, 0), size: 0.4 * s, sizeEnd: 1.0 * s, life: 0.6, shape: 'smoke', additive: false, drag: 2.5 });
     },
     dissolveFx(e, s = 1) {
       const c = e.getCenter(_v2);
       const vfx = game.vfx;
-      vfx.burst(c, { count: Math.round(30 * s), color: [0x5a2a7a, 0x24103a], speed: 2.2 * s, speedVar: 1.2, spread: 1, size: 0.7 * s, sizeEnd: 1.6 * s, life: 1.1, shape: 'smoke', additive: false, drag: 2, gravity: -1.5 });
-      vfx.burst(c, { count: Math.round(26 * s), color: [0xd9a0ff, 0xffffff], speed: 3.5 * s, spread: 1, size: 0.13, sizeEnd: 0, life: 1.0, lifeVar: 0.4, shape: 'spark', drag: 1.5, gravity: -2.5 });
-      vfx.burst(c, { count: Math.round(12 * s), color: [0xff8ad8, 0xb07aff], speed: 1.2, spread: 1, size: 0.25, sizeEnd: 0, life: 1.4, shape: 'ember', gravity: -2 });
-      vfx.flash?.(c, { color: 0xb07aff, intensity: 4 * s, distance: 8 * s, duration: 0.4 });
+      vfx.burst(c, { owner: 'enemy', count: Math.round(30 * s), color: [0x5a2a7a, 0x24103a], speed: 2.2 * s, speedVar: 1.2, spread: 1, size: 0.7 * s, sizeEnd: 1.6 * s, life: 1.1, shape: 'smoke', additive: false, drag: 2, gravity: -1.5 });
+      vfx.burst(c, { owner: 'enemy', count: Math.round(26 * s), color: [0xd9a0ff, 0xf3ecdf], speed: 3.5 * s, spread: 1, size: 0.13, sizeEnd: 0, life: 1.0, lifeVar: 0.4, shape: 'spark', drag: 1.5, gravity: -2.5 });
+      vfx.burst(c, { owner: 'enemy', count: Math.round(12 * s), color: [0xff8ad8, 0xb07aff], speed: 1.2, spread: 1, size: 0.25, sizeEnd: 0, life: 1.4, shape: 'ember', gravity: -2 });
+      vfx.flash?.(c, { owner: 'enemy', color: 0xb07aff, intensity: 4 * s, distance: 8 * s, duration: 0.4 });
       ctx.audio('enemy_death', { position: c, volume: 0.5, pitch: 1.3 });
     },
     onEnemyDied(e) { onDied(e); },
@@ -173,7 +188,7 @@ export function createEnemies(game) {
       if (!e) return null;
       e.summoned = true;
       if (!opts.noLeap) { e.velocity.y = 7; e.grounded = false; }
-      game.vfx.debris?.(pos, { count: 8, size: 0.3, speed: 6, material: 'rock' });
+      game.vfx.debris?.(pos, { owner: 'enemy', count: 8, size: 0.3, speed: 6, material: 'rock' });
       ctx.dust(pos, 1.2);
       alertEnemy(ctx, e);
       return e;
@@ -194,11 +209,17 @@ export function createEnemies(game) {
     const p = pos.clone();
     if (opts.snap !== false) p.y = ctx.groundH(p.x, p.z);
     // v3: opts.element picks the 말랑이 variant; opts.elite marks elites
-    if (type === 'chuchu' && !opts.variant && opts.element && CHU_VARIANTS[opts.element]) opts = { ...opts, variant: opts.element };
+    if (type === 'chuchu' && !opts.variant && opts.element && Codex.CHU_NAMES[opts.element]) opts = { ...opts, variant: opts.element };
     const e = f(ctx, p, opts);
     if (opts.elite) e.isElite = true;
+    if (opts.bench) { e.bench = true; e.xpValue = 0; e.noLoot = true; e.noDamage = true; }
     applyScaling(game, e, type, opts);
+    if (opts.bench) e.xpValue = 0;
     game.scene.add(e.object);
+    // §2.5: compile + draw every new material once on the first spawn of each type (no first-use hitch)
+    const wk = type + ':' + (opts.variant || opts.element || '');
+    // (v4 models share materials that MobModels.prewarm already warmed at boot; bosses warm in prewarmBoss; only wrapped v3 models need it here)
+    if (!e.model?.v4 && !e.isBoss && !warmed.has(wk)) { warmed.add(wk); try { game.render?.warm?.(e.object); } catch (_) { /* */ } }
     game.combat.register(e);
     all.push(e);
     if (opts.camp != null && camps[opts.camp]) camps[opts.camp].members.push(e);
@@ -208,6 +229,7 @@ export function createEnemies(game) {
   /** Per-instance THREE.Skeleton bone textures (one float DataTexture each) are not freed by removeFromParent:
    *  dispose each unique skeleton (geometries / materials are shared caches and stay). */
   const _skels = new Set();
+  const warmed = new Set();
   function disposeSkeletons(root) {
     if (!root?.traverse) return;
     _skels.clear();
@@ -228,7 +250,7 @@ export function createEnemies(game) {
   }
 
   function onDied(e) {
-    if (e.isDummy) return;
+    if (e.isDummy || e.bench) return;
     kills++;
     if (e.camp != null) {
       const c = camps[e.camp];
@@ -253,10 +275,10 @@ export function createEnemies(game) {
   function celebrate(pos) {
     const vfx = game.vfx;
     _v.copy(pos); _v.y += 1.5;
-    vfx.burst(_v, { count: 70, color: [0xffe27a, 0xffffff], speed: 9, spread: 0.5, dir: _v2.set(0, 1, 0), size: 0.2, sizeEnd: 0, life: 1.6, shape: 'spark', gravity: 6, drag: 1 });
-    vfx.burst(_v, { count: 40, color: [0x8fffc1, 0x7fe3ff], speed: 6, spread: 1, size: 0.25, sizeEnd: 0, life: 1.8, shape: 'ember', gravity: -1 });
-    vfx.shockwave(_v2.set(pos.x, pos.y + 0.2, pos.z), { color: 0xffe27a, radius: 14, duration: 1.0, opacity: 0.7 });
-    vfx.flash?.(_v, { color: 0xffe27a, intensity: 8, distance: 25, duration: 0.8 });
+    vfx.burst(_v, { owner: 'world', count: 70, color: [0xffe27a, 0xf3ecdf], speed: 9, spread: 0.5, dir: _v2.set(0, 1, 0), size: 0.2, sizeEnd: 0, life: 1.6, shape: 'spark', gravity: 6, drag: 1 });
+    vfx.burst(_v, { owner: 'world', count: 40, color: [0x8fffc1, 0x7fe3ff], speed: 6, spread: 1, size: 0.25, sizeEnd: 0, life: 1.8, shape: 'ember', gravity: -1 });
+    vfx.shockwave(_v2.set(pos.x, pos.y + 0.2, pos.z), { owner: 'world', color: 0xffe27a, radius: 14, duration: 1.0, opacity: 0.7 });
+    vfx.flash?.(_v, { owner: 'world', color: 0xffe27a, intensity: 8, distance: 25, duration: 0.8 });
     ctx.audio('reaction', { position: pos, volume: 0.9, pitch: 1.2 });
   }
 
@@ -465,8 +487,85 @@ export function createEnemies(game) {
     if (run.combo > run.maxCombo) run.maxCombo = run.combo;
   }
 
+  // ------------------------------------------------------------------ v4: codex, encounters, previews, bench (§7.4.5)
+  const codexMap = {};
+  for (const k in Codex.CODEX) codexMap[k] = Codex.CODEX[k];
+  const previews = new Map();
+  let seenSave = {};                          // save section 'encounters': type → true (first sight / aggro ever)
+  const seenSession = {}, aggroSession = {};
+  try { game.save?.section?.('encounters', { serialize: () => ({ seen: { ...seenSave } }), load: (d) => { seenSave = d && d.seen && typeof d.seen === 'object' ? { ...d.seen } : {}; } }); }
+  catch (err) { warnOnce('save', 'save.section unavailable', err?.message); }
+  const codexKey = (e) => e.codexKey || e.bossId || e.kind;
+  function noteEncounter(type, { sight = true } = {}) {
+    const first = !seenSave[type];
+    seenSave[type] = true;
+    return { first };
+  }
+  function encounter(e, sight) {
+    const type = codexKey(e);
+    const book = sight ? seenSession : aggroSession;
+    if (book[type]) return;
+    book[type] = true;
+    const { first } = noteEncounter(type, { sight });
+    game.events.emit('enemyEncounter', { type, enemy: e, first, sight });
+  }
+  let sightT = 0;
+  function scanSight(dt) {
+    sightT -= dt; if (sightT > 0) return;
+    sightT = 0.25;
+    const cam = game.camera; if (!cam) return;
+    let frustumReady = false;
+    const pp = ctx.realPlayerPos;
+    for (let i = 0; i < all.length; i++) {
+      const e = all[i];
+      if (!e.alive || e.dying || e.isDummy || e.bench || e.isBoss) continue;
+      const type = codexKey(e);
+      if (!seenSession[type]) {
+        const p = e.object.position, dx = p.x - pp.x, dz = p.z - pp.z;
+        if (dx * dx + dz * dz <= 900) {
+          if (!frustumReady) { cam.updateMatrixWorld(); _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _frustum.setFromProjectionMatrix(_pm); frustumReady = true; }
+          _sph.center.set(p.x, p.y + e.height * 0.5, p.z); _sph.radius = Math.max(0.5, e.radius);
+          if (_frustum.intersectsSphere(_sph)) encounter(e, true);
+        }
+      }
+      if (e.aggro && !aggroSession[type]) encounter(e, false);
+    }
+  }
+
   const api = {
     list, all, FACTORIES, bosses, encounters,
+    substeps: true,
+    /** Test / debug access to the projectile pools (orbs, spores, clouds). */
+    get projectiles() { return ctx.projectiles; },
+    // ---- v4 (§7.4.5)
+    registerCodex(entries) { for (const c of [].concat(entries || [])) if (c && c.type) codexMap[c.type] = c; },
+    codex() { return codexMap; },
+    noteEncounter,
+    /** Test hook: forget every encounter (session + save section). */
+    debugResetEncounters() { seenSave = {}; for (const k in seenSession) delete seenSession[k]; for (const k in aggroSession) delete aggroSession[k]; },
+    aggroCount() { let n = 0; for (const e of all) if (e.alive && !e.dying && e.aggro && !e.isDummy && !e.bench) n++; return n; },
+    orbCount() { return ctx.projectiles?.orbCount?.() ?? 0; },
+    orbEta(pos) { return ctx.projectiles?.orbEta?.(pos) ?? Infinity; },
+    previewModel(type, opts = {}) {
+      const f = previews.get(type);
+      if (f) { try { return f(opts) || null; } catch (err) { warnOnce('pv:' + type, 'preview failed', type, err?.message); return null; } }
+      try { return MobModels.preview?.(type, opts) || null; } catch (err) { warnOnce('pv:' + type, 'preview failed', type, err?.message); return null; }
+    },
+    registerPreview(type, fn) { if (type && typeof fn === 'function') previews.set(type, fn); },
+    /** Benchmark mobs (§2.8): never deal damage, drop loot, give XP or count for quests. */
+    spawnBench(n = 8) {
+      const ROSTER = ['bokoblin', 'wolf', 'lizard', 'shaman', 'voidknight', 'shroom', 'wraith', 'chuchu', 'bokoblin', 'wolf', 'chuchu', 'chuchu'];
+      const out = [], pp = ctx.realPlayerPos;
+      const yaw = game.player?.yaw ?? 0;
+      for (let i = 0; i < n; i++) {
+        const a = yaw + Math.PI + (i / Math.max(1, n - 1) - 0.5) * 1.6, r = 6 + (i % 3) * 2.5;
+        _v.set(pp.x + Math.sin(a) * r, 0, pp.z + Math.cos(a) * r);
+        const e = spawn(ROSTER[i % ROSTER.length], _v, { bench: true, variant: i % 3 === 1 ? 'fire' : undefined });
+        if (e) { e.aggro = true; e.setState(e.chaseState || 'chase'); out.push(e); }
+      }
+      return out;
+    },
+    despawnBench(listB) { for (const e of [].concat(listB || [])) if (e) removeEnemy(e); },
     get boss() { return boss && (boss.alive !== false || boss.dying) ? boss : null; },
     get kills() { return kills; },
     get inCombat() {
@@ -537,12 +636,11 @@ export function createEnemies(game) {
 
     /** Hidden instances of every regular-enemy model so their programs compile at boot (main.js prewarm). */
     prewarm() {
+      // v4: the mobmodels registry warms every mob material (and builds the types in idle time); golem via GolemMod
       const out = [];
-      try {
-        for (const b of [buildLizard, buildShroom, buildWolf, buildWraith, buildVoidKnight]) out.push(b().root);
-        for (const v of ['water', 'nature', 'light', 'shadow']) out.push(buildChuchu(v).root);
-        for (const o of out) o.position.set(0, -500, 0);
-      } catch (err) { console.warn('[enemies] prewarm', err); }
+      try { const mats = MobModels.prewarm?.(game); if (Array.isArray(mats) && MobModels.warmObject) out.push(MobModels.warmObject()); } catch (err) { console.warn('[enemies] prewarm', err?.message || err); }
+      try { const g = GolemMod.prewarmGolem?.(game); if (g?.isObject3D) out.push(g); } catch (err) { console.warn('[enemies] prewarmGolem', err?.message || err); }
+      for (const o of out) if (!o.parent) o.position.set(0, -500, 0);
       return out;
     },
 
@@ -569,7 +667,11 @@ export function createEnemies(game) {
       ev.on('stateChange', (p) => { if (p?.state === 'title') threat.reset(); });
     },
 
-    update(dt, realDt) {
+    update(dtIn, realDt) {
+      // enemy logic runs on game.enemyTime deltas (assist.enemySpeed; frozen during a global hitstop)
+      // (= the step dt × assist.enemySpeed, the same scale core applies to game.enemyTime)
+      const dt = dtIn * (game.assist?.enemySpeed ?? 1);
+      ctx.visualStep = game.frame ? game.frame.lastStep !== false : true;
       playTime += realDt;
       const pe = game.player?.entity;
       if (pe) {
@@ -593,11 +695,11 @@ export function createEnemies(game) {
       }
       ctx.restoreTarget();
       separate();
-      // distance LOD: outlines beyond ~45 m and shadows beyond ~70 m off (draw-call budget)
+      // distance LOD for wrapped v3 models only (v4 models switch LOD / outline in model.update from game.quality.budget)
       const cp = game.camera.position;
-      for (let i = 0; i < all.length; i++) {
+      for (let i = 0; ctx.visualStep && i < all.length; i++) {
         const e = all[i];
-        if (e.noLod) continue;
+        if (e.noLod || e.model?.v4) continue;
         const d2 = e.object.position.distanceToSquared(cp);
         const far = d2 > 45 * 45, noSh = d2 > 70 * 70;
         if (e._olFar !== far) { e._olFar = far; const ol = e.model?.outlines; if (ol) for (const o of ol) o.visible = !far; }
@@ -610,6 +712,7 @@ export function createEnemies(game) {
       ctx.loot.update(dt);
       ctx.telegraphs.update(dt, game.time);
       encounters.update(realDt);
+      if (ctx.visualStep) scanSight(realDt);
       // rebuild alive list
       list.length = 0;
       for (const e of all) if (e.alive && !e.isDummy) list.push(e);
