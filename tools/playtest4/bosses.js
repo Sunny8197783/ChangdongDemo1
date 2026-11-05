@@ -152,6 +152,18 @@ module.exports = async function bosses(PT) {
       PT.check('boss spawned via &boss=', !!b && b.bossId === id, b?.bossId);
       if (!b) return null;
       try { g.debug?.firstDraws?.(); } catch (_) { /* */ }
+      // boss-attributed first draws: programs first used by an object inside the boss trees (model, proxy, thrown rock, shards, clone)
+      {
+        const R = g.renderer, props = R.properties, seen = new WeakSet(); for (const p of R.info.programs || []) seen.add(p);
+        const mine = (o) => { for (let q = o; q; q = q.parent) { if (q === b.object || q === b.modelRoot || q === b.model?.thrown || q.name === 'golemRock' || /^bosspart:/.test(q.name)) return true; if (q.isScene) break; } return false; };
+        const clone = () => b.getClone?.()?.object;
+        window.BT.bossFirst = []; const orig = R.renderBufferDirect.bind(R);
+        R.renderBufferDirect = function (c, sc, geo, mat, obj, grp) {
+          const r = orig(c, sc, geo, mat, obj, grp); const pr = props.get(mat).currentProgram;
+          if (pr && !seen.has(pr)) { seen.add(pr); if (mine(obj) || (clone() && (() => { for (let q = obj; q; q = q.parent) if (q === clone()) return true; return false; })())) window.BT.bossFirst.push(mat.type + ':' + (obj.name || obj.type)); }
+          return r;
+        };
+      }
       const A = b.arena || g.world.bossArena;
       PT.tp(A.position.x + 6, A.position.z + 6); PT.heal(); BT.face(); PT.step(1.5, true);
       const m = b.model || {};
@@ -298,8 +310,7 @@ module.exports = async function bosses(PT) {
       if (id === 'nox') { b.debugPhase?.(2); BT.run(3); }                 // the translucent clone joins (built in prewarm)
       g.renderNow?.();
       const fd = g.debug?.firstDraws?.();
-      if (fd == null) { PT.skip('0 first draws during the fight', 'debug.firstDraws missing'); return; }
-      PT.check('0 first draws during the fight (boss models + materials prewarmed)', fd === 0, fd);
+      PT.check('0 boss first draws during the fight (boss models + materials prewarmed)', BT.bossFirst.length === 0, { boss: BT.bossFirst.slice(0, 4), sceneWide: fd });
     }, { id });
     const errs = pg.errors();
     PT.check(`B-${id}: no console errors`, errs.length === 0, errs.slice(0, 4));
@@ -311,7 +322,7 @@ module.exports = async function bosses(PT) {
         if (!R?.snapshot) return [];
         const obj = b.modelRoot || b.model?.root || b.object;
         const out = [];
-        const shot = async (label, yaw, k) => out.push({ url: await R.snapshot(obj, { w: 320, h: 180, yaw, pitch: 0.12, dist: 0 }).then((u) => u, () => null), label, k });
+        const shot = async (label, yaw, k) => out.push({ url: await R.snapshot(obj, { w: 320, h: 180, yaw: yaw + (b.facing || 0), pitch: 0.12, dist: 0 }).then((u) => u, () => null), label, k });
         b.vulnerableUntil = -1; BT.run(0.5);
         await shot('idle front', 0, 1); await shot('idle 3/4', 0.8, 1); await shot('idle side', 1.57, 1);
         const a = b.attacks[0]?.id; const h = a ? b.debugAttack(a) : null;

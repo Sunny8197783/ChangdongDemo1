@@ -132,6 +132,21 @@ export function createGolem(ctx, pos, opts = {}) {
     }
   };
 
+  // a lethal blow before phase 2 (punish ×2 can overkill) clamps at the 50 % floor and starts phase 2, like bossbase phases
+  const baseDeath = e.onDeath;
+  let xpHold = null;
+  e.onDeath = (result, hit) => {
+    if (!e.phase2 && !hit?.fixed) {                      // fixed (scripted / debug) kills pass
+      e.alive = true; e.hp = Math.round(e.maxHp * 0.5);
+      if (!game.entities?.includes?.(e)) { try { game.combat.register(e); } catch (_) { /* */ } }
+      xpHold = e.xpValue; e.xpValue = 0;                 // the `kill` event that follows awards nothing
+      e.react({ damage: 0 });
+      return;
+    }
+    return baseDeath?.(result, hit);
+  };
+  e.restoreXp = () => { if (xpHold != null) { e.xpValue = xpHold; xpHold = null; } };
+
   function resolveSlam(hh) {
     shakeAt(slamCenter, 0.75);
     vfx.debris?.(slamCenter, { owner: 'enemy', count: 14, size: 0.55, speed: 10, life: 2.2, material: 'rock' });
@@ -182,6 +197,7 @@ export function createGolem(ctx, pos, opts = {}) {
   e.think = (dt, sm) => {
     const pp = ctx.playerPos, p = e.object.position, d = e.distP;
     const k = sm * mul;
+    e.restoreXp();
     cd -= dt * k; poiseCd -= dt; poise = Math.max(0, poise - dt * 30);
     if (e._cageT > 0) { e._cageT -= dt; if (e._cageT <= 0) model.setCage(0); }
     _v.set(p.x - arena.position.x, 0, p.z - arena.position.z);

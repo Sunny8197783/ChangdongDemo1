@@ -389,6 +389,7 @@ export function bossAttack(ctx, e, id, over = null) {
   const game = ctx.game, S = attackSpec(id);
   if (!S || !e || e.defeated || e.alive === false) return null;
   if (e.bossBrokenUntil > bossTime(game)) return null;
+  if (game.cinematic?.active) return null;              // never wind up during a cinematic (finisher, phase, intro)
   const T = game.tells;
   if (!T?.attack) { warnOnce('tells', 'game.tells.attack missing'); return null; }
   const p2 = (e.phase || 0) >= 1 || !!e.phase2;
