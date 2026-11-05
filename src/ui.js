@@ -32,6 +32,7 @@ import { createMonsters } from './ui/monsters.js';
 import { createRecap } from './ui/recap.js';
 import { createGuide } from './ui/guide.js';
 import { createNewGame } from './ui/newgame.js';
+import { autoAllocate } from './ui/build.js';
 import {
   HUD_KO, BOSS_KO, VICTORY_KO, CONTROLS, DEF_KO, TIPS, RES_KO, FAMILIES_FALLBACK, MASTERY_KO,
   CALLOUT_KO, HINTS_KO, SETTINGS_UI_KO, HUD4_KO, ONBOARD_KO, fmtKo,
@@ -214,6 +215,7 @@ export function createUI(game) {
     <div class="aw-obj-prog"><div class="aw-obj-bar"><i></i></div><span></span></div>
     <div class="aw-obj-dist"></div>`));
   const objTitle = objective.querySelector('.aw-obj-title'), objText = objective.querySelector('.aw-obj-text');
+  const objHow = objText.insertAdjacentElement('afterend', h('div', 'aw-obj-how'));
   const objDist = objective.querySelector('.aw-obj-dist');
   let objDistTxt = '';
   const objProg = objective.querySelector('.aw-obj-prog'), objProgBar = objProg.querySelector('i'), objProgTxt = objProg.querySelector('span');
@@ -634,7 +636,7 @@ export function createUI(game) {
 
   // ------------------------------------------------------------------ v3 menus (modules)
   const sub = {
-    anim: restartAnim, toast,
+    anim: restartAnim, toast, fmt: (t, c) => fmt(t, c),
     tip: (id, text, o) => tour.tip(id, text, o),
     confirm: (text, onYes, onNo) => openConfirm(text, onYes, onNo),
     openSkillTree: (el) => api.openSkillTree(el),
@@ -842,12 +844,14 @@ export function createUI(game) {
     if (!o) { objective.classList.add('off'); return; }
     objective.classList.remove('off');
     const pr = o.progress && o.progress.max > 0 ? o.progress : null;
-    const key = (o.title || '') + '|' + (o.desc || '') + '|' + (pr ? pr.cur + '/' + pr.max : '');
+    const key = (o.title || '') + '|' + (o.desc || '') + '|' + (pr ? pr.cur + '/' + pr.max : '') + '|' + (o.how || '');
     if (key !== objKey) {
       const changed = objKey !== '' && objKey.split('|')[1] !== (o.desc || '');
       objKey = key;
       objTitle.textContent = o.title || '목표';
-      objText.textContent = o.desc || '';
+      objText.textContent = fmt(o.desc || '');
+      const hw = o.how ? fmt(o.how) : '';
+      objHow.textContent = hw; objHow.style.display = hw ? '' : 'none';
       objProg.style.display = pr ? '' : 'none';
       if (pr) { objProgBar.style.transform = `scaleX(${clamp(pr.cur / pr.max, 0, 1).toFixed(3)})`; objProgTxt.textContent = `${pr.cur} / ${pr.max}`; }
       if (changed) restartAnim(objective, 'flash');
@@ -935,6 +939,8 @@ export function createUI(game) {
   });
   ev.on('levelUp', (p) => {
     const L = p?.level ?? prog()?.level ?? 1;
+    // 자동 배분 (§6.6): settings.autoAllocate (on by default for 이야기)
+    if (game.settings?.values?.autoAllocate || game.settings?.values?.difficulty === 'story') later(0.2, () => { try { autoAllocate(game, toast); } catch (err) { console.warn('[ui] autoAllocate', err); } });
     deferBanner(() => showCard(HUD_KO.levelUpPre, HUD_KO.levelUpTitle(L), HUD_KO.levelUpSub(p?.pointsGained ?? 1), 'aw-card-level', 3.0));
     game.audio?.play?.('level_up');
     edge('awaken');
@@ -1029,7 +1035,7 @@ export function createUI(game) {
     edge('parry');
     restartAnim(defBlock, 'pulse');
   });
-  ev.on('perfectDodge', () => { showFlash(CALLOUT_KO.dodge, CALLOUT_KO.dodgeSub, 'dodge', 1.1, 3); edge('dodge'); try { game.audio?.play?.('perfect_dodge'); } catch (_) { /* */ } });
+  ev.on('perfectDodge', () => { showFlash(CALLOUT_KO.dodge, CALLOUT_KO.dodgeSub, 'dodge', 1.1, 3); edge('dodge'); });
   ev.on('dodgeRejected', () => { try { game.audio?.play?.('dodge_rejected', { volume: 0.7 }); } catch (_) { /* */ } restartAnim(defDash, 'shake'); });
   ev.on('blocked', (p) => {
     if (p?.target?.team !== 'player' || p.parried || p.perfect || p.dodged) return;

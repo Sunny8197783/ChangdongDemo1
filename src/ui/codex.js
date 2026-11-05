@@ -6,7 +6,7 @@ import { ALL_ELEMENTS, elName } from '../core/elements.js';
 import { CLASS_DEFS } from '../core/classes.js';
 import { h, esc, fmtNum } from './dom.js';
 import { elementSVG, spellSVG, elCss, ARCH_GLYPH } from './icons.js';
-import { FAMILIES_FALLBACK, FAMILY_ORDER, FAMILY_BLURB, CODEX_KO, SLOT_KO, RES_KO } from './text.js';
+import { FAMILIES_FALLBACK, FAMILY_ORDER, FAMILY_BLURB, CODEX_KO, SLOT_KO, RES_KO, RX_DESC_KO } from './text.js';
 
 export function createCodex(game, ui, parent) {
   const root = parent.appendChild(h('div', 'aw-screen aw-grimoire aw-codex', `
@@ -67,7 +67,7 @@ export function createCodex(game, ui, parent) {
         const els = (r.elements || []).filter((e) => e && e !== 'physical');
         const chips = els.length ? els.map(chip).join('<b class="aw-plus">+</b>') : `<span class="aw-cx-chip neutral">${elementSVG('physical', 14)}</span>`;
         const hint = els.length ? els.map((e) => elName(e)).join(' + ') + ' ' + CODEX_KO.hintSuffix : CODEX_KO.unknown;
-        html += `<div class="aw-rx ${k2 ? 'known' : 'unknown'}" style="--fc:${fams[k].color};--g1:${elCss(els[0])};--g2:${elCss(els[1] || els[0])}">
+        html += `<div class="aw-rx ${k2 ? 'known' : 'unknown'}" title="${esc(RX_DESC_KO[k] || '')}" style="--fc:${fams[k].color};--g1:${elCss(els[0])};--g2:${elCss(els[1] || els[0])}">
           <div class="aw-cx-mini fam-${k}"><i></i><i></i><i></i></div>
           <div class="aw-rx-body"><div class="aw-rx-name">${k2 ? esc(r.name) : CODEX_KO.unknown}</div>
             <div class="aw-rx-icons">${chips}</div>

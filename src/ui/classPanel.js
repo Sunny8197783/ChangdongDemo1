@@ -5,7 +5,7 @@ import { CLASS_DEFS, CLASS_IDS, TALENTS } from '../core/classes.js';
 import { elName } from '../core/elements.js';
 import { h, esc } from './dom.js';
 import { elementSVG, elCss, classSVG } from './icons.js';
-import { CLASS_KO } from './text.js';
+import { CLASS_KO, CLASS_LINE_KO, CLASS_STARS, CLASS_BEGINNER, ONBOARD_KO } from './text.js';
 
 const AXES = ['hp', 'res', 'power', 'defense', 'crit', 'move'];
 function axisVal(b, k) {
@@ -40,7 +40,7 @@ function radarSVG(base) {
 export function createClassPanel(game, ui, parent) {
   const root = parent.appendChild(h('div', 'aw-screen aw-modal aw-classes', `
     <div class="aw-classes-inner">
-      <div class="aw-classes-head"><div class="aw-classes-title">${CLASS_KO.panelTitle}</div><div class="aw-classes-sub">${CLASS_KO.panelSub}</div></div>
+      <div class="aw-classes-head"><div class="aw-classes-title">${CLASS_KO.panelTitle}</div><div class="aw-classes-sub">${CLASS_KO.panelSub}</div><div class="aw-classes-later">${ONBOARD_KO.changeLater}</div><button class="aw-btn aw-btn-small aw-classes-more" data-kact="more">${ONBOARD_KO.more}</button></div>
       <div class="aw-classes-grid"></div>
       <div class="aw-menu aw-menu-row"><button class="aw-btn" data-kact="cancel">${CLASS_KO.cancel}</button><button class="aw-btn aw-btn-primary" data-kact="pick" disabled>${CLASS_KO.pick}</button></div>
     </div>`));
@@ -54,10 +54,14 @@ export function createClassPanel(game, ui, parent) {
       <div class="aw-ccard-top"><div class="aw-ccard-art">${classSVG(c.style)}</div>
         <div class="aw-ccard-id"><div class="aw-ccard-name">${esc(c.nameKo)}<small>${esc(c.title || '')}</small></div><div class="aw-ccard-fam">${CLASS_KO.family[c.family] || ''}</div></div>
         ${radarSVG(c.base || {})}</div>
+      <div class="aw-ccard-badges">${CLASS_BEGINNER.includes(c.dodge) ? `<i class="aw-badge-new">${ONBOARD_KO.recommended}</i>` : ''}<i class="aw-stars" title="${ONBOARD_KO.stars}">${'★'.repeat(CLASS_STARS[c.dodge] || 2)}${'☆'.repeat(3 - (CLASS_STARS[c.dodge] || 2))}</i></div>
+      <div class="aw-ccard-how" data-dodge="${esc(c.dodge || '')}"></div>
       <div class="aw-ccard-line">${esc(c.fantasyKo || '')}</div>
+      <div class="aw-ccard-more">
       <div class="aw-ccard-row"><b>${CLASS_KO.weapon}</b><span>${esc(c.weaponKo || c.weapon)}</span></div>
       <div class="aw-ccard-row"><b>${CLASS_KO.signature}</b><span>${esc(c.signatureKo || t1?.nameKo || '')}</span></div>
       <div class="aw-ccard-sigdesc">${esc(t1?.desc || '')}</div>
+      </div>
       <div class="aw-ccard-els"><b>${CLASS_KO.elements}</b><div>${chips}</div></div>
     </button>`;
   }).join('');
@@ -74,6 +78,7 @@ export function createClassPanel(game, ui, parent) {
     game.audio?.play?.('ui_click');
     if (b.dataset.kact === 'cancel') { api.close(); return; }
     if (b.dataset.kact === 'pick' && sel) api.pick(sel);
+    if (b.dataset.kact === 'more') { root.classList.toggle('detail'); return; }
   });
   root.addEventListener('dblclick', (e) => { const card = e.target.closest('.aw-ccard'); if (card) { select(card.dataset.cls); api.pick(sel); } });
 
@@ -84,6 +89,7 @@ export function createClassPanel(game, ui, parent) {
       onPick = typeof pick === 'function' ? pick : null;
       onCancel = typeof cancel === 'function' ? cancel : null;
       select(current || null);
+      for (const n of root.querySelectorAll('.aw-ccard-how')) n.textContent = ui.fmt ? ui.fmt(CLASS_LINE_KO[n.dataset.dodge] || '') : (CLASS_LINE_KO[n.dataset.dodge] || '');
       api.isOpen = true;
       root.classList.add('show');
     },

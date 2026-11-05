@@ -1380,3 +1380,14 @@
 .aw-diff.sel { border-color: var(--gold); background: rgba(70, 50, 20, .7); }
 .aw-intro-row { display: flex; gap: 12px; align-items: center; justify-content: center; margin-bottom: 12px; font: 700 13px/1 var(--sans); }
 .aw-toast-btns { margin-left: 10px; pointer-events: auto; } .aw-toast-btns .aw-btn { pointer-events: auto; }
+.aw-obj-how { font: 500 12.5px/1.4 var(--sans); color: #cfe6ff; opacity: .9; margin-top: 2px; }
+.aw-ccard-badges { display: flex; gap: 6px; align-items: center; margin: 4px 0 2px; }
+.aw-badge-new { font: 800 10.5px/1 var(--sans); font-style: normal; padding: 3px 7px; border-radius: 8px; background: #2f7a4a; color: #eafff0; }
+.aw-stars { font-style: normal; color: #ffd36a; letter-spacing: 1px; font-size: 12px; }
+.aw-ccard-how { font: 600 12.5px/1.45 var(--sans); color: #e8f4ff; margin: 2px 0 4px; }
+.aw-ccard-more { display: none; }
+.aw-classes.detail .aw-ccard-more { display: block; }
+.aw-classes-later { font: 500 12px/1.4 var(--sans); opacity: .75; margin-top: 2px; }
+.aw-classes-more { pointer-events: auto; margin-top: 6px; }
+.aw-node.rec .aw-node-star { box-shadow: 0 0 0 2px #7dffb0, 0 0 16px 4px rgba(125, 255, 176, .55); animation: aw-recglow 1.6s ease-in-out infinite; }
+@keyframes aw-recglow { 50% { box-shadow: 0 0 0 2px #7dffb0, 0 0 6px 1px rgba(125, 255, 176, .3); } }

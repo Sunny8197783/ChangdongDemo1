@@ -5,11 +5,14 @@
 //  5 the first guardians' seal (5-colour beams, flash, rune circle)
 //  6 present day: seal cracks, monsters gather (camp bonfire)
 //  7 sunrise over 바람결 마을, descend to the hero, elemental mark glows  8 title card
+import { safeFlash } from './flash.js';
 import * as THREE from 'three';
 import { ELEMENT_COLORS, clamp, smoothstep } from '../core/utils.js';
 import { SPIRITS, makeSpirit, makeMist, makeColossus, makeRune, makeMotes, riftTex, glowTex, starTex } from './assets.js';
 
-export function buildIntro(C, onDone) {
+/** opts.short (PLAN v4 §6.1, settings.introShort): 4 key shots (spirits → the seal cracks → the camps → title), ≈ 27 s. */
+export const SHORT_SHOTS = [2, 6, 7, 9];
+export function buildIntro(C, onDone, opts = {}) {
   const { game, ov, V, groundY, EASE } = C;
   const W = game.world || {};
   const audio = game.audio;
@@ -253,7 +256,7 @@ export function buildIntro(C, onDone) {
       }
       setTimeoutish(1.9, () => {
         sfx('blessing', { volume: 0.9 }); sfx('explode_lightning', { volume: 0.45, pitch: 0.7 });
-        vfx?.screenFlash?.(0xfff4dc, 0.85, 1.3); vfx?.shake?.(0.5);
+        safeFlash(vfx, 0xfff4dc, 0.85, 1.3); vfx?.shake?.(0.5);
         vfx?.flash?.(sealTop, { color: 0xffe6b0, intensity: 40, distance: 260, duration: 1.4 });
         vfx?.shockwave?.(arena, { color: 0xffe2a0, radius: 70, duration: 1.6, opacity: 0.9 });
         vfx?.burst?.(sealTop, { count: 140, color: [0xffffff, 0xffd890], speed: 34, spread: 1, size: 2.2, sizeEnd: 0, life: 1.8, shape: 'spark', drag: 1 });
@@ -364,6 +367,16 @@ export function buildIntro(C, onDone) {
     },
   });
 
+  // ---------------------------------------------------------------- short version (§6.1)
+  if (opts.short) {
+    const keep = SHORT_SHOTS.map((i) => shots[i]).filter(Boolean);
+    const first = keep[0], last = keep[keep.length - 1];
+    const s0 = first.onStart;
+    first.duration = 9; first.fadeIn = 1.0; first.letterbox = true;
+    first.onStart = function (...a) { try { audio?.setMusic?.('intro'); } catch (_) { /* */ } return s0?.apply(this, a); };
+    last.duration = 7;
+    shots.length = 0; shots.push(...keep);
+  }
   // ---------------------------------------------------------------- tiny real-time scheduler inside the intro clock
   const timers = [];
   function setTimeoutish(delay, fn) { timers.push({ at: T + delay, fn }); }

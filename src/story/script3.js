@@ -66,14 +66,14 @@ export const CHOICE_LATER = { t: '조금 더 생각해 볼게요', desc: '대화
 
 // ------------------------------------------------------------------------------------------------ 첫 수련 (training)
 /** Per-class kit names (data keyed by the kit types of CLASS_DEFS). */
-export const DODGE_KO = { blink: '블링크', dashstep: '질풍보', backflip: '백플립', shieldstep: '방패 돌진', spiritswap: '정령 교대', shadowroll: '그림자 구르기' };
+export const DODGE_KO = { blink: '점멸', dashstep: '질풍보', backflip: '백덤블링', shieldstep: '방패 돌진', spiritswap: '정령 교대', shadowroll: '그림자 구르기' };
 export const DEFEND_KO = {
-  barrier: 'E를 누르고 있으면 {마력 방벽}', guard: 'E를 누르고 있으면 {검 막기}', focus: '공중이나 회피 직후 E를 누르고 있으면 {집중}',
-  shield: 'E를 누르고 있으면 {방패 막기}', ward: 'E로 {수호 결계}', counter: 'E로 {반격 자세}',
+  barrier: '{defendKey}를 누르고 있으면 {마력 방벽}', guard: '{defendKey}를 누르고 있으면 {막기}', focus: '공중이나 회피 직후 {defendKey}를 누르고 있으면 {집중}',
+  shield: '{defendKey}를 누르고 있으면 {방패 막기}', ward: '{defendKey}로 {정령 결계}', counter: '{defendKey}로 {반격 자세}',
 };
 export const DEFEND_OBJ = {
-  barrier: '마력 방벽으로 공격 막기 (E 길게)', guard: '검 막기로 공격 막기 (E 길게)', focus: '공중에서 집중 쓰기 (점프 후 E 길게)',
-  shield: '방패로 공격 막기 (E 길게)', ward: '수호 결계로 공격 받아내기 (E)', counter: '반격 자세로 공격 받아치기 (E)',
+  barrier: '마력 방벽으로 공격 막기 ({defendKey} 길게)', guard: '막기로 공격 막기 ({defendKey} 길게)', focus: '공중에서 집중 쓰기 (점프 후 {defendKey} 길게)',
+  shield: '방패 막기로 공격 막기 ({defendKey} 길게)', ward: '정령 결계로 공격 받아내기 ({defendKey})', counter: '반격 자세로 공격 받아치기 ({defendKey})',
 };
 export function trainingStepText(cls, step, kit) {
   switch (step) {
@@ -81,25 +81,25 @@ export function trainingStepText(cls, step, kit) {
     case 'basic': return '허수아비에게 기본 공격 5번 (좌클릭)';
     case 'charged': return '충전 공격 사용하기 (우클릭 길게)';
     case 'quick': return '빠른 슬롯 스킬 사용하기 (1)';
-    case 'defend': return DEFEND_OBJ[kit?.defend] || '방어로 공격 막기 (E)';
-    case 'dodge': return `${DODGE_KO[kit?.dodge] || '회피'}로 몸 날리기 (Q)`;
-    case 'learn': return '스킬 트리(K)에서 노드 하나를 배우고 슬롯에 장착하기';
+    case 'defend': return DEFEND_OBJ[kit?.defend] || '방어로 공격 막기 ({defendKey})';
+    case 'dodge': return `${DODGE_KO[kit?.dodge] || '회피'}로 몸 날리기 ({dodgeKey})`;
+    case 'learn': return '스킬 트리({skillsKey})에서 노드 하나를 배우고 슬롯에 장착하기';
     case 'done': return '스승에게 돌아가기';
     default: return '';
   }
 }
 /** Mentor voice per step. `kit` = {dodge, defend}. */
 const VOICE = {
-  mageMentor: { go: '수련장으로 와! 마을 동쪽, 허수아비들 있는 곳이야.', basic: '좌클릭으로 {기본 마법}! 허수아비에게 다섯 번 맞혀 봐.', charged: '좋아! 우클릭을 꾹 눌렀다 떼서 {충전 마법}! 오래 모을수록 강해져.', quick: '이번엔 {1}번! 빠른 슬롯에 넣어 둔 주문이야.', defend: '방어 연습! {D}. 맞기 직전에 펼치면 {완벽 방어}야!', dodge: '마지막 몸풀기! Q로 {X}! 무적 시간도 있어.', learn: '이제 진짜 공부! {K}를 눌러 스킬 트리를 열고, 하나 배워서 슬롯에 끼워 봐.', done: '훌륭해! 이리 와서 얘기 좀 하자!' },
-  swordMentor: { go: '수련장으로 와라. 마을 동쪽이다.', basic: '좌클릭, {베기}. 다섯 번 베어라.', charged: '우클릭을 꾹 눌렀다 떼라. {충전 일격}이다.', quick: '{1}번. 몸에 새긴 기술을 써 봐라.', defend: '{D}다. 맞기 직전에 막으면 {간파}다.', dodge: 'Q, {X}. 공격 직전에 피하면 {완벽 회피}다.', learn: '{K}. 스킬 트리를 열어 기술 하나를 익히고 손에 쥐어라.', done: '…됐다. 이리 와라.' },
-  rangerMentor: { go: '수련장으로 고고! 마을 동쪽이야!', basic: '좌클릭으로 {화살}! 허수아비한테 다섯 발!', charged: '우클릭을 꾹— 시위를 끝까지 당겼다가 놔! {충전 사격}!', quick: '{1}번! 내가 제일 좋아하는 기술이 거기 있다구.', defend: '점프하고 공중에서 {D}! 세상이 느려지는 거 느껴져?', dodge: 'Q로 {X}! 뒤로 휙— 멋지게!', learn: '{K}를 눌러 봐! 별자리에서 하나 골라 배우고 슬롯에 쏙!', done: '완벽했어! 이리 와 봐, 할 얘기 있어!' },
-  paladinMentor: { go: '수련장으로 오게. 마을 동쪽일세.', basic: '좌클릭으로 {망치}를 휘두르게. 다섯 번이면 충분하네.', charged: '우클릭을 길게. 힘을 모아 {내려찍기}일세.', quick: '{1}번. 맹세의 기술을 써 보게.', defend: '{D}. 맞기 직전에 들면 공격을 {되받아친다}네.', dodge: 'Q, {X}. 방패를 앞세워 밀고 나가게.', learn: '{K}로 스킬 트리를 열게. 하나를 배우고 손에 쥐는 것까지가 수련이네.', done: '잘했네. 이리 오게.' },
-  spiritMentor: { go: '수련장으로 와. 허수아비들이 기다리고 있어. 걔들도 외로우니까.', basic: '좌클릭으로 {정령탄}. 다섯 번 톡톡.', charged: '우클릭을 꾹. 정령들이 모여드는 소리가 들려?', quick: '{1}번. 친구를 불러 보자.', defend: '{D}. 맞는 순간에 결계가 너를 감싸 줄 거야.', dodge: 'Q, {X}. 정령과 자리를 바꾸는 거야.', learn: '{K}를 눌러 봐. 별들 중 하나가 너를 부를 거야. 배우고, 슬롯에 담아.', done: '잘했어. 새들이 박수 치고 있어. 이리 와.' },
-  shadowMentor: { go: '수련장. 마을 동쪽. 늦지 마라.', basic: '좌클릭, {쌍검}. 다섯 번 긋는다.', charged: '우클릭을 길게. 숨을 죽였다가 {찌른다}.', quick: '{1}번. 표식을 새겨 봐라.', defend: '{D}다. 맞는 순간 사라져서 등 뒤로.', dodge: 'Q, {X}. 그림자 속으로 굴러라.', learn: '{K}. 기술 하나 훔쳐… 아니, 배워서 손에 쥐어라.', done: '나쁘지 않군. 이리 와.' },
+  mageMentor: { go: '수련장으로 와! 마을 동쪽, 허수아비들 있는 곳이야.', basic: '좌클릭으로 {기본 마법}! 허수아비에게 다섯 번 맞혀 봐.', charged: '좋아! 우클릭을 꾹 눌렀다 떼서 {충전 마법}! 오래 모을수록 강해져.', quick: '이번엔 {1}번! 빠른 슬롯에 넣어 둔 주문이야.', defend: '방어 연습! {D}. 맞기 직전에 펼치면 {완벽 방어}야!', dodge: '마지막 몸풀기! {dodgeKey}로 {X}! 무적 시간도 있어.', learn: '이제 진짜 공부! {skillsKey}를 눌러 스킬 트리를 열고, 하나 배워서 슬롯에 끼워 봐.', done: '훌륭해! 이리 와서 얘기 좀 하자!' },
+  swordMentor: { go: '수련장으로 와라. 마을 동쪽이다.', basic: '좌클릭, {베기}. 다섯 번 베어라.', charged: '우클릭을 꾹 눌렀다 떼라. {충전 일격}이다.', quick: '{1}번. 몸에 새긴 기술을 써 봐라.', defend: '{D}다. 맞기 직전에 막으면 {간파}다.', dodge: '{dodgeKey}, {X}. 공격 직전에 피하면 {완벽 회피}다.', learn: '{skillsKey}. 스킬 트리를 열어 기술 하나를 익히고 손에 쥐어라.', done: '…됐다. 이리 와라.' },
+  rangerMentor: { go: '수련장으로 고고! 마을 동쪽이야!', basic: '좌클릭으로 {화살}! 허수아비한테 다섯 발!', charged: '우클릭을 꾹— 시위를 끝까지 당겼다가 놔! {충전 사격}!', quick: '{1}번! 내가 제일 좋아하는 기술이 거기 있다구.', defend: '점프하고 공중에서 {D}! 세상이 느려지는 거 느껴져?', dodge: '{dodgeKey}로 {X}! 뒤로 휙— 멋지게!', learn: '{skillsKey}를 눌러 봐! 별자리에서 하나 골라 배우고 슬롯에 쏙!', done: '완벽했어! 이리 와 봐, 할 얘기 있어!' },
+  paladinMentor: { go: '수련장으로 오게. 마을 동쪽일세.', basic: '좌클릭으로 {망치}를 휘두르게. 다섯 번이면 충분하네.', charged: '우클릭을 길게. 힘을 모아 {내려찍기}일세.', quick: '{1}번. 맹세의 기술을 써 보게.', defend: '{D}. 맞기 직전에 들면 공격을 {되받아친다}네.', dodge: '{dodgeKey}, {X}. 방패를 앞세워 밀고 나가게.', learn: '{skillsKey}로 스킬 트리를 열게. 하나를 배우고 손에 쥐는 것까지가 수련이네.', done: '잘했네. 이리 오게.' },
+  spiritMentor: { go: '수련장으로 와. 허수아비들이 기다리고 있어. 걔들도 외로우니까.', basic: '좌클릭으로 {정령탄}. 다섯 번 톡톡.', charged: '우클릭을 꾹. 정령들이 모여드는 소리가 들려?', quick: '{1}번. 친구를 불러 보자.', defend: '{D}. 맞는 순간에 결계가 너를 감싸 줄 거야.', dodge: '{dodgeKey}, {X}. 정령과 자리를 바꾸는 거야.', learn: '{skillsKey}를 눌러 봐. 별들 중 하나가 너를 부를 거야. 배우고, 슬롯에 담아.', done: '잘했어. 새들이 박수 치고 있어. 이리 와.' },
+  shadowMentor: { go: '수련장. 마을 동쪽. 늦지 마라.', basic: '좌클릭, {쌍검}. 다섯 번 긋는다.', charged: '우클릭을 길게. 숨을 죽였다가 {찌른다}.', quick: '{1}번. 표식을 새겨 봐라.', defend: '{D}다. 맞는 순간 사라져서 등 뒤로.', dodge: '{dodgeKey}, {X}. 그림자 속으로 굴러라.', learn: '{skillsKey}. 기술 하나 훔쳐… 아니, 배워서 손에 쥐어라.', done: '나쁘지 않군. 이리 와.' },
 };
 export function trainingBark(mentorId, step, kit) {
   const v = VOICE[mentorId] || VOICE.mageMentor;
-  return (v[step] || '').replace('{D}', DEFEND_KO[kit?.defend] || 'E로 {방어}').replace('{X}', `{${DODGE_KO[kit?.dodge] || '회피'}}`);
+  return (v[step] || '').replace('{D}', DEFEND_KO[kit?.defend] || '{defendKey}로 {방어}').replace('{X}', `{${DODGE_KO[kit?.dodge] || '회피'}}`);
 }
 const PRAISE = {
   mageMentor: ['좋아!', '멋져!', '바로 그거야!', '완벽해!'], swordMentor: ['좋다.', '그거다.', '나쁘지 않군.', '됐다.'],

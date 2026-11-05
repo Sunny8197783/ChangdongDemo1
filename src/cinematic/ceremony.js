@@ -1,5 +1,6 @@
 // 각인 의식 (class rite, DESIGN §5.6): only the spirits of the chosen class's elements descend — primaries big and in
 // front, secondaries small and behind — and enter the hero on the altar dais. The ending lives in cinematic/finale.js.
+import { safeFlash } from './flash.js';
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/utils.js';
 import { CLASS_DEFS } from '../core/classes.js';
@@ -135,7 +136,7 @@ export function buildClassRite(C, cls, onDone) {
       from: C.orbit(hero, { radius: 3.6, height: 1.0, from: facing + 0.35, to: facing + 1.6, radiusTo: 5, heightTo: 2.2 }), look: () => tmp2.set(hero.x, hero.y + 1.2, hero.z), fov: [52, 56],
       onStart() {
         const c = mainCol;
-        vfx?.screenFlash?.(c, 0.6, 0.6); vfx?.shake?.(0.2);
+        safeFlash(vfx, c, 0.6, 0.6); vfx?.shake?.(0.2);
         vfx?.shockwave?.(hero, { color: c, radius: 7, duration: 0.8 });
         vfx?.burst?.(chest, { count: 70, color: els.map((x) => elColor(x, 'hex')), speed: 9, spread: 1, size: 0.3, sizeEnd: 0, life: 1.1, shape: 'spark', drag: 1.5 });
         vfx?.flash?.(chest, { color: c, intensity: 10, distance: 18, duration: 0.8 });

@@ -1,6 +1,7 @@
 // 필살기 cinematic template (gameplay mode, ≈4.3 s), shared by sword & magic finishers:
 // freeze-frame + letterbox → close shot of the hero with element aura & calligraphic name splash →
 // orbit/rise power-up → wide shot of the blow landing on `center` (onImpact) → camera blends back to gameplay.
+import { safeFlash } from './flash.js';
 import * as THREE from 'three';
 import { clamp } from '../core/utils.js';
 import { elColor } from '../core/elements.js';
@@ -103,7 +104,7 @@ export function buildFinisher(C, o = {}) {
     if (impacted) return; impacted = true;
     try { o.onImpact?.(); } catch (err) { console.error('[cinematic] onImpact', err); }
     try { piece?.impact(); } catch (_) { /* */ }
-    vfx?.screenFlash?.(col, 0.55, 0.45); vfx?.shake?.(0.85); vfx?.fovKick?.(9, 0.5);
+    safeFlash(vfx, col, 0.55, 0.45); vfx?.shake?.(0.85); vfx?.fovKick?.(9, 0.5);
     vfx?.shockwave?.(center, { color: col, radius: 14, duration: 0.8 });
     vfx?.flash?.(center, { color: col, intensity: 18, distance: 40, duration: 0.6 });
     game.hitstop?.(0.12);
@@ -116,7 +117,7 @@ export function buildFinisher(C, o = {}) {
       from: null, to: null,
       onStart() {
         ov.letterbox(true);
-        vfx?.screenFlash?.(col, 0.35, 0.3); vfx?.fovKick?.(-6, 0.35);
+        safeFlash(vfx, col, 0.35, 0.3); vfx?.fovKick?.(-6, 0.35);
         sfx('cinematic_whoosh', { volume: 0.8, pitch: 1.3 });
         aura = stage.keep(vfx?.emitter?.({ follow: pObj || undefined, position: hero().clone(), rate: 40, count: 1, color: [col, 0xffffff], speed: 4, dir: new THREE.Vector3(0, 1, 0), spread: 0.35, size: 0.16, sizeEnd: 0, life: 0.9, shape: 'spark', radius: 1.2, drag: 0.6 }));
       },

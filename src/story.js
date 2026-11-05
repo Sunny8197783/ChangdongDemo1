@@ -8,6 +8,7 @@ import { createTrials } from './story/trials.js';
 import { createStoryUI } from './story/ui.js';
 import * as SC from './story/script.js';
 import * as S3 from './story/script3.js';
+import * as S4 from './story/script4.js';
 import {
   QUESTS, QUEST_BY_ID, STAGES, TITLES, REGIONS, REGION_OF, BOSS_OF_STAGE, STAGE_OF_BOSS, SPIRIT_OF_BOSS, MIN_LEVEL, ACT_OF,
   TRAIN_STEPS, TRAIN_BASIC_N, ASCENT_STEPS, GROVE, NPC_FALLBACK, SHRINE_OF, SPIRIT_NPC, questXp, nextStage, stagesBefore,
@@ -184,9 +185,12 @@ export function createStory(game) {
     }
   }
   let heldBark = null; // barks raised during a dialogue / cinematic wait until it is over (latest wins)
+  /** §6.11 key tokens ({dodgeKey} …) through ui.fmtKo; {강조} markup is untouched (Hangul never matches the token regex). */
+  const fmtT = (t) => { try { return game.ui?.fmtKo ? game.ui.fmtKo(t) : t; } catch (_) { return t; } };
   function bark(id, text, sec) {
     if (silent || !text) return;
     if (D.active || game.cinematic?.active || game.state === 'cutscene') { heldBark = [id, text, sec]; return; }
+    text = fmtT(text);
     ui.bark(SPEAKERS[id] || null, text, sec || Math.min(7, 2.6 + text.length * 0.055));
   }
 
@@ -599,10 +603,10 @@ export function createStory(game) {
     const pp = game.player?.object?.position;
     if (f && !f.hidden && (!pp || f.pos.distanceTo(pp) < 14)) D.focus = f;
     ui.setSpeaker(sp);
-    const r = ui.setText(node.t || '');
+    const r = ui.setText(fmtT(node.t || ''));
     D.spans = r.spans; D.chars = r.chars; D.idx = 0; D.charT = 0.05; D.typing = true; D.choices = null;
     ui.clearChoices();
-    ui.setHint('Space / F / 클릭 — 계속');
+    ui.setHint(game.ui?.fmtKo ? game.ui.fmtKo(S4.FF_HINT) : S4.FF_HINT);
   }
   function finishTyping() {
     ui.reveal(D.spans, D.idx, D.chars.length); D.idx = D.chars.length; D.typing = false;
@@ -643,8 +647,14 @@ export function createStory(game) {
     const raw = game.input.raw;
     if (D.inputDelay > 0) D.inputDelay -= realDt;
     const ok = D.inputDelay <= 0;
+    // v4 §6.1: hold F / Space → ≥ 3× text speed + auto-advance 0.4 s after a line ends; Esc → 대화 건너뛰기 confirm
+    if (game.ui?.anyModalOpen) return;
+    const hold = ok && (raw.down('Space') || raw.down('KeyF'));
+    D.ffHeld = hold ? (D.ffHeld || 0) + realDt : 0;
+    const ff = D.ffHeld > 0.25;
+    if (ok && raw.pressed('Escape') && !D.choices) { askSkip(); return; }
     if (D.typing) {
-      D.charT -= realDt;
+      D.charT -= realDt * (ff ? 4 : 1);
       let blips = 0;
       while (D.charT <= 0 && D.idx < D.chars.length) {
         const ch = D.chars[D.idx];
@@ -669,10 +679,28 @@ export function createStory(game) {
       if (raw.pressed('Enter') || raw.pressed('NumpadEnter') || raw.pressed('Space') || raw.pressed('KeyF')) pickChoice(D.sel);
       return;
     }
-    if (adv) {
+    if (ff && !D.typing) {
+      D.ffWait = (D.ffWait || 0) + realDt;
+      if (D.ffWait >= 0.4) { D.ffWait = 0; nextNode(); }
+      return;
+    }
+    D.ffWait = 0;
+    if (adv && !ff) {
       if (D.typing) finishTyping();
       else { audio('ui_click', { volume: 0.35, pitch: 1.4 }); nextNode(); }
     }
+  }
+  /** Esc in a dialogue: confirm, then run through the remaining lines (stopping at the next choice). */
+  function askSkip() {
+    const doSkip = () => skipDialogue();
+    if (game.ui?.confirm) game.ui.confirm(S4.SKIP_Q, doSkip, () => {});
+    else doSkip();
+  }
+  function skipDialogue() {
+    if (!D.active) return false;
+    if (D.typing) finishTyping();
+    for (let guard = 0; guard < 200 && D.active && !D.choices; guard++) nextNode();
+    return true;
   }
 
   // dialogue camera: over-the-shoulder of the hero toward the current speaker
@@ -736,7 +764,7 @@ export function createStory(game) {
   }
 
   // ------------------------------------------------------------------------------------------- objective & markers
-  const objective = { title: '', desc: '', progress: null, marker: null };
+  const objective = { title: '', desc: '', progress: null, marker: null, how: '' };
   const prog = { cur: 0, max: 0 };
   const markers = [];
   const mk = Array.from({ length: 10 }, () => ({ position: null, kind: 'npc', label: '' }));
@@ -802,7 +830,21 @@ export function createStory(game) {
       try { objective.desc = q.objective(S, game, H) || ''; } catch (err) { warnOnce('obj:' + q.id, '[story] objective', q.id, err); }
       try { q.markers(S, game, H); } catch (err) { warnOnce('mk:' + q.id, '[story] markers', q.id, err); }
     }
+    objective.how = '';
+    try { const f = q && S4.HOW[q.id]; objective.how = f ? f(S) || '' : ''; } catch (_) { objective.how = ''; }
     for (const n of npcList) ui.setTagMark(n.tag, n.mark);
+    syncBeacon(q);
+  }
+  // §6.3: world.setBeacon on every objective step (camps → the entrance when world exposes it, else the centre)
+  let beaconPos = null, beaconWarned = false;
+  function syncBeacon(q) {
+    const W = game.world;
+    if (typeof W?.setBeacon !== 'function') { if (!beaconWarned) { beaconWarned = true; console.warn('[story] world.setBeacon missing'); } return; }
+    let m = objective.marker || null;
+    if (m && q?.kind === 'camps') { const c = (W.camps || []).find((x) => x?.position && m.distanceTo && x.position.distanceTo(m) < 20); if (c?.entrance) m = c.entrance; }
+    if (m === beaconPos && (!m || !beaconPos || m.equals?.(beaconPos))) return;
+    beaconPos = m;
+    try { W.setBeacon(m || null, { kind: q?.kind === 'boss' ? 'boss' : q?.kind === 'camps' ? 'camp' : 'quest' }); } catch (err) { warnOnce('beacon', '[story] setBeacon', err); }
   }
 
   // ------------------------------------------------------------------------------------------- interact offers (F)
@@ -922,6 +964,33 @@ export function createStory(game) {
 
   // ------------------------------------------------------------------------------------------- update
   let practiceT = 0, slowT = 0, arenaT = 0, defendHold = 0;
+  const LESSON_SEQ = ['danger', 'danger', 'parry'];
+  const lesson = { i: 0, t: 1.5, waiting: false, dummy: null };
+  game.events.on('tellEnd', (p) => { if (lesson.waiting && p?.enemy === lesson.dummy) { lesson.waiting = false; lesson.t = 1.6; } });
+  function lessonDummy(Pp) {
+    let best = null, bd = 22 * 22;
+    for (const e of game.entities || []) {
+      if (!e.isDummy || !e.alive || typeof e.practice !== 'function' || !e.object) continue;
+      const d = e.object.position.distanceToSquared(Pp); if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+  function updateLesson(dt, Pp) {
+    if (lesson.i >= LESSON_SEQ.length || lesson.waiting || D.active) return;
+    if ((lesson.t -= dt) > 0) return;
+    lesson.t = 2;
+    const d = lessonDummy(Pp); if (!d) return;
+    const kind = LESSON_SEQ[lesson.i];
+    let ok = false;
+    try { ok = !!d.practice(kind); } catch (_) { ok = false; }
+    if (!ok) return;
+    lesson.dummy = d; lesson.waiting = true;
+    const canP = game.ui?.canParry ? game.ui.canParry() : true;
+    const txt = kind === 'danger' ? S4.LESSON.danger : canP ? S4.LESSON.parry : S4.LESSON.parryB;
+    try { game.ui?.hint?.('lesson_' + lesson.i, txt, { until: 'tellEnd', maxShows: 1, dur: 8 }); } catch (_) { /* */ }
+    lesson.i++;
+    if (lesson.i >= LESSON_SEQ.length) after(5, () => bark(S.mentorId || 'elder', S4.LESSON.done));
+  }
   function update(dt, realDt) {
     realDt = Math.min(realDt || 0, 0.1);
     t += realDt;
@@ -975,6 +1044,8 @@ export function createStory(game) {
         }
       }
     }
+    // v4 §6.1 telegraph lesson: once training is done, the dummy performs 2 slow danger swings and 1 parry swing
+    if (S.stage === 'training' && S.trainStep === 'done' && Pp && game.state === 'playing') updateLesson(realDt, Pp);
     // 4 Hz checks: camps, region choice, the Mirwen shrine, the escort, the ascent, boss triggers
     slowT -= realDt;
     if (slowT <= 0) {
@@ -1328,6 +1399,8 @@ export function createStory(game) {
     /** Start talking to an NPC by id (tests / scripted). */
     talkTo(id) { const n = npcs[id]; if (n && !n.hidden && game.state === 'playing') talk(n); return !!n && !n.hidden; },
     advance() { if (!D.active) return false; if (D.typing) finishTyping(); else if (!D.choices) nextNode(); return true; },
+    /** v4: skip the rest of the dialogue up to the next choice (Esc → 대화 건너뛰기). */
+    skipDialogue: () => skipDialogue(),
     choose(i) { if (D.choices) { pickChoice(i); return true; } return false; },
     getDialogueState() {
       return D.active ? { npc: D.npc?.id, speaker: D.node?.s, text: D.node?.t, typing: D.typing, choices: D.choices?.map((c) => c.t) || null } : null;
