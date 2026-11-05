@@ -18,6 +18,19 @@
   lightning bolts cannot reach saturation ≥ 0.40 on grass; a `halo` colour option would help. (3) P1: a caustic UV scroll in the FM shader
   for `water.sheet` (the row asks for it; the sheet has the crest line only). (4) `vfx.debug.setVisible('player', true)` makes every
   player-owned mesh visible, including pooled meshes that were hidden — MG1 uses its own visible-set toggle.
+- **vfx (continued)**: (5) `vfx.hitFeel` plays `kit.motif(el, 'burst')` on the first hit of a cast, often *before* the cast's primary
+  shape exists (cone / nova hits run synchronously). Magic's registered burst motifs now detect this (cast context by `castId`) and play
+  the skill's bespoke impact once per `castId` inside a handle share (≤ ½ of the tier's handles). Melee's motifs reached through the
+  same path are not inside magic's facade: their handle use counts for the caster casts of earth / nature / light / shadow after the
+  melee merge — please keep each burst ≤ 4 handles. (6) Each `kit.mesh` instance is one handle, so impact crowns of 8 FM petals /
+  prisms exhaust the C/A budget (8): a multi-instance call (`kit.meshes(name, n, fn)` → one handle) would let crowns stay FM.
+  (7) The bolt halo is a soft premultiplied falloff that adds colour without covering the ground: violet over green reads grey
+  (sat ≈ 0.2); magic narrows the halo to ≈ the core width for player bolts (`halo ≤ 1.2 × width`).
+- **core**: (4) through the post chain an opaque `mid` swatch on the plains meadow reads sat ≈ 0.50 (lightning, shadow, earth), 0.55
+  (wind), 0.59 (ice), 0.75 (fire, water), 0.21 (light, ivory by design). Thin AA lines over green lose another 0.1–0.2, so the
+  violet elements sit right at the §1.4 floor of 0.40; MG1 uses a per-element floor of min(0.40, 0.85 × swatch) (only light and
+  physical are actually relaxed by it). If the grade can keep violet / teal saturation (e.g. less desaturation above 0.8 luma in
+  FinalPass), every caster look gains margin.
 - **player**: `game.spells.castLock` is > 0 only during the ultimate anticipation (0.14 s, awakened 0.2 s) and while a finisher plays;
   every other cast is instant (0), so the dodge buffer never waits on a caster.
 - **tells / mobs / bosses**: none.

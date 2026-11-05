@@ -132,7 +132,7 @@ export function createLooks(S) {
       const R = k.ramp(s.el || 'lightning');
       // the kit halo is a soft premultiplied falloff (adds colour over the ground without covering it): keep it narrow, so the bolt reads
       // as a crisp saturated `mid` zig-zag; the 2–3-frame strike itself is the bright moment
-      if (s.core == null && !s.owner) s.core = R.mid;
+      if (s.core == null && !s.owner) s.core = s.el === 'shadow' ? R.light : R.mid;   // shadow: violet rim colour (its mid is near-black)
       if (!s.owner) { if ((s.el || 'lightning') === 'lightning') s.width = Math.max(0.1, s.width ?? 0.08); s.halo = Math.min(s.halo ?? 0.3, s.width * 1.2); }
       const h = k.bolt(s);
       if (!s.owner && s.halo !== 0 && h?._r?.cLight?.isColor) h._r.cLight.copy(R.mid);
@@ -511,7 +511,7 @@ export function createLooks(S) {
     if (dur <= 0.6 && el !== 'light') {   // short vines / ink lines / water ropes: a tapered ribbon (body in mid, crisp light edge)
       return K.ribbon({ points: [from, from.clone().lerp(to, 0.5).setY((from.y + to.y) / 2 + 0.12), to], width: Math.min(0.32, Math.max(0.12, w * 1.25)), taper: 0.6, life: Math.max(0.2, dur), el, alpha: 0.85 });
     }
-    return K.bolt({ from, to, forks: 0, jagged: 0, width: Math.min(0.12, Math.max(0.05, w * 0.25)), halo: Math.min(0.6, w * 0.55 + 0.1), life: Math.max(0.1, dur), afterglow: 0.15, el });
+    return K.bolt({ from, to, forks: 0, jagged: 0, width: Math.min(0.12, Math.max(el === 'shadow' ? 0.1 : 0.05, w * 0.25)), halo: Math.min(0.6, w * 0.55 + 0.1), life: Math.max(0.1, dur), afterglow: 0.15, el });
   }
 
   // ------------------------------------------------------------------ boot warm-up (first cast ≤ 8 ms: the JS paths of every look run once at boot)

@@ -1085,7 +1085,10 @@ export function createArchetypes(S, api, { summons, structures }) {
   };
   function vine(a, b, dur) {
     fx('beam', a, b, { color: 0x6fcf4a, width: 0.24, duration: dur, jagged: 0.15, segments: 10 });
-    if (L?.on()) fx('impact', b, { element: 'nature', scale: 0.8 });   // v4: the vine's anchor bloom (the cast's one impact)
+    if (L?.on()) {   // v4: the vine's anchor bloom (the cast's one impact) + a rotating dotted leaf ring at the anchor
+      fx('impact', b, { element: 'nature', scale: 0.8 });
+      L.kit.line({ shape: 'dots', n: 12, el: 'nature', pos: b.clone(), plane: 'billboard', r: 1.5, width: 0.06, life: Math.max(0.4, dur + 0.15), tIn: 0.08, tOut: 0.2, spin: 2, scaleIn: 'backOut' });
+    }
     fx('burst', b, { count: 12, shape: 'leaf', color: [0xd8ff9a, 0x4f9e3a], speed: 3, spread: 1, size: 0.2, life: 0.5, gravity: 3 });
   }
 
@@ -1213,6 +1216,7 @@ export function createArchetypes(S, api, { summons, structures }) {
       b.handles.push(fx('beam', gp, ec, { color: colOf(el, 'edge'), width: 0.14, duration: dur, jagged: 0.08, segments: 8 }));
       b.handles.push(fx('beam', anchor.clone(), ec.clone(), { color: colOf(el, 'mid'), width: 0.1, duration: Math.min(0.6, dur), jagged: 0.2, segments: 10 }));
       fx('runeCircle', gp.clone(), { element: el, r: 1.8, dur, rotSpeed: 2 });
+      if (L?.on()) L.kit.line({ shape: 'crescent', el, pos: ec.clone(), plane: 'billboard', r: 0.95, width: 0.07, life: 0.7, tIn: 0.06, tOut: 0.35, color: L.kit.ramp(el).light, color2: L.kit.ramp(el).dark });   // v4: the bind's bite
     }
     binds.push(b);
     return true;
