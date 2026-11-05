@@ -470,6 +470,28 @@ export function bossPunish(ctx, e, dur, mul) {
   game.events.emit('punishWindow', { enemy: e, dur, mul });
 }
 
+/**
+ * Compile the shadow-depth program of a skinned caster ahead of its first shadow draw (renderer.compile skips the shadow pass, so a
+ * boss proxy would otherwise compile MeshDepthMaterial+skinning on its first shadowed frame). Once per page.
+ */
+let shadowWarmed = false;
+export function warmSkinnedShadow(game, mesh) {
+  if (shadowWarmed || !mesh?.isSkinnedMesh || !game?.renderer || !game.camera) return;
+  shadowWarmed = true;
+  try {
+    const sc = new THREE.Scene();
+    const dm = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    const mats = [dm, dm.clone(), dm.clone()]; mats[1].side = THREE.BackSide; mats[2].side = THREE.DoubleSide;
+    for (const m of mats) { const t = new THREE.SkinnedMesh(mesh.geometry, m); t.bind(mesh.skeleton, mesh.bindMatrix); t.frustumCulled = false; sc.add(t); }
+    // the shadow pass renders into a render target (no tone mapping, linear output): compile with one bound
+    const R = game.renderer, prev = R.getRenderTarget(), rt = new THREE.WebGLRenderTarget(4, 4);
+    R.setRenderTarget(rt);
+    // (the shadow pass draws with the main scene's lights but no fog)
+    const fog = game.scene.fog; game.scene.fog = null;
+    try { R.compile(sc, game.camera, game.scene); } finally { game.scene.fog = fog; R.setRenderTarget(prev); rt.dispose(); }
+  } catch (err) { console.warn('[bosses] shadow warm', err?.message || err); }
+}
+
 const SEEN_SIGHT = {}, SEEN_AGGRO = {};
 /**
  * Finish a boss entity (call last in every factory, after e.think / e.pose exist).
@@ -479,6 +501,7 @@ export function finishBoss(ctx, e, o = {}) {
   const game = ctx.game, type = o.type || e.bossId || e.kind;
   registerBossCodex(game);
   const model = e.model || {};
+  warmSkinnedShadow(game, model.proxy || model.lod);
   // ---- §7.4.5 fields
   const cx = codexOf(type);
   if (!Array.isArray(e.weakness)) e.weakness = cx ? cx.weak.map((w) => w.el) : [];

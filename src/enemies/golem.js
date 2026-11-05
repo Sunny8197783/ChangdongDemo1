@@ -43,6 +43,7 @@ export function createGolem(ctx, pos, opts = {}) {
   e.aggro = true; e.friction = 10;
   e.invulnerable = true;
   e.bossId = 'golem';
+  e.breakMax = 100; e.breakValue = 100;          // a break = the 3.5 s stagger (bossbase finishBoss)
   game.scene.add(model.thrown);
   const cur = newPose(HIP), tgt = newPose(HIP);
   let mul = 1, cd = 2, lastAtk = '', phase = 0, speed = 0, poise = 0, poiseCd = 0, summonDone = false, debrisT = 0, staggerLen = 2.4;
@@ -413,6 +414,6 @@ export function createGolem(ctx, pos, opts = {}) {
     get() { return payloadFn ? () => { const o = payloadFn(); if (o && !o.brief) o.brief = e.brief.slice(); return o; } : null; },
     set(fn) { payloadFn = fn; },
   });
-  try { game.render?.warm?.(model.root); } catch (_) { /* */ }
+  try { game.render?.warm?.(model.root); game.render?.warm?.(model.thrown); } catch (_) { /* */ }
   return e;
 }
