@@ -89,13 +89,7 @@ export function registerMeleeArchetypes(game, E) {
     if (ctx.element) E.setElementLocal(ctx.element);
     const hitT = clamp(o.hitT ?? ctx.def?.melee?.hitT ?? 0.35, 0.05, 0.95);
     const yaw = o.yaw ?? aimYaw(ctx);
-    const look = E.look;
-    const evs = [[hitT, (a) => {
-      look?.hook?.('strike', a, ctx);
-      if (look?.cur?.row?.replaceStrikeFx) look.cur.mute = look.cur.row.mute;
-      try { o.strike?.(a); } catch (err) { warnOnce('strike:' + ctx.skillId, err); }
-      look?.hook?.('after', a, ctx);
-    }]];
+    const evs = [[hitT, (a) => { try { o.strike?.(a); } catch (err) { warnOnce('strike:' + ctx.skillId, err); } E.look?.hook?.('after', a, ctx); }]];
     if (o.events) for (const e of o.events) evs.push(e);
     E.tag.skillId = ctx.skillId; E.tag.slot = ctx.slot;
     const dur = o.dur ?? 0.72;
@@ -103,9 +97,8 @@ export function registerMeleeArchetypes(game, E) {
       name: 'sk_' + ctx.skillId, kind: kindOf(ctx), tpl: ctx.def?.melee?.tpl || o.tpl || 'slashR', dur, cancel: o.cancel ?? Math.min(dur, Math.max(hitT + 0.2, 0.55) * dur),
       move: o.move ?? 0.12, target: o.target ?? null, facing: yaw, superArmor: o.superArmor ?? true, noGlide: true, lunge: o.lunge, lungeT: o.lungeT,
       trail: o.trail || [Math.max(0, hitT - 0.18), Math.min(1, hitT + 0.22)], events: evs, hits: o.hits, setVy: o.setVy, gravityMul: o.gravityMul,
-      onUpdate: o.update, poseFn: o.poseFn, loop: o.loop, spin: o.spin, strikeT: hitT,
+      onUpdate: o.update, poseFn: o.poseFn, loop: o.loop, spin: o.spin, strikeT: hitT, ctx,
     });
-    E.look?.hook?.('start', E.act, ctx);
     try { P().playCast?.(ctx.def?.anim || 'basic', ctx.element); } catch (_) { /* presentation */ }
     return E.act;
   }

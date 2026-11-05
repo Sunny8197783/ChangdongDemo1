@@ -178,7 +178,7 @@ function dodgeWindows(arg) {
     ML.clear();
     g.skills.cast(id, { free: true, aim: ML.aim(), charge: 1 });
     let t = 0, dmgT = null, freeT = null;
-    const off = g.events.on('damage', (p) => { if (dmgT == null && p?.target && p.target.team !== 'player') dmgT = t; });
+    const off = g.events.on('damage', (p) => { if (dmgT == null && p?.target && p.target.team !== 'player' && !p.dot && p.skillId === id) dmgT = t; });
     for (let f = 0; f < 150; f++) { g.step(1, 1 / 60, false); t += 1 / 60; if (freeT == null && (A.dodgeCancelable || !g.sword.action)) { freeT = t; } if (freeT != null && dmgT != null) break; }
     off();
     const slot = g.skills.def(id)?.slot;

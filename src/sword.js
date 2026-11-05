@@ -347,11 +347,15 @@ export function createSword(game) {
     }
     pl.setSwordDrawn(true);
     idleT = 0;
+    // bespoke row hook: the cast's first action starts
+    const cc = act.look;
+    if (cc?.row && !cc.started) { cc.started = true; act.rowAct = true; look.hook('start', act, spec.ctx); }
     return act;
   }
   function endAction(interrupted) {
     if (!act) return;
     const a = act; act = null;
+    if (a.rowAct) { const prev = look.cur; look.cur = a.look; look.hook('end', a, interrupted); look.cur = prev; }
     try { a.onEnd?.(a, interrupted); } catch (err) { console.error('[sword] onEnd', err); }
   }
   const sInWin = (t, t0, t1) => clamp((t - t0) / Math.max(1e-4, t1 - t0), 0, 1);
@@ -461,7 +465,8 @@ export function createSword(game) {
     A.move = a.move ?? 0.15;
     A.cancelable = a.kind !== 'finisher' && tNow >= (a.cancel ?? a.dur) * 1;
     // v4 dodge-cancel windows (§5.8; player.js reads action.dodgeCancelable): the complete truth of "may dodge now"
-    A.dodgeCancelable = a.kind !== 'finisher' && (A.cancelable || dodgeWindow(a, tNow));
+    const dw = dodgeWindow(a, tNow);
+    A.dodgeCancelable = a.kind !== 'finisher' && (A.cancelable || dw);
     A.noGlide = true; A.superArmor = !!a.superArmor || a.kind === 'finisher';
     if (a.kind === 'finisher') { try { pl.grantIframes?.(0.15); } catch (_) { /* */ } }
     A.gravityMul = a.gravityMul ?? (a.airborne ? 0.15 : 1);
@@ -483,6 +488,11 @@ export function createSword(game) {
       if (s >= 1) A.bodyYaw = 0;
     } else A.bodyYaw = 0;
     try { a.onUpdate?.(dt * a.speed, a, A); } catch (err) { console.error('[sword] onUpdate', err); act = null; return; }
+    // bespoke row hook: the strike frame (first hit window / first event / archetype strike) — before the legacy fx of that frame
+    if (a.rowAct && !a.struckHook) {
+      const w = a._dw; const tS = Math.min(w.t0, w.e0, a.strikeT != null ? a.strikeT * a.dur : Infinity);
+      if (tNow >= tS || !Number.isFinite(tS)) { a.struckHook = true; a.look.struck = true; look.hook('strike', a, a.ctx); }
+    }
     // events + hits
     const ev = a.events;
     if (ev) for (let i = 0; i < ev.length; i++) if (!a.evDone[i] && tNow >= ev[i][0] * a.dur) { a.evDone[i] = 1; try { ev[i][1](a); } catch (err) { console.error('[sword] event', err); } }

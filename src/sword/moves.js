@@ -465,7 +465,7 @@ export function buildMoves(S) {
             vfx('decal', tgtP, { color: 0xc9a4ff, radius: aw ? 7 : 5, duration: 0.8, opacity: 0.7 });
             const tip = P().getSwordTip(V());
             vfx('beam', V(tip.x, tip.y + 30, tip.z), tip, { color: 0xe8d8ff, width: 0.35, duration: 0.35, jagged: 1, segments: 14, branches: 2 });
-            vfx('flash', tip, { color: 0xc9a4ff, intensity: 6, distance: 12, duration: 0.4 });
+            vfx('flash', tip, { color: 0xc9a4ff, distance: 12, duration: 0.4 });
             S.sfx('charge', { pitch: 1.5 });
           }],
           [0.6, () => {
@@ -535,7 +535,7 @@ export function buildMoves(S) {
           if (aw) for (let i = 0; i < 2; i++) { const an = P().facing + (i ? 1 : -1) * 1.1; pts.push(ground(V(c.x + Math.sin(an) * 5, 0, c.z + Math.cos(an) * 5))); }
           const tip = P().getSwordTip(V());
           vfx('beam', tip, V(tip.x, tip.y + 25, tip.z), { color: 0xffc070, width: 0.4, duration: 0.6, jagged: 0, segments: 2 });
-          vfx('flash', tip, { color: 0xffb060, intensity: 5, distance: 10, duration: 0.6 });
+          vfx('flash', tip, { color: 0xffb060, distance: 10, duration: 0.6 });
           S.sfx('golem_step', { pitch: 0.6 });
           pts.forEach((q, i) => {
             vfx('decal', q, { color: 0xffb060, radius: 5.5, duration: 1.2, opacity: 0.6 });
@@ -570,7 +570,7 @@ export function buildMoves(S) {
         const p = S.pos(), c = palOf(el);
         vfx('burst', V(p.x, p.y + 1, p.z), { count: 36, color: [c.a, c.b], speed: 5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, shape: 'spark', drag: 2.5 });
         vfx('shockwave', ground(p.clone()), { color: c.a, radius: 3.5, duration: 0.5, opacity: 0.8 });
-        vfx('flash', V(p.x, p.y + 1.5, p.z), { color: c.a, intensity: 4, distance: 8, duration: 0.5 });
+        vfx('flash', V(p.x, p.y + 1.5, p.z), { color: c.a, distance: 8, duration: 0.5 });
         vfx('screenFlash', c.a, 0.15, 0.4);
         S.sfx('cast_' + el, { position: p }); S.sfx('blessing', { volume: 0.5 });
       }]] };
