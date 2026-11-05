@@ -13,6 +13,8 @@ import * as THREE from 'three';
 import { clamp } from '../core/utils.js';
 import { makeEnemy } from './base.js';
 import { bossScaling, XP_VALUES } from './scaling.js';
+import { hitTest as refHitTest } from '../core/tellgeom.js';
+import { attackSpec, attacksOf, codexOf, BOSS_BRIEF, registerBossCodex } from './bosses/codex.js';
 
 const _v = new THREE.Vector3(), _q = new THREE.Vector3();
 let partUid = 0;
@@ -339,7 +341,7 @@ export function createBoss(ctx, cfg) {
   e.spawnPayload = () => ({
     boss: e, id: cfg.id, name: e.name, title: e.title, sub: e.sub,
     phases: e.phases.slice(1).map((p) => ({ at: p.at, name: p.name })),
-    parts: e.partList.slice(), locks: e.locks.slice(),
+    parts: e.partList.slice(), locks: e.locks.slice(), brief: (BOSS_BRIEF[cfg.id] || []).slice(),
   });
   void _q;
   return e;
@@ -353,3 +355,228 @@ export function modelCache(build) {
     take() { const m = spare || build(); spare = null; return m; },
   };
 }
+
+// ====================================================================== v4 boss contract (PLAN §4.0, §4.15, §7.4.5)
+// Shared by every boss (createBoss users and golem.js):
+//   bossAttack(ctx, e, id, over)   → game.tells.attack with the §4 numbers (nameKo from bosses/codex.js) + enemyAttack {id, nameKo, tell, windup}
+//   bossHit(ctx, e, handle|shape|null, hit, {jumpAvoid, pad})   → the ONE hit path: tells.hitTest / h.contains, attack:{id, nameKo, kind}
+//   rhythm(game, h)                → 'wind' | 'hold' | 'strike' | 'done' (hold 0.15 s at the top, strike ≤ 0.12 s before the hit)
+//   finishBoss(ctx, e, o)          → contract fields, enemy-time clock, per-entity hitstop, pose hold/LOD rate, break → 3.5 s stagger,
+//                                    first-sight encounter, codex/preview registration; call it at the end of every boss factory.
+const _tp = new THREE.Vector3(), _td = new THREE.Vector3();
+const _fr = new THREE.Frustum(), _fm = new THREE.Matrix4(), _fs = new THREE.Sphere();
+export const BOSS_BREAK = Object.freeze({ dur: 3.5, cd: 12, mul: 1.5 });
+export const RHYTHM = Object.freeze({ hold: 0.15, strike: 0.12 });
+const warned = {};
+const warnOnce = (k, ...a) => { if (!warned[k]) { warned[k] = true; console.warn('[bosses]', ...a); } };
+const META = {};
+/** Reused hit metadata object per attack id ({id, nameKo, kind}). */
+export function attackMeta(id) {
+  if (META[id]) return META[id];
+  const S = attackSpec(id);
+  return (META[id] = Object.freeze({ id, nameKo: S?.nameKo || '', kind: S?.kind === 'check' ? 'melee' : (S?.kind || 'melee') }));
+}
+export const bossTime = (game) => game.enemyTime || 0;
+/** Reference hit test (tells when present, else core/tellgeom). */
+export function shapeHit(game, shape, pos, pad = 0.15) {
+  const T = game.tells;
+  try { if (T?.hitTest) return T.hitTest(shape, pos, pad); } catch (_) { /* */ }
+  return refHitTest(shape, pos, pad);
+}
+
+/** Start boss attack `id` now through game.tells.attack. Returns the TellHandle, or null when tells refuses. */
+export function bossAttack(ctx, e, id, over = null) {
+  const game = ctx.game, S = attackSpec(id);
+  if (!S || !e || e.defeated || e.alive === false) return null;
+  if (e.bossBrokenUntil > bossTime(game)) return null;
+  const T = game.tells;
+  if (!T?.attack) { warnOnce('tells', 'game.tells.attack missing'); return null; }
+  const p2 = (e.phase || 0) >= 1 || !!e.phase2;
+  const shape = S.shape || over?.shape ? Object.assign({}, S.shape || null, over?.shape || null) : undefined;
+  const spec = { id, nameKo: S.nameKo, tell: S.tell, cls: S.cls, windup: over?.windup ?? ((p2 && S.windup2) || S.windup),
+    melee: S.melee ?? S.kind === 'melee', anchor: S.anchor };
+  if (shape) spec.shape = shape;
+  if (S.lockAt != null) spec.lockAt = S.lockAt;
+  if (S.punishDur) spec.punishDur = S.punishDur;
+  if (S.shockwave) spec.shockwave = S.shockwave;
+  if (S.targetsPlayer === false) spec.targetsPlayer = false;
+  if (over) for (const k of ['body', 'icon', 'sound', 'targetsPlayer', 'lockAt', 'melee', 'anchor', 'el']) if (over[k] !== undefined) spec[k] = over[k];
+  let h = null;
+  try { h = T.attack(e, spec); } catch (err) { console.error('[bosses] tells.attack', id, err); h = null; }
+  if (!h) return null;
+  h.bossId = id;
+  const L = e._handles || (e._handles = []);
+  for (let i = L.length - 1; i >= 0; i--) if (!L[i].alive) L.splice(i, 1);
+  L.push(h);
+  if (!over || over.hold !== false) e._holdH = h;
+  game.events.emit('enemyAttack', { enemy: e, kind: id.slice(id.indexOf('.') + 1), id, nameKo: S.nameKo, tell: S.tell, windup: h.dur });
+  return h;
+}
+/** Stop every live attack handle of e (break / phase change / death). */
+export function stopAttacks(e, reason = 'cancel') {
+  const L = e?._handles; if (!L) return;
+  for (let i = 0; i < L.length; i++) if (L[i].alive) { try { L[i].stop(reason); } catch (_) { /* */ } }
+  L.length = 0; e._holdH = null;
+}
+/** Rhythm phase of handle h on enemy time: anticipation → hold (≤ 0.15 s, from lock) → strike (last 0.12 s) → done. */
+export function rhythm(game, h) {
+  if (!h) return 'done';
+  const t = bossTime(game), hit = h.start + h.dur;
+  if (t >= hit || h.alive === false) return 'done';
+  if (t >= hit - RHYTHM.strike) return 'strike';
+  const lock = hit - (h.lockAt ?? 0.4);
+  if (t >= Math.max(lock, hit - RHYTHM.strike - RHYTHM.hold)) return 'hold';
+  return 'wind';
+}
+/** True for a handle that ended without striking (stopped by tells, a break or a phase change). */
+export const cancelled = (h) => !!h && h.alive === false && !(h.struck || h._struck);
+
+/**
+ * The single boss hit path. src = TellHandle (h.contains), a tells shape (tells.hitTest), or null (caller already tested).
+ * hit = {attack:id, amount, element, knockback, launch, status, from?}; o = {jumpAvoid, pad}. Returns the combat result or null.
+ */
+export function bossHit(ctx, e, src, hit, o = null) {
+  const game = ctx.game;
+  const pe = ctx.target || game.player?.entity;
+  if (!pe || pe.alive === false || e?.noDamage) return null;
+  const pp = ctx.playerPos;
+  const pad = o?.pad ?? 0.15;
+  let inside = true;
+  if (src && typeof src.contains === 'function') inside = src.contains(pp, pad);
+  else if (src) inside = shapeHit(game, src, pp, pad);
+  if (!inside) return null;
+  if (o?.jumpAvoid) {
+    const gy = game.world?.getGroundHeight ? game.world.getGroundHeight(pp.x, pp.z) : ctx.groundH(pp.x, pp.z);
+    if (pp.y - gy > 0.6) return null;
+  }
+  if (pe.isDecoy || typeof pe.hp !== 'number') { try { pe.onDecoyHit?.(e); } catch (_) { /* */ } pe.alive = false; return { damage: 0, absorbed: true }; }
+  _td.subVectors(pp, hit.from || e.object.position).setY(0);
+  if (_td.lengthSq() < 1e-6) _td.set(Math.sin(e.facing || 0), 0, Math.cos(e.facing || 0));
+  _td.normalize();
+  const attack = hit.attack ? attackMeta(hit.attack) : undefined;
+  return game.combat.dealDamage(pe, {
+    amount: hit.amount, element: hit.element || 'physical', source: e, point: _tp.copy(pp).setY(pp.y + 1).clone(), direction: _td.clone(),
+    knockback: hit.knockback ?? 6, launch: hit.launch ?? 0, status: hit.status || undefined, heavy: hit.heavy ?? hit.amount >= 20,
+    attack, sourceName: e.name, noReaction: hit.noReaction, fixed: hit.fixed,
+  });
+}
+
+/** Punish window (tells.punish, or the stub-equivalent fields + event). */
+export function bossPunish(ctx, e, dur, mul) {
+  const game = ctx.game;
+  if (!(dur > 0) || !e || e.defeated) return;
+  if (game.tells?.punish) { try { game.tells.punish(e, dur, { mul }); return; } catch (err) { console.error('[bosses] punish', err); } }
+  e.vulnerableUntil = bossTime(game) + dur; e.vulnerableMul = mul;
+  game.events.emit('punishWindow', { enemy: e, dur, mul });
+}
+
+const SEEN_SIGHT = {}, SEEN_AGGRO = {};
+/**
+ * Finish a boss entity (call last in every factory, after e.think / e.pose exist).
+ * o: {type, cameraHint?, debugAttack(id) → handle, immune?, anchors?, onBroken?(dur)}
+ */
+export function finishBoss(ctx, e, o = {}) {
+  const game = ctx.game, type = o.type || e.bossId || e.kind;
+  registerBossCodex(game);
+  const model = e.model || {};
+  // ---- §7.4.5 fields
+  const cx = codexOf(type);
+  if (!Array.isArray(e.weakness)) e.weakness = cx ? cx.weak.map((w) => w.el) : [];
+  e.immune = o.immune || e.immune || [];
+  e.attacks = attacksOf(type);
+  e.debugAttack = (id) => { try { return o.debugAttack ? o.debugAttack(id) : null; } catch (err) { console.error('[bosses] debugAttack', id, err); return null; } };
+  e.timeMul = e.timeMul ?? 1;
+  e.cameraHint = o.cameraHint || null;
+  e.codexKey = type;
+  e.brief = (BOSS_BRIEF[type] || []).slice();
+  e.flashUniform = model.flashUniform || (model.flashUniform = { value: 0 });
+  const anchors = model.tellAnchors || null;
+  e.tellAnchor = (kind) => (anchors && (anchors[kind] || anchors.head)) || e.object;
+  e.rimSource = () => (model.rimSource ? model.rimSource() : null);
+  const basePayload = e.spawnPayload;
+  if (basePayload && !e._briefWrapped) { e._briefWrapped = true; e.spawnPayload = () => { const p = basePayload(); if (!p.brief) p.brief = e.brief.slice(); return p; }; }
+  try { game.enemies?.registerPreview?.(type, o.preview || (() => null)); } catch (_) { /* */ }
+
+  // ---- break → a real 3.5 s stagger (§4.15)
+  const prevBreak = e.onBreak;
+  e.bossBrokenUntil = -1; e.bossBreakCdUntil = -1;
+  e.onBreak = () => {
+    try { prevBreak?.(); } catch (err) { console.error('[bosses] onBreak', err); }
+    if (e.defeated || e.transitioning) return;
+    const t = bossTime(game);
+    if (e.bossBreakCdUntil > t) return;
+    e.bossBrokenUntil = t + BOSS_BREAK.dur; e.bossBreakCdUntil = t + BOSS_BREAK.cd;
+    e._brokenT = Math.max(e._brokenT || 0, BOSS_BREAK.cd);       // combat/break.js refills the gauge after the cd
+    stopAttacks(e);
+    try { o.onBroken?.(BOSS_BREAK.dur); } catch (err) { console.error('[bosses] onBroken', err); }
+    bossPunish(ctx, e, BOSS_BREAK.dur, BOSS_BREAK.mul);
+    game.events.emit('bossBroken', { boss: e, dur: BOSS_BREAK.dur });
+    try { game.audio?.play?.('break_boss', { pos: e.object.position }); } catch (_) { /* */ }
+  };
+  e.isBroken = () => e.bossBrokenUntil > bossTime(game);
+
+  // ---- hit flash (the uniform decays once per frame in the pose wrapper)
+  const react = e.react;
+  e.react = (res, hit, lx, lz) => { e.flashUniform.value = 1; return react?.(res, hit, lx, lz); };
+
+  // ---- clock: enemy time (assist.enemySpeed, frozen by a global hitstop); per-entity hitstop skips the update
+  const think = e.think;
+  let lastET = null, still = 0;
+  e.think = (dt, sm) => {
+    const t = bossTime(game);
+    let d = lastET == null ? dt : t - lastET;
+    lastET = t;
+    if (!(d >= 0)) d = 0;
+    if (d === 0 && dt > 0) { if (++still > 30) d = dt; } else still = 0;     // a host that never advances enemyTime
+    if (d > 0.1) d = 0.1;
+    if (e.hitstopUntil > (game.realTime || 0)) { e.stateT -= dt; return; }
+    e.stateT += d - dt;
+    encounter(d);
+    think(d, sm);
+  };
+  // ---- pose: once per frame (lastStep), hold at the top of each windup, half rate > 30 m, paused > 60 m (§2.6)
+  const pose = e.pose;
+  let acc = 0, odd = false;
+  e.pose = (dt, sm, stunned) => {
+    acc += dt;
+    if (game.frame && game.frame.lastStep === false) return;
+    const h = e._holdH;
+    if (h) { const ph = rhythm(game, h); if (ph === 'hold') { acc = 0; return; } if (ph === 'done') e._holdH = null; }
+    const cam = game.camera;
+    if (cam && !e.defeated) {
+      const p = e.object.position, dx = p.x - cam.position.x, dz = p.z - cam.position.z, d2 = dx * dx + dz * dz;
+      if (d2 > 3600 && !o.noDistanceRate) return;
+      if (d2 > 900 && !o.noDistanceRate) { odd = !odd; if (odd) return; }
+    }
+    const fu = e.flashUniform;
+    if (fu.value > 0) fu.value = Math.max(0, fu.value - acc * 6);
+    const step = Math.min(acc, 0.1); acc = 0;
+    pose(step, sm, stunned);
+    try { model.update?.(step); } catch (_) { /* */ }
+  };
+
+  // ---- first sight (≤ 30 m, in view) / first aggro per session → noteEncounter + enemyEncounter
+  let sightT = 0;
+  function encounter(d) {
+    if (SEEN_SIGHT[type] && SEEN_AGGRO[type]) return;
+    sightT -= d; if (sightT > 0) return;
+    sightT = 0.25;
+    const cam = game.camera, pp = ctx.realPlayerPos;
+    if (!SEEN_AGGRO[type] && e.aggro && e.playerInArena?.(6) !== false) emitEnc(false);
+    if (SEEN_SIGHT[type] || !cam || !pp) return;
+    const p = e.object.position, dx = p.x - pp.x, dz = p.z - pp.z;
+    if (dx * dx + dz * dz > 900 && !(o.sightRange && dx * dx + dz * dz < o.sightRange * o.sightRange)) return;
+    cam.updateMatrixWorld(); _fm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _fr.setFromProjectionMatrix(_fm);
+    _fs.center.set(p.x, p.y + (e.height || 2) * 0.5, p.z); _fs.radius = Math.max(1, e.radius || 1);
+    if (_fr.intersectsSphere(_fs)) emitEnc(true);
+  }
+  function emitEnc(sight) {
+    (sight ? SEEN_SIGHT : SEEN_AGGRO)[type] = true;
+    let first = false;
+    try { first = !!game.enemies?.noteEncounter?.(type, { sight })?.first; } catch (_) { /* */ }
+    game.events.emit('enemyEncounter', { type, enemy: e, first, sight });
+  }
+  return e;
+}
+/** Test hook: forget the per-session encounter books. */
+export function resetEncounters() { for (const k of Object.keys(SEEN_SIGHT)) delete SEEN_SIGHT[k]; for (const k of Object.keys(SEEN_AGGRO)) delete SEEN_AGGRO[k]; }
