@@ -29,7 +29,8 @@ const TIER = {
 };
 // R6: light (ivory, saturation ≤ 0.35 by rule) and physical have no saturation floor
 const SAT_EXEMPT = new Set(['light', 'physical']);
-const WINDOW = { B: 0.8, C: 1.4, A: 1.4, Z: 1.8, U: 2.6, F: 3.6 };
+const WINDOW = { B: 0.6, C: 1.2, A: 1.2, Z: 1.5, U: 2.2, F: 3.0 };
+const EVERY = +(process.env.MELEE_EVERY || 6);
 const ELS = ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow'];
 
 function grepStatic(root) {
@@ -82,6 +83,7 @@ function installML() {
   ML.clear = () => {
     try { g.sword.clearFx(); } catch (_) { /* */ }
     try { g.spells?.clearFx?.(); } catch (_) { /* */ }
+    try { g.vfx?.clear?.(); } catch (_) { /* */ }   // lingering kit handles / particles of the previous cast
     g.skills.resetCooldowns?.(); PT.keepAlive(); PT.heal();
     if (g.state !== 'playing') { try { g.setState('playing'); } catch (_) { /* */ } }
     g.step(2, 1 / 60, false); ML.home();
@@ -245,9 +247,17 @@ module.exports = async function (PT) {
   const perArch = {};
   for (const id of reg.ids) { const a = reg.arch[id]; if (a && !perArch[a] && !BESPOKE.includes(id)) perArch[a] = id; }
   for (const id of reg.ids) { const a = reg.arch[id]; if (a && !perArch[a]) perArch[a] = id; }
-  const set = full ? reg.ids.slice() : [...new Set([...BESPOKE, ...Object.values(perArch)])];
+  let set = full ? reg.ids.slice() : [...new Set([...BESPOKE, ...Object.values(perArch)])];
+  if (process.env.MELEE_IDS) set = process.env.MELEE_IDS.split(',');
   const sheetSet = new Set([...BESPOKE, ...Object.values(perArch)]);
 
+  // dev probe: MELEE_PART=probe MELEE_PROBE=<file exporting an in-page function source> (diagnostics only)
+  if (part === 'probe' && process.env.MELEE_PROBE) {
+    const src = fs.readFileSync(process.env.MELEE_PROBE, 'utf8');
+    const out = await pg.eval(new Function('return ' + src)(), process.env.MELEE_PROBE_ARG || null);
+    console.log(JSON.stringify(out, null, 1));
+    await pg.close(); return;
+  }
   // ML1.a first casts on the fresh page
   if (part === 'all' || part === 'first') {
     const first = await pg.run('ML1.a first cast', (ids) => {
@@ -311,8 +321,9 @@ module.exports = async function (PT) {
     const tstart = Date.now();
     for (const id of set) {
       const tier = reg.tier[id] || 'A';
-      const r = await pg.eval(({ id, win, frames }) => window.ML.measure(id, { win, frames }), { id, win: WINDOW[tier], frames: sheets && sheetSet.has(id) });
+      const r = await pg.eval(({ id, win, frames, every }) => window.ML.measure(id, { win, frames, every }), { id, win: WINDOW[tier], frames: sheets && sheetSet.has(id), every: EVERY });
       r.tier = tier; r.el = reg.el[id] || 'physical'; rows.push(r);
+      if (process.env.MELEE_VERBOSE) { const f = []; judge(r, f); console.log('   ', id, tier, JSON.stringify({ d: r.detail, c: r.crisp, s: r.sat, w: r.white, cov: r.cov, p: r.particles, h: r.handles, why: r.why })); }
       if (r.frames) {
         await PT.sheet(pg, r.frames.map((u, i) => ({ url: u, label: `${id} ${['anticipation', 'impact', 'dissipation'][i] || ''}` })), path.join(root, 'tools/playtest4/sheets/melee', id + '.png'), { cols: 3, cellW: 320, cellH: 180, title: `${id} (melee, ${tier}, ${r.look})` });
         delete r.frames;
@@ -398,7 +409,7 @@ module.exports = async function (PT) {
       const bad = [];
       for (const id of BESPOKE) {
         const tier = reg.tier[id] || 'A';
-        const r = await p2.eval(({ id, win }) => window.ML.measure(id, { win }), { id, win: WINDOW[tier] });
+        const r = await p2.eval(({ id, win, every }) => window.ML.measure(id, { win, every }), { id, win: WINDOW[tier], every: EVERY });
         r.tier = tier; r.el = reg.el[id] || 'physical';
         const f = []; judge(r, f); if (f.length) bad.push(...f);
       }

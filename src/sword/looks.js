@@ -15,7 +15,7 @@ import { installEarth } from './motifs/earth.js';
 import { installNature } from './motifs/nature.js';
 import { installLight } from './motifs/light.js';
 import { installShadow } from './motifs/shadow.js';
-import { ROWS, STARRED } from './rows.js';
+import { ROWS, STARRED, ARCH_LOOKS } from './rows.js';
 
 export const MELEE_MOTIF_ELEMENTS = ['earth', 'nature', 'light', 'shadow'];
 export const KINDS = ['cast', 'trail', 'burst', 'spark', 'zone', 'pillar', 'wave', 'aura', 'summon'];
@@ -49,10 +49,13 @@ const NORMAL_SP = { rock: 1, leaf: 1, petal: 1, feather: 1, droplet: 1, smoke: 1
 const SOFTISH = { soft: 1, glow: 1, flare: 1, puff: 1, star: 1, ring: 1, bubble: 1, rune: 1, bolt: 1, crescent: 1 };
 const DECAL_OF = { fire: 'scorch', ice: 'frost', lightning: 'lichtenberg', wind: 'ripple', water: 'ripple', earth: 'crack', nature: 'flower', light: 'rune', shadow: 'violet', physical: 'crack' };
 const UP = new THREE.Vector3(0, 1, 0);
+// handles a motif kind may spawn (checked before the call; the cast's handle budget is §1.4's)
+const HEAVY_MOTIF = { burst: 3, pillar: 3, wave: 3, zone: 2, summon: 3, aura: 2, cast: 1, trail: 1 };
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _d = new THREE.Vector3();
 const BURST_OPTS = { count: 0, shape: 'spark', color: [0, 0], speed: 6, speedVar: 3, spread: 1, dir: null, size: 0.12, sizeEnd: 0.03, life: 0.3, lifeVar: 0.1,
   gravity: 4, drag: 3, additive: undefined, alpha: 1, velocityStretch: 0, owner: 'player', castId: 0, el: 'physical', disc: false, radius: 0, inward: false, curl: 0, tangential: 0, up: 0, ground: false, rotSpeed: undefined };
+const SPARK_O = { _look: true, count: 6, shape: 'spark', el: 'physical', dir: null, spread: 1, speed: 5, gravity: 4, size: 0.12, life: 0.4, drag: 2.5, velocityStretch: 0.04 };
 const BURST_KEYS = ['disc', 'radius', 'inward', 'curl', 'tangential', 'up', 'ground'];
 
 export function createLooks(game, E) {
@@ -121,7 +124,7 @@ export function createLooks(game, E) {
     const row = info.skillId ? ROWS[info.skillId] || null : null;
     const cc = {
       castId: info.castId || game.nextCastId?.() || ++serial, tier, el, skillId: info.skillId || null, kind: info.kind || 'skill', archetype: def?.archetype || info.archetype || null,
-      row, look: row ? 'bespoke' : 'archetype', weapon: E.weapon?.id || 'longsword', t0: game.time || 0,
+      row, arch: !row && def?.archetype ? ARCH_LOOKS[def.archetype] || null : null, look: row ? 'bespoke' : 'archetype', weapon: E.weapon?.id || 'longsword', t0: game.time || 0,
       pLeft: B.particles, hLeft: B.handles, arcs: 0, rings: 0, decals: 0, glints: 0, bursts: 0, flashes: 0, fovs: 0, runes: 0, contacts: 0,
       zT: 0, struck: false, finalDone: false, spawned: 0, mute: row?.mute ?? null, data: {},
     };
@@ -147,7 +150,10 @@ export function createLooks(game, E) {
     }
   };
   const useP = (cc, n) => { const k = Math.max(0, Math.min(Math.floor(n), Math.floor(cc.pLeft))); cc.pLeft -= k; return k; };
-  const useH = (cc, n = 1) => { if (cc.hLeft < n) return false; cc.hLeft -= n; return true; };
+  // handle budget per cast = kit handles actually spawned with the castId (vfx.debug.byCast, the measured truth) + slash crescents
+  const usedH = (cc) => { let h = 0; try { h = V()?.debug?.byCast?.(cc.castId)?.handles || 0; } catch (_) { h = 0; } return h + cc.arcs; };
+  const useH = (cc, n = 1) => { const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles; if (lim - usedH(cc) < n) { stats.dropped++; return false; } cc.hLeft = lim - usedH(cc) - n; return true; };
+  L.usedH = usedH;
   L.useP = useP; L.useH = useH;
 
   // ------------------------------------------------------------------ helpers
@@ -165,6 +171,8 @@ export function createLooks(game, E) {
     const K = kit(); if (!K || !spec?.pos) return null;
     spec.owner = 'player';
     if (spec.castId == null && L.cur) spec.castId = L.cur.castId;
+    const cc = spec.castId ? byCast.get(spec.castId) : null;
+    if (cc && kind !== 'spark' && !useH(cc, HEAVY_MOTIF[kind] || 1)) { if (kind === 'burst') { spec.n = Math.min(spec.n ?? 6, 6); return L.motif(el, 'spark', spec); } return null; }
     if (K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) return K.motif(el, kind, spec);
     return local(el, kind, spec);
   };
@@ -181,39 +189,42 @@ export function createLooks(game, E) {
   };
   function local(el, kind, s) {
     const K = kit(); const S = LOCAL_SIG[el] || LOCAL_SIG.physical; const R = K.ramp(el); const out = [];
+    const RN = rampOf(game, el);
+    const ln = (sp) => { if (sp.color == null) { sp.color = RN.mid; if (sp.color2 == null) sp.color2 = RN.light; } else if (sp.color === R.light) { sp.color = RN.mid; sp.color2 = RN.light; } return K.line(sp); };
     const cid = s.castId;
     const r = Math.max(0.3, Math.min(s.r ?? 1.1, 6));
     const pos = s.pos;
     const ground = nearGround(pos);
     const G = ground ? K.v3(pos.x, gy(pos.x, pos.z), pos.z) : pos;
-    const sp = (n, o) => K.spark(pos, el, Math.min(12, n), s.dir || null, { castId: cid, shape: SPARK_SHAPE[el], gravity: S.grav, ...(o || null) });
+    const cc0 = byCast.get(cid) || L.cur;
+    const sp = (n, o) => { if (cc0) L.h.spark(cc0, pos, el, Math.min(12, n), s.dir || null, { shape: SPARK_SHAPE[el], gravity: S.grav, ...(o || null) }); else K.spark(pos, el, Math.min(12, n), s.dir || null, { castId: cid, shape: SPARK_SHAPE[el], gravity: S.grav, ...(o || null) }); };
     switch (kind) {
       case 'spark': sp(s.n ?? 6); return null;
       case 'burst': {
         if (el === 'fire') {
           // ring of 8 crescent flame petals opening in 0.2 s + heat-shimmer ring + scorch
-          out.push(K.line({ shape: 'rays', n: 8, r2: 0.55, el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.2, width: 0.09, life: 0.42, tIn: 0.12, tOut: 0.25, scaleIn: 'expand', erode: true, castId: cid, color: R.light, color2: R.mid, spin: 0.6 }));
-          out.push(K.line({ shape: 'ring', el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.5, width: 0.025, life: 0.32, tIn: 0, tOut: 0.2, scaleIn: 'expand', castId: cid, alpha: 0.6 }));
+          out.push(ln({ shape: 'rays', n: 8, r2: 0.55, el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.2, width: 0.09, life: 0.42, tIn: 0.12, tOut: 0.25, scaleIn: 'expand', erode: true, castId: cid, color: R.light, color2: R.mid, spin: 0.6 }));
+          out.push(ln({ shape: 'ring', el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.5, width: 0.025, life: 0.32, tIn: 0, tOut: 0.2, scaleIn: 'expand', castId: cid, alpha: 0.6 }));
           if (ground && s.decal !== false) out.push(K.decal('scorch', G, r * 0.8, 1.2, { el, castId: cid }));
         } else if (el === 'ice') {
-          out.push(K.line({ shape: 'star', points: 6, r2: 0.42, el, pos, plane: 'billboard', r, width: 0.035, life: 0.4, tIn: 0.08, tOut: 0.22, erode: true, castId: cid, color: R.light, color2: R.mid }));
-          out.push(K.line({ shape: 'poly', sides: 6, el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.35, width: 0.03, life: 0.45, tOut: 0.25, scaleIn: 'expand', castId: cid, alpha: 0.7 }));
+          out.push(ln({ shape: 'star', points: 6, r2: 0.42, el, pos, plane: 'billboard', r, width: 0.035, life: 0.4, tIn: 0.08, tOut: 0.22, erode: true, castId: cid, color: R.light, color2: R.mid }));
+          out.push(ln({ shape: 'poly', sides: 6, el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.35, width: 0.03, life: 0.45, tOut: 0.25, scaleIn: 'expand', castId: cid, alpha: 0.7 }));
           if (ground && s.decal !== false) out.push(K.decal('frost', G, r * 0.9, 1.2, { el, castId: cid }));
         } else if (el === 'lightning') {
           for (let i = 0; i < 2; i++) { const a = i * 2.6 + (cid || 0) * 0.7; out.push(K.bolt({ from: pos, to: K.v3(pos.x + Math.cos(a) * r * 1.4, pos.y + 0.3, pos.z + Math.sin(a) * r * 1.4), forks: 1, el, castId: cid, seed: (cid || 1) * 7 + i })); }
-          out.push(K.line({ shape: 'star', points: 4, r2: 0.18, el, pos, plane: 'billboard', r: r * 0.8, width: 0.03, life: 0.12, tIn: 0, tOut: 0.08, castId: cid, color: R.light, color2: R.mid }));
+          out.push(ln({ shape: 'star', points: 4, r2: 0.18, el, pos, plane: 'billboard', r: r * 0.8, width: 0.03, life: 0.12, tIn: 0, tOut: 0.08, castId: cid, color: R.light, color2: R.mid }));
           if (ground && s.decal !== false) out.push(K.decal('lichtenberg', G, r, 0.6, { el, castId: cid }));
         } else if (el === 'wind') {
-          out.push(K.line({ shape: 'spiral', turns: 0.9, arms: 3, r2: 0.15, el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.3, width: 0.045, life: 0.45, tIn: 0.1, tOut: 0.25, spin: 2.4, castId: cid, alpha: 0.75 }));
+          out.push(ln({ shape: 'spiral', turns: 0.9, arms: 3, r2: 0.15, el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.3, width: 0.045, life: 0.45, tIn: 0.1, tOut: 0.25, spin: 2.4, castId: cid, alpha: 0.75 }));
           const a = Math.atan2(s.dir?.z ?? 1, s.dir?.x ?? 0);
-          out.push(K.line({ shape: 'arc', arc: [a - 0.8, a + 0.8], el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.7, width: 0.04, life: 0.4, tOut: 0.2, scaleIn: 'expand', castId: cid, alpha: 0.6 }));
+          out.push(ln({ shape: 'arc', arc: [a - 0.8, a + 0.8], el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.7, width: 0.04, life: 0.4, tOut: 0.2, scaleIn: 'expand', castId: cid, alpha: 0.6 }));
         } else if (el === 'water') {
-          out.push(K.line({ shape: 'ring', el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.2, width: 0.035, life: 0.5, tOut: 0.3, scaleIn: 'expand', castId: cid }));
-          if (ground) out.push(K.line({ shape: 'ripple', el, pos: G, plane: 'ground', r: r * 1.7, width: 0.03, life: 0.8, tOut: 0.4, alpha: 0.35, castId: cid }));
+          out.push(ln({ shape: 'ring', el, pos: G, plane: ground ? 'ground' : 'billboard', r: r * 1.2, width: 0.035, life: 0.5, tOut: 0.3, scaleIn: 'expand', castId: cid }));
+          if (ground) out.push(ln({ shape: 'ripple', el, pos: G, plane: 'ground', r: r * 1.7, width: 0.03, life: 0.8, tOut: 0.4, alpha: 0.35, castId: cid }));
           const a = Math.atan2(s.dir?.z ?? 1, s.dir?.x ?? 0);
-          out.push(K.line({ shape: 'arc', arc: [a - 1.1, a + 1.1], el, pos, plane: 'billboard', r: r * 0.9, width: 0.05, life: 0.35, tOut: 0.2, castId: cid, color: R.light }));
+          out.push(ln({ shape: 'arc', arc: [a - 1.1, a + 1.1], el, pos, plane: 'billboard', r: r * 0.9, width: 0.05, life: 0.35, tOut: 0.2, castId: cid, color: R.light }));
         } else {
-          out.push(K.line({ shape: 'ticks', n: 8, r2: 0.55, el, pos, plane: 'billboard', r, width: 0.03, life: 0.35, tOut: 0.2, castId: cid }));
+          out.push(ln({ shape: 'ticks', n: 8, r2: 0.55, el, pos, plane: 'billboard', r, width: 0.03, life: 0.35, tOut: 0.2, castId: cid }));
         }
         sp(s.n ?? 10, { speed: 6 * Math.sqrt(r) });
         return out;
@@ -222,34 +233,34 @@ export function createLooks(game, E) {
         const h = Math.min(8, s.h ?? 4), rr = Math.min(0.6, s.r ?? 0.5);
         const base = K.v3(G.x, G.y, G.z), top = K.v3(G.x, G.y + h, G.z);
         if (el === 'lightning') out.push(K.bolt({ from: top, to: base, forks: 2, el, life: 0.06, afterglow: 0.25, castId: cid, seed: cid }));
-        else if (el === 'fire') { for (let i = 0; i < 3; i++) out.push(K.line({ shape: 'crescent', el, pos: K.v3(G.x, G.y + 0.6 + i * h * 0.28, G.z), plane: 'billboard', r: rr * (1.6 - i * 0.35), width: 0.08, life: 0.5, tIn: 0.06 + i * 0.05, tOut: 0.25, erode: true, castId: cid, rot: i * 2.1 })); }
-        else if (el === 'ice') out.push(K.line({ shape: 'poly', sides: 6, el, pos: K.v3(G.x, G.y + h * 0.5, G.z), plane: 'billboard', r: rr * 2, width: 0.035, life: 0.5, tOut: 0.25, castId: cid }));
+        else if (el === 'fire') { for (let i = 0; i < 3; i++) out.push(ln({ shape: 'crescent', el, pos: K.v3(G.x, G.y + 0.6 + i * h * 0.28, G.z), plane: 'billboard', r: rr * (1.6 - i * 0.35), width: 0.08, life: 0.5, tIn: 0.06 + i * 0.05, tOut: 0.25, erode: true, castId: cid, rot: i * 2.1 })); }
+        else if (el === 'ice') out.push(ln({ shape: 'poly', sides: 6, el, pos: K.v3(G.x, G.y + h * 0.5, G.z), plane: 'billboard', r: rr * 2, width: 0.035, life: 0.5, tOut: 0.25, castId: cid }));
         else out.push(K.ribbon({ points: [base, top], width: rr, life: 0.4, el, castId: cid, alpha: 0.7 }));
-        out.push(K.line({ shape: 'ring', el, pos: G, plane: 'ground', r: rr * 2.4, width: 0.03, life: 0.5, tOut: 0.3, scaleIn: 'expand', castId: cid }));
+        out.push(ln({ shape: 'ring', el, pos: G, plane: 'ground', r: rr * 2.4, width: 0.03, life: 0.5, tOut: 0.3, scaleIn: 'expand', castId: cid }));
         K.spark(base, el, 8, UP, { castId: cid, shape: SPARK_SHAPE[el], gravity: -2, speed: 5 });
         return out;
       }
       case 'wave': {
         const dir = s.dir || { x: 0, z: 1 }, a = Math.atan2(dir.z, dir.x), half = Math.min(1.4, s.arc ?? 0.7), rr = Math.min(s.r ?? 4, 10);
-        out.push(K.line({ shape: el === 'water' ? 'arc' : el === 'fire' ? 'arc' : 'arc', arc: [a - half, a + half], el, pos: G, plane: 'ground', r: rr, width: el === 'lightning' ? 0.03 : 0.06, life: s.life ?? 0.45, tOut: 0.25, scaleIn: 'expand', castId: cid }));
+        out.push(ln({ shape: el === 'water' ? 'arc' : el === 'fire' ? 'arc' : 'arc', arc: [a - half, a + half], el, pos: G, plane: 'ground', r: rr, width: el === 'lightning' ? 0.03 : 0.06, life: s.life ?? 0.45, tOut: 0.25, scaleIn: 'expand', castId: cid }));
         if (el === 'ice') out.push(K.decal('frost', G, rr * 0.5, 1.0, { el, castId: cid }));
         else if (el === 'fire') out.push(K.decal('scorch', G, rr * 0.4, 1.0, { el, castId: cid }));
-        else out.push(K.line({ shape: 'arc', arc: [a - half * 0.8, a + half * 0.8], el, pos: G, plane: 'ground', r: rr * 0.8, width: 0.025, life: (s.life ?? 0.45) * 0.85, tOut: 0.2, scaleIn: 'expand', castId: cid, alpha: 0.5 }));
+        else out.push(ln({ shape: 'arc', arc: [a - half * 0.8, a + half * 0.8], el, pos: G, plane: 'ground', r: rr * 0.8, width: 0.025, life: (s.life ?? 0.45) * 0.85, tOut: 0.2, scaleIn: 'expand', castId: cid, alpha: 0.5 }));
         return out;
       }
       case 'zone': {
         const rr = Math.max(0.6, Math.min(s.r ?? 3, 10)), life = s.life ?? 3;
-        out.push(K.line({ shape: el === 'ice' ? 'poly' : el === 'wind' ? 'spiral' : el === 'water' ? 'ripple' : 'dots', sides: 6, turns: 1.2, arms: 3, n: Math.round(10 + rr * 6), el, pos: G, plane: 'ground', r: rr, width: 0.035, life, tIn: 0.25, tOut: 0.4, spin: el === 'wind' ? 0.8 : 0.25, alpha: 0.35, castId: cid, follow: s.follow }));
+        out.push(ln({ shape: el === 'ice' ? 'poly' : el === 'wind' ? 'spiral' : el === 'water' ? 'ripple' : 'dots', sides: 6, turns: 1.2, arms: 3, n: Math.round(10 + rr * 6), el, pos: G, plane: 'ground', r: rr, width: 0.035, life, tIn: 0.25, tOut: 0.4, spin: el === 'wind' ? 0.8 : 0.25, alpha: 0.35, castId: cid, follow: s.follow }));
         out.push(K.decal(DECAL_OF[el] || 'crack', G, rr * 0.9, Math.min(life, 6), { el, castId: cid, alpha: 0.28 }));
         return out;
       }
       case 'aura': {
         const rr = Math.min(s.r ?? 0.9, 2), life = s.life ?? 2;
-        out.push(K.line({ shape: 'dots', n: 14, el, pos, follow: s.follow, followOff: K.v3(0, 0.05, 0), plane: 'ground', r: rr, width: 0.03, life, tIn: 0.2, tOut: 0.3, spin: 1.2, alpha: 0.35, castId: cid }));
+        out.push(ln({ shape: 'dots', n: 14, el, pos, follow: s.follow, followOff: K.v3(0, 0.05, 0), plane: 'ground', r: rr, width: 0.03, life, tIn: 0.2, tOut: 0.3, spin: 1.2, alpha: 0.35, castId: cid }));
         return out;
       }
       case 'cast': {
-        out.push(K.line({ shape: 'glyph', glyph: el, el, pos, follow: s.follow, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.4), life: s.life ?? 0.3, tIn: 0.08, tOut: 0.12, spin: 1.2, castId: cid, color: R.light }));
+        out.push(ln({ shape: 'glyph', glyph: el, el, pos, follow: s.follow, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.4), life: s.life ?? 0.3, tIn: 0.08, tOut: 0.12, spin: 1.2, castId: cid, color: R.light }));
         return out;
       }
       case 'trail': {
@@ -257,7 +268,7 @@ export function createLooks(game, E) {
         return out;
       }
       case 'summon': {
-        out.push(K.line({ shape: 'glyph', glyph: el, el, pos: G, plane: 'ground', r: Math.min(1.4, s.r ?? 1), life: 0.6, tIn: 0.2, tOut: 0.25, spin: 0.8, castId: cid, alpha: 0.6 }));
+        out.push(ln({ shape: 'glyph', glyph: el, el, pos: G, plane: 'ground', r: Math.min(1.4, s.r ?? 1), life: 0.6, tIn: 0.2, tOut: 0.25, spin: 0.8, castId: cid, alpha: 0.6 }));
         sp(8, { gravity: -2 });
         return out;
       }
@@ -283,13 +294,13 @@ export function createLooks(game, E) {
     const R = rampOf(game, el);
     const O = BURST_OPTS;
     O.count = n; O.shape = shape;
-    O.color[0] = smoke ? R.mid : R.light; O.color[1] = smoke ? R.dark : R.mid;
+    O.color[0] = R.mid; O.color[1] = smoke ? R.dark : el === 'light' ? R.light : R.dark;   // saturated mid → dark (normal blend: no white-out)
     O.speed = Math.min(o.speed ?? 3, 11); O.speedVar = o.speedVar ?? O.speed * 0.5; O.spread = o.spread ?? 1; O.dir = o.dir || null;
     const big = smoke ? 0.7 : (shape === 'leaf' || shape === 'petal' || shape === 'feather' || shape === 'wisp' ? 0.22 : 0.16);
     O.size = Math.min(o.size ?? 0.12, big); O.sizeEnd = Math.min(o.sizeEnd ?? O.size * 0.3, big);
     O.life = Math.min(o.life ?? 0.4, smoke ? 0.6 : 0.6); O.lifeVar = Math.min(o.lifeVar ?? O.life * 0.3, 0.15);
     O.gravity = o.gravity ?? 0; O.drag = o.drag ?? 2;
-    O.additive = NORMAL_SP[shape] || el === 'earth' || el === 'shadow' || el === 'nature' ? false : undefined;
+    O.additive = el === 'light' && !NORMAL_SP[shape] ? undefined : false;
     O.alpha = Math.min(o.alpha ?? 1, smoke ? 0.3 : 0.9);
     O.velocityStretch = shape === 'spark' || shape === 'ember' || shape === 'streak' ? Math.min(0.06, o.velocityStretch === true ? 0.06 : (o.velocityStretch || 0.03)) : 0;
     O.castId = cc.castId; O.el = el; O.owner = 'player';
@@ -335,7 +346,7 @@ export function createLooks(game, E) {
     const el = elOf(o, cc);
     const K = kit(); if (!K) return null;
     const rad = Math.min(o?.radius ?? 3, cc.tier === 'U' || cc.tier === 'F' ? 9 : cc.tier === 'B' ? 1.6 : 5);
-    return K.line({ shape: el === 'ice' ? 'poly' : 'ring', sides: 6, pos, plane: o?.vertical ? 'billboard' : 'ground', r: rad, width: Math.min(0.06, 0.02 + rad * 0.006), el,
+    return K.line({ color: rampOf(game, el).mid, shape: el === 'ice' ? 'poly' : 'ring', sides: 6, pos, plane: o?.vertical ? 'billboard' : 'ground', r: rad, width: Math.min(0.06, 0.02 + rad * 0.006), el,
       alpha: Math.min(0.8, o?.opacity ?? 0.8), life: Math.min(0.6, Math.max(0.15, o?.duration ?? 0.4)), tIn: 0, tOut: 0.25, scaleIn: 'expand', owner: 'player', castId: cc.castId });
   }
   function beam(cc, from, to, o) {
@@ -355,13 +366,20 @@ export function createLooks(game, E) {
     if (!pos) return null;
     const el = elOf(o, cc);
     // the magic circles the user likes: kept for charged / U / F anticipation (one per cast), linework dots otherwise
-    if ((cc.tier === 'C' || cc.tier === 'U' || cc.tier === 'F') && cc.runes < (cc.tier === 'C' ? 1 : 2)) {
+    const K = kit(); if (!K) return null;
+    if ((cc.tier === 'C' || cc.tier === 'U' || cc.tier === 'F') && cc.runes < (cc.tier === 'C' ? 1 : 2) && useH(cc, 3)) {
+      // rune circle in kit linework (§3.1 craft: outer ring → glyph band → sigil; opposed spins, back-out scale-in, fade in the last 30 %)
       cc.runes++;
-      const r = Math.min(o?.r ?? 2, cc.tier === 'C' ? 1.6 : 6);
-      try { return V().runeCircle(pos, { ...o, element: el, r, dur: Math.min(o?.dur ?? 1, cc.tier === 'C' ? 0.9 : 3), owner: 'player', castId: cc.castId }); } catch (err) { warnOnce('rune', err); return null; }
+      const r = Math.min(o?.r ?? 2, cc.tier === 'C' ? 1.6 : 5), life = Math.min(o?.dur ?? 1, cc.tier === 'C' ? 0.9 : 2.5), R = rampOf(game, el);
+      const G = nearGround(pos, 2.5) ? K.v3(pos.x, gy(pos.x, pos.z), pos.z) : pos;
+      const base = { el, pos: G, plane: 'ground', life, tIn: 0.28, tOut: life * 0.3, scaleIn: 'backOut', owner: 'player', castId: cc.castId };
+      const h = K.line({ ...base, shape: 'glyph', glyph: el, r: r * 0.62, spin: 0.9, color: R.mid, color2: R.dark, alpha: 0.8 });
+      K.line({ ...base, shape: 'ring', r, width: Math.min(0.05, 0.02 + r * 0.008), spin: -0.4, color: R.mid, alpha: 0.85 });
+      K.line({ ...base, shape: 'ticks', n: 24, r2: 0.86, r: r * 0.9, width: 0.025, spin: -0.6, color: R.light, alpha: 0.7 });
+      return h;
     }
-    const K = kit(); if (!K || !useH(cc)) return null;
-    return K.line({ shape: 'dots', n: 18, el, pos, plane: 'ground', r: Math.min(o?.r ?? 2, 3), width: 0.035, life: Math.min(o?.dur ?? 0.8, 1.2), tIn: 0.15, tOut: 0.3, spin: 1.2, alpha: 0.6, castId: cc.castId });
+    if (!useH(cc)) return null;
+    return K.line({ color: rampOf(game, el).mid, shape: 'dots', n: 18, el, pos, plane: 'ground', r: Math.min(o?.r ?? 2, 3), width: 0.035, life: Math.min(o?.dur ?? 0.8, 1.2), tIn: 0.15, tOut: 0.3, spin: 1.2, alpha: 0.6, castId: cc.castId });
   }
   function screenFlash(cc, color, a, dur) {
     if (cc.tier !== 'U' && cc.tier !== 'F') return null;
@@ -457,6 +475,7 @@ export function createLooks(game, E) {
     const el = o.el || cc?.el || 'physical';
     if (cc) {
       if (cc.arcs >= TIER_BUDGET[cc.tier].arcs && !o._look) return null;
+      if (cc.arcs > 0 && !useH(cc)) return null;
       cc.arcs++;
     }
     const St = ARC_STYLE[el] || ARC_STYLE.physical;
@@ -479,8 +498,8 @@ export function createLooks(game, E) {
   // ------------------------------------------------------------------ bespoke rows: hook points
   /** Run a row hook ('start' | 'strike' | 'final' | 'end') for the current cast. */
   L.hook = (when, a, b) => {
-    const cc = L.cur; if (!cc?.row) return;
-    const fn = cc.row[when]; if (typeof fn !== 'function') return;
+    const cc = L.cur; const R = cc?.row || cc?.arch; if (!R) return;
+    const fn = R[when]; if (typeof fn !== 'function') return;
     try { fn(L, cc, a, b); } catch (err) { warnOnce('row:' + cc.skillId + ':' + when, err); }
   };
   /** Helpers rows use (kit + budgets). */
@@ -489,15 +508,41 @@ export function createLooks(game, E) {
     fwd: (out, yaw = game.player?.facing ?? 0) => out.set(Math.sin(yaw), 0, Math.cos(yaw)),
     ground: (p) => { p.y = gy(p.x, p.z); return p; },
     gy, rampOf: (el) => rampOf(game, el),
-    line: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.line(spec); },
+    line: (cc, spec) => {
+      const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player';
+      // primary linework in the saturated mid step (R6), the light step as the second colour
+      if (spec.color == null && spec.el && spec.el !== 'light') { const R = rampOf(game, spec.el); spec.color = R.mid; if (spec.color2 == null) spec.color2 = R.light; }
+      return K.line(spec);
+    },
     mesh: (cc, name, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.mesh(name, spec); },
     ribbon: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.ribbon(spec); },
     bolt: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.bolt(spec); },
     decal: (cc, kind, pos, r, life, o = {}) => { const K = kit(); if (!K || !useH(cc)) return null; o.castId = cc.castId; return K.decal(kind, pos, r, life, o); },
-    spark: (cc, pos, el, n, dir, o = {}) => { const K = kit(); const k = useP(cc, n); if (!K || k <= 0) return; o.castId = cc.castId; K.spark(pos, el, k, dir, o); },
+    spark: (cc, pos, el, n, dir, o = {}) => {
+      if (!pos) return;
+      const B = SPARK_O; B.count = Math.min(12, n); B.shape = o.shape || SPARK_SHAPE[el]; B.el = el; B.dir = dir || null; B.spread = dir ? 0.55 : 1;
+      B.speed = o.speed ?? 5; B.gravity = o.gravity ?? 4; B.size = o.size ?? (B.shape === 'spark' || B.shape === 'ember' ? 0.1 : 0.15); B.life = o.life ?? 0.4;
+      burst(cc, pos, B);
+    },
     motif: (cc, el, kind, spec) => { spec.castId = cc.castId; return L.motif(el, kind, spec); },
     arc: (o) => E.S?.arc?.({ ...o, _look: true }),
     v3: (x, y, z) => new THREE.Vector3(x, y, z),
+    playerObj: () => game.player?.object || null,
+    yaw: () => game.player?.facing ?? 0,
+    tip: (out) => { const pl = game.player; if (pl?.getWeaponTip) return pl.getWeaponTip('main', out); return pl?.getSwordTip?.(out) || out; },
+    /** schedule fn after t game seconds inside the current cast context (engine scheduler; tasks keep their cast) */
+    after: (t, fn) => { const S = E.S; if (S?.after) S.after(t, fn); else fn(); },
+    /** n spikes of an engine spike pool ('iceSpikes' | 'rockSpikes' | 'crystal') around p within spread metres (deterministic per castId) */
+    spikes: (cc, kind, p, n, h = 1, spread = 0.6) => {
+      const pool = E.S?.fx?.[kind]; if (!pool?.spawn || !p) return 0;
+      let k = 0;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.39996 + (cc.castId % 13) * 0.7, rr = n > 1 ? spread * (0.35 + 0.65 * ((i * 0.618 + cc.castId * 0.13) % 1)) : 0;
+        _p.set(p.x + Math.cos(a) * rr, 0, p.z + Math.sin(a) * rr); _p.y = gy(_p.x, _p.z);
+        if (pool.spawn(_p, h * (1 - 0.35 * (i % 3) / 2), 0.32 + 0.1 * (i % 2), 0.03 * i, 0.9, 0.25 + 0.1 * (i % 3), rampOf(game, cc.el).mid)) k++;
+      }
+      return k;
+    },
   };
 
   // ------------------------------------------------------------------ motifs (factory time: before the boot prewarm)

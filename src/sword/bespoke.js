@@ -199,7 +199,11 @@ export function registerMeleeBespoke(game, E) {
     const L = E.look;
     const cc = L ? L.begin({ skillId: ctx.skillId || id, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx) }) : null;
     const prev = L ? L.cur : null; if (L) L.cur = cc;
-    try { fn(ctx); } finally { if (L) L.cur = prev; }
+    try { fn(ctx); } finally {
+        // a skill that started no engine action still gets its look (start + strike at once)
+        if (L && cc && (cc.row || cc.arch) && !cc.started) { cc.started = true; L.hook('start', null, ctx); L.hook('strike', null, ctx); }
+        if (L) L.cur = prev;
+      }
   };
   for (const id in IMPLS) { try { A?.registerImpl?.(id, 'melee', wrap(id, IMPLS[id])); } catch (err) { console.warn('[sword] registerImpl', id, err); } }
   return { ids: Object.keys(IMPLS), warmup() { return []; } };

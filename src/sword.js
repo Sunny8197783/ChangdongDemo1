@@ -297,7 +297,8 @@ export function createSword(game) {
     v1.copy(pos()); v1.y += h;
     smE.set(-Math.PI / 2 + (tilt || 0) * 0.6, yaw - Math.PI / 2, tilt || 0, 'YXZ');
     smQ.setFromEuler(smE);
-    vcall('smear', weapon.smear, v1, smQ, reach, el);
+    // v4: the slash crescent is the primary shape (§3.6); the legacy vfx smear only plays without the kit
+    if (!game.vfx?.kit) vcall('smear', weapon.smear, v1, smQ, reach, el);
   }
 
   // ---------------- actions ----------------
@@ -349,7 +350,7 @@ export function createSword(game) {
     idleT = 0;
     // bespoke row hook: the cast's first action starts
     const cc = act.look;
-    if (cc?.row && !cc.started) { cc.started = true; act.rowAct = true; look.hook('start', act, spec.ctx); }
+    if ((cc?.row || cc?.arch) && !cc.started) { cc.started = true; act.rowAct = true; look.hook('start', act, spec.ctx); }
     return act;
   }
   function endAction(interrupted) {

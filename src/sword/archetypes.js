@@ -770,7 +770,11 @@ export function registerMeleeArchetypes(game, E) {
       const L = E.look;
       const cc = L ? L.begin({ skillId: ctx.skillId, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx), archetype: name }) : null;
       const prev = L ? L.cur : null; if (L) L.cur = cc;
-      try { fn(ctx); } catch (err) { warnOnce(name, err); throw err; } finally { if (L) L.cur = prev; }
+      try { fn(ctx); } catch (err) { warnOnce(name, err); throw err; } finally {
+        // a skill that started no engine action still gets its look (start + strike at once)
+        if (L && cc && (cc.row || cc.arch) && !cc.started) { cc.started = true; L.hook('start', null, ctx); L.hook('strike', null, ctx); }
+        if (L) L.cur = prev;
+      }
     };
     try { R?.registerArchetype?.(name, 'melee', wrapped); n++; } catch (err) { warnOnce('register:' + name, err); }
   }

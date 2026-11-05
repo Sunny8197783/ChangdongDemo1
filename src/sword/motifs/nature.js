@@ -17,7 +17,7 @@ export function installNature(api) {
   { // 5-petal flower lying flat (+Y up): five teardrop plates around a centre disc
     const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.bezierCurveTo(0.16, 0.12, 0.14, 0.42, 0, 0.5); sh.bezierCurveTo(-0.14, 0.42, -0.16, 0.12, 0, 0);
     const parts = [], grads = [];
-    for (let i = 0; i < 5; i++) { const p = plate(sh, 0.02, (x, y) => 0.35 + y * 1.2); p.rotateX(-Math.PI / 2 + 0.25); p.rotateY((i / 5) * Math.PI * 2); parts.push(p); grads.push(null); }
+    for (let i = 0; i <= 4; i++) { const p = plate(sh, 0.02, (x, y) => 0.35 + y * 1.2); p.rotateX(-Math.PI / 2 + 0.25); p.rotateY((i / 5) * Math.PI * 2); parts.push(p); grads.push(null); }
     const c = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 8); parts.push(c); grads.push(0.95);
     K.registerShape('nature.petal', merge(parts, grads), { blend: 'solid', outline: true });
   }

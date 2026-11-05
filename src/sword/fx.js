@@ -72,21 +72,23 @@ const ARC_FS = /* glsl */`
     // toon body: dark inner → mid; a crisp light rim band, a thin hi line near the head only (glint, not haze)
     float rimB = smoothstep(e - 0.13, e - 0.11 + aa, v);
     float edgeA = 1.0 - smoothstep(e - aa, e + aa, v);
-    vec3 col = mix(uDark, uMid, smoothstep(0.15, 0.65, t));
-    float body = (0.08 + 0.52 * pow(t, 1.6));
-    if (k > 8.5) { col = uDark; body = 0.25 + 0.45 * t; }                                                                        // shadow: inverted value
-    if (k > 3.5 && k < 4.5) { float s = abs(fract(v * 5.0 + u * 0.6) - 0.5); body *= 0.55; rimB = max(rimB, (1.0 - smoothstep(0.03, 0.03 + aa * 5.0, s)) * step(0.35, v) * 0.7); } // wind: streamlines
-    col = mix(col, uLight, rimB);
+    // a crisp crescent BAND (not a faint fan): the inner 40 % is empty, the body is the saturated mid step at ≤ 0.7 alpha
+    vec3 col = mix(uDark, uMid, smoothstep(0.36, 0.44, t));       // thin dark inner line, saturated mid body
+    float body = 0.7 * smoothstep(0.36, 0.5, t);
+    if (k > 8.5) { col = mix(uDark, uMid, smoothstep(0.3, 0.6, t)); body = 0.7 * smoothstep(0.3, 0.45, t); }                                                          // shadow: inverted value
+    if (k > 3.5 && k < 4.5) { float s = abs(fract(v * 5.0 + u * 0.6) - 0.5); body *= 0.8; rimB = max(rimB, (1.0 - smoothstep(0.03, 0.03 + aa * 5.0, s)) * step(0.45, v) * 0.85); } // wind: streamlines
+    col = mix(col, mix(uMid, uLight, 0.55), rimB);
     float hiL = (1.0 - smoothstep(0.0, 0.18, age)) * smoothstep(e - 0.05, e - 0.035, v) * edgeA;
     col = mix(col, uHi, hiL * 0.85);
     float a = max(body, rimB * 0.95) * edgeA;
     if (tick) { col = uLight; a = 0.9; }
-    a *= (1.0 - smoothstep(0.35, 1.0, age)) * smoothstep(0.0, 0.1, v) * smoothstep(0.0, 0.04, u) * uOpacity;
-    // dissipation by erosion (never haze)
+    a *= smoothstep(0.0, 0.04, u) * uOpacity;
+    // dissipation by erosion of the tail and of the whole crescent (never by haze)
     float n = h1(floor(u * 60.0) + floor(v * 8.0) * 61.0 + uSeed);
     if (n > uFade * 1.25 - 0.1) discard;
+    if (n > 1.0 - smoothstep(0.35, 1.0, age)) discard;
     a = min(a, 0.95);
-    if (a < 0.004) discard;
+    if (a < 0.12) discard;                                   // no faint haze fragments (coverage, crisp edges)
     gl_FragColor = vec4(col * a, a);
   }`;
 
@@ -187,13 +189,13 @@ const TRAIL_FS = /* glsl */`
   void main() {
     float age = vT.x, y = vT.y;
     float aa = max(fwidth(y), 0.01);
-    float body = (1.0 - smoothstep(0.0, 0.65, age)) * smoothstep(0.25, 0.75, y) * 0.55;
+    float body = (1.0 - smoothstep(0.0, 0.5, age)) * smoothstep(0.55, 0.7, y) * 0.6;
     float edge = smoothstep(0.86 - aa, 0.9, y) * (1.0 - smoothstep(0.0, 1.0, age)) * uEdge;
-    vec3 col = mix(uDark, uMid, smoothstep(0.3, 0.8, y));
-    col = mix(col, uLight, edge);
-    col = mix(col, uHi, edge * (1.0 - smoothstep(0.0, 0.15, age)) * 0.7);
-    float a = min(0.85, max(body, edge * 0.9)) * uOpacity;
-    if (a < 0.004) discard;
+    vec3 col = mix(uDark, uMid, smoothstep(0.5, 0.7, y));
+    col = mix(col, mix(uMid, uLight, 0.6), edge);
+    col = mix(col, uHi, edge * (1.0 - smoothstep(0.0, 0.15, age)) * 0.5);
+    float a = min(0.8, max(body, edge * 0.9)) * uOpacity;
+    if (a < 0.12) discard;
     gl_FragColor = vec4(col * a, a);
   }`;
 function cr(p0, p1, p2, p3, t, out) {
