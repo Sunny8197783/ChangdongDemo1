@@ -25,3 +25,4 @@
 - (3) 검증·푸시·재배포: 대기
 - 2026-11-04 15:4x: 5시간 사용량 한도로 구현 run 중단(완료: core wave A, world, mobmodels; 태그 tells-b, vfx-b 생성됨). 18:23 UTC 같은 run id로 재개(task wbqcx1u4b).
 - 2026-11-04 ~21:00: 두 번째 한도 중단(완료 추가: core-b, tells, vfx, player). 2026-11-05 00:02 UTC 재개(task wvhtayrmm). 남은 것: magic, melee, mobs, bosses, ux → 통합·리뷰·수정.
+- 2026-11-05 05:13 UTC: 세 번째 재개(task wz6ytpbxk). 사용자 요청 '토큰을 덜 쓰는 방향'으로 축소: 리뷰 6→2 렌즈(effort medium), 별도 검증 단계 제거(수정 담당이 직접 확인), 수정 1회, 남은 빌더에 토큰 절약 지시, 자동 재개 체크 2시간 간격.
