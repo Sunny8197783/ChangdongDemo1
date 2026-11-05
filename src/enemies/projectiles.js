@@ -42,6 +42,16 @@ export class EnemyProjectiles {
       this.boulders.push({ m, active: false, vel: new THREE.Vector3(), spin: new THREE.Vector3(), t: 0, T: 1, opts: null, source: null, em: null, target: new THREE.Vector3() });
     }
     this._sporePool();   // pooled at construction (materials compiled at boot)
+    // §4.5: fire burns spore clouds away (a fire hit landing inside a cloud ends it)
+    try {
+      ctx.game.events.on('damage', (p) => {
+        if (!p || p.element !== 'fire' || p.isPlayer || !p.point || !this.clouds) return;
+        for (const c of this.clouds) {
+          if (!c.active || c.delay > 0) continue;
+          if (Math.hypot(p.point.x - c.pos.x, p.point.z - c.pos.z) <= c.r + 0.8) { c.active = false; c.hz?.stop?.(); c.hz = null; }
+        }
+      });
+    } catch (_) { /* */ }
   }
 
   /** world.projectileBlockAt(p) → 'block' | 'reflect' | null (only queried while temp colliders exist). */
