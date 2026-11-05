@@ -16,6 +16,9 @@
    thin (crisp) lines pull the mean HSV saturation of changed pixels down. Please decide at integration: measure `sat` on pixels whose
    change is strong (e.g. ΔRGB > 60) or against a neutral backdrop, or lower the floor for ice / lightning / water / wind / shadow.
    melee keeps every look in the `mid` step (bodies, lines, sparks; normal blend) and reports the measured values in its notes.
+   ML1.c now uses MG1's swatch rule (floor = min(§1.4, 0.85 × opaque-swatch sat)); 14 cool-element casts still read 0.25–0.36.
+   **vfx**: `kit.spark` colours `[light, mid]` and the RB tail desaturation (`tailSat` 0.3) pull the mean down on every hit — a
+   `[mid, dark]` option for player sparks would help both families.
 4. **vfx** — (a) `combat` reaction hits (`rxHit`) carry no `castId`, so a reaction's hitstop on a melee target is logged right before
    the triggering hit's `damage` event; `tools/playtest2.js` then reads it as a second hitstop of the melee castId ("wind combo hitstop
    on the first hit of each castId: repeat"). Please pass the source hit's `castId` into reaction hits / their `hitFeel`.

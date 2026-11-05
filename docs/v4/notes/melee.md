@@ -69,8 +69,44 @@ Dev split: `MELEE_PART=first|dodge|measure|iou|probe`, `MELEE_IDS=a,b`, `MELEE_E
 Static (rule 5, reserved shapes, no hitstop, files) · ML1.a first casts · ML1.b registration + declared looks · ML1.c per-cast
 measurement (ceilings + floors) · ML1.d materials · ML1.e stacked rotation · ML1.f element IoU · ML1.g dodge windows · sheets.
 
-RESULTS_PLACEHOLDER
+### Measured (branch `v4/melee`, 640×360 SwiftShader, run by parts: `MELEE_PART=first|dodge|measure|iou`)
+| Check | Result | Numbers vs budget |
+|---|---|---|
+| static (rule 5, reserved shapes, no `game.hitstop`, files) | PASS 8/8 | 17 files scanned, 0 hits |
+| ML1.a first casts | PASS | max 2.1 ms CPU (≤ 8 ms) over 57 casts; 0 first draws of never-drawn programs |
+| ML1.b registration / lookOf | PASS | 4 el × 9 motif kinds, 14 FM shapes; 104 ids ≥ archetype; 36 bespoke |
+| ML1.g dodge windows | PASS | longsword worst 0.25 s (c4_fire), hammer 0.15 s, daggers 0.083 s (≤ 0.25); charged 0 s after release (≤ 0.10); actives ≤ 0.10 s after first damage; ults from first damage; fire.finisher 293 frames, 0 cancellable, 0 vulnerable |
+| ML1.c ceilings (white, luma, cov, particles, handles) | PASS for all 57 | white max 0.02 % (≤ 1.5–15 %), cov max 0.465 (U ≤ 1.0; C ≤ 0.30 all pass), particles max 132 (U ≤ 150), handles ≤ tier cap (hard cap now) |
+| ML1.c floors | **FAIL 16/57** | sat below the swatch floor for cool elements (ice.basic 0.357 / 0.387, ice.nova 0.362, ice.ult 0.321, lightning.basic 0.31 / 0.40, lightning.charged 0.251, lightning.ult 0.282, wind.basic 0.346 / 0.382, wind.ult 0.332, water.ult 0.346 / 0.35, water.charged 0.346, shadow.basic 0.312, shadow.charged 0.348, lightning.mine 0.333); detail lightning.ult 5855 and fire.ult 7619 (U ≥ 8000; 7417 / 7350 alone) |
+| ML1.d materials | PASS | 0 new materials per cast after the first (57) |
+| ML1.e stacked 7-cast rotation | PASS | 0.0 % near-white (≤ 12 %) |
+| ML1.f element IoU | **FAIL 2/5 forms** | basic 0.35, nova 0.21, cone 0.48 pass; projectile 0.61 (water/light), zone 0.61 (wind/water) (< 0.5) |
+| retention (I) | SKIP | integration |
 
-## P1
+Swatch saturation on the test ground (opaque `mid` ring + tinted solid, MG1 method): fire 0.748, ice 0.454, lightning 0.5,
+wind 0.447, water 0.545, earth 0.665, nature 0.637, light 0.252, shadow 0.567. ML1.c judges sat against `min(§1.4, 0.85 × swatch)`
+(MG1's rule, window-weighted), so the two families are measured alike.
+
+Legacy (worktree): `tools/bootcheck.js` exit 0 (all configs playing, no uncaught errors); `tools/playtest3.js melee` 98/0;
+`tools/playtest.js` exit 0; `tools/playtest2.js` exit 0 with one FAIL line "wind combo hitstop on the first hit of each castId:
+repeat" — a reaction hit without `castId` (request 4a; flaky across owners' runs).
+
+### Late fixes (this pass)
+- Hard per-cast handle cap: every kit spawn of a motif (also the once-per-cast burst `vfx.hitFeel` plays through `kit.motif`, spark
+  motifs and decals) runs under the cast's §1.4 cap; spawns past it return an inert handle.
+- FX solids (FM meshes) stop when the chase camera reaches them (depth < 2.5 m or distance < 3 m): a lunge through the target carried
+  the camera into the impact flower (nature.charged peak coverage 1.47 → 0.04).
+- `light.ray` built at pillar width (uniform scale keeps the kit's coverage estimate honest: light.charged 0.60 → 0.15).
+- Rows: lightning.ult owns its beams / impacts (paced strikes no longer starved by the legacy beam + burst), fire.ult inner ring,
+  smaller roots / sanctuary footprints, Z decals ≤ 2.2 m, crescent and blade-trail rims lean to `mid` (less `light` / `hi` mix).
+- ML1 harness isolation: spells zones cleared between casts (sanctuary kept ticking into later casts), meadow soaked / regrown,
+  legacy leftovers waited out; these were the cause of most earlier sat / cov failures in the full sequence.
+
+
+## Known issues / P1
+- Open B floors (above): cool-element saturation (request 3) and two U detail floors; two IoU pairs (projectile water/light,
+  zone wind/water) — the zone / projectile forms of those elements need more distinct primary shapes (P1 polish).
+- ML1.c with all 57 casts takes ≈ 8–13 min on the shared machine; run it by parts.
+
 Cut: bespoke looks for the remaining (non-bespoke-set) rows — they use their archetype look; finisher polish (the finishers run the
 v3 cinematics through the gate: one tinted flash ≤ 0.15 s, budgets F); per-weapon smear textures.
