@@ -27,3 +27,21 @@
 - 2026-11-04 ~21:00: 두 번째 한도 중단(완료 추가: core-b, tells, vfx, player). 2026-11-05 00:02 UTC 재개(task wvhtayrmm). 남은 것: magic, melee, mobs, bosses, ux → 통합·리뷰·수정.
 - 2026-11-05 05:13 UTC: 세 번째 재개(task wz6ytpbxk). 사용자 요청 '토큰을 덜 쓰는 방향'으로 축소: 리뷰 6→2 렌즈(effort medium), 별도 검증 단계 제거(수정 담당이 직접 확인), 수정 1회, 남은 빌더에 토큰 절약 지시, 자동 재개 체크 2시간 간격.
 - 2026-11-05 08:58 UTC: 사용자 요청으로 저장 후 중지. 완료: core, world, mobmodels, tells, vfx, player, magic, melee, mobs (태그 *-b). 진행 중이던 bosses, ux는 WIP 커밋. 모든 v4/* 브랜치와 태그를 origin에 푸시. 자동 재개 예약은 비활성화(삭제 안 함). 재개: Workflow({scriptPath, resumeFromRunId:'wf_e69257f0-71f'}) 후 예약 재활성화.
+
+### 로컬 태그 (프록시가 태그 푸시를 403으로 막아 기록만 함; 재생성: git tag <name> <sha>)
+- core-b 21040b7
+- core-p0a 274dcac
+- kit-p0a 2ab85be
+- magic-b 743aedb
+- melee-b 48db1e1
+- mobmodels-b 9faeb46
+- mobs-b 09b720a
+- models-p0a fe90c05
+- player-b a6487c3
+- player-b.2 36d965a
+- tells-b 2a3497d
+- tells-b.2 dc0f040
+- tells-p0a 6b2738c
+- vfx-b 4727b28
+- world-b 1849646
+- world-p0a fe8589e
