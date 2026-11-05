@@ -52,9 +52,15 @@ function installMG() {
   const g = window.game, T = g.THREE, PT = window.PT;
   if (window.MG) return true;
   const MG = window.MG = {};
-  const SPOT = { x: -30, z: 30 };   // open plains grass, no tree in the view at yaw 0
+  // the plains meadow (the F-* fighting ground, tall grass: ground linework must survive it), yaw 0, dummy at 7 m; the §1.4 percast
+  // plateau measured lower saturation on its yellow-green ground for every element (kept as an option: window.__MG_SPOT)
+  const SPOT = window.__MG_SPOT || { x: -30, z: 30 };
+  MG.SPOT = SPOT;
   MG.setup = () => {
     PT.tp(SPOT.x, SPOT.z, 0.1); PT.clearEnemies?.(false);
+    // the background must not change between casts: soak the test meadow (fire skills cannot ignite it; scorched grass would grey every
+    // later measurement) and regrow anything already burnt
+    try { const sf = g.world?.surface, c = new T.Vector3(SPOT.x, 0, SPOT.z); sf?.wet?.(c, 40, 3600); sf?.regrow?.(c, 40); } catch (_) { /* */ }
     PT.look(0, -0.18); g.step(10, 1 / 60, false);
     const pp = g.player.object.position, f = new T.Vector3(); g.camera.getWorldDirection(f); f.y = 0; f.normalize();
     MG.dummy = g.debug.spawn('dummy', { pos: pp.clone().addScaledVector(f, 7), hp: 1e9 });
@@ -120,7 +126,8 @@ function installMG() {
     const bc = g.vfx.debug.byCast(castId) || {};
     const out = {
       id, castId, castMs: +castMs.toFixed(2), peakT: peak?.t ?? 0,
-      detail: peak?.changed ?? 0, sat: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
+      // sat: mean HSV saturation of the changed pixels over the cast window (pixel-weighted over every diffed frame); satPeak: at the peak frame
+      detail: peak?.changed ?? 0, sat: +(S.reduce((t, s) => t + s.sat * s.changed, 0) / Math.max(1, S.reduce((t, s) => t + s.changed, 0))).toFixed(3), satPeak: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
       white: +Math.max(0, ...S.map((s) => s.white)).toFixed(4), whiteOver5: S.reduce((t, s) => t + (s.white > 0.05 ? s.dt : 0), 0), whiteOver6: S.reduce((t, s) => t + (s.white > 0.06 ? s.dt : 0), 0),
       rise: +Math.max(0, ...S.map((s) => s.rise)).toFixed(2),
       cov: +covMax.toFixed(4), diffs: S.length, covFrag: fragUsed, covByCast: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: bc.handles ?? 0, generic: !!bc.generic,

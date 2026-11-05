@@ -38,7 +38,7 @@ export function createFallbacks(kit, game) {
   );
   const zoneOf = (el, a, b) => (s) => {
     const r = Math.max(0.6, Math.min(s.r ?? 3, 10)), life = s.life ?? 4, gp = groundAt(game, s.pos);
-    return H(kit.line({ ...a, el, pos: gp, follow: s.follow, plane: 'ground', r, life, tIn: 0.25, tOut: 0.5, alpha: 0.32, castId: s.castId, role: 'fill' }),
+    return H(kit.line({ ...a, el, pos: gp, follow: s.follow, plane: 'ground', r: r * (a.k ?? 1), life, tIn: 0.25, tOut: 0.5, alpha: 0.32, castId: s.castId, role: 'fill' }),
       kit.line({ ...b, el, pos: gp, follow: s.follow, plane: 'ground', r: r * (b.k ?? 1.03), life, tIn: 0.3, tOut: 0.5, alpha: 0.32, castId: s.castId }));
   };
   const auraOf = (el, a, b) => (s) => {
@@ -91,7 +91,7 @@ export function createFallbacks(kit, game) {
       return H(out);
     },
     spark: (s) => { kit.spark(s.pos, 'nature', Math.min(6, s.n ?? 4), s.dir || null, { castId: s.castId, shape: 'petal', gravity: 1, speed: 3 }); return null; },
-    zone: zoneOf('nature', { shape: 'glyph', glyph: 'flower5', width: 0.035, spin: 0.15 }, { shape: 'dots', n: 24, width: 0.035, spin: -0.3 }),
+    zone: zoneOf('nature', { shape: 'glyph', glyph: 'flower5', width: 0.035, spin: 0.15, k: 0.72 }, { shape: 'dots', n: 24, width: 0.035, spin: -0.3 }),
     pillar: (s) => { const gp = groundAt(game, s.pos, 0), h = Math.min(5, s.h ?? 2.5), out = [];
       for (let i = 0; i < 3; i++) out.push(vine(helixPoints(gp, 0.35, 0.1, h, 0.8, i * TAU / 3, 10), s.castId, { life: s.life ?? 0.9 }));
       out.push(kit.line({ shape: 'glyph', glyph: 'nature', el: 'nature', pos: groundAt(game, s.pos), plane: 'ground', r: 1.2, width: 0.035, life: 0.8, tIn: 0.2, tOut: 0.3, castId: s.castId, alpha: 0.6 }));

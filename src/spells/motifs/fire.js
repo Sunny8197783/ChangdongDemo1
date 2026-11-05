@@ -67,8 +67,10 @@ export function install(kit, game) {
     const base = gp || s.pos, out = [];
     const rnd = rng((s.castId || 1) * 31 + 3);
     out.push(kit.line({ shape: 'crescent', el: 'fire', pos: s.pos, plane: 'billboard', r: r * 0.8, width: 0.05, life: 0.1, tIn: 0.0, tOut: 0.06, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot: rnd() * TAU }));
+    // the 8-petal opening (one LW `rays` handle: wedge petals that open in 0.2 s), then the heat ring; FM petals take what the budget leaves
+    out.push(kit.line({ shape: 'rays', n: s.petals ?? 8, r2: 0.3, el: 'fire', pos: s.pos, plane: 'billboard', r: r * 0.95, width: 0.09, life: 0.36, tIn: 0.2, tOut: 0.16, scaleIn: 'backOut', castId: s.castId, color: R.mid, color2: R.light, rot: rnd() * TAU }));
     out.push(kit.line({ shape: 'ring', el: 'fire', pos: base, plane: gp ? 'ground' : 'billboard', r: r * 1.1, width: 0.035, life: 0.32, tIn: 0.0, tOut: 0.22, scaleIn: 'expand', castId: s.castId, alpha: 0.8 }));
-    const n = s.petals ?? 8, y0 = rnd() * TAU;
+    const n = Math.min(4, s.petals ?? 8), y0 = rnd() * TAU;
     for (let i = 0; i < n; i++) {
       const a = y0 + (i / n) * TAU;
       const p = v3(base.x + Math.cos(a) * r * 0.25, base.y + (gp ? 0.02 : -0.2), base.z + Math.sin(a) * r * 0.25);

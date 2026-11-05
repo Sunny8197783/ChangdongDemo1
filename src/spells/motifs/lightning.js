@@ -31,7 +31,6 @@ export function install(kit, game) {
   const bolt = (from, to, castId, o = {}) => kit.bolt({ from, to, forks: o.forks ?? 2, width: o.width ?? 0.08, halo: o.halo ?? 0.3, life: o.life ?? 0.06, afterglow: o.afterglow ?? 0.25, el: 'lightning', castId, seed: o.seed ?? castId });
 
   M.cast = (s) => {
-    kit.spark(s.pos, 'lightning', 3, null, { castId: s.castId, speed: 3, life: 0.12 });
     return H(
       kit.line({ shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.55, s.r ?? 0.38), width: 0.04, life: s.life ?? 0.2, tIn: 0.05, tOut: 0.1, spin: 0, castId: s.castId, color: R.mid, color2: R.light }),
       kit.line({ shape: 'ticks', n: 6, r2: 0.6, el: 'lightning', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.7, (s.r ?? 0.38) * 1.35), width: 0.018, life: s.life ?? 0.2, tIn: 0.04, tOut: 0.1, spin: 3.2, castId: s.castId, alpha: 0.75 }),
@@ -52,12 +51,12 @@ export function install(kit, game) {
     out.push(kit.line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot: 0.785 }));
     out.push(kit.line({ shape: 'ticks', n: 12, r2: 0.7, el: 'lightning', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.05, width: 0.025, life: 0.32, tIn: 0.0, tOut: 0.2, scaleIn: 'expand', spin: 2, castId: s.castId }));
     if (gp && s.decal !== false) out.push(kit.decal('lichtenberg', gp, r * 0.8, s.decalLife ?? 0.6, { el: 'lightning', castId: s.castId, alpha: 0.32 }));
-    kit.spark(s.pos, 'lightning', Math.min(8, s.n ?? 6), null, { castId: s.castId, speed: 7, life: 0.2 });
+    kit.spark(s.pos, 'lightning', Math.min(4, s.n ?? 4), null, { castId: s.castId, speed: 7, life: 0.2 });
     return H(out);
   };
   /** spark: ≤ 8 arc-crawl sparks + one tiny bolt. */
   M.spark = (s) => {
-    kit.spark(s.pos, 'lightning', Math.min(8, s.n ?? 5), s.dir || null, { castId: s.castId, speed: 6, life: 0.18 });
+    kit.spark(s.pos, 'lightning', Math.min(4, s.n ?? 4), s.dir || null, { castId: s.castId, speed: 6, life: 0.18 });
     const a = ((s.castId || 0) * 2.3) % TAU;
     return H(bolt(s.pos, v3(s.pos.x + Math.cos(a) * 0.7, s.pos.y + 0.3, s.pos.z + Math.sin(a) * 0.7), s.castId, { forks: 0, width: 0.04, halo: 0.15, life: 0.04, afterglow: 0.12 }));
   };

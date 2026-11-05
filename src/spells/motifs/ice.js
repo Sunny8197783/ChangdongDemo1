@@ -25,8 +25,10 @@ export function install(kit, game) {
   const prismAt = (p, s, life, castId, { a = 0, lean = 0, tIn = 0.16, stub = false, tOut } = {}) =>
     kit.mesh(stub ? 'ice.stub' : 'ice.prism', { pos: p, quat: qYawTilt(Math.PI / 2 - a, lean), scale: s, life, tIn, tOut: tOut ?? Math.min(0.4, life * 0.4), erode: true, castId });
   const debris = (p, n, castId, speed = 5) => {
+    // shatter debris: shard-frame accent particles (SP) + at most one FM shard (each FM instance is a kit handle)
+    kit.spark(p, 'ice', Math.min(10, n + 2), null, { castId, shape: 'shard', gravity: 12, speed });
     const out = [], rnd = rng((castId || 1) * 13 + 5);
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < Math.min(1, n); i++) {
       const a = (i / n) * TAU + rnd() * 0.4, up = 0.4 + rnd() * 0.6;
       out.push(kit.mesh('ice.shard', { pos: p, dir: v3(Math.cos(a), up, Math.sin(a)), scale: 0.45 + rnd() * 0.35, life: 0.5, tIn: 0.02, tOut: 0.25, erode: true, castId,
         vel: v3(Math.cos(a) * speed, up * speed, Math.sin(a) * speed), gravity: 14, drag: 1.2, spin: 6, spinAxis: v3(1, 0, 0) }));
@@ -66,7 +68,7 @@ export function install(kit, game) {
     out.push(kit.decal('frost', gp, r * 0.62, life, { el: 'ice', castId: s.castId, alpha: 0.3, rot }));
     out.push(kit.line({ shape: 'poly', sides: 6, el: 'ice', pos: gp, plane: 'ground', r: r * 1.02, width: 0.03, life, tIn: 0.25, tOut: 0.5, alpha: 0.35, castId: s.castId, rot }));
     const n = Math.min(6, s.prisms ?? 6), rnd = rng((s.castId || 1) * 7);
-    for (let i = 0; i < n; i++) { const a = rot + (i / n) * TAU, rr = r * (0.8 + rnd() * 0.15); out.push(prismAt(groundAt(game, v3(gp.x + Math.cos(a) * rr, 0, gp.z + Math.sin(a) * rr), 0), 0.3 + rnd() * 0.25, life, s.castId, { a, lean: 0.25, stub: i % 2 === 0, tIn: 0.2 + i * 0.04 })); }
+    for (let i = 0; i < n; i++) { const a = rot + (i / n) * TAU, rr = r * (0.8 + rnd() * 0.15); out.push(prismAt(groundAt(game, v3(gp.x + Math.cos(a) * rr, 0, gp.z + Math.sin(a) * rr), 0), 0.5 + rnd() * 0.35, life, s.castId, { a, lean: 0.25, stub: i % 2 === 0, tIn: 0.2 + i * 0.04 })); }
     return H(out);
   };
   /** pillar: cluster of 3 prisms (central tall) + frost decal + 6-spoke star at the base. */

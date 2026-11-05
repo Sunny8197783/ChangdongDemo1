@@ -72,10 +72,12 @@ export function createLooks(S) {
     try {
       MY.fire = Fire.install(K, game).M; MY.ice = Ice.install(K, game).M; MY.lightning = Lightning.install(K, game).M;
       MY.wind = Wind.install(K, game).M; MY.water = Water.install(K, game).M;
+      for (const el of MAGIC_ELEMENTS) for (const kind of ['burst', 'spark']) if (MY[el][kind]) MY[el][kind] = K.sub(kind, MY[el][kind]);
       installArrows(K); FB = createFallbacks(K, game);
+      for (const el in FB) for (const kind of ['burst', 'spark']) if (FB[el][kind]) FB[el][kind] = K.sub(kind, FB[el][kind]);
       // caster stand-ins become the kit's motifs for earth / nature / light / shadow only while melee has not registered its own
       // (sword runs after spells in ORDER and overwrites them; hitFeel / impact presets then never fall to the generic fallback)
-      for (const el of ['earth', 'nature', 'light', 'shadow']) for (const kind in FB[el]) if (!k.hasMotif(el, kind)) { const fn = FB[el][kind]; k.registerMotif(el, kind, (spec) => fn(spec)); standins.add(el + ':' + kind); }
+      for (const el of ['earth', 'nature', 'light', 'shadow']) for (const kind in FB[el]) if (!k.hasMotif(el, kind)) { const fn = FB[el][kind]; K.registerMotif(el, kind, (spec) => fn(spec)); standins.add(el + ':' + kind); }
       ROWS = createRows(api);
       installed = true;
     } catch (err) { warnOnce('install', err); installed = false; }
@@ -97,37 +99,75 @@ export function createLooks(S) {
   function facade(k) {
     const can = (s) => {
       const c = ctxOf(s); if (!c) return true;
-      if (c.h >= c.cap.handles) { c.refused++; return false; }
-      c.h++; return true;
+      if (c.sub != null) { if (c.sub <= 0) { c.refused++; return false; } c.sub--; }
+      if (c.h >= c.cap.handles) { c.refused++; if (c.trace) c.trace.push('REFUSED ' + (s?._tk || s?.shape || '?')); return false; }
+      c.h++; if (c.trace) c.trace.push(s?._tk || s?.shape || '?'); return true;
     };
-    const mid = (s) => { const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = k.ramp(el).light; return s; };
+    // line weight: a 2 px screen-space floor (1.8 px on the ground) so the thin precise lines keep a saturated core instead of an AA fringe
+    const mid = (s) => {
+      const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = k.ramp(el).light;
+      if (s.minPx == null) s.minPx = !s.plane || s.plane === 'ground' ? 1.8 : 2.2;
+      return s;
+    };
     const F = Object.create(k);
     // v4 palette discipline: linework bodies in the element `mid` step (saturated), `light` for the secondary / rims, `hi` only where a row asks for a glint
     F.line = (s) => (can(s) ? stampCast(s) && k.line(mid(s)) : DEAD);
-    F.mesh = (n, s) => (can(s) ? stampCast(s) && k.mesh(n, s) : DEAD);
-    F.ribbon = (s) => { if (!can(s)) return DEAD; stampCast(s); s.tailSat = Math.max(0.75, s.tailSat ?? 0.85); return k.ribbon(s); };
+    // FM bodies of the pale-ramp elements lean toward their `mid` step (the toon ramp's light / hi bands read grey-white on grass)
+    const PALE_FM = { ice: 0.35, lightning: 0.4, wind: 0.3 };
+    F.mesh = (n, s) => {
+      if (!can(traceKind(s, n))) return DEAD;
+      stampCast(s);
+      const el = s.el || n.slice(0, n.indexOf('.'));
+      if (PALE_FM[el] && s.color == null && s.colors == null && !s.owner) { s.color = k.ramp(el).mid; if (s.tintAmt == null) s.tintAmt = PALE_FM[el]; }
+      return k.mesh(n, s);
+    };
+    F.ribbon = (s) => { if (!can(traceKind(s, 'ribbon'))) return DEAD; stampCast(s); s.tailSat = Math.max(0.75, s.tailSat ?? 0.85); return k.ribbon(s); };
     // bolts: `light` core inside a `mid` halo (the kit's halo is always the `light` step, saturation ≈ 0.39 for lightning — requests/magic.md vfx (2));
     // the halo colour lives on the bolt record and is read on every write, so it is retinted once here (feature-detected, no-op if the kit changes)
     F.bolt = (s) => {
-      if (!can(s)) return DEAD; stampCast(s);
+      if (!can(traceKind(s, 'bolt'))) return DEAD; stampCast(s);
       const R = k.ramp(s.el || 'lightning');
       // the kit halo is a soft premultiplied falloff (adds colour over the ground without covering it): keep it narrow, so the bolt reads
       // as a crisp saturated `mid` zig-zag; the 2–3-frame strike itself is the bright moment
       if (s.core == null && !s.owner) s.core = R.mid;
-      if (!s.owner) s.halo = Math.min(s.halo ?? 0.3, Math.max(0.12, (s.width ?? 0.08) * 2.2));
+      if (!s.owner) s.halo = Math.min(s.halo ?? 0.3, (s.width ?? 0.08) * 1.2);
       const h = k.bolt(s);
       if (!s.owner && s.halo !== 0 && h?._r?.cLight?.isColor) h._r.cLight.copy(R.mid);
       return h;
     };
-    F.decal = (kind, p, r, life, o = {}) => { if (!can(o)) return DEAD; if (o.castId == null && cur) o.castId = cur.castId; if (o.color == null && o.el) o.color = k.ramp(o.el).mid; return k.decal(kind, p, r, life, o); };
+    F.decal = (kind, p, r, life, o = {}) => { if (!can(traceKind(o, 'decal:' + kind))) return DEAD; if (o.castId == null && cur) o.castId = cur.castId; if (o.color == null && o.el) o.color = k.ramp(o.el).mid; return k.decal(kind, p, r, life, o); };
     F.spark = (p, el, n, dir, o = {}) => {
       const c = ctxOf(o);
       if (c) { tickWindow(c); const left = c.cap.particles - c.p; n = Math.min(n, left); if (n <= 0) return; c.p += n; if (o.castId == null) o.castId = c.castId; }
       k.spark(p, el, n, dir, o);
     };
+    // impacts never starve the cast's primary shape: a burst (one per cast, also when vfx.hitFeel plays it on the first hit, which can run
+    // before the primary is built) may use at most half of the tier's handles, a per-target spark a quarter; parts are authored most-important-first
+    F.sub = (kind, fn) => {
+      if (kind !== 'burst' && kind !== 'spark') return fn;
+      const share = kind === 'burst' ? 0.5 : 0.25;
+      return (spec, kit) => {
+        const c = ctxOf(spec); if (!c) return fn(spec, kit);
+        if (kind === 'burst' && !spec._own) {
+          // vfx.hitFeel plays the burst on the cast's first hit: the full impact plays once per castId, and it is the row's bespoke impact
+          if (c.burst > 0) return null;
+          c.burst++;
+        }
+        const prev = c.sub; c.sub = Math.max(1, Math.floor(c.cap.handles * share));
+        if (prev != null) c.sub = Math.min(c.sub, prev);
+        const pc = cur; cur = c;
+        try {
+          if (kind === 'burst' && !spec._own && c.row?.impact) { const res = c.row.impact(spec.pos, spec.r ?? 1, spec); if (res !== undefined) return res; }
+          return fn(spec, kit);
+        } finally { c.sub = prev ?? null; cur = pc; }
+      };
+    };
+    F.registerMotif = (el, kind, fn) => k.registerMotif(el, kind, F.sub(kind, fn));
     F.DEAD = DEAD;
     return F;
   }
+  // debug trace of handle use (tests: spells.looks.trace(castId) after setting spells.looks.tracing = true)
+  const traceKind = (s, kind) => { if (s && cur?.trace) s._tk = kind; return s; };
   function stampCast(s) { if (s && s.castId == null && cur) s.castId = cur.castId; return true; }
   function tickWindow(c) { if (c.cap.perSec && now() - c.win > 1) { c.win = now(); c.p = 0; } }
 
@@ -140,7 +180,7 @@ export function createLooks(S) {
     const c = {
       castId, skillId: o.skillId || null, el: o.el || def?.element || 'physical', tier, cap: CAPS[tier] || CAPS.A, style: o.style || styleNow(),
       arch: o.arch || def?.archetype || null, row: ROWS[o.skillId] || null, h: 0, p: 0, win: now(), burst: 0, refused: 0, flashed: false, smoke: 0,
-      t0: now(), data: {},
+      t0: now(), data: {}, trace: api.tracing ? [] : null,
     };
     issued.used = Math.max(issued.used, castId);
     if (castId) { byId.set(castId, c); if (byId.size > 64) byId.delete(byId.keys().next().value); }
@@ -233,7 +273,7 @@ export function createLooks(S) {
     if (c.burst > 0 && !o.force) return motif(el, 'spark', { pos: pos.clone ? pos.clone() : pos, n: 4, dir: o.dir });
     c.burst++;
     if (c.row?.impact) { const res = c.row.impact(pos, r, o); if (res !== undefined) return res; }
-    return motif(el, 'burst', { pos: pos.clone ? pos.clone() : pos, r, dir: o.dir, decal: o.decal });
+    return motif(el, 'burst', { pos: pos.clone ? pos.clone() : pos, r, dir: o.dir, decal: o.decal, _own: true });
   }
   /** Player target marker (replaces player-side telegraphs): dotted rotating ring in the element `light` step (R5). */
   function target(o = {}) {
@@ -325,14 +365,15 @@ export function createLooks(S) {
   /** Lane surfaces (ice road / tailwind / frost ground): linework stations along the strip + tiny prisms (ice). */
   function lane(el, pos, o, life) {
     const d = v1.set(o.dir.x, 0, o.dir.z).normalize().clone(), len = o.len || 12, w = o.width || 3, out = [];
-    const n = Math.max(2, Math.min(4, Math.round(len / 3.2)));
+    const n = Math.max(2, Math.min(el === 'ice' ? 3 : 4, Math.round(len / 3.2)));
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) / n, p = new THREE.Vector3(pos.x + d.x * len * t, 0, pos.z + d.z * len * t); p.y = S.height(p.x, p.z) + 0.05;
       if (el === 'ice') out.push(K.line({ shape: 'poly', sides: 6, el: 'ice', pos: p, plane: 'ground', r: w * 0.42, width: 0.04, life, tIn: 0.15 + i * 0.06, tOut: 0.4, alpha: 0.4, rot: Math.atan2(d.z, d.x) }));
       else out.push(K.line({ shape: el === 'wind' ? 'spiral' : 'dots', turns: 0.7, arms: 2, n: 14, el, pos: p, plane: 'ground', r: w * 0.42, width: 0.035, life, tIn: 0.15 + i * 0.06, tOut: 0.4, spin: el === 'wind' ? 2 : 0.5, alpha: 0.32 }));
     }
-    if (el === 'ice') for (let i = 0; i < 2; i++) { const t = (i + 1) / 3, p = new THREE.Vector3(pos.x + d.x * len * t + d.z * w * 0.5, 0, pos.z + d.z * len * t - d.x * w * 0.5); p.y = S.height(p.x, p.z);
-      out.push(K.mesh('ice.stub', { pos: p, scale: 0.55, life, tIn: 0.2 + i * 0.1, tOut: 0.4, erode: true })); }
+    // ice: small prisms every few metres along both lane edges (they stand above the grass; the hex linework lies in it)
+    if (el === 'ice') for (let i = 0; i < 3; i++) { const t = (i + 0.6) / 3.2, sd = i % 2 ? -0.5 : 0.5, p = new THREE.Vector3(pos.x + d.x * len * t + d.z * w * sd, 0, pos.z + d.z * len * t - d.x * w * sd); p.y = S.height(p.x, p.z);
+      out.push(K.mesh(i === 1 ? 'ice.prism' : 'ice.stub', { pos: p, scale: i === 1 ? 0.75 : 1.0, life, tIn: 0.2 + i * 0.1, tOut: 0.4, erode: true })); }
     return out.filter(Boolean);
   }
   const toArr = (x) => (x == null ? null : Array.isArray(x) ? x.filter(Boolean) : [x]);
@@ -390,7 +431,7 @@ export function createLooks(S) {
         // sky circles (rain / storm overhead) stay on the vfx pool
         const p = a[0], o = a[1] || {};
         if (p && S.props?.sigil && Math.abs(p.y - S.height(p.x, p.z)) < 2.5) {
-          S.props.sigil(p, { color: rampOf(o.element || c?.el || 'light').mid, radius: Math.min(8, o.r ?? 2), duration: o.dur ?? 1.2, spin: o.rotSpeed ?? 1.2 });
+          S.props.sigil(p, { color: (o.element || c?.el) === 'shadow' ? rampOf('shadow').light : rampOf(o.element || c?.el || 'light').mid, radius: Math.min(8, o.r ?? 2), duration: o.dur ?? 1.2, spin: o.rotSpeed ?? 1.2 });
           return null;
         }
         return call(name, stampOpts(a));
@@ -465,7 +506,7 @@ export function createLooks(S) {
     }
     const dur = o.duration ?? 0.3;
     if (dur <= 0.6 && el !== 'light') {   // short vines / ink lines / water ropes: a tapered ribbon (body in mid, crisp light edge)
-      return K.ribbon({ points: [from, from.clone().lerp(to, 0.5).setY((from.y + to.y) / 2 + 0.12), to], width: Math.min(0.3, Math.max(0.12, w)), taper: 0.6, life: Math.max(0.2, dur), el, alpha: 0.85 });
+      return K.ribbon({ points: [from, from.clone().lerp(to, 0.5).setY((from.y + to.y) / 2 + 0.12), to], width: Math.min(0.32, Math.max(0.12, w * 1.25)), taper: 0.6, life: Math.max(0.2, dur), el, alpha: 0.85 });
     }
     return K.bolt({ from, to, forks: 0, jagged: 0, width: Math.min(0.12, Math.max(0.05, w * 0.25)), halo: Math.min(0.6, w * 0.55 + 0.1), life: Math.max(0.1, dur), afterglow: 0.15, el });
   }
@@ -549,6 +590,7 @@ export function createLooks(S) {
   const api = {
     adopt, install, on, begin, end, within, swap, bind, stamp, motif, motifSource, castFx, body, impact, target, zone, fx, stopAll, toArr,
     crawl, crawlTick, nova, wave, strike, blink, aura, rowHook, spike, sigil, warmup,
+    tracing: false, trace: (id) => { const c = byId.get(id); return c ? { h: c.h, refused: c.refused, list: c.trace } : null; },
     lock, castLock, lookOf, tierOf: tierOfDef, skillOfSpell, takeIssued, CAPS, BESPOKE_IDS, MAGIC_ELEMENTS,
     get cur() { return cur; }, get kit() { return K; }, get rows() { return ROWS; }, get installed() { return installed; },
     S, game, DEAD, UP,

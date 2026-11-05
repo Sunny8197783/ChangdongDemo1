@@ -76,6 +76,7 @@ export function createProps(game) {
   const makeSigil = (color) => {
     const mat = sigilMat(color);
     mat.map = mat.map.clone(); mat.map.center.set(0.5, 0.5);
+    mat.alphaTest = 0.03;   // the disc is mostly empty texels: discard them (fill cost on integrated GPUs, coverage)
     const s = new THREE.Mesh(makeGroundDisc(10), mat);
     s.renderOrder = 4; s.frustumCulled = false; s.name = 'spells-sigil';
     return s;

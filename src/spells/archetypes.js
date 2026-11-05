@@ -501,10 +501,11 @@ export function createArchetypes(S, api, { summons, structures }) {
       if (frac <= p.execute && e.isBoss) return Object.assign({}, base, { amount: base.amount * (p.bossBelowMul || 1.5) });
       return base;
     } : base;
+    // v4 visuals first: the primary wave is built before the hits (the first hit plays the cast's one impact burst)
+    const look4 = !!L?.on();
+    if (look4) L.wave(o, dir, len, ang);
     api.cone(o, dir, len, ang, spec, { element: el });
-    // visuals
-    if (L?.on()) L.wave(o, dir, len, ang);
-    else if (el === 'wind' || el === 'water') {
+    if (look4) { /* v4 look built above */ } else if (el === 'wind' || el === 'water') {
       try { S.props.gust(o, dir, len, colOf(el)); } catch (_) { /* */ }
       fx('burst', o, { count: 40, shape: el === 'water' ? 'droplet' : 'leaf', color: [glint(colOf(el)), colOf(el)], dir, spread: ang / 360, speed: len * 2.2, size: 0.2, life: 0.45, drag: 2, gravity: el === 'water' ? 8 : 0 });
     } else {
@@ -541,9 +542,9 @@ export function createArchetypes(S, api, { summons, structures }) {
     let total = 0;
     const ring = (R, mul, delay) => S.later(delay, () => {
       const h = mul === 1 ? hit : Object.assign({}, hit, { amount: hit.amount * mul });
+      novaFx(el, c, R * rMul(ctx));   // primary ring before the hits (see cone)
       const n = api.aoe(c, R * rMul(ctx), h, { element: el });
       total += n;
-      novaFx(el, c, R * rMul(ctx));
       if (p.healPerHit && n > 0) heal(Math.min(p.healMax || 0.12, p.healPerHit * n), 'nova');
     });
     rings.forEach((R, i) => ring(R, 1, i * (p.every || 0.35)));
@@ -1083,7 +1084,8 @@ export function createArchetypes(S, api, { summons, structures }) {
     return true;
   };
   function vine(a, b, dur) {
-    fx('beam', a, b, { color: 0x6fcf4a, width: 0.14, duration: dur, jagged: 0.15, segments: 10 });
+    fx('beam', a, b, { color: 0x6fcf4a, width: 0.24, duration: dur, jagged: 0.15, segments: 10 });
+    if (L?.on()) fx('impact', b, { element: 'nature', scale: 0.8 });   // v4: the vine's anchor bloom (the cast's one impact)
     fx('burst', b, { count: 12, shape: 'leaf', color: [0xd8ff9a, 0x4f9e3a], speed: 3, spread: 1, size: 0.2, life: 0.5, gravity: 3 });
   }
 
@@ -1210,7 +1212,7 @@ export function createArchetypes(S, api, { summons, structures }) {
       const gp = e.object.position.clone(); gp.y = S.height(gp.x, gp.z);
       b.handles.push(fx('beam', gp, ec, { color: colOf(el, 'edge'), width: 0.14, duration: dur, jagged: 0.08, segments: 8 }));
       b.handles.push(fx('beam', anchor.clone(), ec.clone(), { color: colOf(el, 'mid'), width: 0.1, duration: Math.min(0.6, dur), jagged: 0.2, segments: 10 }));
-      fx('runeCircle', gp.clone(), { element: el, r: 1, dur, rotSpeed: 2 });
+      fx('runeCircle', gp.clone(), { element: el, r: 1.5, dur, rotSpeed: 2 });
     }
     binds.push(b);
     return true;

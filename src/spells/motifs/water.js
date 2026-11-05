@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { lathe, sheet, merge, groundAt, nearGround, qFwd, qYawTilt, rng, flatDir, arcPoints, v3, TAU, H } from './common.js';
 
 export const SHAPES = ['water.droplet', 'water.sheet', 'water.bead'];
+const UPV = v3(0, 1, 0);
 
 function shapes() {
   // teardrop along +Z (round head at +Z, point trailing to −Z), highlight via aGrad on the upper front
@@ -26,8 +27,10 @@ export function install(kit, game) {
   const M = {};
   /** Droplet crown: n droplets thrown up/out with gravity (seeded). */
   const crown = (p, n, castId, speed = 4) => {
+    // the crown body is accent particles (droplet frames, SP); only the two highest droplets are FM teardrops (each FM instance is a kit handle)
+    kit.spark(p, 'water', Math.min(12, n + 2), UPV, { castId, shape: 'droplet', gravity: 12, speed: speed * 1.1 });
     const out = [], rnd = rng((castId || 1) * 29 + 1);
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < Math.min(2, n); i++) {
       const a = (i / n) * TAU + rnd() * 0.3, up = 0.9 + rnd() * 0.5;
       const vel = v3(Math.cos(a) * speed * 0.55, up * speed, Math.sin(a) * speed * 0.55);
       out.push(kit.mesh('water.droplet', { pos: p, dir: vel, scale: 0.5 + rnd() * 0.3, life: 0.55, tIn: 0.04, tOut: 0.2, erode: true, castId, vel, gravity: 14, drag: 0.6 }));
