@@ -10,7 +10,8 @@
 //     V throws 루미엘의 창. The final strike → cinematic.playFinale(onDone) → bossDefeated {id:'nidhoggra', final:true}.
 // Locks: a counter hit strips poise×1, a reaction ×2, the gift (V) 50 % once per lock and never grants a shard buff.
 import * as THREE from 'three';
-import { createBoss } from '../bossbase.js';
+import { createBoss, finishBoss, bossAttack, bossHit, bossPunish, rhythm, cancelled, stopAttacks } from '../bossbase.js';
+import { attackSpec } from './codex.js';
 import { buildNidhoggra, layBody, poseLimb, SEGMENTS, SHARD_ELEMENTS } from './nidhoggra_model.js';
 import { CLASS_DEFS, CLASS_IDS, classElements } from '../../core/classes.js';
 import { elColor } from '../../core/elements.js';
@@ -88,7 +89,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     shardIdx: -1, shardT: 4, shardWin: 0, tide: { active: false, t: 0, done: false, retry: 0 }, heartOpen: false, heartT: 0,
     minionT: 12, minions: [], atk: null, atkT: 0, cd: 3, stagger: 0, tele: null, rodTele: [], clawL: null, breathDir: new THREE.Vector3(),
     gift: { ready: false, charges: 0, element: null, purpose: null, recharge: 0 }, headPos: new THREE.Vector3(), headLook: new THREE.Vector3(),
-    flyIn: 0, buffs: [],
+    flyIn: 0, buffs: [], h: null, safes: [], breathFrom: new THREE.Vector3(), rain: null,
   };
   const segPts = Array.from({ length: SEGMENTS }, () => new THREE.Vector3());
   const ctrl = Array.from({ length: 9 }, () => new THREE.Vector3());
@@ -272,7 +273,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
   }
 
   // ---------------------------------------------------------------- phases
-  function clearTele() { st.tele?.stop?.(); st.tele = null; for (const h of st.rodTele) h?.stop?.(); st.rodTele.length = 0; }
+  function clearTele() { stopAttacks(e); st.h = null; st.rain = null; st.atk = null; st.resolved = false; for (const z of st.safes) z?.stop?.(); st.safes.length = 0; st.tele?.stop?.(); st.tele = null; for (const h of st.rodTele) h?.stop?.(); st.rodTele.length = 0; }
   function onPhase(i) {
     clearTele(); st.atk = null;
     if (i === 1) {
@@ -314,7 +315,6 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     if (ok) {
       st.rods.done = true; st.stagger = 6;
       vfx.preset?.('rx_overload', st.headPos, { scale: 3 });
-      vfx.flashSprite?.(st.headPos, 0xe9d8ff, 10, 0.5, 1.6);
       e.shakeAt(st.headPos, 1.0);
     } else {
       st.rods.cd = 6;
@@ -390,29 +390,47 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     for (const L of model.limbs) { const d = L.shoulder.distanceToSquared(pp); if (d < bd) { bd = d; best = L; } }
     return best;
   }
+  /** Start attack kind now (claw / breath / rain) through game.tells. Returns the (first) handle or null. */
   function begin(kind) {
-    st.atk = kind; st.atkT = 0;
     const pp = ctx.playerPos;
-    game.events.emit('enemyAttack', { enemy: e, kind });
+    let h = null;
     if (kind === 'claw') {
       const L = st.clawL = nearestLimb();
       _v.set(pp.x, 0, pp.z); _d.set(_v.x - C0.x, 0, _v.z - C0.z); if (_d.length() > A.radius - 3) { _d.setLength(A.radius - 3); _v.set(C0.x + _d.x, 0, C0.z + _d.z); }
       _v.y = ctx.groundH(_v.x, _v.z);
       L.slamAt = (L.slamAt || new THREE.Vector3()).copy(_v);
-      st.tele = ctx.tele({ shape: 'circle', pos: _v, r: 5, dur: 1.2, color: 'void', parryable: true });
+      h = bossAttack(ctx, e, 'nidhoggra.claw', { shape: { pos: L.slamAt } });
     } else if (kind === 'breath') {
-      _v.copy(st.headPos); _v.y = ctx.groundH(_v.x, _v.z);
-      st.breathDir.set(pp.x - _v.x, 0, pp.z - _v.z).normalize();
-      st.tele = ctx.tele({ shape: 'cone', pos: _v, dir: st.breathDir, r: 26, angle: 70, dur: 1.5, color: 'void' });
-      ctx.audio('charge', { position: st.headPos, volume: 0.9, pitch: 0.5 });
+      st.breathFrom.copy(st.headPos); st.breathFrom.y = ctx.groundH(st.breathFrom.x, st.breathFrom.z);
+      st.breathDir.set(pp.x - st.breathFrom.x, 0, pp.z - st.breathFrom.z).normalize();
+      h = bossAttack(ctx, e, 'nidhoggra.breath', { shape: { pos: st.breathFrom, dir: st.breathDir } });
+      if (h) {
+        // root-pillar shadow wedges: the safe spots behind each pillar inside the breath cone
+        for (const z of st.safes) z?.stop?.();
+        st.safes.length = 0;
+        const T = game.tells;
+        if (T?.safe) for (const P of pillars) {
+          _w.set(P.pos.x - st.breathFrom.x, 0, P.pos.z - st.breathFrom.z);
+          const d = _w.length(); if (d < 2 || d > 26) continue;
+          _w.multiplyScalar(1 / d);
+          if (_w.dot(st.breathDir) < Math.cos(0.61)) continue;
+          const pos = new THREE.Vector3(P.pos.x + _w.x * 1.5, 0, P.pos.z + _w.z * 1.5); pos.y = ctx.groundH(pos.x, pos.z);
+          st.safes.push(T.safe({ shape: { kind: 'line', pos, dir: _w.clone(), len: 7.5, width: 5.6 }, dur: h.dur + 0.3 }));
+        }
+        ctx.audio('charge', { position: st.headPos, volume: 0.9, pitch: 0.5 });
+      }
     } else if (kind === 'rain') {
       st.rain = [];
-      for (let k = 0; k < 4; k++) {
+      const S = attackSpec('nidhoggra.rain');
+      for (let k = 0; k < S.n; k++) {
         const a = k * 1.57 + rand(0, 1), r = k === 0 ? 0 : rand(3, 7);
         const p = new THREE.Vector3(pp.x + Math.sin(a) * r, 0, pp.z + Math.cos(a) * r); p.y = ctx.groundH(p.x, p.z);
-        st.rain.push({ p, h: ctx.tele({ shape: 'circle', pos: p, r: 3, dur: 1.4 + k * 0.2, color: 'void' }), t: -k * 0.2, done: false });
+        const hh = bossAttack(ctx, e, 'nidhoggra.rain', { windup: S.windup + k * 0.2, shape: { pos: p }, hold: k === 0 });
+        if (hh) { st.rain.push({ p, h: hh }); if (!h) h = hh; }
       }
     }
+    if (h) { st.atk = kind; st.atkT = 0; st.h = h; st.resolved = false; }
+    return h;
   }
   function pillarCovers(from, to) {
     // stepping behind a root pillar blocks the breath
@@ -425,22 +443,21 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     }
     return false;
   }
-  function resolveAttack() {
-    const pe = game.player?.entity, rp = ctx.realPlayerPos;
+  function resolveAttack(h) {
     if (st.atk === 'claw') {
       const L = st.clawL;
-      ctx.slam(L.slamAt, 5, { amount: D.claw, element: 'void', knockback: 14, launch: 6 }, e, 2.4);
-      st.dip = 2.6;
-      vfx.groundDecal?.('violet', L.slamAt, 5, 8);
+      const r = bossHit(ctx, e, h, { attack: 'nidhoggra.claw', amount: D.claw, element: 'shadow', knockback: 14, launch: 6, from: L.slamAt });
+      vfx.groundDecal?.('violet', L.slamAt, 4, 6, { owner: 'enemy' });
+      vfx.burst(L.slamAt, { owner: 'enemy', count: 10, color: [0x4c4666, 0x262034], speed: 4, spread: 0.4, dir: _d.set(0, 1, 0), size: 1.0, sizeEnd: 2.0, life: 0.8, shape: 'smoke', additive: false, drag: 2 });
       e.shakeAt(L.slamAt, 1.1);
+      // the head sags onto the rim: 2.6 s after a parry, 1.2 s after a whiff (non-parry classes get a window too)
+      const S = attackSpec('nidhoggra.claw');
+      const dur = r?.parried ? S.punishParry : !r || r.damage === 0 || r.blocked ? S.punishDur : 0;
+      if (dur > 0) { st.dip = dur; bossPunish(ctx, e, dur, S.punishMul); }
     } else if (st.atk === 'breath') {
-      _v.copy(st.headPos); _v.y = ctx.groundH(_v.x, _v.z);
-      for (let k = 1; k <= 8; k++) { _w.copy(_v).addScaledVector(st.breathDir, k * 3); _w.y += 1.5; vfx.burst(_w, { count: 10, color: [0xb14bff, 0x2a1440], speed: 4, spread: 0.6, dir: st.breathDir, size: 0.9, sizeEnd: 2.0, life: 0.9, shape: 'smoke', additive: k % 2 === 0, drag: 1.5 }); }
-      if (pe && pe.alive !== false) {
-        _d.set(rp.x - _v.x, 0, rp.z - _v.z); const dd = _d.length(); _d.normalize();
-        const inCone = dd < 26 && _d.dot(st.breathDir) > Math.cos(35 * Math.PI / 180);
-        if (inCone && !pillarCovers(_v, rp)) game.combat.dealDamage(pe, { amount: D.breath, element: 'void', source: e, point: rp.clone().setY(rp.y + 1), direction: st.breathDir.clone(), knockback: 10, heavy: true, status: { blight: 3 } });
-      }
+      _v.copy(st.breathFrom);
+      for (let k = 2; k <= 8; k += 2) { _w.copy(_v).addScaledVector(st.breathDir, k * 3); _w.y += 1.5; vfx.burst(_w, { owner: 'enemy', count: 6, color: [0x5a3a8a, 0x1e1428], speed: 4, spread: 0.6, dir: st.breathDir, size: 0.9, sizeEnd: 1.8, life: 0.8, shape: 'smoke', additive: false, drag: 1.5 }); }
+      if (!pillarCovers(_v, ctx.playerPos)) bossHit(ctx, e, h, { attack: 'nidhoggra.breath', amount: D.breath, element: 'shadow', knockback: 10, heavy: true, status: { blight: 3 }, from: st.breathFrom });
     }
   }
 
@@ -453,8 +470,9 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     if (G.rechargeFull > 0) { G.rechargeFull -= dt; if (G.rechargeFull <= 0 && G.purpose === 'spear') { G.charges = D.spear.charges; game.events.emit('giftReady', { element: 'light', purpose: 'spear' }); } }
     // rain resolution runs even between attacks
     if (st.rain) for (const r of st.rain) {
-      if (r.done) continue; r.t += dt;
-      if (r.t >= 1.4) { r.done = true; vfx.preset?.('explosion_shadow', _v.copy(r.p).setY(r.p.y + 0.5), { scale: 1.2 }); const pe = game.player?.entity, rp = ctx.realPlayerPos; if (pe && pe.alive !== false && Math.hypot(rp.x - r.p.x, rp.z - r.p.z) < 3.4) game.combat.dealDamage(pe, { amount: D.rain, element: 'void', source: e, point: rp.clone().setY(rp.y + 1), knockback: 6, launch: 4 }); }
+      if (r.done) continue;
+      if (r.h.consumeStrike()) { r.done = true; vfx.preset?.('explosion_shadow', _v.copy(r.p).setY(r.p.y + 0.5), { owner: 'enemy', scale: 0.8 }); bossHit(ctx, e, r.h, { attack: 'nidhoggra.rain', amount: D.rain, element: 'shadow', knockback: 6, launch: 4, from: r.p }); }
+      else if (cancelled(r.h)) r.done = true;
     }
     if (e.transitioning || e.defeated) return;
     if (!e.playerInArena(30)) return;
@@ -509,28 +527,29 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     // attacks
     if (st.atk) {
       st.atkT += dt * sm;
-      const T = st.atk === 'claw' ? 1.2 : st.atk === 'breath' ? 1.5 : 1.8;
-      if (!st.resolved && st.atkT >= T) { st.resolved = true; st.tele = null; resolveAttack(); }
-      if (st.atkT >= T + 1.2) { st.atk = null; st.resolved = false; st.cd = rand(2.0, 3.2); }
+      const h = st.h;
+      if (!st.resolved && h) {
+        if (st.atk === 'rain') { if (st.rain.every((r) => r.done)) { st.resolved = true; st.h = null; st.atkT = 0; } }
+        else if (h.consumeStrike()) { st.resolved = true; st.h = null; st.atkT = 0; resolveAttack(h); }
+        else if (cancelled(h)) { st.resolved = true; st.h = null; st.atkT = 0; }
+      }
+      if (st.resolved && st.atkT >= Math.max(1.2, st.dip > 0 ? st.dip : 0)) { st.atk = null; st.resolved = false; st.cd = rand(2.0, 3.2); }
       return;
     }
     st.cd -= dt * sm;
     if (st.cd <= 0) {
       const d = Math.hypot(ctx.playerPos.x - st.headPos.x, ctx.playerPos.z - st.headPos.z);
       const r = Math.random();
-      if (e.phase === 0) begin(d < 22 && r < 0.55 ? 'claw' : 'breath');
-      else if (e.phase === 1) begin(r < 0.5 ? 'rain' : 'breath');
-      else begin(st.heartOpen ? 'rain' : r < 0.5 ? 'breath' : 'claw');
+      const k = e.phase === 0 ? (d < 22 && r < 0.55 ? 'claw' : 'breath') : e.phase === 1 ? (r < 0.5 ? 'rain' : 'breath') : (st.heartOpen ? 'rain' : r < 0.5 ? 'breath' : 'claw');
+      if (!begin(k)) st.cd = 0.6;
     }
   };
 
   // parry the claw → big stagger (+15 break from combat's blocked listener)
   e.onParried = () => {
-    if (st.atk !== 'claw' && !st.rods.active) return;
+    if (!st.rods.active) return;          // the claw parry is resolved at its strike (head sag 2.6 s)
     st.atk = null; st.resolved = false; st.tele?.stop?.(); st.tele = null;
     st.stagger = Math.max(st.stagger, 2.2);
-    try { game.hitstop?.(0.12); } catch (_) { /* */ }
-    vfx.flashSprite?.(st.headPos, 0xffe08a, 8, 0.25, 1.4);
   };
 
   // ---------------------------------------------------------------- body + limbs (render rate)
@@ -548,7 +567,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       H.copy(C0).addScaledVector(fwd, -27).setY(top + 10 + Math.sin(t * 0.7) * 0.8);
       if (st.atk === 'breath' || st.rods.active) H.y += 2;
       // after a claw slam / a parry / the rods stagger the head sags onto the rim: the melee window
-      if (st.stagger > 0 || st.dip > 0) { H.copy(C0).addScaledVector(fwd, -22).setY(top + 4.2); }
+      if (st.stagger > 0 || st.dip > 0 || e.isBroken?.()) { H.copy(C0).addScaledVector(fwd, -22).setY(top + 4.2); }
     } else if (e.phase === 1) {
       H.copy(C0).setY(top + 22 + Math.sin(t * 0.5) * 1.2);
       if (st.tide.active) { H.copy(C0).addScaledVector(fwd, -8).setY(top + 4); }
@@ -658,6 +677,16 @@ export function createNidhoggra(ctx, arena, opts = {}) {
   e.partList.length = 0;
   for (const x of partsFor(0)) e.partList.push(x);
   e.st = st; e.shards = shards; e.heartPart = heart; e.plate = plate; e.rodsList = rods; e.lightRod = lightRod;
+  Object.assign(e.model, { tellAnchors: model.tellAnchors, rimSource: model.rimSource, flashUniform: model.flashUniform, features: model.features, proxy: model.proxy, lod: model.lod, meshes: model.meshes, bones: model.bones, isV4: true });
+  finishBoss(ctx, e, { type: 'nidhoggra', cameraHint: { dist: 1.5, height: 1.4 }, preview: () => buildNidhoggra().root, noDistanceRate: true, sightRange: 60,
+    debugAttack: (id) => {
+      const k = String(id).replace(/^nidhoggra\./, '');
+      if (k === 'rods') { clearTele(); st.rods.done = false; st.rods.active = false; startRods(); return null; }
+      if (k === 'tide') { clearTele(); startTide(); return null; }
+      clearTele(); st.stagger = 0;
+      return begin(k);
+    },
+    onBroken: () => { st.atk = null; st.h = null; st.resolved = false; st.dip = 3.5; } });
   return e;
 }
 createNidhoggra.prewarm = () => { if (!spare) spare = buildNidhoggra(); return spare.root; };
