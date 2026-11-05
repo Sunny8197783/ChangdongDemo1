@@ -74,7 +74,7 @@ export const AWAKENED = {
       const pt = clampPoint(S, aim, 55);
       const fd = flatDir(S.aimDirFlat || aim.dir);
       S.props.sigil(pt, { color: C.fire, radius: 12, duration: 2.4, spin: 1.2 });
-      S.props.sigil(pt, { color: 0xffd080, radius: 6, duration: 2.0, spin: -2 });
+      S.props.sigil(pt, { color: 0xffa53a /* fire light step */, radius: 6, duration: 2.0, spin: -2 });
       S.vfx('decal', pt, { color: 0xff6a1f, radius: 12, duration: 2.2, opacity: 0.45 });
       S.vfx('screenFlash', 0xff8040, 0.25, 0.6);
       S.sfx('charge', { position: pt, pitch: 0.5 });

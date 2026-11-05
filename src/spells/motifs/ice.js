@@ -35,7 +35,7 @@ export function install(kit, game) {
   };
 
   M.cast = (s) => H(
-    kit.line({ shape: 'glyph', glyph: 'ice', el: 'ice', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.4), width: 0.04, life: s.life ?? 0.24, tIn: 0.08, tOut: 0.12, spin: 0.9, castId: s.castId, color: R.light, color2: R.mid }),
+    kit.line({ shape: 'glyph', glyph: 'ice', el: 'ice', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.4), width: 0.04, life: s.life ?? 0.24, tIn: 0.08, tOut: 0.12, spin: 0.9, castId: s.castId, color: R.mid, color2: R.light }),
     kit.line({ shape: 'star', points: 6, r2: 0.18, el: 'ice', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.7, (s.r ?? 0.4) * 1.25), width: 0.018, life: s.life ?? 0.24, tIn: 0.1, tOut: 0.1, spin: -0.6, castId: s.castId, alpha: 0.75 }),
   );
   M.trail = (s) => {
@@ -48,7 +48,7 @@ export function install(kit, game) {
   M.burst = (s) => {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos, 0) : null, out = [];
     const rot = ((s.castId || 0) * 0.61) % TAU;
-    out.push(kit.line({ shape: 'star', points: 6, r2: 0.16, el: 'ice', pos: s.pos, plane: 'billboard', r: r * 0.55, width: 0.04, life: 0.1, tIn: 0, tOut: 0.05, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot }));
+    out.push(kit.line({ shape: 'star', points: 6, r2: 0.16, el: 'ice', pos: s.pos, plane: 'billboard', r: r * 0.55, width: 0.04, life: 0.1, tIn: 0, tOut: 0.05, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot }));
     out.push(kit.line({ shape: 'poly', sides: 6, el: 'ice', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.9, width: 0.03, life: 0.4, tIn: 0.0, tOut: 0.25, scaleIn: 'expand', castId: s.castId, rot }));
     if (gp) {
       const n = s.prisms ?? 6;

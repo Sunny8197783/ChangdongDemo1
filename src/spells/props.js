@@ -81,7 +81,7 @@ export function createProps(game) {
     return s;
   };
   // v4: the rune circles are pre-built (0 new materials / textures per cast; adopted by spells.js like every spell object)
-  for (let i = 0; i < 6; i++) sigilPool.push(makeSigil(GLINT));
+  for (let i = 0; i < 10; i++) sigilPool.push(makeSigil(GLINT));
   function sigil(pos, { color = GLINT, radius = 3, duration = 1.2, spin = 1.2, grow = 0.2 } = {}) {
     let s = sigilPool.pop();
     if (!s) { s = makeSigil(color); onNewSigil?.(s); }

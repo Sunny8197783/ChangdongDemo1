@@ -79,26 +79,41 @@ function installMG() {
   const fxOwner = (o) => o.userData?.owner === 'player' && o !== g.player?.object;
   MG.measure = (id, { win = 1.4, samples = 6, frames = false, keepMask = false, fn = null, covCeil = 1e9 } = {}) => {
     const every = Math.max(2, Math.round(win * 60 / samples));
-    MG.clear();
+    MG.setup(); MG.clear();   // same spot, camera and dummy for every cast (blinks / dashes move the player)
     const aim = MG.aim();
     g.debug.newMaterials();
     const t0 = performance.now();
     let castId = 0;
     if (fn) castId = fn(aim); else { g.debug.cast(id, { aim, charge: 1 }); castId = g.skills.lastCastId; }
     const castMs = performance.now() - t0;
-    const n = Math.round(win * 60 / every);
+    // sampling (percast method: peak over the cast window): a regular grid of `samples` diffs plus adaptive diffs whenever the
+    // per-frame player-FX coverage estimator (CPU, every frame) rises above the last diffed level — so short impact frames are caught
+    const N = Math.round(win * 60), maxExtra = samples + 4;
     const S = [];
-    let peak = null, peakD = null, shots = [], fragCalls = 0, fragUsed = false;
-    for (let k = 0; k < n; k++) {
-      for (let j = 0; j < every; j++) { PT.keepAlive(); g.step(1, 1 / 60, false); }
-      const d = MG.diff();
-      // coverage: the runtime player-FX estimator of this frame (only this cast is alive after MG.clear(); conservative ≈ 1.5–2×)
+    let peak = null, peakD = null, shots = [], fragCalls = 0, fragUsed = false, covRatio = 1, covChecked = 0, extra = 0, lastF = 0, diffCv = 0, covMax = 0, reg = 0;
+    for (let f = 1; f <= N; f++) {
+      PT.keepAlive(); g.step(1, 1 / 60, false);
       let cv = g.vfx.debug.coverage?.()?.screens ?? 0;
-      if (cv > covCeil && fragCalls < 3) { fragCalls++; try { const fr = PT.fragments({ owner: fxOwner }); cv = Math.min(cv, fr.scene); fragUsed = true; } catch (_) { /* */ } }
-      const rec = { t: +((k + 1) * every / 60).toFixed(3), changed: d.changed, white: d.newWhite, sat: d.sat, rise: d.lumaRise, cov: cv };
+      const regular = f % every === 0;
+      const rising = !regular && extra < maxExtra && f - lastF >= 3 && cv * covRatio > 0.001 && cv * covRatio > diffCv * 1.25;
+      // coverage truth: the counting override (PT.fragments) at every new estimator maximum above the ceiling (≤ 6 per cast); other frames
+      // scale the estimator by the latest measured fragments / estimate ratio (the estimator counts whole quads, the override shaded fragments)
+      const est = cv;
+      cv = est * covRatio;
+      if (cv > covCeil && fragCalls < 6 && est > covChecked * 1.05) {
+        fragCalls++; covChecked = est;
+        try { const fr = PT.fragments({ owner: fxOwner }); covRatio = Math.min(1, fr.scene / Math.max(1e-6, est)); cv = Math.min(est, fr.scene); fragUsed = true; } catch (_) { /* */ }
+      }
+      if (cv > covMax) covMax = cv;
+      if (!regular && !rising) continue;
+      if (rising) extra++;
+      const d = MG.diff();
+      diffCv = Math.max(diffCv * 0.85, cv);
+      const rec = { t: +(f / 60).toFixed(3), dt: (f - lastF) / 60, changed: d.changed, white: d.newWhite, sat: d.sat, rise: d.lumaRise, cov: cv };
+      lastF = f;
       S.push(rec);
       if (!peak || d.changed > peak.changed) { peak = rec; peakD = d; }
-      if (frames && (k === 1 || k === Math.round(n * 0.3) || k === Math.round(n * 0.75))) shots.push(PT.pixels.dataURL(false));
+      if (regular) { reg++; if (frames && (reg === 2 || reg === Math.round(samples * 0.3) + 1 || reg === Math.round(samples * 0.75) + 1)) shots.push(PT.pixels.dataURL(false)); }
     }
     let crisp = 0;
     if (peakD && peakD.changed > 0) crisp = PT.pixels.sobel({ mask: peakD.mask, w: peakD.w, h: peakD.h }, peakD.on);
@@ -106,9 +121,9 @@ function installMG() {
     const out = {
       id, castId, castMs: +castMs.toFixed(2), peakT: peak?.t ?? 0,
       detail: peak?.changed ?? 0, sat: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
-      white: +Math.max(0, ...S.map((s) => s.white)).toFixed(4), whiteOver5: S.filter((s) => s.white > 0.05).length * every / 60, whiteOver6: S.filter((s) => s.white > 0.06).length * every / 60,
+      white: +Math.max(0, ...S.map((s) => s.white)).toFixed(4), whiteOver5: S.reduce((t, s) => t + (s.white > 0.05 ? s.dt : 0), 0), whiteOver6: S.reduce((t, s) => t + (s.white > 0.06 ? s.dt : 0), 0),
       rise: +Math.max(0, ...S.map((s) => s.rise)).toFixed(2),
-      cov: +Math.max(0, ...S.map((s) => s.cov)).toFixed(4), covFrag: fragUsed, covByCast: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: bc.handles ?? 0, generic: !!bc.generic,
+      cov: +covMax.toFixed(4), diffs: S.length, covFrag: fragUsed, covByCast: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: bc.handles ?? 0, generic: !!bc.generic,
       newMats: g.debug.newMaterials(), look: id ? g.debug.lookOf(id, 'caster') : null, path: g.skills.lastPath,
     };
     if (frames) out.frames = shots;
@@ -159,6 +174,14 @@ module.exports = async function (PT) {
     PT.check(`lookOf: every registry skill declares ≥ 'archetype' (${ids.length} ids)`, bad.length === 0, bad);
     const nb = bespoke.filter((id) => levels[id] !== 'bespoke');
     PT.check(`lookOf: the bespoke set (${bespoke.length}) declares 'bespoke'`, nb.length === 0, nb);
+    // the bespoke set is derived data: every *.basic / *.charged / *.ult of the registry and the starter_<cls> loadouts of the caster classes
+    const need = ids.filter((id) => /\.(basic|charged|ult)$/.test(id));
+    for (const cls of ['mage', 'ranger', 'spiritcaller']) {
+      const pr = g.skills.PRESETS?.['starter_' + cls];
+      for (const nid of Object.keys(pr?.ranks || {})) for (const sid of (g.skills.node(nid)?.grants || [])) if (g.skills.def(sid)) need.push(sid);
+    }
+    const notIn = [...new Set(need)].filter((id) => !bespoke.includes(id));
+    PT.check(`bespoke set covers every registry basic / charged / ult and the caster starter loadouts (${new Set(need).size})`, notIn.length === 0, notIn);
     PT.note(`motif sources: ${['earth', 'nature', 'light', 'shadow'].map((e) => e + '=' + L.motifSource(e)).join(' ')}`);
     return { ids, levels, el: Object.fromEntries(ids.map((id) => [id, g.skills.def(id)?.element || g.spells.element])), arch: Object.fromEntries(ids.map((id) => [id, g.skills.def(id)?.archetype || null])), tier: Object.fromEntries(ids.map((id) => [id, L.tierOf(g.skills.def(id), id)])) };
   }, BESPOKE);
@@ -167,10 +190,12 @@ module.exports = async function (PT) {
   const perArch = {};
   for (const id of reg.ids) { const a = reg.arch[id]; if (a && !perArch[a]) perArch[a] = id; }
   for (const id of BESPOKE) { const a = reg.arch[id]; if (a) perArch[a] = perArch[a] && BESPOKE.includes(perArch[a]) ? perArch[a] : id; }
-  const set = full ? reg.ids.slice() : [...new Set([...BESPOKE, ...Object.values(perArch)])];
+  // developer iteration only: MG_IDS=a,b limits the measured set, MG_PARTS=a,c,d,e,f,g limits the parts (default: everything)
+  const parts = process.env.MG_PARTS ? new Set(process.env.MG_PARTS.split(',')) : null; const want = (p) => !parts || parts.has(p);
+  const set = process.env.MG_IDS ? process.env.MG_IDS.split(',') : full ? reg.ids.slice() : [...new Set([...BESPOKE, ...Object.values(perArch)])];
 
   // MG1.a first casts on the fresh page (every measured skill's first cast; no rendering before the cast)
-  const first = await pg.run('MG1.a first cast', (ids) => {
+  const first = !want('a') ? null : await pg.run('MG1.a first cast', (ids) => {
     const g = window.game, MG = window.MG; MG.setup();
     g.renderNow(); g.debug.firstDraws();
     const out = [];
@@ -194,7 +219,7 @@ module.exports = async function (PT) {
   }
 
   // MG1.g castLock
-  await pg.run('MG1.g castLock', () => {
+  if (want('g')) await pg.run('MG1.g castLock', () => {
     const g = window.game, MG = window.MG, Sp = g.spells;
     MG.clear(); g.step(30, 1 / 60, false);
     PT.check('castLock = 0 when free', Sp.castLock === 0, Sp.castLock);
@@ -212,7 +237,7 @@ module.exports = async function (PT) {
   const res = await pg.run('MG1.c setup', () => window.MG.setup());
   const rows = [];
   const tstart = Date.now();
-  for (const id of set) {
+  for (const id of want('c') ? set : []) {
     const tier = reg.tier[id] || 'A';
     const r = await pg.eval(({ id, win, samples, frames, covCeil }) => window.MG.measure(id, { win, samples, frames, covCeil }), { id, win: WINDOW[tier], samples: SAMPLES[tier], covCeil: (TIER[tier] || TIER.A).cov, frames: sheets && (BESPOKE.includes(id) || Object.values(perArch).includes(id)) });
     r.tier = tier; rows.push(r);
@@ -252,7 +277,7 @@ module.exports = async function (PT) {
   try { fs.mkdirSync(path.join(PT.OUT, 'magic'), { recursive: true }); fs.writeFileSync(path.join(PT.OUT, 'magic', 'mg1_rows.json'), JSON.stringify(rows, null, 1)); } catch (_) { /* */ }
 
   // ================================================================== MG1.d materials: second round without enemies
-  await pg.run('MG1.d materials', (ids) => {
+  if (want('d')) await pg.run('MG1.d materials', (ids) => {
     const g = window.game, MG = window.MG;
     for (const e of PT.enemies()) { e.alive = false; try { g.combat.unregister?.(e); } catch (_) { /* */ } }
     MG.dummy = null;
@@ -262,7 +287,7 @@ module.exports = async function (PT) {
     PT.check(`0 new materials per cast after the first (${ids.length} casts, no enemies)`, n === 0, n);
   }, set);
   // ================================================================== MG1.e stacked rotation
-  await pg.run('MG1.e stacked 7-cast rotation', () => {
+  if (want('e')) await pg.run('MG1.e stacked 7-cast rotation', () => {
     const g = window.game, MG = window.MG;
     MG.setup(); MG.clear();
     const ids = ['fire.basic', 'fire.charged', 'fire.cyclone', 'ice.pillar', 'fire.phoenix', 'lightning.mine', 'fire.ult'];
@@ -277,7 +302,7 @@ module.exports = async function (PT) {
   });
 
   // ================================================================== MG1.f element silhouettes per archetype (impact-frame IoU)
-  const ARCH = full ? Object.keys(perArch) : ['projectile', 'nova', 'cone', 'zone'];
+  const ARCH = !want('f') ? [] : process.env.MG_ARCH ? process.env.MG_ARCH.split(',') : full ? Object.keys(perArch) : ['projectile', 'nova', 'cone', 'zone'];
   const iouFails = [];
   for (const name of ARCH) {
     const rep = perArch[name]; if (!rep) continue;
@@ -334,3 +359,4 @@ module.exports = async function (PT) {
   PT.skip('MG1 telegraph retention ≥ 95 % (R-mage / R-boss)', 'verified at integration (I) with the real tells and both families');
   PT.note(`magic section ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 };
+module.exports.installMG = installMG;

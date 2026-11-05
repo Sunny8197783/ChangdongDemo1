@@ -51,7 +51,7 @@ export function install(kit, game) {
 
   /** cast: 3-petal flame glyph at the tip + counter-rotating dotted ring (0.2–0.3 s). */
   M.cast = (s) => H(
-    kit.line({ shape: 'glyph', glyph: 'fire', el: 'fire', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.4), width: 0.05, life: s.life ?? 0.26, tIn: 0.08, tOut: 0.12, spin: 1.4, castId: s.castId, color: R.light, color2: R.mid }),
+    kit.line({ shape: 'glyph', glyph: 'fire', el: 'fire', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.4), width: 0.05, life: s.life ?? 0.26, tIn: 0.08, tOut: 0.12, spin: 1.4, castId: s.castId, color: R.mid, color2: R.light }),
     kit.line({ shape: 'dots', n: 10, el: 'fire', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.75, (s.r ?? 0.4) * 1.3), width: 0.022, life: s.life ?? 0.26, tIn: 0.1, tOut: 0.12, spin: -2.2, castId: s.castId, alpha: 0.7 }),
   );
   /** trail: soft toon flame body (swept tongues, thin hi core) + tapered ribbon. setDir is driven by the caller. */
@@ -66,7 +66,7 @@ export function install(kit, game) {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null;
     const base = gp || s.pos, out = [];
     const rnd = rng((s.castId || 1) * 31 + 3);
-    out.push(kit.line({ shape: 'crescent', el: 'fire', pos: s.pos, plane: 'billboard', r: r * 0.8, width: 0.05, life: 0.1, tIn: 0.0, tOut: 0.06, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot: rnd() * TAU }));
+    out.push(kit.line({ shape: 'crescent', el: 'fire', pos: s.pos, plane: 'billboard', r: r * 0.8, width: 0.05, life: 0.1, tIn: 0.0, tOut: 0.06, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot: rnd() * TAU }));
     out.push(kit.line({ shape: 'ring', el: 'fire', pos: base, plane: gp ? 'ground' : 'billboard', r: r * 1.1, width: 0.035, life: 0.32, tIn: 0.0, tOut: 0.22, scaleIn: 'expand', castId: s.castId, alpha: 0.8 }));
     const n = s.petals ?? 8, y0 = rnd() * TAU;
     for (let i = 0; i < n; i++) {

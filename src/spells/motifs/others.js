@@ -33,7 +33,7 @@ export function createFallbacks(kit, game) {
   const shard = (el, o) => kit.mesh('physical.shard', { el, ...o });
   const F = {};
   const glyphCast = (el, glyph, extra) => (s) => H(
-    kit.line({ shape: 'glyph', glyph, el, pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.42), width: 0.04, life: s.life ?? 0.25, tIn: 0.08, tOut: 0.12, spin: 1, castId: s.castId, color: kit.ramp(el).light, color2: kit.ramp(el).mid }),
+    kit.line({ shape: 'glyph', glyph, el, pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.42), width: 0.04, life: s.life ?? 0.25, tIn: 0.08, tOut: 0.12, spin: 1, castId: s.castId, color: kit.ramp(el).mid, color2: kit.ramp(el).light }),
     kit.line({ ...extra, el, pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.75, (s.r ?? 0.42) * 1.3), life: s.life ?? 0.25, tIn: 0.1, tOut: 0.1, castId: s.castId, alpha: 0.7 }),
   );
   const zoneOf = (el, a, b) => (s) => {
@@ -112,7 +112,7 @@ export function createFallbacks(kit, game) {
     burst: (s) => {
       const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, R = kit.ramp('light');
       kit.spark(s.pos, 'light', Math.min(6, s.n ?? 4), null, { castId: s.castId, shape: 'mote', gravity: -0.5, speed: 1.5, life: 0.6 });
-      return H(kit.line({ shape: 'star', points: 4, r2: 0.1, el: 'light', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.03, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6 }),
+      return H(kit.line({ shape: 'star', points: 4, r2: 0.1, el: 'light', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.03, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6 }),
         kit.line({ shape: 'ticks', n: 16, r2: 0.84, el: 'light', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.05, width: 0.02, life: 0.45, tIn: 0.05, tOut: 0.25, scaleIn: 'expand', castId: s.castId }),
         kit.line({ shape: 'ring', el: 'light', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.85, width: 0.025, life: 0.4, tIn: 0.04, tOut: 0.25, scaleIn: 'expand', castId: s.castId }));
     },

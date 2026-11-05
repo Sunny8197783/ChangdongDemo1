@@ -203,10 +203,11 @@ export function sigilTexture() {
   });
 }
 
-/** Additive textured material for ground sigils. */
+/** Textured material for ground sigils. v4 (R1/R6): normal-blended in the element `mid` step — additive violet / blue over green grass
+ *  washed out to grey (lightning.ult sat 0.24); the canvas carries the line alpha, so the same crisp rune circle reads saturated. */
 export function sigilMat(color) {
   return new THREE.MeshBasicMaterial({
-    map: sigilTexture(), color, transparent: true, blending: THREE.AdditiveBlending,
+    map: sigilTexture(), color, transparent: true, blending: THREE.NormalBlending,
     depthWrite: false, opacity: 1, side: THREE.DoubleSide, toneMapped: false, fog: false,
   });
 }

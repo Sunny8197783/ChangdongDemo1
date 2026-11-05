@@ -106,7 +106,19 @@ export function createLooks(S) {
     F.line = (s) => (can(s) ? stampCast(s) && k.line(mid(s)) : DEAD);
     F.mesh = (n, s) => (can(s) ? stampCast(s) && k.mesh(n, s) : DEAD);
     F.ribbon = (s) => { if (!can(s)) return DEAD; stampCast(s); s.tailSat = Math.max(0.75, s.tailSat ?? 0.85); return k.ribbon(s); };
-    F.bolt = (s) => { if (!can(s)) return DEAD; stampCast(s); if (s.core == null && !s.owner) s.core = k.ramp(s.el || 'lightning').light; return k.bolt(s); };
+    // bolts: `light` core inside a `mid` halo (the kit's halo is always the `light` step, saturation ≈ 0.39 for lightning — requests/magic.md vfx (2));
+    // the halo colour lives on the bolt record and is read on every write, so it is retinted once here (feature-detected, no-op if the kit changes)
+    F.bolt = (s) => {
+      if (!can(s)) return DEAD; stampCast(s);
+      const R = k.ramp(s.el || 'lightning');
+      // the kit halo is a soft premultiplied falloff (adds colour over the ground without covering it): keep it narrow, so the bolt reads
+      // as a crisp saturated `mid` zig-zag; the 2–3-frame strike itself is the bright moment
+      if (s.core == null && !s.owner) s.core = R.mid;
+      if (!s.owner) s.halo = Math.min(s.halo ?? 0.3, Math.max(0.12, (s.width ?? 0.08) * 2.2));
+      const h = k.bolt(s);
+      if (!s.owner && s.halo !== 0 && h?._r?.cLight?.isColor) h._r.cLight.copy(R.mid);
+      return h;
+    };
     F.decal = (kind, p, r, life, o = {}) => { if (!can(o)) return DEAD; if (o.castId == null && cur) o.castId = cur.castId; if (o.color == null && o.el) o.color = k.ramp(o.el).mid; return k.decal(kind, p, r, life, o); };
     F.spark = (p, el, n, dir, o = {}) => {
       const c = ctxOf(o);
@@ -371,6 +383,16 @@ export function createLooks(S) {
         const n = String(a[0] || '');
         const m = /^(impact|explosion)_(\w+)$/.exec(n);
         if (m) return impact(a[1], { el: m[2], scale: a[2]?.scale ?? 1, big: m[1] === 'explosion' });
+        return call(name, stampOpts(a));
+      }
+      case 'runeCircle': {
+        // ground rune circles → the spells sigil (normal-blended, element `mid`; the vfx rune pool is additive and reads grey on grass);
+        // sky circles (rain / storm overhead) stay on the vfx pool
+        const p = a[0], o = a[1] || {};
+        if (p && S.props?.sigil && Math.abs(p.y - S.height(p.x, p.z)) < 2.5) {
+          S.props.sigil(p, { color: rampOf(o.element || c?.el || 'light').mid, radius: Math.min(8, o.r ?? 2), duration: o.dur ?? 1.2, spin: o.rotSpeed ?? 1.2 });
+          return null;
+        }
         return call(name, stampOpts(a));
       }
       case 'beam': return beam(a[0], a[1], a[2] || {});

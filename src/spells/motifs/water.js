@@ -36,7 +36,7 @@ export function install(kit, game) {
   };
 
   M.cast = (s) => H(
-    kit.line({ shape: 'glyph', glyph: 'water', el: 'water', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.42), width: 0.04, life: s.life ?? 0.25, tIn: 0.08, tOut: 0.12, spin: 0.7, castId: s.castId, color: R.light, color2: R.mid }),
+    kit.line({ shape: 'glyph', glyph: 'water', el: 'water', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.42), width: 0.04, life: s.life ?? 0.25, tIn: 0.08, tOut: 0.12, spin: 0.7, castId: s.castId, color: R.mid, color2: R.light }),
     kit.line({ shape: 'ring', el: 'water', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.75, (s.r ?? 0.42) * 1.3), width: 0.016, life: s.life ?? 0.25, tIn: 0.05, tOut: 0.15, scaleIn: 'expand', castId: s.castId, alpha: 0.7 }),
   );
   M.trail = (s) => {

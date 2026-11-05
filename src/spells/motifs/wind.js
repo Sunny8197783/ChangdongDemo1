@@ -25,7 +25,7 @@ export function install(kit, game) {
   const leaves = (p, n, castId, dir = null) => kit.spark(p, 'wind', Math.min(12, n), dir, { castId, shape: 'leaf', gravity: 1, speed: 4, life: 0.6, size: 0.14 });
 
   M.cast = (s) => H(
-    kit.line({ shape: 'glyph', glyph: 'wind', el: 'wind', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.42), width: 0.04, life: s.life ?? 0.24, tIn: 0.08, tOut: 0.12, spin: 2.2, castId: s.castId, color: R.light, color2: R.mid }),
+    kit.line({ shape: 'glyph', glyph: 'wind', el: 'wind', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.6, s.r ?? 0.42), width: 0.04, life: s.life ?? 0.24, tIn: 0.08, tOut: 0.12, spin: 2.2, castId: s.castId, color: R.mid, color2: R.light }),
     kit.line({ shape: 'spiral', turns: 0.9, arms: 3, r2: 0.15, el: 'wind', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.75, (s.r ?? 0.42) * 1.35), width: 0.02, life: s.life ?? 0.24, tIn: 0.1, tOut: 0.1, spin: -3, castId: s.castId, alpha: 0.7 }),
   );
   /** trail: spinning thin crescent blade (alpha body, hi leading edge) + one streamline ribbon. */
@@ -41,7 +41,7 @@ export function install(kit, game) {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
     const rot = ((s.castId || 0) * 0.9) % TAU;
     out.push(kit.line({ shape: 'spiral', turns: 0.7, arms: 3, r2: 0.1, el: 'wind', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.1, width: 0.04, life: 0.42, tIn: 0, tOut: 0.25, scaleIn: 'expand', spin: 3, castId: s.castId, rot }));
-    out.push(kit.line({ shape: 'crescent', el: 'wind', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.2, tIn: 0, tOut: 0.1, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot: rot + 1 }));
+    out.push(kit.line({ shape: 'crescent', el: 'wind', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.2, tIn: 0, tOut: 0.1, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot: rot + 1 }));
     for (let i = 0; i < 2; i++) { const a = rot + i * Math.PI; out.push(stream(arcPoints(s.pos, r * 0.7, a, a + 2.2, 8, 0.1), s.castId, { width: 0.08, life: 0.3 })); }
     leaves(s.pos, Math.min(6, s.n ?? 5), s.castId);
     return H(out);

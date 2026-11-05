@@ -2,7 +2,7 @@
 // and then deliver the blow. Animated with REAL time (the cinematic freezes gameplay time), built lazily
 // once per element and reused. Materials come from spells/assets (already compiled at boot → no hitch).
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
+import { glint, GLINT, midOf, lightOf } from './palette.js';
 import {
   fresnelMat, coreMat, flameGeo, flameMat, crystalGeo, iceMatSolid, outlineBasic, rockGeo, rockMat,
   sigilMat, tornadoGeo, tornadoMat, uTime,
@@ -106,7 +106,7 @@ function buildIceSky() {
   const bigHalo = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 10), fresnelMat(0xdffaff, { power: 1.2, intensity: 1.2, core: 0.05 }));
   bigHalo.position.y = 0.8; bigHalo.scale.set(1.2, 2.4, 1.2); big.add(bigHalo);
   g.add(big);
-  const sig = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(0x9feaff)); sig.rotation.x = Math.PI / 2; sig.renderOrder = 5; sig.frustumCulled = false;
+  const sig = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(midOf('ice'))); sig.rotation.x = Math.PI / 2; sig.renderOrder = 5; sig.frustumCulled = false;
   g.add(sig);
   g.userData = { crystals, big, sig };
   return g;
@@ -114,11 +114,11 @@ function buildIceSky() {
 
 function buildThunder() {
   const g = new THREE.Group();
-  const sky = new THREE.Mesh(new THREE.CircleGeometry(1, 56), sigil(0xc9a4ff)); sky.rotation.x = Math.PI / 2; sky.renderOrder = 5; sky.frustumCulled = false;
-  const sky2 = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(GLINT)); sky2.rotation.x = Math.PI / 2; sky2.renderOrder = 5; sky2.frustumCulled = false;
+  const sky = new THREE.Mesh(new THREE.CircleGeometry(1, 56), sigil(midOf('lightning'))); sky.rotation.x = Math.PI / 2; sky.renderOrder = 5; sky.frustumCulled = false;
+  const sky2 = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sigil(lightOf('lightning'))); sky2.rotation.x = Math.PI / 2; sky2.renderOrder = 5; sky2.frustumCulled = false;
   const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 6, 64), fresnelMat(0xd9c2ff, { power: 0.5, intensity: 1.2, core: 0.6 })); halo.rotation.x = Math.PI / 2;
   // hero-side vertical sigil (the god's mark behind the caster)
-  const back = new THREE.Mesh(new THREE.CircleGeometry(1, 40), sigil(0xe0ccff)); back.renderOrder = 5; back.frustumCulled = false;
+  const back = new THREE.Mesh(new THREE.CircleGeometry(1, 40), sigil(lightOf('lightning'))); back.renderOrder = 5; back.frustumCulled = false;
   // conduit from hero to sky and the final colossal bolt column
   const conduit = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 14, 1, true), fresnelMat(0xc9a4ff, { power: 0.8, intensity: 1.2, core: 0.3 }));
   const column = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 18, 1, true), coreMat(0xd9c2ff, 1.2));
@@ -134,7 +134,7 @@ function buildEye() {
   const vortex = new THREE.Mesh(tornadoGeo(), tornadoMat()); vortex.renderOrder = 6;
   vortex.material.uniforms.colA.value.set(0xf4fffa); vortex.material.uniforms.colB.value.set(0x4a8a78); vortex.material.uniforms.speed.value = 0.6;
   const eye = new THREE.Mesh(new THREE.TorusGeometry(1, 0.18, 8, 48), fresnelMat(0xbfffe0, { power: 0.6, intensity: 1.2, core: 0.5 })); eye.rotation.x = Math.PI / 2;
-  const eyeCore = new THREE.Mesh(new THREE.CircleGeometry(1, 40), sigil(0x8fffc1)); eyeCore.rotation.x = Math.PI / 2; eyeCore.renderOrder = 5; eyeCore.frustumCulled = false;
+  const eyeCore = new THREE.Mesh(new THREE.CircleGeometry(1, 40), sigil(midOf('wind'))); eyeCore.rotation.x = Math.PI / 2; eyeCore.renderOrder = 5; eyeCore.frustumCulled = false;
   const rings = [];
   for (let i = 0; i < 3; i++) {
     const r = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 5, 40), fresnelMat(0x8fffc1, { power: 0.8, intensity: 0.9, core: 0.15 }));

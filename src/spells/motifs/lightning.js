@@ -33,7 +33,7 @@ export function install(kit, game) {
   M.cast = (s) => {
     kit.spark(s.pos, 'lightning', 3, null, { castId: s.castId, speed: 3, life: 0.12 });
     return H(
-      kit.line({ shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.55, s.r ?? 0.38), width: 0.04, life: s.life ?? 0.2, tIn: 0.05, tOut: 0.1, spin: 0, castId: s.castId, color: R.light, color2: R.mid }),
+      kit.line({ shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.55, s.r ?? 0.38), width: 0.04, life: s.life ?? 0.2, tIn: 0.05, tOut: 0.1, spin: 0, castId: s.castId, color: R.mid, color2: R.light }),
       kit.line({ shape: 'ticks', n: 6, r2: 0.6, el: 'lightning', pos: s.pos, follow: s.follow, followOff: s.followOff, plane: 'billboard', r: Math.min(0.7, (s.r ?? 0.38) * 1.35), width: 0.018, life: s.life ?? 0.2, tIn: 0.04, tOut: 0.1, spin: 3.2, castId: s.castId, alpha: 0.75 }),
     );
   };
@@ -49,7 +49,7 @@ export function install(kit, game) {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
     const rnd = rng((s.castId || 1) * 19 + 11), a0 = rnd() * TAU;
     for (let i = 0; i < 3; i++) { const a = a0 + i * TAU / 3 + rnd() * 0.4; out.push(bolt(s.pos, v3(s.pos.x + Math.cos(a) * r * 1.7, s.pos.y + 0.2 + rnd() * r * 0.5, s.pos.z + Math.sin(a) * r * 1.7), s.castId, { forks: 1, width: 0.07, life: 0.06, seed: (s.castId || 1) * 3 + i })); }
-    out.push(kit.line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.light, color2: R.hi, additiveCore: 0.6, rot: 0.785 }));
+    out.push(kit.line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot: 0.785 }));
     out.push(kit.line({ shape: 'ticks', n: 12, r2: 0.7, el: 'lightning', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.05, width: 0.025, life: 0.32, tIn: 0.0, tOut: 0.2, scaleIn: 'expand', spin: 2, castId: s.castId }));
     if (gp && s.decal !== false) out.push(kit.decal('lichtenberg', gp, r * 0.8, s.decalLife ?? 0.6, { el: 'lightning', castId: s.castId, alpha: 0.32 }));
     kit.spark(s.pos, 'lightning', Math.min(8, s.n ?? 6), null, { castId: s.castId, speed: 7, life: 0.2 });
