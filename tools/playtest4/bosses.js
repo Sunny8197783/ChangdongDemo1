@@ -248,6 +248,16 @@ module.exports = async function bosses(PT) {
       const starts = PT.events('tellStart').filter((r) => r.p.enemy === b).length;
       PT.check('break → bossBroken {boss, dur 3.5}, no attacks during the stagger', bb && bb.p.boss === b && Math.abs(bb.p.dur - 3.5) < 1e-6 && starts === 0 && b.isBroken(), { bb: bb && bb.p.dur, starts, ids: PT.events('tellStart').map((r) => r.p.id) });
       BT.run(1.0);
+      // enemy-owned FX coverage while the boss fights (AI attacks for 8 s; I-check at integration with real looks)
+      const cov = g.vfx?.debug?.coverage;
+      if (cov) {
+        const v = [];
+        b.vulnerableUntil = -1; BT.face();
+        BT.run(8, (i) => { if (i % 6 === 5) { const c = cov(); v.push(c?.byOwner?.enemy ?? 0); } });
+        v.sort((x, y) => x - y);
+        const p95 = v.length ? v[Math.min(v.length - 1, Math.floor(v.length * 0.95))] : 0;
+        PT.check('enemy-owned FX coverage p95 ≤ 1.0 screens (branch-side; I at integration)', p95 <= 1.0, { p95: +p95.toFixed(3), max: +(v[v.length - 1] || 0).toFixed(3), n: v.length });
+      } else PT.skip('enemy-owned FX coverage', 'vfx.debug.coverage missing');
       if (id === 'hydra') {
         // AI: ≤ 1 bite at a time + ≤ 1 other attack
         let maxBite = 0, maxOther = 0;

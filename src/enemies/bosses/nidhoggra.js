@@ -529,7 +529,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       st.atkT += dt * sm;
       const h = st.h;
       if (!st.resolved && h) {
-        if (st.atk === 'rain') { if (st.rain.every((r) => r.done)) { st.resolved = true; st.h = null; st.atkT = 0; } }
+        if (st.atk === 'rain') { let all = true; for (let i = 0; i < st.rain.length; i++) if (!st.rain[i].done) all = false; if (all) { st.resolved = true; st.h = null; st.atkT = 0; } }
         else if (h.consumeStrike()) { st.resolved = true; st.h = null; st.atkT = 0; resolveAttack(h); }
         else if (cancelled(h)) { st.resolved = true; st.h = null; st.atkT = 0; }
       }

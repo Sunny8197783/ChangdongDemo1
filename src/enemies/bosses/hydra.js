@@ -327,7 +327,11 @@ export function createHydra(ctx, arena, opts = {}) {
     vfx.preset?.('impact_water', _v.copy(s.p).setY(s.p.y + 0.5), { owner: 'enemy', scale: 1.2 });
     bossHit(ctx, e, s.h, { attack: 'hydra.spouts', amount: D.spout, element: 'water', knockback: 4, launch: 9, heavy: true, status: { wet: 5 }, from: s.p });
   }
-  const otherBusy = () => !!(other && other.alive) || spouts.length > 0 || heads.some((h) => h.state === 'spitWind' || h.state === 'spit');
+  const otherBusy = () => {
+    if ((other && other.alive) || spouts.length > 0) return true;
+    for (let i = 0; i < heads.length; i++) { const s = heads[i].state; if (s === 'spitWind' || s === 'spit') return true; }
+    return false;
+  };
 
   e.think = (dt, sm) => {
     e.baseTick(dt);
