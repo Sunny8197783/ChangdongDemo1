@@ -55,7 +55,33 @@ Measurement (`MG.measure`): plains meadow (−30, 30), yaw 0, dummy at 7 m, same
 estimator rises (impact frames), coverage truth from `PT.fragments` at every new estimator maximum above the ceiling (others scaled by
 the measured fragments / estimate ratio); detail / crisp at the peak frame, saturation pixel-weighted over the window.
 
-RESULTS_PLACEHOLDER
+Final run (`magic-b`, 48 casts = 36 bespoke + 12 archetype representatives; 565 s): **23 passed, 4 failed, 1 skipped**.
+
+| Check | Budget | Measured |
+|---|---|---|
+| MG static (rule 5, reserved shapes, 5 motif files) | 0 white literals, multipliers ≤ 1.2 | pass (25 files) |
+| MG1.b registration / lookOf | 104 registry ids ≥ archetype, 36 bespoke | pass |
+| MG1.a first cast CPU | ≤ 8 ms | max 8.9 ms (`lightning.dash`, 7.5 ms "extra" = shared-CPU noise; 5.8 ms in the previous run), median 0.7 — **flaps** |
+| MG1.a first draws after warm-up | 0 | 0 |
+| MG1.g castLock | 0 free / ≤ 0.25 s in ult anticipation | 0 / 0.14 s / 0 |
+| MG1.c white peak | B ≤ 1.5 %, C/A ≤ 4 %, U ≤ 12 % | max 0.85 % |
+| MG1.c coverage | B ≤ 0.05 … U ≤ 1.0 | max 0.211, median 0.026 (all within tier) |
+| MG1.c detail / crisp | §1.4 floors | median 3,077 px / 0.714; misses: `nature.grapple` 1,724 (< 2,000), `nature.roots` 1,150 (< 1,200), `light.basic` 497 (< 500), `shadow.charged` crisp 0.231 (< 0.25) |
+| MG1.c saturation | ≥ 0.40 (B/C/A), ≥ 0.35 (Z/U); per-element min(floor, 0.85 × swatch) | median 0.512; misses (violet elements only): `lightning.basic` 0.354, `shadow.basic` 0.387, `shadow.ult` 0.337, `lightning.thunderclap` 0.397 |
+| MG1.d new materials per cast | 0 | 0 |
+| MG1.e stacked 7-cast rotation near-white | ≤ 12 % (v3 94–97 %) | 0 % |
+| MG1.f element silhouette IoU | < 0.5 | projectile 0.36, nova 0.30, cone 0.13, zone 0.46 |
+| page errors | 0 | 0 |
+| retention (R-mage / R-boss) | ≥ 95 % | SKIP (I, integration) |
+
+Run-to-run spread: the borderline rows move by ±0.03 sat / ±10 % detail between full runs and differ again in `MG_IDS` subset
+runs (e.g. `lightning.charged` 0.40+ in the full order, 0.36–0.37 alone), so the 4 to 6 misses above flap.
+Root cause of the violet misses: an opaque lightning / shadow `mid` swatch reads sat ≈ 0.49 through the post chain on the meadow,
+so thin AA linework lands at 0.35–0.40 (requests core (4)).
+
+Other suites in this worktree: `tools/bootcheck.js` exit 0 (all configs, no console errors); `tools/playtest3.js magic` 41/41
+(the rule-8 static scan now recurses into `src/spells/motifs/`, §7.9); `tools/playtest.js` exit 0; `tools/playtest2.js` exit 0,
+one sword-section line `FAIL wind combo hitstop on the first hit of each castId` (melee / core, not a magic file).
 
 ## P1 cut / open
 - P1 bespoke rows for awakened skills, the remaining actives and finisher polish were not started (they use the archetype looks,
@@ -63,3 +89,8 @@ RESULTS_PLACEHOLDER
 - `breadth.finisher` is declared `'archetype'` through the attuned element (core's `skills/fallback.js` draws it; requests core 2).
 - earth / nature / light / shadow use magic's stand-in motifs on this branch; once melee's motifs merge, the caster casts of those
   elements use them (their handle use is then melee's).
+- **Open B misses (MG1.c / MG1.a, see Measured)**: violet saturation for 4 rows, detail for `nature.grapple` / `nature.roots` /
+  `light.basic`, crisp for `shadow.charged`, first-cast 8.9 ms once. Next steps: dark-step outlines for lightning / shadow lines
+  (more chroma at lower luma), a larger grapple anchor glyph in screen space, and a measurement that averages 2 casts per row.
+
+Final tag: `magic-b`.
