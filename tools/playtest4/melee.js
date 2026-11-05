@@ -84,6 +84,8 @@ function installML() {
     try { g.sword.clearFx(); } catch (_) { /* */ }
     try { g.spells?.clearFx?.(); } catch (_) { /* */ }
     try { g.vfx?.clear?.(); } catch (_) { /* */ }   // lingering kit handles / particles of the previous cast
+    try { if (ML.dummy) g.combat.clearStatus(ML.dummy); } catch (_) { /* */ }   // no reactions from the previous casts' statuses
+    try { g.sword.clearFx?.(); } catch (_) { /* */ }
     g.skills.resetCooldowns?.(); PT.keepAlive(); PT.heal();
     if (g.state !== 'playing') { try { g.setState('playing'); } catch (_) { /* */ } }
     g.step(2, 1 / 60, false); ML.home();

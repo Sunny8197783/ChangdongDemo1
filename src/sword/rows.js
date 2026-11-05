@@ -272,18 +272,17 @@ export const ROWS = {
     } },
   'light.sanctuary': { sig: 'ground hexagram + ivory halo linework (lines only) + descending motes',
     strike(L, cc) { const g = feet(L);
-      L.h.line(cc, { shape: 'glyph', glyph: 'hexagram', el: 'light', pos: g, plane: 'ground', r: 4.6, life: 8, tIn: 0.3, tOut: 0.5, spin: 0.12, alpha: 0.35 });
+      L.h.line(cc, { shape: 'glyph', glyph: 'hexagram', el: 'light', pos: g, plane: 'ground', r: 1.8, life: 8, tIn: 0.3, tOut: 0.5, spin: 0.12, alpha: 0.35 });
       L.h.line(cc, { shape: 'ticks', n: 36, r2: 0.9, el: 'light', pos: g, plane: 'ground', r: 5, width: 0.035, life: 8, tIn: 0.3, tOut: 0.5, spin: -0.15, alpha: 0.35 });
       L.h.spark(cc, L.h.v3(g.x, g.y + 2.6, g.z), 'light', 12, null, { shape: 'mote', gravity: 0.5, speed: 0.6 });
     } },
-  'light.ult': { sig: 'central ray beam + 2 orbiting thin rays + halo rings descending (no white column)',
+  'light.ult': { sig: 'prism beam framed by halo rings with ticks descending along it + ground halo (no white column)',
     start(L, cc) { anticip(L, cc, 'light', 0.5); },
-    strike(L, cc, a) { frame(L, a, 6); const g = imp(L, 0);
-      L.h.mesh(cc, 'light.ray', { pos: g, scale: L.h.v3(0.8, 5, 0.8), life: 1.6, tIn: 0.15, tOut: 0.4 });
-      for (let i = 0; i < 2; i++) { const s = i * Math.PI + cc.castId; L.h.mesh(cc, 'light.ray', { pos: L.h.v3(g.x + Math.cos(s) * 1.4, g.y, g.z + Math.sin(s) * 1.4), scale: L.h.v3(0.3, 4, 0.3), life: 1.4, tIn: 0.25, tOut: 0.4 }); }
-      for (let k = 0; k < 3; k++) L.h.line(cc, { shape: 'ticks', n: 24, r2: 0.84, el: 'light', pos: L.h.v3(g.x, g.y + 6 - k * 1.8, g.z), plane: 'flat', r: 1.8 + k * 0.4, width: 0.035, life: 1.6, tIn: 0.15 + k * 0.12, tOut: 0.4, spin: (k % 2 ? -1 : 1) * 0.7 });
-      L.h.line(cc, { shape: 'ring', el: 'light', pos: g, plane: 'ground', r: 3, width: 0.04, life: 1.6, tIn: 0.15, tOut: 0.4, alpha: 0.6 });
-      L.h.spark(cc, L.h.v3(g.x, g.y + 3, g.z), 'light', 12, null, { shape: 'mote', gravity: 0.6, speed: 1 });
+    strike(L, cc, a) { frame(L, a, 6); const t0 = chest(L, 1.5), n = L.h.v3(F.fx, 0, F.fz);
+      for (let k = 0; k < 3; k++) { const d = 3 + k * 3.5; L.h.line(cc, { shape: 'ticks', n: 16, r2: 0.8, el: 'light', pos: L.h.v3(t0.x + F.fx * d, t0.y, t0.z + F.fz * d), plane: 'oriented', normal: n, r: 0.9 - k * 0.12, width: 0.03, life: 2.4, tIn: 0.15 + k * 0.12, tOut: 0.4, spin: (k % 2 ? -1 : 1) * 1.2 });
+        L.h.line(cc, { shape: 'ring', el: 'light', pos: L.h.v3(t0.x + F.fx * d, t0.y, t0.z + F.fz * d), plane: 'oriented', normal: n, r: 1.0 - k * 0.12, width: 0.025, life: 2.4, tIn: 0.15 + k * 0.12, tOut: 0.4, alpha: 0.7 }); }
+      L.h.line(cc, { shape: 'ring', el: 'light', pos: feet(L), plane: 'ground', r: 2.2, width: 0.035, life: 2.6, tIn: 0.15, tOut: 0.4, alpha: 0.5 });
+      L.h.line(cc, { shape: 'star', points: 4, r2: 0.12, el: 'light', pos: t0, plane: 'billboard', r: 0.7, width: 0.03, life: 0.08, tIn: 0, tOut: 0.04 });
     } },
   // ======================================================================== shadow 그림자
   'shadow.basic': { sig: 'ink crescent bite at the slashR tip + 4 soul wisps',

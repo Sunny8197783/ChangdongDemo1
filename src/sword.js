@@ -286,7 +286,8 @@ export function createSword(game) {
     v1.copy(o.pos || pos()); v1.y += o.h ?? 1.1;
     if (o.fwdOff) v1.addScaledVector(fwd(v2, yaw), o.fwdOff);
     return fx.arcs.spawn({
-      pos: v1, yaw, tilt: o.tilt || 0, pitch: o.pitch || 0, start: o.a0, span: o.a1 - o.a0,
+      // v4: the crescent plane leans 0.3 rad toward the chase camera so the swing reads as a shape, not an edge-on sliver
+      pos: v1, yaw, tilt: o.tilt || 0, pitch: (o.pitch || 0) - (o.noLean ? 0 : 0.3), start: o.a0, span: o.a1 - o.a0,
       rin: o.rin ?? (o.rout ?? 2.5) * 0.58, rout: o.rout ?? 2.5, el: o.el, kind: o.kind, sweep: o.sweep ?? 0.09,
       life: o.life ?? 0.26, scale: o.scale || 1, vel: o.vel, grow: o.grow, opacity: Math.min(1, o.opacity ?? 1), castId: o.castId, seed: o.seed,
     });

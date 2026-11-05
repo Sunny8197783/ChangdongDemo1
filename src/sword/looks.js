@@ -66,6 +66,7 @@ export function createLooks(game, E) {
   let serial = 0;
   const stats = { casts: 0, gated: 0, dropped: 0, bursts: 0, sparks: 0, flashes: 0 };
   const byCast = new Map();   // castId → cc (last 64)
+  const motifCost = new Map(); // 'el:kind:tier' → handles spawned (max seen)
 
   const L = {
     cur: null, stats, ROWS, ARC_STYLE, TIER_BUDGET,
@@ -172,7 +173,14 @@ export function createLooks(game, E) {
     spec.owner = 'player';
     if (spec.castId == null && L.cur) spec.castId = L.cur.castId;
     const cc = spec.castId ? byCast.get(spec.castId) : null;
-    if (cc && kind !== 'spark' && !useH(cc, HEAVY_MOTIF[kind] || 1)) { if (kind === 'burst') { spec.n = Math.min(spec.n ?? 6, 6); return L.motif(el, 'spark', spec); } return null; }
+    const key = el + ':' + kind + ':' + (spec.tier || cc?.tier || '');
+    if (cc && kind !== 'spark' && !useH(cc, Math.max(HEAVY_MOTIF[kind] || 1, motifCost.get(key) || 0))) { if (kind === 'burst') { spec.n = Math.min(spec.n ?? 6, 6); return L.motif(el, 'spark', spec); } return null; }
+    if (cc && kind !== 'spark') {
+      // learn the real handle cost of each motif (measured through vfx.debug.byCast) so later casts budget it exactly
+      const h0 = usedH(cc); const out = (K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) ? K.motif(el, kind, spec) : local(el, kind, spec);
+      const d = usedH(cc) - h0; if (d > (motifCost.get(key) || 0)) motifCost.set(key, d);
+      return out;
+    }
     if (K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) return K.motif(el, kind, spec);
     return local(el, kind, spec);
   };
@@ -328,8 +336,9 @@ export function createLooks(game, E) {
     if (!pos) return null;
     const el = elOf(o, cc);
     if (cc.mute?.impacts && !o?._look) return null;
-    const r = Math.min(cc.tier === 'U' || cc.tier === 'F' ? 3.2 : cc.tier === 'B' ? 0.9 : 1.8, 0.6 + (o?.scale ?? 1) * 0.6);
-    if (cc.bursts < (cc.tier === 'U' ? 2 : cc.tier === 'F' ? 3 : 1)) {
+    const r = Math.min(cc.tier === 'U' || cc.tier === 'F' ? 3.2 : 1.8, 0.6 + (o?.scale ?? 1) * 0.6);
+    // §3.6 basic attack: smear + ≤ 6 sparks per hit, nothing persists → no burst on tier B
+    if (cc.tier !== 'B' && cc.bursts < (cc.tier === 'U' ? 2 : cc.tier === 'F' ? 3 : 1)) {
       cc.bursts++; stats.bursts++;
       const n = useP(cc, cc.tier === 'B' ? 6 : 10);
       return L.motif(el, 'burst', { pos: _q.copy(pos), r, n, castId: cc.castId, dir: o?.normal || null, tier: cc.tier });
@@ -370,7 +379,7 @@ export function createLooks(game, E) {
     if ((cc.tier === 'C' || cc.tier === 'U' || cc.tier === 'F') && cc.runes < (cc.tier === 'C' ? 1 : 2) && useH(cc, 3)) {
       // rune circle in kit linework (§3.1 craft: outer ring → glyph band → sigil; opposed spins, back-out scale-in, fade in the last 30 %)
       cc.runes++;
-      const r = Math.min(o?.r ?? 2, cc.tier === 'C' ? 1.6 : 5), life = Math.min(o?.dur ?? 1, cc.tier === 'C' ? 0.9 : 2.5), R = rampOf(game, el);
+      const r = Math.min(o?.r ?? 2, cc.tier === 'C' ? 1.2 : 4), life = Math.min(o?.dur ?? 1, cc.tier === 'C' ? 0.9 : 2.5), R = rampOf(game, el);
       const G = nearGround(pos, 2.5) ? K.v3(pos.x, gy(pos.x, pos.z), pos.z) : pos;
       const base = { el, pos: G, plane: 'ground', life, tIn: 0.28, tOut: life * 0.3, scaleIn: 'backOut', owner: 'player', castId: cc.castId };
       const h = K.line({ ...base, shape: 'glyph', glyph: el, r: r * 0.62, spin: 0.9, color: R.mid, color2: R.dark, alpha: 0.8 });
@@ -466,6 +475,7 @@ export function createLooks(game, E) {
     const cc = L.cur; if (!cc || !point || cc.finalDone) return null;
     cc.finalDone = true;
     if (cc.bursts >= 1) return null;
+    if (cc.tier === 'B') { L.motif(el || cc.el, 'spark', { pos: point, n: useP(cc, 4), castId: cc.castId, dir }); return null; }
     cc.bursts++;
     return L.motif(el || cc.el, 'burst', { pos: point, r, n: useP(cc, cc.tier === 'B' ? 5 : 10), castId: cc.castId, dir, tier: cc.tier });
   };
