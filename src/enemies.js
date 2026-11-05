@@ -218,7 +218,8 @@ export function createEnemies(game) {
     game.scene.add(e.object);
     // §2.5: compile + draw every new material once on the first spawn of each type (no first-use hitch)
     const wk = type + ':' + (opts.variant || opts.element || '');
-    if (!warmed.has(wk)) { warmed.add(wk); try { game.render?.warm?.(e.object); } catch (_) { /* */ } }
+    // (v4 models share materials that MobModels.prewarm already warmed at boot; bosses warm in prewarmBoss; only wrapped v3 models need it here)
+    if (!e.model?.v4 && !e.isBoss && !warmed.has(wk)) { warmed.add(wk); try { game.render?.warm?.(e.object); } catch (_) { /* */ } }
     game.combat.register(e);
     all.push(e);
     if (opts.camp != null && camps[opts.camp]) camps[opts.camp].members.push(e);

@@ -35,7 +35,9 @@
    `e.hitstopUntil > game.realTime` (tells extends the frozen handle); `scaling.js` DIFFICULTY_FALLBACK gains `story`, `telegraphMul` = 1 everywhere,
    `checkAddSec` (+ `checkAdd` alias); `ctx.tele` no longer multiplies anything.
 9. **Perf**: `enemies.substeps = true`; poses / springs / `model.update` / icons only on `game.frame.lastStep`; animation half rate 30–60 m, paused > 60 m
-   (camera distance); `game.render.warm(e.object)` on the first spawn of each type+variant; wander allocations removed; tell shapes are per-entity reusable
+   (camera distance); `game.render.warm(e.object)` on the first spawn of each type+variant for wrapped v3 models only (v4 mob materials are shared
+   and warmed at boot by `MobModels.prewarm`; bosses warm in `prewarmBoss`) — warming every first spawn put a one-frame warm burst (≈ 1150 calls)
+   into playtest3's village draw-call sample; wander allocations removed; tell shapes are per-entity reusable
    objects; `separate()` unchanged (no `new`; the sampled "allocation" there is V8 heap-number churn).
 10. `enemies.js`: `import * as GolemMod from './enemies/golem.js'` (`GolemMod.createGolem`, `GolemMod.prewarmGolem?.(game)`).
 
@@ -56,6 +58,8 @@ Korean player text lives only in `codex.js` (entity names via `typeName`); remai
   `owner:'enemy'` (enemy style) and orb visuals shrank (halo 1.3→1.1, 2.6→1.9 m, trails 0.42→0.3 m wide, emitter 32→18/s).
 
 ## Legacy tests (this branch)
+- Full `tools/playtest3.js` (before the warm fix): 1264 passed, 3 failed (core zones elderwood calls 314/310, perf elderwood 314/310, narrative village
+  1440/290 — all the first-spawn warm burst). After the fix: `playtest3.js narrative core` 0 failed (village + elderwood within budget).
 - `tools/bootcheck.js` exit 0 (all configs playing, no console errors). `tools/playtest.js --quick` all PASS. `tools/playtest2.js --only sword` 0 FAIL
   (full run earlier: story/settings/perf unchanged). `tools/playtest3.js enemies`: **139 passed, 0 failed, 1 skipped**.
 - §7.9: `tools/playtest3/enemies.js` gained "§4 windups: tellStart → damage" (bokoblin.swing, lizard.thrust, voidknight.combo1 = 0.80 s). The boss
