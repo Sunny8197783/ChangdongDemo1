@@ -50,7 +50,11 @@ export function createDummy(ctx, pos, opts = {}) {
     const d = Math.hypot(tp.x - p.x, tp.z - p.z);
     const kind = kindArg ? 'swing' : d <= SWING_REACH + 0.3 ? 'swing' : 'orb';
     prac = { phase: 'tell', t: 0, target, kind, done: false, H: null };
-    if (kind === 'swing') {
+    if (kind === 'swing' && !kindArg) {
+      // v3 callers (story training, legacy tests): v3 timing, decal through the legacy telegraph adapter (threat scene)
+      prac.ring = ctx.tele?.({ shape: 'circle', pos: _v.set(p.x, p.y, p.z), r: SWING_REACH, dur: 1.1, color: 0xffc04a }) || null;
+      game.events.emit('enemyAttack', { enemy: e, kind: 'practice' });
+    } else if (kind === 'swing') {
       e.timeMul = 1.5;
       prac.H = beginAttack(ctx, e, kindArg === 'parry' ? 'dummy.parry' : 'dummy.practice', swingShape);
       e.timeMul = 1;
@@ -58,7 +62,7 @@ export function createDummy(ctx, pos, opts = {}) {
     } else game.events.emit('enemyAttack', { enemy: e, kind: 'practice' });
     e.showAlert?.();
     ctx.audio('charge', { position: p, volume: 0.35, pitch: 0.9 });
-    return { kind, eta: kind === 'swing' ? prac.H.dur : 1.0 + d / 5.5, source: e, tell: kindArg || 'danger' };
+    return { kind, eta: kind === 'swing' ? (prac.H ? prac.H.dur : 1.2) : 1.0 + d / 5.5, source: e, tell: kindArg || 'danger' };
   };
   e.attackStarters['dummy.practice'] = () => !!e.practice('danger');
   e.attackStarters['dummy.parry'] = () => !!e.practice('parry');
@@ -78,7 +82,7 @@ export function createDummy(ctx, pos, opts = {}) {
         ctx.projectiles.orb(_c, 'physical', e, { amount: 2, speed: 5.5, practice: true, color: 0xffd27a });
         ctx.audio('cast_wind', { position: p, volume: 0.5, pitch: 1.3 });
         P.phase = 'recover'; P.t = 0; spin.kick(-6);
-      } else if (P.kind === 'swing' && (P.H ? P.H.consumeStrike() : P.t > 1.1)) { P.phase = 'swing'; P.t = 0.1; P.done = false; ctx.audio('sword_swing', { position: p, volume: 0.6, pitch: 0.8 }); }
+      } else if (P.kind === 'swing' && (P.H ? P.H.consumeStrike() : P.t > 1.1)) { P.phase = 'swing'; P.t = P.H ? 0.1 : 0; P.done = false; ctx.audio('sword_swing', { position: p, volume: 0.6, pitch: 0.8 }); }
       else if (P.kind === 'swing' && P.H && !P.H.alive) { prac = null; return 0; }
     } else if (P.phase === 'swing') {
       const k = clamp(P.t / 0.22, 0, 1);
@@ -87,11 +91,11 @@ export function createDummy(ctx, pos, opts = {}) {
         P.done = true;
         const te = P.target;
         const d = Math.hypot(tp.x - p.x, tp.z - p.z);
-        if (te.alive !== false && (P.H ? P.H.contains(tp) : d < SWING_REACH + 0.15) && Math.abs(tp.y - p.y) < 2.5) {
+        if (te.alive !== false && (P.H ? P.H.contains(tp) : d < SWING_REACH + (te.radius || 0.4)) && Math.abs(tp.y - p.y) < 2.5) {
           _v.set(tp.x - p.x, 0, tp.z - p.z).normalize();
           te.getCenter ? te.getCenter(_c) : _c.copy(tp).setY(tp.y + 1);
           const r = game.combat.dealDamage(te, { amount: 2, element: 'physical', source: e, point: _c.clone(), direction: _v.clone(), knockback: 3, tags: ['practice'], hitstop: 0.06,
-            attack: attackMeta(P.H?.id || 'dummy.practice'), sourceName: e.name });
+            attack: P.H ? attackMeta(P.H.id) : undefined, sourceName: e.name });
           if (r?.blocked && !r.parried) { spin.kick(-8); wx.kick(-2); }
         }
       }

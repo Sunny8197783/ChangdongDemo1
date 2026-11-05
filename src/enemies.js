@@ -530,7 +530,6 @@ export function createEnemies(game) {
       if (e.aggro && !aggroSession[type]) encounter(e, false);
     }
   }
-  let lastET = null;
 
   const api = {
     list, all, FACTORIES, bosses, encounters,
@@ -669,9 +668,8 @@ export function createEnemies(game) {
 
     update(dtIn, realDt) {
       // enemy logic runs on game.enemyTime deltas (assist.enemySpeed; frozen during a global hitstop)
-      const et = game.enemyTime;
-      let dt = dtIn;
-      if (typeof et === 'number') { if (lastET !== null) { const d = et - lastET; dt = d >= 0 && d < 0.25 ? d : dtIn; } lastET = et; }
+      // (= the step dt × assist.enemySpeed, the same scale core applies to game.enemyTime)
+      const dt = dtIn * (game.assist?.enemySpeed ?? 1);
       ctx.visualStep = game.frame ? game.frame.lastStep !== false : true;
       playTime += realDt;
       const pe = game.player?.entity;
