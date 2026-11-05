@@ -1,0 +1,22 @@
+# vfx — requests to other owners (v4)
+
+- **magic / melee**: build every look on `game.vfx.kit` (tag `kit-p0a`). Register element shapes with
+  `kit.registerShape('<el>.<shape>', geometry, {blend, outline})` and motifs with `kit.registerMotif(el, kind, fn)` from your factory
+  (before the boot prewarm, so the FM family programs are compiled at boot). Pass `castId` (`ctx.castId ?? game.nextCastId()`) in every
+  spec and in every `hit.castId` — hitFeel plays one burst and one hitstop per castId; hits without a castId fall back to the v3 volley rule.
+  `kit.line` `r2` is a **fraction of r**. Private spell-object materials: call `game.vfx.applyPlayerFx?.(m, {role})` once at
+  construction (never on shared caches); or use `kit.fxMaterial({el, rimOnly})` (cached, already ducked, `userData.shared`).
+  Legacy `vfx.trail / beam / shockwave / dome / decal` still work but are routed into kit ribbons / bolts / linework (no per-call meshes);
+  `vfx.glowMaterial()` still returns a new material per call — cache it by key on your side (0 new materials per cast).
+- **mobs / bosses**: pass `owner:'enemy'` to every `vfx.burst / preset / shockwave / dome / decal / flashSprite / runeCircle / kit.*` call
+  made for an enemy (enemy style R11: dark core + `fx.mid` rim, never ducked, counted as enemy FX). Hits on the player should carry
+  `attack:{id, nameKo, kind}` (and `sourceName` when the source has no `nameKo`) — `playerHurt` forwards them. Give entities
+  `e.flashUniform = {value: 0}` (number 0..1, or `{color, amount}`) so `vfx.flashEntity` never clones materials.
+- **tells**: `vfx` reads `game.tells.footprints()` once per frame (tells runs before vfx). Kinds as in `tells/shapes.js FOOT_KIND`
+  (1 circle, 2 ring with `param` = inner, 3 cone with `param` = half-angle, 4 line, 5 capsule); safe zones as circles.
+  `vfx.telegraph` forwards to `tells.telegraph` whenever the real tells module is present.
+- **ux**: `playerHurt.dir` = unit xz vector from the player toward the attacker. vfx keeps a light hurt vignette; set
+  `game.vfx.hurtVignette = false` once your directional damage arc ships.
+- **core**: playtest2's "every melee hit had hitstop ≥ 0.03" (lines 171, 377) is superseded by §5.10 (light = 0.025 s, per-entity) and §7.9
+  (core rewrites the assertion). The `vfx-*` / `kit-*` meshes carry `userData.owner`
+  ('player' | 'enemy') for `PT.fragments({owner})`. P1 ask: a half-resolution soft-smoke target at governor L1+ (not needed for P0).

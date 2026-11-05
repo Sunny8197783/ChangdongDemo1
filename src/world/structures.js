@@ -476,7 +476,9 @@ export function buildStructures(game, world) {
       for (const side of [1, -1]) labelQuads.push({ row, m: bt.clone().multiply(mat4(0, 0, side * 0.045, 0, side > 0 ? 0 : Math.PI, 0)) });
     });
     colliders.push({ x, z, r: 0.25, kind: 'sign' });
+    signSpots.push(x, z);
   };
+  const signSpots = [];   // v4: flat [x, z, …] — world.js hides the label mesh when no sign is within reading distance
   sign(5, 108, -0.2, [{ text: '바람결 마을 ↓', dir: 0 }, { text: '고대 유적 ↑', dir: 0 }]);
   sign(-7, 63, 0.4, [{ text: '← 서쪽 야영지', dir: 0 }, { text: '북쪽 야영지 →', dir: 0 }]);
   sign(6, 97, -0.55, [{ text: '동쪽 야영지 →', dir: 0 }]);
@@ -553,7 +555,7 @@ export function buildStructures(game, world) {
 
   const tmp = new THREE.Vector3();
   return {
-    group, fires, runes: runeUniforms, crystals,
+    group, fires, runes: runeUniforms, crystals, signs, signSpots,
     update(t) {
       fires.update(t);
       runeUniforms.uTime.value = t;
