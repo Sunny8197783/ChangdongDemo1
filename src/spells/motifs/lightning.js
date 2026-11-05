@@ -47,6 +47,8 @@ export function install(kit, game) {
   M.burst = (s) => {
     const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
     const rnd = rng((s.castId || 1) * 19 + 11), a0 = rnd() * TAU;
+    // the strike's plasma knot: a soft toon orb (saturated `mid` body, crisp rim) that pops and erodes in 0.2 s — first, it is the focal point
+    out.push(kit.mesh('lightning.orb', { pos: s.pos, scale: Math.min(1.6, 0.55 + r * 0.35), life: 0.22, tIn: 0.03, tOut: 0.14, erode: true, castId: s.castId, grow: 1.3 }));
     for (let i = 0; i < 3; i++) { const a = a0 + i * TAU / 3 + rnd() * 0.4; out.push(bolt(s.pos, v3(s.pos.x + Math.cos(a) * r * 1.7, s.pos.y + 0.2 + rnd() * r * 0.5, s.pos.z + Math.sin(a) * r * 1.7), s.castId, { forks: 1, width: 0.07, life: 0.06, seed: (s.castId || 1) * 3 + i })); }
     out.push(kit.line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos: s.pos, plane: 'billboard', r: r * 0.6, width: 0.035, life: 0.08, tIn: 0, tOut: 0.04, castId: s.castId, color: R.mid, color2: R.hi, additiveCore: 0.6, rot: 0.785 }));
     out.push(kit.line({ shape: 'ticks', n: 12, r2: 0.7, el: 'lightning', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 1.05, width: 0.025, life: 0.32, tIn: 0.0, tOut: 0.2, scaleIn: 'expand', spin: 2, castId: s.castId }));
@@ -73,6 +75,7 @@ export function install(kit, game) {
   M.pillar = (s) => {
     const h = Math.min(14, s.h ?? 9), gp = groundAt(game, s.pos, 0.05), out = [];
     out.push(bolt(v3(gp.x + 0.6, gp.y + h, gp.z - 0.4), gp, s.castId, { forks: s.forks ?? 2, width: s.width ?? 0.1, halo: 0.32, life: 0.06, afterglow: 0.3 }));
+    out.push(kit.mesh('lightning.orb', { pos: v3(gp.x, gp.y + 0.35, gp.z), scale: Math.min(1.4, 0.5 + (s.r ?? 1.2) * 0.3), life: 0.2, tIn: 0.03, tOut: 0.12, erode: true, castId: s.castId, grow: 1.3 }));
     out.push(kit.line({ shape: 'ring', el: 'lightning', pos: gp, plane: 'ground', r: Math.min(3, s.r ?? 1.2), width: 0.035, life: 0.35, tIn: 0, tOut: 0.25, scaleIn: 'expand', castId: s.castId }));
     if (s.decal !== false) out.push(kit.decal('lichtenberg', gp, Math.min(4, (s.r ?? 1.2) * 1.4), s.decalLife ?? 0.6, { el: 'lightning', castId: s.castId, alpha: 0.32 }));
     kit.spark(gp, 'lightning', Math.min(8, s.n ?? 5), v3(0, 1, 0), { castId: s.castId, speed: 6, life: 0.2 });

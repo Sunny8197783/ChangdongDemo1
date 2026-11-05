@@ -1212,7 +1212,7 @@ export function createArchetypes(S, api, { summons, structures }) {
       const gp = e.object.position.clone(); gp.y = S.height(gp.x, gp.z);
       b.handles.push(fx('beam', gp, ec, { color: colOf(el, 'edge'), width: 0.14, duration: dur, jagged: 0.08, segments: 8 }));
       b.handles.push(fx('beam', anchor.clone(), ec.clone(), { color: colOf(el, 'mid'), width: 0.1, duration: Math.min(0.6, dur), jagged: 0.2, segments: 10 }));
-      fx('runeCircle', gp.clone(), { element: el, r: 1.5, dur, rotSpeed: 2 });
+      fx('runeCircle', gp.clone(), { element: el, r: 1.8, dur, rotSpeed: 2 });
     }
     binds.push(b);
     return true;

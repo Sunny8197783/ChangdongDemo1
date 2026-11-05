@@ -23,7 +23,7 @@ export function createBespoke(S, api, AR, { summons }) {
 
   /** Shared ultimate anticipation: slow-mo beat, FOV kick, sigils under the caster, a rising flare. */
   function ultIntro(ctx, aw = false) {
-    const el = ctx.element, col = elColor(el, 'mid');
+    const el = ctx.element, col = elColor(el, el === 'shadow' ? 'edge' : 'mid');   // shadow: violet rim colour (its mid is near-black)
     const pp = ppos();
     try { game.timeScale?.set?.('ult', aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); } catch (_) { /* */ }
     fx('screenFlash', col, aw ? 0.22 : 0.12, aw ? 0.4 : 0.25);

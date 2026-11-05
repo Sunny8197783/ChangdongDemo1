@@ -187,8 +187,13 @@ export function createRows(L) {
   // ================================================================================== 번개 lightning
   def('lightning.basic', {   // B: 2-frame spark + forked-rune glyph → BT bolt hand→target, regenerated twice → afterglow + arc-crawl sparks; no flare
     cast: (o) => { glyph('lightning', 'lightning', o, 0.3, { life: 0.08, tIn: 0.02, tOut: 0.05, spin: 0 }); return true; },
-    gate: { beam: (a) => K().bolt({ from: a[0], to: a[1], forks: 1, width: 0.08, halo: 0.3, life: 0.07, afterglow: 0.25, el: 'lightning', seed: cid() * 3 + (L.cur?.h || 0) }) },
-    impact: (pos) => { K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: 0.6, width: 0.045, life: 0.1, tIn: 0, tOut: 0.05, color: R('lightning').mid, color2: R('lightning').light, rot: 0.785 }); sparks('lightning', pos, 3, { speed: 6, life: 0.18 }); return true; },
+    // one bolt per cast (the kit regenerates it every 2–3 frames); the legacy re-fires of the beam are dropped
+    gate: { beam: (a) => { const c = L.cur; if (c?.data.bolt) return null; if (c) c.data.bolt = 1; return K().bolt({ from: a[0], to: a[1], forks: 1, width: 0.08, halo: 0.3, life: 0.07, afterglow: 0.25, el: 'lightning', seed: cid() * 3 }); } },
+    impact: (pos) => {
+      K().mesh('lightning.orb', { pos, scale: 0.7, life: 0.18, tIn: 0.02, tOut: 0.12, erode: true, grow: 1.3 });
+      K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: 0.6, width: 0.045, life: 0.1, tIn: 0, tOut: 0.05, color: R('lightning').mid, color2: R('lightning').light, rot: 0.785 });
+      sparks('lightning', pos, 3, { speed: 6, life: 0.18 }); return true;
+    },
   });
   def('lightning.charged', {   // C: 3 small bolt loops crackle at the hand → thicker forked bolts per jump → lichtenberg under each target
     cast: (o) => { const a = cid(); K().bolt({ from: o, to: v3(o.x + Math.cos(a) * 0.5, o.y + 0.35, o.z + Math.sin(a) * 0.5), forks: 0, width: 0.04, halo: 0.12, life: 0.05, afterglow: 0.12, el: 'lightning' }); return true; },
@@ -427,7 +432,7 @@ export function createRows(L) {
     cast: () => true,
     zone: (kind, pos, r, life, o) => {
       const g = gp(pos);
-      return [K().line({ shape: 'glyph', glyph: 'hexagram', el: 'light', pos: g, follow: o.follow, plane: 'ground', r: r * 0.88, width: 0.03, life, tIn: 0.28, tOut: 0.5, spin: 0.15, alpha: 0.35, color: R('light').light }),
+      return [K().line({ shape: 'glyph', glyph: 'hexagram', el: 'light', pos: g, follow: o.follow, plane: 'ground', r: Math.min(2.2, r * 0.45), width: 0.03, life, tIn: 0.28, tOut: 0.5, spin: 0.15, alpha: 0.35, color: R('light').light }),
         K().line({ shape: 'ticks', n: 36, r2: 0.92, el: 'light', pos: g, follow: o.follow, plane: 'ground', r: r * 1.04, width: 0.02, life, tIn: 0.3, tOut: 0.5, spin: -0.2, alpha: 0.35 }),
         K().line({ shape: 'ring', el: 'light', pos: g, follow: o.follow, plane: 'ground', r: r * 1.1, width: 0.02, life, tIn: 0.35, tOut: 0.5, alpha: 0.3 })];
     },
@@ -452,7 +457,7 @@ export function createRows(L) {
   def('shadow.basic', {   // B: crescent-eye glyph → near-black ink arrow with violet rim + ink RB
     cast: (o) => { glyph('shadow', 'shadow', o, 0.3, { life: 0.12, tIn: 0.05, tOut: 0.06, color: R('shadow').light }); return true; },
     body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'shadow.arrow' : 'physical.shard', { el: 'shadow', color: R('shadow').light, tintAmt: 0.5, follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.95 : 0.85, life: Infinity, tIn: 0.12, tOut: 0.08 }),
-      K().ribbon({ follow: p.proxy, width: 0.15, taper: 1, life: 0.22, maxLen: 1.6, el: 'shadow', alpha: 0.85, colors: { head: R('shadow').mid, tail: R('shadow').mid, edge: R('shadow').light } })],
+      K().ribbon({ follow: p.proxy, width: 0.15, taper: 1, life: 0.22, maxLen: 1.6, el: 'shadow', alpha: 0.9, colors: { head: R('shadow').light, tail: R('shadow').mid, edge: R('shadow').light } })],
     impact: (pos) => { K().line({ shape: 'crescent', el: 'shadow', pos, plane: 'billboard', r: 0.8, width: 0.05, life: 0.22, tIn: 0.03, tOut: 0.1, color: R('shadow').light, color2: R('shadow').dark, rot: cid() % TAU }); sparks('shadow', pos, 4, { shape: 'wisp', gravity: -0.5, speed: 2 }); return true; },
   });
   def('shadow.charged', {   // C: ink tendril from the target to the hand, soul wisps travel inward
@@ -462,7 +467,7 @@ export function createRows(L) {
       const c = L.cur, f = a[0], t = a[1]; if (!f || !t) return null;
       if (c && !c.data.bite) { c.data.bite = 1; K().line({ shape: 'crescent', el: 'shadow', pos: f, plane: 'billboard', r: 0.8, width: 0.06, life: 0.4, tIn: 0.05, tOut: 0.2, color: R('shadow').light, color2: R('shadow').dark, rot: cid() % TAU }); }
       const m = f.clone().lerp(t, 0.5); m.y += 0.35;
-      return K().ribbon({ points: [f.clone(), m, t.clone()], width: 0.16, taper: 0.7, life: Math.max(0.3, Math.min(1.2, a[2]?.duration ?? 1)), el: 'shadow', alpha: 0.9, colors: { head: R('shadow').mid, tail: R('shadow').mid, edge: R('shadow').light } });
+      return K().ribbon({ points: [f.clone(), m, t.clone()], width: 0.11, taper: 0.7, life: Math.max(0.3, Math.min(1.2, a[2]?.duration ?? 1)), el: 'shadow', alpha: 0.9, colors: { head: R('shadow').mid, tail: R('shadow').mid, edge: R('shadow').light } });
     },
       burst: (a) => { if (a[0]) sparks('shadow', a[0], 3, { shape: 'wisp', gravity: 0, speed: 2, life: 0.5 }); return null; } },
   });

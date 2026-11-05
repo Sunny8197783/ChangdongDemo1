@@ -83,13 +83,14 @@ function installMG() {
   // coverage truth: the core counting override (PT.fragments) restricted to player-FX objects — called only when the cheap runtime
   // estimator of a sample exceeds the tier ceiling (≤ 3 calls per cast); otherwise the (conservative) estimator stands
   const fxOwner = (o) => o.userData?.owner === 'player' && o !== g.player?.object;
-  MG.measure = (id, { win = 1.4, samples = 6, frames = false, keepMask = false, fn = null, covCeil = 1e9 } = {}) => {
+  MG.measure = (id, { win = 1.4, samples = 6, frames = false, keepMask = false, fn = null, covCeil = 1e9, afterHit = false } = {}) => {
     const every = Math.max(2, Math.round(win * 60 / samples));
     MG.setup(); MG.clear();   // same spot, camera and dummy for every cast (blinks / dashes move the player)
     const aim = MG.aim();
     g.debug.newMaterials();
     const t0 = performance.now();
-    let castId = 0;
+    let castId = 0, hitF = -1, fNow = 0;
+    const unHit = afterHit ? g.events.on('damage', (ev) => { if (hitF < 0 && ev?.target && ev.target !== g.player?.entity) hitF = fNow; }) : null;
     if (fn) castId = fn(aim); else { g.debug.cast(id, { aim, charge: 1 }); castId = g.skills.lastCastId; }
     const castMs = performance.now() - t0;
     // sampling (percast method: peak over the cast window): a regular grid of `samples` diffs plus adaptive diffs whenever the
@@ -98,7 +99,7 @@ function installMG() {
     const S = [];
     let peak = null, peakD = null, shots = [], fragCalls = 0, fragUsed = false, covRatio = 1, covChecked = 0, extra = 0, lastF = 0, diffCv = 0, covMax = 0, reg = 0;
     for (let f = 1; f <= N; f++) {
-      PT.keepAlive(); g.step(1, 1 / 60, false);
+      PT.keepAlive(); g.step(1, 1 / 60, false); fNow = f;
       let cv = g.vfx.debug.coverage?.()?.screens ?? 0;
       const regular = f % every === 0;
       const rising = !regular && extra < maxExtra && f - lastF >= 3 && cv * covRatio > 0.001 && cv * covRatio > diffCv * 1.25;
@@ -106,9 +107,9 @@ function installMG() {
       // scale the estimator by the latest measured fragments / estimate ratio (the estimator counts whole quads, the override shaded fragments)
       const est = cv;
       cv = est * covRatio;
-      if (cv > covCeil && fragCalls < 6 && est > covChecked * 1.05) {
+      if ((cv > covCeil * 0.7 || est > covCeil * 0.7) && fragCalls < 6 && est > covChecked * 1.05) {
         fragCalls++; covChecked = est;
-        try { const fr = PT.fragments({ owner: fxOwner }); covRatio = Math.min(1, fr.scene / Math.max(1e-6, est)); cv = Math.min(est, fr.scene); fragUsed = true; } catch (_) { /* */ }
+        try { const fr = PT.fragments({ owner: fxOwner }); covRatio = Math.min(4, fr.scene / Math.max(1e-6, est)); cv = fr.scene; fragUsed = true; } catch (_) { /* */ }
       }
       if (cv > covMax) covMax = cv;
       if (!regular && !rising) continue;
@@ -118,9 +119,11 @@ function installMG() {
       const rec = { t: +(f / 60).toFixed(3), dt: (f - lastF) / 60, changed: d.changed, white: d.newWhite, sat: d.sat, rise: d.lumaRise, cov: cv };
       lastF = f;
       S.push(rec);
-      if (!peak || d.changed > peak.changed) { peak = rec; peakD = d; }
+      // afterHit (silhouettes): the impact frame = the peak after the first hit (hitF ≥ 0), so the shared anticipation glyph does not decide it
+      if ((!afterHit || hitF < 0 || f >= hitF) && (!peak || d.changed > peak.changed || (afterHit && hitF >= 0 && peak.t * 60 < hitF))) { peak = rec; peakD = d; }
       if (regular) { reg++; if (frames && (reg === 2 || reg === Math.round(samples * 0.3) + 1 || reg === Math.round(samples * 0.75) + 1)) shots.push(PT.pixels.dataURL(false)); }
     }
+    try { unHit?.(); } catch (_) { /* */ }
     let crisp = 0;
     if (peakD && peakD.changed > 0) crisp = PT.pixels.sobel({ mask: peakD.mask, w: peakD.w, h: peakD.h }, peakD.on);
     const bc = g.vfx.debug.byCast(castId) || {};
@@ -136,6 +139,19 @@ function installMG() {
     if (frames) out.frames = shots;
     if (keepMask && peakD) out.mask = Array.from(peakD.mask);   // (only for IoU)
     return out;
+  };
+  /** Palette swatch through the real pipeline: an opaque 0.25 m `mid` ring + a `mid`-tinted FM solid, 4 m ahead on the test ground.
+   *  Its mean saturation is the most any effect of that element can reach on this ground after the post chain (grade / tone map). */
+  MG.swatch = (el) => {
+    const K = g.vfx.kit; MG.setup(); MG.clear();
+    const pp = g.player.object.position, f = new T.Vector3(); g.camera.getWorldDirection(f); f.y = 0; f.normalize();
+    const at = pp.clone().addScaledVector(f, 4); at.y += 1.2; const R = K.ramp(el);
+    const shape = { fire: 'fire.comet', water: 'water.droplet', ice: 'ice.prism', lightning: 'lightning.orb', wind: 'wind.crescent' }[el] || 'physical.chunk';
+    K.line({ shape: 'ring', el, pos: at, plane: 'billboard', r: 0.8, width: 0.25, life: 5, tIn: 0, tOut: 0, alpha: 1, color: R.mid });
+    K.mesh(shape, { pos: at.clone().add(new T.Vector3(0, -1.0, 0)), scale: 1.5, life: 5, tIn: 0, tOut: 0, el, color: R.mid, tintAmt: 0.5 });
+    g.step(3, 1 / 60, false);
+    const d = MG.diff(); MG.clear();
+    return { sat: +d.sat.toFixed(3), px: d.changed };
   };
   /** Archetype look of element el (no bespoke row): call the registered caster archetype with a ctx built like the skills runtime's. */
   MG.archCast = (name, rep, el, aim) => {
@@ -242,6 +258,11 @@ module.exports = async function (PT) {
 
   // ================================================================== MG1.c per-cast measurement
   const res = await pg.run('MG1.c setup', () => window.MG.setup());
+  // per-element saturation reference (see MG.swatch): the §1.4 sat floor assumes the ramp's `mid` (saturation ≥ 0.5, R6) survives
+  // the pipeline; where even an opaque swatch reads lower on the test ground, the floor is 85 % of the swatch (never above §1.4)
+  const swatch = await pg.run('MG1.c palette swatches', (els) => { const o = {}; for (const el of els) o[el] = window.MG.swatch(el); return o; }, ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow', 'physical']);
+  PT.note(`MG1.c palette swatch saturation on the test ground: ${Object.entries(swatch || {}).map(([k, v]) => k + ' ' + v.sat).join(', ')}`);
+  const satFloorOf = (el, T) => Math.min(T.sat, 0.85 * (swatch?.[el]?.sat ?? 1));
   const rows = [];
   const tstart = Date.now();
   for (const id of want('c') ? set : []) {
@@ -261,8 +282,8 @@ module.exports = async function (PT) {
     else if (r.white > T.white) why.push('white ' + r.white);
     if (r.rise > T.luma) why.push('luma +' + r.rise);
     if (r.cov > T.cov) why.push('cov ' + r.cov);
-    // §3.2 / R6: the light ramp is ivory (saturation ≤ 0.35 on every step below hi) — its saturation floor is the palette's, not 0.40
-    const satFloor = reg.el[r.id] === 'light' ? Math.min(T.sat, 0.15) : T.sat;
+    const satFloor = satFloorOf(reg.el[r.id], T);   // light: ivory ramp (§3.2, saturation ≤ 0.35 below hi) — the swatch rule covers it too
+    r.satFloor = +satFloor.toFixed(3);
     if (r.sat < satFloor) why.push('sat ' + r.sat);
     if (r.detail < T.detail) why.push('detail ' + r.detail);
     if (r.crisp < T.crisp) why.push('crisp ' + r.crisp);
@@ -318,7 +339,7 @@ module.exports = async function (PT) {
     for (const el of ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow']) {
       const r = await pg.eval(({ name, rep, el, sheets }) => {
         const MG = window.MG; MG.setup();
-        const out = MG.measure(null, { win: 0.8, samples: 4, keepMask: true, fn: (aim) => MG.archCast(name, rep, el, aim) });
+        const out = MG.measure(null, { win: 0.8, samples: 4, keepMask: true, afterHit: true, fn: (aim) => MG.archCast(name, rep, el, aim) });
         if (sheets) out.shot = window.PT.pixels.dataURL(true);
         return out;
       }, { name, rep, el, sheets });

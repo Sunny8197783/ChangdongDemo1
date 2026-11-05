@@ -104,16 +104,19 @@ export function createLooks(S) {
       c.h++; if (c.trace) c.trace.push(s?._tk || s?.shape || '?'); return true;
     };
     // line weight: a 2 px screen-space floor (1.8 px on the ground) so the thin precise lines keep a saturated core instead of an AA fringe
+    const VIOLET = { lightning: 1, shadow: 1 };
     const mid = (s) => {
       const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = k.ramp(el).light;
       if (s.minPx == null) s.minPx = !s.plane || s.plane === 'ground' ? 1.8 : 2.2;
+      // violet bodies (lightning, shadow) mix to grey with the green ground at partial coverage: a fuller line core, opaque off the ground
+      if (VIOLET[el] && !s.owner) { s.minPx = Math.max(s.minPx, 2.6); if (s.plane && s.plane !== 'ground' && s.role !== 'fill') s.alpha = Math.max(s.alpha ?? 0.85, 1); }
       return s;
     };
     const F = Object.create(k);
     // v4 palette discipline: linework bodies in the element `mid` step (saturated), `light` for the secondary / rims, `hi` only where a row asks for a glint
     F.line = (s) => (can(s) ? stampCast(s) && k.line(mid(s)) : DEAD);
     // FM bodies of the pale-ramp elements lean toward their `mid` step (the toon ramp's light / hi bands read grey-white on grass)
-    const PALE_FM = { ice: 0.35, lightning: 0.4, wind: 0.3 };
+    const PALE_FM = { ice: 0.55, lightning: 0.45, wind: 0.3 };
     F.mesh = (n, s) => {
       if (!can(traceKind(s, n))) return DEAD;
       stampCast(s);
@@ -130,7 +133,7 @@ export function createLooks(S) {
       // the kit halo is a soft premultiplied falloff (adds colour over the ground without covering it): keep it narrow, so the bolt reads
       // as a crisp saturated `mid` zig-zag; the 2–3-frame strike itself is the bright moment
       if (s.core == null && !s.owner) s.core = R.mid;
-      if (!s.owner) s.halo = Math.min(s.halo ?? 0.3, (s.width ?? 0.08) * 1.2);
+      if (!s.owner) { if ((s.el || 'lightning') === 'lightning') s.width = Math.max(0.1, s.width ?? 0.08); s.halo = Math.min(s.halo ?? 0.3, s.width * 1.2); }
       const h = k.bolt(s);
       if (!s.owner && s.halo !== 0 && h?._r?.cLight?.isColor) h._r.cLight.copy(R.mid);
       return h;

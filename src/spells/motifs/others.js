@@ -85,7 +85,8 @@ export function createFallbacks(kit, game) {
       s.follow ? kit.ribbon({ follow: s.follow, width: 0.08 * (s.scale ?? 1), taper: 1, life: 0.2, maxLen: 1.2, el: 'nature', castId: s.castId, alpha: 0.6 }) : null),
     burst: (s) => {
       const r = Math.max(0.4, Math.min(s.r ?? 1, 7)), gp = nearGround(game, s.pos, 1.8) ? groundAt(game, s.pos) : null, out = [];
-      out.push(kit.line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: gp || s.pos, plane: gp ? 'ground' : 'billboard', r: r * 0.9, width: 0.04, life: 0.6, tIn: 0.12, tOut: 0.3, spin: 0.6, castId: s.castId }));
+      out.push(kit.line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: s.pos, plane: 'billboard', r: Math.min(1.4, r * 0.8), width: 0.045, life: 0.55, tIn: 0.12, tOut: 0.25, spin: 0.6, scaleIn: 'backOut', castId: s.castId }));
+      if (gp) out.push(kit.line({ shape: 'dots', n: 14, el: 'nature', pos: gp, plane: 'ground', r: r * 0.9, width: 0.04, life: 0.5, tIn: 0.1, tOut: 0.25, spin: 0.6, castId: s.castId, alpha: 0.7 }));
       for (let i = 0; i < 2; i++) { const a = ((s.castId || 0) + i * 3.1) % TAU; out.push(vine(arcPoints(s.pos, r * 0.6, a, a + 2.4, 8, 0.1), s.castId, { life: 0.5 })); }
       kit.spark(s.pos, 'nature', Math.min(10, s.n ?? 8), null, { castId: s.castId, shape: 'petal', gravity: 1.2, speed: 3 });
       return H(out);
