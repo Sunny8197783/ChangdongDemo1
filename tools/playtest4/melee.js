@@ -58,13 +58,18 @@ function installML() {
   if (window.ML) return true;
   const ML = window.ML = {};
   const SPOT = { x: -20, z: 45 };
+  // the background must not change between casts (MG1's rule): soak the test meadow (fire cannot ignite it; scorched / frozen grass
+  // would shift every later measurement) and regrow anything already burnt
+  ML.soak = () => { try { const sf = g.world?.surface, c = new T.Vector3(SPOT.x, 0, SPOT.z); sf?.wet?.(c, 40, 3600); sf?.regrow?.(c, 40); } catch (_) { /* */ } };
   ML.setup = (dist = 3.4) => {
     PT.tp(SPOT.x, SPOT.z, 0.1); PT.clearEnemies?.(false);
+    ML.soak();
     PT.look(Math.PI, -0.18); g.step(10, 1 / 60, false);
     const pp = g.player.object.position, f = new T.Vector3(); g.camera.getWorldDirection(f); f.y = 0; f.normalize();
     g.player.setFacing?.(Math.atan2(f.x, f.z));
     ML.dummy = g.debug.spawn('dummy', { pos: pp.clone().addScaledVector(f, dist), hp: 1e9 });
     if (ML.dummy) PT.armor(ML.dummy);
+    if (!ML.base) { try { g.vfx?.clear?.(); } catch (_) { /* */ } g.step(2, 1 / 60, false); ML.base = new Set(ML.fxObjs()); }
     g.step(20, 1 / 60, false);
     return !!ML.dummy;
   };
@@ -84,16 +89,24 @@ function installML() {
   ML.clear = () => {
     try { g.sword.clearFx(); } catch (_) { /* */ }
     try { g.spells?.clearFx?.(); } catch (_) { /* */ }
+    try { const Z = g.spells?.api?.zones; Z?.v3?.clear?.(); Z?.v2?.clear?.(); } catch (_) { /* */ }   // melee zones run on spells.api.zones (sanctuary would keep ticking)
     try { g.vfx?.clear?.(); } catch (_) { /* */ }   // lingering kit handles / particles of the previous cast
     try { if (ML.dummy) g.combat.clearStatus(ML.dummy); } catch (_) { /* */ }   // no reactions from the previous casts' statuses
     try { g.sword.clearFx?.(); } catch (_) { /* */ }
+    ML.soak();
     g.skills.resetCooldowns?.(); PT.keepAlive(); PT.heal();
     if (g.state !== 'playing') { try { g.setState('playing'); } catch (_) { /* */ } }
-    g.step(2, 1 / 60, false); ML.home();
+    g.step(2, 1 / 60, false);
+    // leftovers outside the kit / sword pools (legacy rune circles and emitters of caster-family zones) expire on their own: wait them out
+    // (≤ 30 s game time; also blessed / cursed / mud ground under the player or the dummy) so they do not leak into the next cast's diff
+    const s2 = g.world?.surface2, dirty = () => { try { return !!s2 && [g.player.object.position, ML.dummy?.object?.position].some((p) => p && s2.surfaceAt(p) !== 'none'); } catch (_) { return false; } };
+    if (ML.base) for (let k = 0; k < 60 && (ML.fxObjs().some((o) => !ML.base.has(o) && o.name !== 'vfx-particles') || dirty()); k++) { g.step(30, 1 / 60, false); PT.keepAlive(); try { g.vfx?.clear?.(); } catch (_) { /* */ } }
+    ML.home();
   };
   /** Cast id (or call fn) and sample the window. Returns metrics + optional frames and the peak mask. */
   ML.measure = (id, { win = 1.4, every = 4, frames = false, keepMask = false, fn = null } = {}) => {
     ML.clear();
+    const pre = ML.fxObjs().length;
     const aim = ML.aim();
     g.debug.newMaterials();
     const t0 = performance.now();
@@ -122,7 +135,7 @@ function installML() {
     const bc = g.vfx.debug.byCast(castId) || {};
     const cc = g.sword.look.cast(castId);
     const out = {
-      id, castId, castMs: +castMs.toFixed(2), peakT: peak?.t ?? 0,
+      id, pre, castId, castMs: +castMs.toFixed(2), peakT: peak?.t ?? 0,
       detail: peak?.changed ?? 0, sat: +(S.reduce((t, s) => t + s.sat * s.changed, 0) / Math.max(1, S.reduce((t, s) => t + s.changed, 0))).toFixed(3), satPeak: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
       white: +Math.max(0, ...S.map((s) => s.white)).toFixed(4), whiteOver5: S.filter((s) => s.white > 0.05).length * every / 60, whiteOver6: S.filter((s) => s.white > 0.06).length * every / 60,
       rise: +Math.max(0, ...S.map((s) => s.rise)).toFixed(2),
@@ -348,7 +361,7 @@ module.exports = async function (PT) {
       const tier = reg.tier[id] || 'A';
       const r = await pg.eval(({ id, win, frames, every }) => window.ML.measure(id, { win, frames, every }), { id, win: WINDOW[tier], frames: sheets && sheetSet.has(id), every: EVERY });
       r.tier = tier; r.el = reg.el[id] || 'physical'; rows.push(r);
-      if (process.env.MELEE_VERBOSE) { const f = []; judge(r, f); console.log('   ', id, tier, JSON.stringify({ d: r.detail, c: r.crisp, s: r.sat, w: r.white, cov: r.cov, p: r.particles, h: r.handles, why: r.why })); }
+      if (process.env.MELEE_VERBOSE) { const f = []; judge(r, f); console.log('   ', id, tier, JSON.stringify({ pre: r.pre, d: r.detail, c: r.crisp, s: r.sat, w: r.white, cov: r.cov, p: r.particles, h: r.handles, why: r.why })); }
       if (r.frames) {
         await PT.sheet(pg, r.frames.map((u, i) => ({ url: u, label: `${id} ${['anticipation', 'impact', 'dissipation'][i] || ''}` })), path.join(root, 'tools/playtest4/sheets/melee', id + '.png'), { cols: 3, cellW: 320, cellH: 180, title: `${id} (melee, ${tier}, ${r.look})` });
         delete r.frames;
