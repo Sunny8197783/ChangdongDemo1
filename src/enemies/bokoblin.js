@@ -2,30 +2,59 @@
 import * as THREE from 'three';
 import { rand, clamp, pick } from '../core/utils.js';
 import { buildBokoblin } from './models.js';
-import { makeEnemy, faceTo, moveTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid, walkCycle, reactionPose } from './base.js';
+import { makeEnemy, faceTo, moveTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid, walkCycle, reactionPose,
+  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, attackMeta, rhythmDamp } from './base.js';
+import { typeName } from './codex.js';
 
-const _v = new THREE.Vector3();
+const _v = new THREE.Vector3(), _dir = new THREE.Vector3();
+const M_SWING = attackMeta('bokoblin.swing'), M_LEAP = attackMeta('bokoblin.leap');
 const HIP = 0.74;
 
 export function createBokoblin(ctx, pos, opts = {}) {
-  const model = buildBokoblin();
+  const model = modelFor(ctx, 'bokoblin', {}, buildBokoblin);
   model.lieY = 0.28;
   const e = makeEnemy(ctx, {
-    kind: 'bokoblin', model, name: '뿔도깨비', hp: 140, radius: 0.55, height: 1.7, mass: 1,
+    kind: 'bokoblin', model, name: typeName('bokoblin'), hp: 140, radius: 0.55, height: 1.7, mass: 1,
     camp: opts.camp, facing: opts.facing, staggerDmg: 34,
   }, pos);
   const cur = newPose(HIP), tgt = newPose(HIP);
   let phase = rand(0, 6), speed = 0, attackCd = rand(0.5, 1.5), leapCd = rand(2, 5);
   let strafeDir = 1, swingHit = false, wanderT = rand(2, 6), wander = null, lookT = 0, lookY = 0;
-  let leapTarget = new THREE.Vector3(), ring = null, smashCombo = false;
+  let leapTarget = new THREE.Vector3(), smashCombo = false, H = null, recoverDur = 0.7, launched = false;
+  // per-entity reusable decal shapes (hitbox = decal, §4.0): swing cone r 2.9 + 0.6 lunge, half-angle 1.0 rad; leap circle r 2.9
+  const swingShape = { kind: 'cone', r: 3.5, angle: 1.0, dir: _dir, follow: true };
+  const leapShape = { kind: 'circle', r: 2.9, pos: leapTarget };
   e.sitting = !!opts.sit;
 
   const game = ctx.game;
-  const attack = (kind) => game.events.emit('enemyAttack', { enemy: e, kind });
-  // reactions (base.js): interrupted attacks reset; super-armor only during the active swing frames
-  e.interrupt = () => { swingHit = true; smashCombo = false; e.sitting = false; if (ring && (e.state === 'leap' || e.state === 'leapPrep')) ring.t = Math.max(ring.t, ring.dur); ring = null; };
+  // reactions (base.js): interrupted attacks reset (base stops the TellHandle); super-armor only during the active swing frames
+  e.interrupt = () => { swingHit = true; smashCombo = false; e.sitting = false; H = null; e.leaping = false; };
+  const faceDir = () => _dir.set(Math.sin(e.facing), 0, Math.cos(e.facing));
+  function startSwing(force) {
+    if (!force && !ctx.takeToken(e)) return false;
+    faceDir();
+    H = beginAttack(ctx, e, 'bokoblin.swing', swingShape);
+    if (!H) { ctx.releaseToken(e); return false; }
+    e.setState('windup'); swingHit = false; return true;
+  }
+  function predictLanding() {
+    const pp = ctx.playerPos, p = e.object.position;
+    leapTarget.set(pp.x, 0, pp.z);
+    _v.set(leapTarget.x - p.x, 0, leapTarget.z - p.z);
+    const len = _v.length(); if (len > 0.5) leapTarget.addScaledVector(_v, -1.1 / len);
+    leapTarget.y = ctx.groundH(leapTarget.x, leapTarget.z);
+  }
+  function startLeap(force) {
+    if (!force && !ctx.takeToken(e)) return false;
+    predictLanding();
+    H = beginAttack(ctx, e, 'bokoblin.leap', leapShape);
+    if (!H) { ctx.releaseToken(e); return false; }
+    launched = false; e.setState('leapPrep'); return true;
+  }
+  e.attackStarters['bokoblin.swing'] = startSwing;
+  e.attackStarters['bokoblin.leap'] = startLeap;
   e.onResume = () => { attackCd = Math.max(attackCd, 0.6); };
-  e.armor = () => (e.state === 'swing' && e.stateT < 0.2) || e.state === 'leap';
+  e.armor = () => (e.state === 'windup' && attackPhase(H) === 2) || e.state === 'swing' || e.state === 'leap';
 
   e.think = (dt, sm) => {
     const pp = ctx.playerPos, p = e.object.position, d = e.distP;
@@ -54,11 +83,10 @@ export function createBokoblin(ctx, pos, opts = {}) {
         if (!e.aggro) { e.setState('return'); break; }
         faceTo(e, pp.x, pp.z, 7, dt);
         if (d > 2.3) moveForward(e, (d > 6 ? 4.8 : 3.6) * sm);
-        if (d < 2.6 && attackCd <= 0 && angleToPlayer(ctx, e) < 0.6) {
-          if (ctx.takeToken(e)) { e.setState('windup'); attack('windup'); }
-          else { strafeDir = Math.random() < 0.5 ? 1 : -1; e.setState('strafe'); }
+        if (d < 3.0 && attackCd <= 0 && angleToPlayer(ctx, e) < 0.6) {
+          if (!startSwing(false)) { attackCd = 0.4; strafeDir = Math.random() < 0.5 ? 1 : -1; e.setState('strafe'); }
         } else if (d > 5 && d < 9.5 && leapCd <= 0 && attackCd <= 0 && Math.random() < 0.02) {
-          if (ctx.takeToken(e)) { e.setState('leapPrep'); attack('leap'); }
+          if (!startLeap(false)) leapCd = 1.5;
         } else if (d < 5.5 && attackCd > 0.3 && Math.random() < 0.01) {
           strafeDir = Math.random() < 0.5 ? 1 : -1; e.setState('strafe');
         }
@@ -72,51 +100,48 @@ export function createBokoblin(ctx, pos, opts = {}) {
         if (e.stateT > 1.6 || (attackCd <= 0 && e.stateT > 0.6)) e.setState('chase');
         break;
       }
-      case 'windup':
-        faceTo(e, pp.x, pp.z, 4.5, dt);
-        if (d > 1.8) moveForward(e, 0.9 * sm);
-        if (e.stateT > 0.62 / Math.max(0.5, sm)) { e.setState('swing'); swingHit = false; ctx.audio('blink', { position: p, volume: 0.35, pitch: 0.55 }); }
-        break;
-      case 'swing': {
-        const t = e.stateT;
-        if (t < 0.16) moveForward(e, 4.2 * sm);
-        if (!swingHit && t > 0.07 && t < 0.22) {
-          if (ctx.meleeCheck(e, 2.9, 1.25)) {
-            swingHit = true;
-            ctx.hitPlayer(e, { amount: 14, knockback: 8, launch: 2.5 });
-          }
+      case 'windup': {
+        // anticipation → hold → strike on the one TellHandle (§4.0); aim tracks until the lock
+        if (!H || (!H.alive && !H.struck)) { H = null; ctx.releaseToken(e); e.setState('chase'); break; }
+        if (!H.locked) { faceTo(e, pp.x, pp.z, 4.5, dt); H.setDir(faceDir()); if (d > 1.8) moveForward(e, 0.9 * sm); }
+        if (attackPhase(H) === 2) moveForward(e, 5 * sm);     // the 0.6 m lunge (inside the decal)
+        if (H.consumeStrike()) {
+          if (H.contains(pp) && Math.abs(pp.y - p.y) < 2.4) ctx.hitPlayer(e, { amount: 14, knockback: 8, launch: 2.5, attack: M_SWING });
+          ctx.dust(e.model.weapon.getWorldPosition(_v), 0.35);
+          ctx.audio('blink', { position: p, volume: 0.35, pitch: 0.55 });
+          e.setState('swing');
         }
-        if (t > 0.12 && t < 0.14) { ctx.dust(e.model.weapon.getWorldPosition(_v), 0.35); }
-        if (t > 0.3) { e.setState('recover'); }
         break;
       }
+      case 'swing':
+        if (e.stateT > 0.12) { recoverDur = punishAfter(ctx, e, 'bokoblin.swing') || 0.7; smashCombo = false; e.setState('recover'); }
+        break;
       case 'leapPrep': {
+        if (!H || !H.alive) { H = null; ctx.releaseToken(e); e.setState('chase'); break; }
         faceTo(e, pp.x, pp.z, 6, dt);
-        if (e.stateT > 0.5) {
-          // predict landing ~0.75s flight
-          const T = 0.75;
-          leapTarget.set(pp.x, 0, pp.z);
-          _v.set(leapTarget.x - p.x, 0, leapTarget.z - p.z);
-          const len = _v.length(); if (len > 0.5) leapTarget.addScaledVector(_v, -1.1 / len);
-          leapTarget.y = ctx.groundH(leapTarget.x, leapTarget.z);
-          e.velocity.set((leapTarget.x - p.x) / T, 22 * T / 2, (leapTarget.z - p.z) / T);
-          e.grounded = false; e.leaping = true;
-          ring = ctx.telegraphs.show(leapTarget, 2.9, T, 0xff5a2a);
+        if (!H.locked) { predictLanding(); H.setPos(leapTarget); }
+        else if (!launched) {
+          // launch at the lock: the flight ends exactly at the hit (decal from prep start)
+          const T = Math.max(0.2, H.remaining);
+          e.velocity.set((leapTarget.x - p.x) / T, (leapTarget.y - p.y) / T + 22 * T / 2, (leapTarget.z - p.z) / T);
+          e.grounded = false; e.leaping = true; launched = true;
           e.setState('leap');
           ctx.audio('jump', { position: p, volume: 0.6, pitch: 0.7 });
         }
         break;
       }
       case 'leap':
-        if (e.grounded && e.stateT > 0.1) {
+        if (H && H.consumeStrike()) {
           e.leaping = false;
-          ctx.slam(e.object.position, 2.9, { amount: 18, knockback: 11, launch: 6 }, e);
-          e.setState('recover'); smashCombo = true;
+          p.x = leapTarget.x; p.z = leapTarget.z;
+          ctx.slam(leapTarget, 2.9, { amount: 18, knockback: 11, launch: 6, handle: H, attack: M_LEAP }, e);
+          recoverDur = punishAfter(ctx, e, 'bokoblin.leap') || 1.2;
+          e.setState('recover'); smashCombo = true; H = null;
           leapCd = rand(6, 10);
-        }
+        } else if (!H || (!H.alive && !H.struck)) { H = null; e.leaping = false; if (e.grounded) { ctx.releaseToken(e); e.setState('chase'); } }
         break;
       case 'recover':
-        if (e.stateT > (smashCombo ? 0.9 : 0.55)) {
+        if (e.stateT > recoverDur) {
           smashCombo = false; ctx.releaseToken(e);
           attackCd = rand(1.1, 2.3);
           e.setState('chase');
@@ -137,6 +162,7 @@ export function createBokoblin(ctx, pos, opts = {}) {
 
   e.pose = (dt, sm, stunned) => {
     Object.assign(tgt, BASE);
+    const AH = liveAttack(e), ph = attackPhase(AH), holding = ph === 1;
     const t = game.time + e.id.length;
     let lambda = 12, rl = 0;
     phase += dt * (1.2 + speed * 2.3);
@@ -154,14 +180,20 @@ export function createBokoblin(ctx, pos, opts = {}) {
       tgt.aRx = -0.9; tgt.aLx = -0.9; tgt.fRx = -0.5; tgt.fLx = -0.6; tgt.aRz = -0.15; tgt.aLz = 0.15;
       tgt.spineX = 0.12 + Math.sin(t * 1.6) * 0.03; tgt.headX = -0.15 + Math.sin(t * 0.7) * 0.08; tgt.headY = Math.sin(t * 0.33) * 0.5;
       lambda = 5;
+    } else if (st === 'windup' && ph === 2) {
+      // strike (≤ 0.12 s)
+      tgt.aRx = -0.55; tgt.fRx = -0.1; tgt.aRz = -0.1; tgt.aLx = 0.5; tgt.aLz = 0.4;
+      tgt.pitch = 0.5; tgt.spineX = 0.35; tgt.spineY = -0.5; tgt.headX = -0.2;
+      tgt.lRx = 0.5; tgt.lLx = -0.7; tgt.kL = 0.6; tgt.kR = 0.2; tgt.hipY = HIP - 0.12;
+      lambda = 40;
     } else if (st === 'windup') {
-      const k = clamp(e.stateT / 0.35, 0, 1);
+      const k = windupK(AH);
       tgt.aRx = -3.4 * k - 0.2; tgt.fRx = -0.9 * k; tgt.aRz = -0.35;
       tgt.aLx = -0.9; tgt.aLz = 0.5; tgt.fLx = -0.6;
       tgt.pitch = -0.28 * k; tgt.spineX = -0.2 * k; tgt.spineY = 0.45 * k; tgt.headX = 0.2;
       tgt.lRx = 0.35; tgt.lLx = -0.45; tgt.kL = 0.5; tgt.kR = 0.15;
       tgt.hipY = HIP - 0.05;
-      // trembling tension
+      // trembling tension (anticipation only; the hold is perfectly still)
       tgt.roll = Math.sin(t * 60) * 0.025 * k;
       lambda = 14;
     } else if (st === 'swing') {
@@ -171,9 +203,10 @@ export function createBokoblin(ctx, pos, opts = {}) {
       tgt.lRx = 0.5; tgt.lLx = -0.7; tgt.kL = 0.6; tgt.kR = 0.2; tgt.hipY = HIP - 0.12;
       lambda = 34;
     } else if (st === 'recover') {
-      tgt.aRx = -0.7; tgt.fRx = -0.3; tgt.pitch = smashCombo ? 0.6 : 0.3; tgt.spineX = 0.2; tgt.spineY = -0.2;
-      tgt.lRx = 0.4; tgt.lLx = -0.5; tgt.kL = 0.5; tgt.kR = 0.3; tgt.hipY = HIP - (smashCombo ? 0.25 : 0.08);
-      tgt.headX = 0.3; tgt.aLx = 0.2; lambda = 7;
+      // visible slump for the whole punish window: club stuck in the ground, head low
+      tgt.aRx = smashCombo ? -0.2 : -0.45; tgt.fRx = -0.1; tgt.pitch = smashCombo ? 0.75 : 0.5; tgt.spineX = 0.35; tgt.spineY = -0.25;
+      tgt.lRx = 0.45; tgt.lLx = -0.55; tgt.kL = 0.65; tgt.kR = 0.4; tgt.hipY = HIP - (smashCombo ? 0.3 : 0.16);
+      tgt.headX = 0.55; tgt.aLx = 0.35; tgt.aLz = 0.4; lambda = 7;
     } else if (st === 'leapPrep') {
       tgt.hipY = HIP - 0.3; tgt.pitch = 0.55; tgt.lRx = tgt.lLx = -1.1; tgt.kR = tgt.kL = 1.6;
       tgt.aRx = -3.3; tgt.fRx = -0.6; tgt.aLx = -2.8; tgt.aLz = 0.3; tgt.headX = -0.4;
@@ -200,8 +233,8 @@ export function createBokoblin(ctx, pos, opts = {}) {
       if (st === 'strafe') { tgt.aRx = -1.0; tgt.fRx = -0.8; tgt.aRz = -0.3; tgt.pitch = 0.2; tgt.hipY -= 0.08; }
       if (e.aggro && st === 'chase') { tgt.aRx -= 0.5; tgt.fRx = -0.9; }
     }
-    dampPose(cur, tgt, lambda, dt);
-    if (e.hurt > 0) cur.headX -= e.hurt * 0.04;
+    rhythmDamp(cur, tgt, lambda, dt, holding);
+    if (e.hurt > 0 && !holding) cur.headX -= e.hurt * 0.04;
     applyHumanoid(model, cur);
   };
   return e;

@@ -3,16 +3,20 @@
 import * as THREE from 'three';
 import { rand, clamp, damp } from '../core/utils.js';
 import { buildWolf } from './models2.js';
-import { makeEnemy, faceTo, moveTo, moveForward, isReacting } from './base.js';
+import { makeEnemy, faceTo, moveTo, moveForward, isReacting, modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, attackMeta } from './base.js';
+import { typeName } from './codex.js';
 
 const _v = new THREE.Vector3(), _d = new THREE.Vector3();
-const CIRCLE_R = 6.2;
+const CIRCLE_R = 4.5;            // v4: inside melee reach (was 6.2)
+const M_BITE = attackMeta('wolf.bite');
+const DART_SPEED = 13;
 
 export function createWolf(ctx, pos, opts = {}) {
-  const model = buildWolf();
+  const alpha = opts.packSlot === 0 && opts.pack != null;
+  const model = modelFor(ctx, 'wolf', alpha ? { variant: 'alpha' } : {}, buildWolf);
   model.lieY = 0.25;
   const e = makeEnemy(ctx, {
-    kind: 'wolf', model, name: '타락 늑대', hp: 110, radius: 0.55, height: 1.1, mass: 0.85,
+    kind: 'wolf', model, name: typeName('wolf'), hp: 110, radius: 0.55, height: 1.1, mass: 0.85,
     camp: opts.camp, facing: opts.facing, staggerDmg: 26, sight: 26, chaseState: 'circle', resist: { shadow: 0.6, light: 1.25 },
   }, pos);
   e.element = 'void'; e.isVoid = true;
@@ -22,13 +26,35 @@ export function createWolf(ctx, pos, opts = {}) {
   let gait = rand(0, 6), speed = 0, dartCd = rand(1.5, 3) + e.packSlot * 0.9, slotA = e.packSlot * 2.09 + rand(-0.3, 0.3), hitDone = false;
   let jaw = 0, howlT = 0, tele = null, lean = 0, bodyPitch = 0;
   const stopTele = () => { tele?.stop?.(); tele = null; };
-  e.interrupt = () => { hitDone = true; stopTele(); };
+  let H = null, dartLen = 6, recoverDur = 0.8;
+  const biteDir = new THREE.Vector3();
+  const biteShape = { kind: 'line', len: 6, width: 1.3, dir: biteDir, follow: true };
+  // one wolf attacks at a time (§4.6)
+  const busyFree = () => { const b = ctx._wolfAttacker; return !b || b === e || !b.alive || b.dying || b.removed || !liveAttack(b) && b.state !== 'dart' && b.state !== 'slide'; };
+  function startBite(force) {
+    if (!force && (!busyFree() || !ctx.takeToken(e))) return false;
+    const pp = ctx.playerPos, p = e.object.position;
+    dartLen = Math.min(9, Math.hypot(pp.x - p.x, pp.z - p.z) + 1.2);
+    biteShape.len = dartLen;
+    biteDir.set(pp.x - p.x, 0, pp.z - p.z).normalize();
+    H = beginAttack(ctx, e, 'wolf.bite', biteShape);
+    if (!H) { ctx.releaseToken(e); return false; }
+    ctx._wolfAttacker = e;
+    e.setState('crouch'); hitDone = false; return true;
+  }
+  e.attackStarters['wolf.bite'] = startBite;
+  e.interrupt = () => { hitDone = true; stopTele(); H = null; if (ctx._wolfAttacker === e) ctx._wolfAttacker = null; };
+  e.die = () => { stopTele(); if (ctx._wolfAttacker === e) ctx._wolfAttacker = null; };
   e.onResume = () => { dartCd = Math.max(dartCd, 1.0); };
-  e.die = () => stopTele();
 
+  const lineShape = { kind: 'line', len: 6, width: 1.3, pos: new THREE.Vector3(), dir: biteDir };
+  function liveContains(pp) {
+    // the locked decal: origin = where the dart started
+    return ctx.game.tells?.hitTest ? ctx.game.tells.hitTest(lineShape, pp, 0.15) : true;
+  }
   function voidWisps(s = 1) {
     model.rig.getWorldPosition(_v);
-    game.vfx.burst(_v, { count: Math.round(10 * s), color: [0xb36bff, 0x2a1440], speed: 1.6, spread: 1, size: 0.3, sizeEnd: 0.7, life: 0.8, shape: 'wisp', additive: false, drag: 2, gravity: -1 });
+    game.vfx.burst(_v, { owner: 'enemy', count: Math.round(10 * s), color: [0xb36bff, 0x2a1440], speed: 1.6, spread: 1, size: 0.3, sizeEnd: 0.7, life: 0.8, shape: 'wisp', additive: false, drag: 2, gravity: -1 });
   }
 
   e.think = (dt, sm) => {
@@ -53,28 +79,30 @@ export function createWolf(ctx, pos, opts = {}) {
         const tx = pp.x + Math.sin(slotA) * CIRCLE_R, tz = pp.z + Math.cos(slotA) * CIRCLE_R;
         const rem = moveTo(e, tx, tz, (d > 12 ? 7.5 : 4.8) * sm, 0.4);
         if (rem > 1.5) faceTo(e, tx, tz, 8, dt); else faceTo(e, pp.x, pp.z, 6, dt);
-        if (dartCd <= 0 && d < 9 && rem < 3) {
-          if (ctx.takeToken(e)) {
-            e.setState('crouch'); game.events.emit('enemyAttack', { enemy: e, kind: 'bite' });
-            _d.set(pp.x - p.x, 0, pp.z - p.z).normalize();
-            tele = ctx.tele({ shape: 'line', pos: p, dir: _d, len: Math.min(9, d + 1), width: 1.3, dur: 0.55, color: 'void' });
-          } else dartCd = rand(0.6, 1.2);
-        }
+        if (dartCd <= 0 && d < 9 && rem < 3 && !startBite(false)) dartCd = rand(0.6, 1.2);
         break;
       }
       case 'crouch':
-        faceTo(e, pp.x, pp.z, 9, dt);
-        if (e.stateT < 0.35) { _d.set(Math.sin(e.facing), 0, Math.cos(e.facing)); tele?.setDir?.(_d); tele?.setPos?.(p); }
-        if (e.stateT > 0.55 / Math.max(0.5, sm)) { e.setState('dart'); hitDone = false; ctx.audio('blink', { position: p, volume: 0.3, pitch: 1.3 }); }
+        if (!H || (!H.alive && !H.struck)) { H = null; ctx.releaseToken(e); if (ctx._wolfAttacker === e) ctx._wolfAttacker = null; e.setState('circle'); break; }
+        if (!H.locked) { faceTo(e, pp.x, pp.z, 9, dt); biteDir.set(Math.sin(e.facing), 0, Math.cos(e.facing)); H.setDir(biteDir); }
+        if (H.consumeStrike()) { lineShape.pos.copy(p); lineShape.len = dartLen; H = null; e.setState('dart'); hitDone = false; ctx.audio('blink', { position: p, volume: 0.3, pitch: 1.3 }); }
         break;
-      case 'dart':
-        moveForward(e, 13 * sm);
+      case 'dart': {
+        // runs the drawn line; bites when its body reaches a target inside the line (hitbox = decal)
+        e.facing = Math.atan2(biteDir.x, biteDir.z);
+        moveForward(e, DART_SPEED);
         jaw = 1;
-        if (!hitDone && ctx.meleeCheck(e, 1.4, 0.8)) {
-          hitDone = true; ctx.hitPlayer(e, { amount: 11, element: 'void', knockback: 5, status: { blight: 1.5 } });
+        if (!hitDone && d < e.radius + 0.9 && liveContains(pp)) {
+          hitDone = true; ctx.hitPlayer(e, { amount: 11, element: 'void', knockback: 5, status: { blight: 1.5 }, attack: M_BITE });
           voidWisps(0.6);
         }
-        if (e.stateT > 0.42 || (hitDone && e.stateT > 0.2)) { stopTele(); e.setState('retreat'); }
+        if (e.stateT * DART_SPEED >= dartLen - 0.3 || e.stateT > 0.75) { recoverDur = punishAfter(ctx, e, 'wolf.bite') || 0.8; e.setState('slide'); }
+        break;
+      }
+      case 'slide':
+        // slides after the bite: the punish window
+        moveForward(e, Math.max(0, 6 * (1 - e.stateT / Math.max(0.1, recoverDur * 0.5))));
+        if (e.stateT > recoverDur) { if (ctx._wolfAttacker === e) ctx._wolfAttacker = null; e.setState('retreat'); }
         break;
       case 'retreat':
         _v.set(p.x - pp.x, 0, p.z - pp.z).normalize();
@@ -100,7 +128,9 @@ export function createWolf(ctx, pos, opts = {}) {
     const run = clamp(speed / 7, 0, 1), amt = clamp(speed / 3, 0, 1);
     const L = model.legs;
     let crouch = 0, headX = 0, headY = 0;
-    if (st === 'crouch') crouch = clamp(e.stateT / 0.3, 0, 1);
+    const AH = liveAttack(e), aph = attackPhase(AH);
+    if (st === 'crouch') crouch = aph === 2 ? 0.6 : windupK(AH);
+    if (aph === 1 && st === 'crouch') return;                 // hold (§4.0): frozen at the bottom of the crouch
     if (st === 'sniff') { headX = 0.5 + Math.sin(t * 6) * 0.08; headY = Math.sin(t * 1.3) * 0.5; }
     if (howlT > 0) { headX = -0.9 * Math.sin(Math.min(1, (1.1 - howlT) / 0.3) * Math.PI * 0.5); jaw = 0.8; }
     const react = isReacting(e);
@@ -114,6 +144,7 @@ export function createWolf(ctx, pos, opts = {}) {
     }
     let pitchT = run * 0.08 - crouch * 0.12, roll = 0, hipY = 0.62 - crouch * 0.2 - Math.abs(Math.sin(gait)) * 0.04 * amt;
     if (st === 'dart') pitchT = 0.18;
+    if (st === 'slide') { pitchT = -0.2; roll = 0.25; }
     if (react) { pitchT = -0.3; roll = Math.sin(t * 10) * 0.1; }
     if (stunned) { roll = Math.sin(t * 3) * 0.2; headY = Math.sin(t * 4) * 0.4; }
     if (st === 'dead') { roll = 1.4; hipY = 0.3; }
