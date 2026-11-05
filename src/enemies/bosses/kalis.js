@@ -333,7 +333,7 @@ export function createKalis(ctx, arena, opts = {}) {
       bossPunish(ctx, e, st, 1.5);
     } else {
       const pe = game.player?.entity;
-      vfx.preset?.('explosion_light', e.getCenter(_v), { owner: 'enemy', scale: 1.6 });
+      vfx.preset?.('explosion_light', e.getCenter(_v), { owner: 'enemy', scale: 0.96 });
       if (pe && pe.alive !== false) {
         const mh = game.player?.maxHp || pe.maxHp || 100;
         const dmg = Math.min(Math.round(mh * D.wipeFrac), Math.max(0, (pe.hp ?? mh) - 1));

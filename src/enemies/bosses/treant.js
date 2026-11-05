@@ -87,8 +87,8 @@ function geos() {
         P(S(0.25, 7, 5), TC.barkLight, [0.35, 0.2, 1.7]), P(S(0.2, 7, 5), TC.barkLight, [-0.4, 0.45, 1.68])]),
       fingers: mergeParts([-0.6, -0.2, 0.2, 0.6].flatMap((x, i) => [P(K(0.14, 1.2, 5), TC.dead, [x * 1.3, -5.7, 0.6 + (i % 2) * 0.2], [0.6, 0, x * 0.8])])),
       vine: mergeParts([P(C(0.07, 0.1, 1.6, 5), TC.moss, [0, -0.8, 0]), P(S(0.18, 6, 4), TC.leaf, [0.1, -1.3, 0.05], [0, 0, 0], [1, 0.5, 1.4])]),
-      glowHead: glowify(mergeParts([P(S(0.28, 8, 6), 0xd9a0ff, [0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5]), P(S(0.28, 8, 6), 0xd9a0ff, [-0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5])]), 2.6),
-      heart: glowify(mergeParts([P(OCT(1.0), 0x9be86a, [0, 0, 0], [0, 0, 0], [1, 1.35, 0.8]), P(T(1.25, 0.1, 14), 0xb36bff, [0, 0, 0])]), 2.0),
+      glowHead: glowify(mergeParts([P(S(0.28, 8, 6), 0xd9a0ff, [0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5]), P(S(0.28, 8, 6), 0xd9a0ff, [-0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5])]), 1.15),
+      heart: glowify(mergeParts([P(OCT(1.0), 0x9be86a, [0, 0, 0], [0, 0, 0], [1, 1.35, 0.8]), P(T(1.25, 0.1, 14), 0xb36bff, [0, 0, 0])]), 1.15),
       pod: (() => { const g = new THREE.IcosahedronGeometry(0.55, 1); return g; })(),
     };
   });
@@ -188,9 +188,9 @@ export function createTreant(ctx, arena, opts = {}) {
   function burnPlate(pl) {
     pl.burnT = 0.01;
     pl.bone.getWorldPosition(_v);
-    vfx.preset?.('explosion_fire', _v, { scale: 2.4 });
-    vfx.debris?.(_v, { count: 16, size: 0.8, speed: 9, material: 'wood' });
-    vfx.burst(_v, { count: 40, color: [0xffd04a, 0xff6a1f], speed: 6, spread: 1, size: 0.4, sizeEnd: 0, life: 1.2, shape: 'ember', gravity: -2 });
+    vfx.preset?.('explosion_fire', _v, { owner: 'enemy', scale: 1.44 });
+    vfx.debris?.(_v, { owner: 'enemy', count: 16, size: 0.8, speed: 9, material: 'wood' });
+    vfx.burst(_v, { owner: 'enemy', count: 20, color: [0xffd04a, 0xff6a1f], speed: 6, spread: 1, size: 0.4, sizeEnd: 0, life: 1.2, shape: 'ember', gravity: -2 });
     ctx.audio('explode_fire', { position: _v, volume: 1, pitch: 0.7 });
     e.shakeAt(_v, 0.5);
   }
@@ -223,7 +223,7 @@ export function createTreant(ctx, arena, opts = {}) {
     try { game.combat.unregister(pod); } catch (_) { /* */ }
     const c = pod.object.position;
     _v.copy(c).setY(c.y + 0.6);
-    vfx.preset?.('explosion_fire', _v, { scale: 1.6 });
+    vfx.preset?.('explosion_fire', _v, { owner: 'enemy', scale: 0.96 });
     vfx.groundDecal?.('scorch', c, 3, 6);
     ctx.audio('explode_fire', { position: c, volume: 0.9 });
     for (const pl of plates) {
@@ -376,7 +376,7 @@ export function createTreant(ctx, arena, opts = {}) {
     applyHumanoid(model, cur);
     // burned plates crumble away; heart glow
     for (const pl of plates) {
-      if (pl.burnT > 0) { pl.burnT += dt; pl.bone.scale.setScalar(Math.max(0.001, 1 - pl.burnT * 1.5)); if (pl.burnT < 0.7 && Math.random() < 0.4) { pl.bone.getWorldPosition(_v); vfx.burst(_v, { count: 2, color: [0xffd04a, 0xff6a1f], speed: 2, spread: 1, size: 0.3, sizeEnd: 0, life: 0.8, shape: 'ember', gravity: -2 }); } }
+      if (pl.burnT > 0) { pl.burnT += dt; pl.bone.scale.setScalar(Math.max(0.001, 1 - pl.burnT * 1.5)); if (pl.burnT < 0.7 && Math.random() < 0.4) { pl.bone.getWorldPosition(_v); vfx.burst(_v, { owner: 'enemy', count: 2, color: [0xffd04a, 0xff6a1f], speed: 2, spread: 1, size: 0.3, sizeEnd: 0, life: 0.8, shape: 'ember', gravity: -2 }); } }
     }
     const hg = e.phase >= 1 ? (heartOpen ? 0.9 : 0.35) : 0.12;
     model.halo.material.opacity = damp(model.halo.material.opacity, hg + Math.sin(t * 4) * 0.08, 4, dt);

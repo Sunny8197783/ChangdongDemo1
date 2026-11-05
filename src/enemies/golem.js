@@ -357,7 +357,7 @@ export function createGolem(ctx, pos, opts = {}) {
     if (!parts) {
       parts = [];
       model.coreGroup.getWorldPosition(_v);
-      vfx.preset?.('explosion_earth', _v, { owner: 'enemy', scale: 1.6 });
+      vfx.preset?.('explosion_earth', _v, { owner: 'enemy', scale: 0.96 });
       vfx.shockwave?.(_v.set(p.x, groundY + 0.3, p.z), { owner: 'enemy', color: 0xb8a582, radius: 14, duration: 1.0, opacity: 0.5 });
       vfx.shake?.(1);
       ctx.audio('explode_earth', { position: p, volume: 1.2, pitch: 0.5 });

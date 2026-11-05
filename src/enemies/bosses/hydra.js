@@ -161,13 +161,13 @@ export function createHydra(ctx, arena, opts = {}) {
     resist: { water: 0.5 }, phases: D.phases, transition: 3.0, weakness: ['lightning', 'fire', 'earth'],
     facing: Math.atan2(ctx.realPlayerPos.x - A.position.x, ctx.realPlayerPos.z - A.position.z),
     gate: (i) => i !== 1 || heads.every((h) => h.dead),
-    onPhase: (i) => { if (i === 1) { rise = 0; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 1), { scale: 3 }); ctx.audio('boss_roar', { position: e.object.position, volume: 1, pitch: 0.7 }); e.shakeAt(e.object.position, 0.7); } },
+    onPhase: (i) => { if (i === 1) { rise = 0; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 1), { owner: 'enemy', scale: 1.8 }); ctx.audio('boss_roar', { position: e.object.position, volume: 1, pitch: 0.7 }); e.shakeAt(e.object.position, 0.7); } },
     onRespawnPhase: () => { if (e.phase === 0) { for (const h of heads) { h.dead = false; h.sever = 0; h.state = 'idle'; } e.reviveParts(); assignElements(); speedMul = 1; } },
     onPartBreak: (part) => severHead(part),
     onBodyHit: (res, hit) => { if (hit?.element === 'ice') freezeRing(); },
     deathPose: (dt, t) => { model.body.position.y = -Math.min(6, t * 2.2); model.body.rotation.z = Math.min(0.5, t * 0.2); },
     dissolveAt: 2.2, dissolveDur: 2.0, dissolveColor: 0x4fb4ff,
-    onDefeat: () => { for (const h of heads) h.N.ring.visible = false; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 2), { scale: 4 }); },
+    onDefeat: () => { for (const h of heads) h.N.ring.visible = false; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 2), { owner: 'enemy', scale: 2.4 }); },
   });
   e.noLod = true;
   e.object.rotation.y = e.facing;
@@ -197,8 +197,8 @@ export function createHydra(ctx, arena, opts = {}) {
     const h = heads.find((q) => q.part === part); if (!h || h.dead) return;
     h.dead = true; h.sever = 0; h.handle?.stop?.(); h.handle = null; h.state = 'idle'; if (biting === h) biting = null; h.N.ring.visible = false;
     h.N.head.getWorldPosition(_v);
-    vfx.preset?.('explosion_' + h.el, _v, { scale: 2.2 });
-    vfx.burst(_v, { count: 50, color: [0xd8f4ff, elColor(h.el, 'mid')], speed: 9, spread: 1, size: 0.35, sizeEnd: 0.05, life: 1.2, gravity: 10, shape: 'droplet' });
+    vfx.preset?.('explosion_' + h.el, _v, { owner: 'enemy', scale: 1.32 });
+    vfx.burst(_v, { owner: 'enemy', count: 25, color: [0xd8f4ff, elColor(h.el, 'mid')], speed: 9, spread: 1, size: 0.35, sizeEnd: 0.05, life: 1.2, gravity: 10, shape: 'droplet' });
     ctx.audio('boss_roar', { position: _v, volume: 1, pitch: 1.3 });
     e.shakeAt(_v, 0.6);
     // the survivors swap elements and speed up (+20 %)
@@ -206,7 +206,7 @@ export function createHydra(ctx, arena, opts = {}) {
     if (live.length > 1) { const first = live[0].el; for (let k = 0; k < live.length - 1; k++) live[k].el = live[k + 1].el; live[live.length - 1].el = first; }
     speedMul *= 1.2;
     assignElements();
-    for (const q of live) { q.N.head.getWorldPosition(_w); vfx.burst(_w, { count: 18, color: [0xffffff, elColor(q.el, 'mid')], speed: 4, spread: 1, size: 0.3, sizeEnd: 0, life: 0.6, shape: 'spark' }); }
+    for (const q of live) { q.N.head.getWorldPosition(_w); vfx.burst(_w, { owner: 'enemy', count: 18, color: [0xc8d0dc, elColor(q.el, 'mid')], speed: 4, spread: 1, size: 0.3, sizeEnd: 0, life: 0.6, shape: 'spark' }); }
   }
 
   /** Ice on the lake: a ring of walkable ice discs around the body for 10 s (melee classes can reach the heads). */
@@ -222,7 +222,7 @@ export function createHydra(ctx, arena, opts = {}) {
       iceDiscs[k].copy(_v);
       try { sf.freezeWater(_v, 4.2, 10); } catch (_) { /* */ }
     }
-    vfx.shockwave?.(_v.set(c.x, waterY + 0.1, c.z), { color: 0xd8f6ff, radius: 14, duration: 0.8, opacity: 0.8 });
+    vfx.shockwave?.(_v.set(c.x, waterY + 0.1, c.z), { owner: 'enemy', color: 0xd8f6ff, radius: 14, duration: 0.8, opacity: 0.8 });
     e.emitCheck?.('freeze', 'start', 10);
   }
   const offFrozen = game.events.on?.('waterFrozen', (p) => {

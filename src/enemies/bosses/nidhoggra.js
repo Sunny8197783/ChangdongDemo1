@@ -157,7 +157,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     st.rods.lit[k] = true;
     const p = rods[k].object.position;
     model.rods.setColorAt(k, _c.setHex(0xe9d8ff).multiplyScalar(2.4)); model.rods.instanceColor.needsUpdate = true;
-    vfx.preset?.('impact_lightning', _v.copy(p).setY(p.y + 5.9), { scale: 1.6 });
+    vfx.preset?.('impact_lightning', _v.copy(p).setY(p.y + 5.9), { owner: 'enemy', scale: 0.96 });
     ctx.audio('impact_lightning', { position: p, volume: 0.9 });
   }
   const _c = new THREE.Color();
@@ -216,7 +216,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       part.lock.giftUsed = true;
       e.stripLock(part, 50, 'gift');
       part.getCenter(_v);
-      vfx.preset?.('rx_resonance', _v, { scale: 1.2 });
+      vfx.preset?.('rx_resonance', _v, { owner: 'enemy', scale: 1.2 });
       game.events.emit('giftUsed', { element: G.element, purpose: 'lock' });
       return true;
     },
@@ -229,8 +229,8 @@ export function createNidhoggra(ctx, arena, opts = {}) {
   }
   function onStrip(part, by) {
     part.getCenter(_v);
-    vfx.preset?.('rx_shatter', _v, { scale: 1.6 });
-    vfx.burst(_v, { count: 40, color: [0xffffff, elColor(part.lock.element, 'hex')], speed: 8, spread: 1, size: 0.3, sizeEnd: 0, life: 0.8, shape: 'shard', gravity: 6 });
+    vfx.preset?.('rx_shatter', _v, { owner: 'enemy', scale: 0.96 });
+    vfx.burst(_v, { owner: 'enemy', count: 20, color: [0xc8d0dc, elColor(part.lock.element, 'hex')], speed: 8, spread: 1, size: 0.3, sizeEnd: 0, life: 0.8, shape: 'shard', gravity: 6 });
     ctx.audio('shatter', { position: _v, volume: 1, pitch: 0.7 });
     if (part !== plate) {
       const s = shards.find((q) => q.part === part);
@@ -267,8 +267,8 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     if (s.buffEarned) grantBuff(s.L.element);
     // the freed oath: a spirit-coloured pillar of light
     s.pos.y += 0;
-    vfx.preset?.('explosion_' + s.L.element, s.pos, { scale: 2.4 });
-    for (let k = 0; k < 4; k++) vfx.burst(_v.copy(s.pos).setY(s.pos.y + k * 3), { count: 14, color: [0xffffff, elColor(s.L.element, 'hex')], speed: 3, spread: 1, size: 0.4, sizeEnd: 0, life: 1.4, shape: 'spark', gravity: -6 });
+    vfx.preset?.('explosion_' + s.L.element, s.pos, { owner: 'enemy', scale: 1.44 });
+    for (let k = 0; k < 4; k++) vfx.burst(_v.copy(s.pos).setY(s.pos.y + k * 3), { owner: 'enemy', count: 14, color: [0xc8d0dc, elColor(s.L.element, 'hex')], speed: 3, spread: 1, size: 0.4, sizeEnd: 0, life: 1.4, shape: 'spark', gravity: -6 });
     if (st.shardIdx === s.i) { st.shardIdx = -1; st.shardT = 3; st.tele?.stop?.(); st.tele = null; }
   }
 
@@ -281,7 +281,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       plate.lock.gauge = 0; plate.alive = false; plate.invulnerable = true;
       st.shardT = 4; st.shardIdx = -1; st.gift.ready = false;
       sendParts(1);
-      vfx.preset?.('rx_break', st.headPos, { scale: 2.5 });
+      vfx.preset?.('rx_break', st.headPos, { owner: 'enemy', scale: 1.5 });
       ctx.audio('boss_roar', { position: st.headPos, volume: 1, pitch: 0.55 });
     } else if (i === 2) {
       st.tide.active = false;
@@ -290,7 +290,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       heart.invulnerable = true; st.heartOpen = true; st.heartT = D.heartWindow;
       sendParts(2);
       offerGift('light', 'spear', D.spear.charges);
-      vfx.preset?.('explosion_light', _v.copy(C0).setY(top + 2), { scale: 3.5 });
+      vfx.preset?.('explosion_light', _v.copy(C0).setY(top + 2), { owner: 'enemy', scale: 2.1 });
       try { game.post?.grade?.('golden', 0.35); } catch (_) { /* */ }
       ctx.audio('boss_roar', { position: st.headPos, volume: 1, pitch: 0.45 });
     }
@@ -314,12 +314,12 @@ export function createNidhoggra(ctx, arena, opts = {}) {
     e.emitCheck('rods', ok ? 'success' : 'fail', 0);
     if (ok) {
       st.rods.done = true; st.stagger = 6;
-      vfx.preset?.('rx_overload', st.headPos, { scale: 3 });
+      vfx.preset?.('rx_overload', st.headPos, { owner: 'enemy', scale: 1.8 });
       e.shakeAt(st.headPos, 1.0);
     } else {
       st.rods.cd = 6;
       const pe = game.player?.entity;
-      vfx.preset?.('explosion_lightning', _v.copy(ctx.realPlayerPos).setY(ctx.realPlayerPos.y + 1), { scale: 2.5 });
+      vfx.preset?.('explosion_lightning', _v.copy(ctx.realPlayerPos).setY(ctx.realPlayerPos.y + 1), { owner: 'enemy', scale: 1.5 });
       if (pe && pe.alive !== false) {
         const mh = game.player?.maxHp || pe.maxHp || 100;
         const dmg = Math.min(Math.round(mh * D.rodFailFrac), Math.max(0, (pe.hp ?? mh) - 1));
@@ -352,7 +352,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
   function failTide() {
     st.tide.active = false; st.tide.retry = 4; clearTele();
     e.emitCheck('tide', 'fail', 0);
-    vfx.shockwave?.(_v.copy(C0).setY(top + 0.3), { color: 0x9a5cff, radius: A.radius, duration: 1.0, opacity: 0.9, thickness: 1 });
+    vfx.shockwave?.(_v.copy(C0).setY(top + 0.3), { owner: 'enemy', color: 0x9a5cff, radius: A.radius, duration: 1.0, opacity: 0.9, thickness: 1 });
     const pe = game.player?.entity;
     if (pe && pe.alive !== false) {
       const mh = game.player?.maxHp || pe.maxHp || 100;
@@ -364,8 +364,8 @@ export function createNidhoggra(ctx, arena, opts = {}) {
   function throwSpear() {
     const pp = ctx.realPlayerCenter;
     heart.getCenter(_v);
-    try { vfx.beam?.(pp.clone(), _v.clone(), { color: 0xfff1c0, width: 0.6, duration: 0.3 }); } catch (_) { /* */ }
-    vfx.preset?.('impact_light', _v, { scale: 1.8 });
+    try { vfx.beam?.(pp.clone(), _v.clone(), { owner: 'enemy', color: 0xfff1c0, width: 0.6, duration: 0.3 }); } catch (_) { /* */ }
+    vfx.preset?.('impact_light', _v, { owner: 'enemy', scale: 1.08 });
     if (!heart.invulnerable && heart.alive) game.combat.dealDamage(heart, { amount: Math.round(heart.maxHp * D.spear.frac), fixed: true, element: 'light', source: 'player', noReaction: true, tags: ['gift'] });
   }
 
@@ -379,7 +379,7 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       _v.set(pp.x + Math.sin(a) * r, 0, pp.z + Math.cos(a) * r);
       _d.set(_v.x - C0.x, 0, _v.z - C0.z); if (_d.length() > A.radius - 4) { _d.setLength(A.radius - 4); _v.set(C0.x + _d.x, 0, C0.z + _d.z); }
       const m = ctx.spawnSummon('wraith', _v.clone(), { zoneId: 'plateau', noLeap: true });
-      if (m) { m.xpValue = 0; st.minions.push(m); vfx.burst(m.getCenter(_w), { count: 24, color: [0x5a2a9a, 0x160f24], speed: 3, spread: 1, size: 0.6, sizeEnd: 1.4, life: 0.9, shape: 'smoke', additive: false }); }
+      if (m) { m.xpValue = 0; st.minions.push(m); vfx.burst(m.getCenter(_w), { owner: 'enemy', count: 12, color: [0x5a2a9a, 0x160f24], speed: 3, spread: 1, size: 0.6, sizeEnd: 1.4, life: 0.9, shape: 'smoke', additive: false }); }
     }
   }
 
