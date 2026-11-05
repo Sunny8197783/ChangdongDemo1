@@ -12,7 +12,6 @@ export function createCodex(game, ui, parent) {
   const root = parent.appendChild(h('div', 'aw-screen aw-grimoire aw-codex', `
     <div class="aw-book">
       <div class="aw-book-tabs"><button class="on" data-cpage="rx">${CODEX_KO.rxPage}</button><button data-cpage="sk">${CODEX_KO.skillPage}</button><button data-cpage="mon">${CODEX_KO.monPage}</button></div>
-      <div class="aw-book-page aw-book-mon"><div class="aw-book-title">${CODEX_KO.monPage}</div><div class="aw-book-count aw-mon-count"></div><div class="aw-cx-scroll aw-mon-list"></div></div>
       <div class="aw-book-page aw-book-left">
         <div class="aw-book-title">${CODEX_KO.title}</div>
         <div class="aw-book-count"></div>
@@ -25,6 +24,7 @@ export function createCodex(game, ui, parent) {
         <div class="aw-book-count aw-sp-count"></div>
         <div class="aw-cx-scroll aw-spell-list"></div>
       </div>
+      <div class="aw-book-page aw-book-mon"><div class="aw-book-title">${CODEX_KO.monPage}</div><div class="aw-book-count aw-mon-count"></div><div class="aw-cx-scroll aw-mon-list"></div></div>
       <div class="aw-book-foot"><kbd class="aw-codex-key">Tab</kbd> ${CODEX_KO.close}</div>
     </div>`));
   const book = root.querySelector('.aw-book');
