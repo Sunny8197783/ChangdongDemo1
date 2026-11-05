@@ -519,13 +519,15 @@ export function createEnemies(game) {
       const e = all[i];
       if (!e.alive || e.dying || e.isDummy || e.bench || e.isBoss) continue;
       const type = codexKey(e);
+      if (!seenSession[type]) {
+        const p = e.object.position, dx = p.x - pp.x, dz = p.z - pp.z;
+        if (dx * dx + dz * dz <= 900) {
+          if (!frustumReady) { cam.updateMatrixWorld(); _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _frustum.setFromProjectionMatrix(_pm); frustumReady = true; }
+          _sph.center.set(p.x, p.y + e.height * 0.5, p.z); _sph.radius = Math.max(0.5, e.radius);
+          if (_frustum.intersectsSphere(_sph)) encounter(e, true);
+        }
+      }
       if (e.aggro && !aggroSession[type]) encounter(e, false);
-      if (seenSession[type]) continue;
-      const p = e.object.position, dx = p.x - pp.x, dz = p.z - pp.z;
-      if (dx * dx + dz * dz > 900) continue;
-      if (!frustumReady) { cam.updateMatrixWorld(); _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _frustum.setFromProjectionMatrix(_pm); frustumReady = true; }
-      _sph.center.set(p.x, p.y + e.height * 0.5, p.z); _sph.radius = Math.max(0.5, e.radius);
-      if (_frustum.intersectsSphere(_sph)) encounter(e, true);
     }
   }
   let lastET = null;
@@ -533,10 +535,14 @@ export function createEnemies(game) {
   const api = {
     list, all, FACTORIES, bosses, encounters,
     substeps: true,
+    /** Test / debug access to the projectile pools (orbs, spores, clouds). */
+    get projectiles() { return ctx.projectiles; },
     // ---- v4 (§7.4.5)
     registerCodex(entries) { for (const c of [].concat(entries || [])) if (c && c.type) codexMap[c.type] = c; },
     codex() { return codexMap; },
     noteEncounter,
+    /** Test hook: forget every encounter (session + save section). */
+    debugResetEncounters() { seenSave = {}; for (const k in seenSession) delete seenSession[k]; for (const k in aggroSession) delete aggroSession[k]; },
     aggroCount() { let n = 0; for (const e of all) if (e.alive && !e.dying && e.aggro && !e.isDummy && !e.bench) n++; return n; },
     orbCount() { return ctx.projectiles?.orbCount?.() ?? 0; },
     orbEta(pos) { return ctx.projectiles?.orbEta?.(pos) ?? Infinity; },

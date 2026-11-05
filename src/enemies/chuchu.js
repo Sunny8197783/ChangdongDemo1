@@ -208,7 +208,7 @@ export function createChuchu(ctx, pos, opts = {}) {
     else if (e.flashUniform && e._auraGlow) e.flashUniform.value = 0;
     e._auraGlow = !!(AH && AH.id === 'chuchu.aura');
     // hold (§4.0): the lunge crouch freezes at the top (springs and quiver paused)
-    if (aph === 1 && AH.id === 'chuchu.lunge') return;
+    if (aph === 1) return;
     if (rs === 'dead') target = 0.6;
     else if (rs === 'knockdown') target = 0.5;               // splat
     else if (rs === 'getup') target = 1.15;

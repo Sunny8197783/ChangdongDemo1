@@ -58,7 +58,7 @@ export class EnemyProjectiles {
     const S = this._sporePool();
     const b = S.find((x) => !x.active) || S[0];
     const T = opts.flight ?? 1.0;
-    b.active = true; b.t = 0; b.T = T; b.source = source;
+    b.active = true; b.t = 0; b.T = T; b.source = source; b.to.copy(to);
     b.g.position.copy(from); b.g.visible = true;
     b.vel.set((to.x - from.x) / T, (to.y - from.y + 0.5 * 22 * T * T) / T, (to.z - from.z) / T);
     b.tele = opts.noTele ? null : (this.ctx.tele?.({ shape: 'circle', pos: to, r: 2.2, dur: T, color: 0x9be86a }) || null);
@@ -76,7 +76,7 @@ export class EnemyProjectiles {
       g.add(new THREE.Mesh(geo, mat));
       const halo = new THREE.Sprite(glowSpriteMat(0x9be86a, 0.6)); halo.scale.setScalar(1.1); g.add(halo);
       this.ctx.game.scene.add(g);
-      this.spores.push({ g, active: false, vel: new THREE.Vector3(), t: 0, T: 1, source: null, em: null, tele: null, attackId: 'shroom.lob' });
+      this.spores.push({ g, to: new THREE.Vector3(), active: false, vel: new THREE.Vector3(), t: 0, T: 1, source: null, em: null, tele: null, attackId: 'shroom.lob' });
     }
     this.clouds = [];
     for (let i = 0; i < 6; i++) this.clouds.push({ active: false, pos: new THREE.Vector3(), r: 2.2, t: 0, life: 4, tick: 0, fx: 0, source: null, hz: null, attack: null });
@@ -329,7 +329,9 @@ export class EnemyProjectiles {
       const gh = ctx.groundH(p.x, p.z);
       if (this._blocked(p) || (b.t > 0.12 && p.y < gh + 0.2) || b.t > b.T + 0.8) {
         b.active = false; b.g.visible = false; b.em?.stop?.(); b.em = null; b.tele?.stop?.(); b.tele = null;
-        this.cloud(p, b.source, { attackId: b.attackId });
+        // the cloud sits on the drawn landing circle (hitbox = decal) unless a collider stopped the sac early
+        const onTarget = Math.hypot(p.x - b.to.x, p.z - b.to.z) < 1.5;
+        this.cloud(onTarget ? b.to : p, b.source, { attackId: b.attackId });
       }
     }
     for (const c of this.clouds) {
