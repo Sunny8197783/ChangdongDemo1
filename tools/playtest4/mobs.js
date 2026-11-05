@@ -88,13 +88,13 @@ module.exports = async function mobs(PT) {
       'voidknight.slam': ['voidknight', {}, 3.4], 'voidknight.bash': ['voidknight', {}, 1.8],
     };
     /** Point 0.3 m inside / outside the locked decal edge (ground XZ). */
-    function edgePoint(S, mode) {
+    function edgePoint(S, mode, side = 1) {
       const s = mode === 'inside' ? -0.3 : 0.3, P = S.pos, D = S.dir || { x: 0, z: 1 };
       const dl = Math.hypot(D.x, D.z) || 1, dx = D.x / dl, dz = D.z / dl;
       if (S.kind === 'cone') return [P.x + dx * (S.r + s), P.z + dz * (S.r + s)];
       if (S.kind === 'circle') { const p = pl(); let ux = p.x - P.x, uz = p.z - P.z; const l = Math.hypot(ux, uz); if (l < 0.2) { ux = 1; uz = 0; } else { ux /= l; uz /= l; } return [P.x + ux * (S.r + s), P.z + uz * (S.r + s)]; }
-      if (S.kind === 'line') { const mx = P.x + dx * S.len * 0.5, mz = P.z + dz * S.len * 0.5, o = S.width / 2 + s; return [mx - dz * o, mz + dx * o]; }
-      if (S.kind === 'capsule') { const Ee = S.end; let ux = Ee.x - P.x, uz = Ee.z - P.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l; const mx = (P.x + Ee.x) / 2, mz = (P.z + Ee.z) / 2, o = S.width / 2 + s; return [mx - uz * o, mz + ux * o]; }
+      if (S.kind === 'line') { const mx = P.x + dx * S.len * 0.5, mz = P.z + dz * S.len * 0.5, o = (S.width / 2 + s) * side; return [mx - dz * o, mz + dx * o]; }
+      if (S.kind === 'capsule') { const Ee = S.end; let ux = Ee.x - P.x, uz = Ee.z - P.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l; const mx = (P.x + Ee.x) / 2, mz = (P.z + Ee.z) / 2, o = (S.width / 2 + s) * side; return [mx - uz * o, mz + ux * o]; }
       return null;
     }
     const refOf = (h) => h?.S?.ref || h?.S || null;
@@ -107,7 +107,7 @@ module.exports = async function mobs(PT) {
       const p0 = pl().clone();
       const e = PT.spawnAt(type, p0.x, p0.z - dist, opts);
       if (!e) return { err: 'spawn' };
-      PT.armor(e); e.facing = Math.PI; e.object.rotation.y = Math.PI; e.setState(e.chaseState || 'chase');
+      PT.armor(e); e.facing = 0; e.object.rotation.y = 0;   // facing the player (+z) e.setState(e.chaseState || 'chase');
       if (id === 'chuchu.aura') e.noPhysics = true;
       PT.step(0.1);
       const n0 = { s: startLog.length, h: hurtLog.length, e: endLog.length, p: punLog.length };
@@ -122,7 +122,12 @@ module.exports = async function mobs(PT) {
         if (h && !rec.placed && (mode === 'inside' || mode === 'outside') && (h.locked || (id === 'chuchu.aura' && i === 1))) {
           const S = refOf(h);
           const pt = S && spec.tell !== 'projectile' || (S && id === 'shroom.lob') ? edgePoint(S, mode) : null;
-          if (pt) { place(pt[0], pt[1]); rec.pt = pt; rec.placed = true; rec.shape = S.kind; rec.S0 = { pos: [S.pos.x, S.pos.z], dir: S.dir && [S.dir.x, S.dir.z], len: S.len, w: S.width, et: g.enemyTime, st: h.start, dur: h.dur, e: [e.object.position.x, e.object.position.z], state: e.state }; }
+          if (pt) {
+            place(pt[0], pt[1]);
+            // a world collider (rock, tree) may push the player off the test point: use the mirrored side then
+            if (Math.hypot(pl().x - pt[0], pl().z - pt[1]) > 0.05) { const q = edgePoint(S, mode, -1); if (q) { pt[0] = q[0]; pt[1] = q[1]; place(pt[0], pt[1]); } }
+            rec.offPt = +Math.hypot(pl().x - pt[0], pl().z - pt[1]).toFixed(3);
+            rec.pt = pt; rec.placed = rec.offPt <= 0.05; rec.shape = S.kind; rec.S0 = { pos: [S.pos.x, S.pos.z], dir: S.dir && [S.dir.x, S.dir.z], len: S.len, w: S.width, et: g.enemyTime, st: h.start, dur: h.dur, e: [e.object.position.x, e.object.position.z], state: e.state }; }
         }
         if (rec.placed) place(rec.pt[0], rec.pt[1]);
         g.step(1, 1 / 60, false);
@@ -324,6 +329,32 @@ module.exports = async function mobs(PT) {
     PT.check('spawnBench(n) → n bench mobs (no damage / loot / XP)', bench.length === 4 && bench.every((e) => e.bench && e.noDamage && e.xpValue === 0));
     E.despawnBench?.(bench);
   }, m1);
+  // ================================================================== perf (§2.6 mobs row; numbers for the notes)
+  await pg.run('perf', () => {
+    const g = window.game, PT = window.PT, E = g.enemies;
+    for (const e of E.all.slice()) if (!e.isBoss) E.remove(e);
+    PT.tp(-20, 45, 0.2); PT.look(0, -0.2);
+    const cp = g.camera.position;
+    const near = PT.spawnAt('bokoblin', cp.x, cp.z - 12), mid = PT.spawnAt('bokoblin', cp.x + 40, cp.z - 25), far = PT.spawnAt('bokoblin', cp.x + 70, cp.z - 30);
+    const cnt = new Map();
+    for (const e of [near, mid, far]) { const f = e.pose; e.pose = (...a) => { cnt.set(e, (cnt.get(e) || 0) + 1); return f(...a); }; }
+    PT.step(1.0);
+    const n = [near, mid, far].map((e) => cnt.get(e) || 0);
+    PT.check('skinned animation: full rate < 30 m, half rate 30–60 m, paused > 60 m (camera distance)', n[0] >= 55 && n[1] >= 25 && n[1] <= 35 && n[2] === 0, n);
+    for (const e of [near, mid, far]) E.remove(e);
+    // 12-mob F roster: enemies.update CPU (render off), median of 120 frames
+    const R = [['bokoblin'], ['bokoblin'], ['wolf'], ['wolf'], ['lizard'], ['shaman'], ['voidknight'], ['shroom'], ['wraith'], ['chuchu', { variant: 'normal' }], ['chuchu', { variant: 'fire' }], ['chuchu', { variant: 'ice' }]];
+    const pp = g.player.object.position;
+    const foes = R.map(([t, o], i) => { const a = i / R.length * Math.PI * 2; return PT.armor(PT.spawnAt(t, pp.x + Math.sin(a) * 8, pp.z + Math.cos(a) * 8, o || {})); });
+    PT.step(1.0);
+    const eu = E.update.bind(E), ts = [];
+    E.update = (...a) => { const t = performance.now(); try { return eu(...a); } finally { ts.push(performance.now() - t); } };
+    for (let i = 0; i < 120; i++) { g.step(1, 1 / 60, false); PT.keepAlive(); }
+    E.update = eu;
+    ts.sort((x, y) => x - y);
+    PT.note(`enemies.update with 12 armoured attacking mobs (SwiftShader host CPU): median ${ts[60].toFixed(3)} ms, p95 ${ts[114].toFixed(3)} ms; orbs alive ${E.orbCount()}; tells active ${g.tells?.active?.().length ?? '-'}`);
+    for (const e of foes) E.remove(e);
+  });
   const errs = pg.errors();
   PT.check('no console errors', errs.length === 0, errs.slice(0, 5));
   await pg.close();

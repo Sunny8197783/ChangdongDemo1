@@ -25,6 +25,7 @@ export function createLizard(ctx, pos, opts = {}) {
   e.element = 'water';
   const game = ctx.game, W = game.world;
   const cur = newPose(HIP), tgt = newPose(HIP);
+  const wanderV = new THREE.Vector3();
   let phase = rand(0, 6), speed = 0, attackCd = rand(0.8, 1.6), lungeCd = rand(2, 4), strafeDir = 1, hitDone = false, tele = null;
   let wanderT = rand(2, 5), wander = null, submerge = 0, splashT = 0;
   const wet = () => (W.waterDepth ? W.waterDepth(e.object.position.x, e.object.position.z) : 0);
@@ -84,7 +85,7 @@ export function createLizard(ctx, pos, opts = {}) {
     switch (e.state) {
       case 'idle':
         wanderT -= dt;
-        if (wanderT <= 0) { wanderT = rand(3, 6); wander = wander ? null : _v.set(e.home.x + rand(-5, 5), 0, e.home.z + rand(-5, 5)).clone(); }
+        if (wanderT <= 0) { wanderT = rand(3, 6); wander = wander ? null : wanderV.set(e.home.x + rand(-5, 5), 0, e.home.z + rand(-5, 5)); }
         if (wander) { faceTo(e, wander.x, wander.z, 3, dt); if (moveTo(e, wander.x, wander.z, 1.3 * sm, 0.6) < 0.7) wander = null; }
         if (depth > 0.5) { splashT -= dt; if (splashT <= 0) { splashT = rand(1.5, 3); game.vfx.burst(_v.set(p.x, (W.waterLevel ?? 1.5) + 0.05, p.z), { owner: 'enemy', count: 3, color: [0xf3ecdf, 0x9fdfff], speed: 0.6, spread: 0.4, dir: _d.set(0, 1, 0), size: 0.14, sizeEnd: 0.3, life: 0.8, shape: 'bubble' }); } }
         break;

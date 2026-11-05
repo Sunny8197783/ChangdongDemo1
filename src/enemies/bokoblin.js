@@ -18,6 +18,7 @@ export function createBokoblin(ctx, pos, opts = {}) {
     camp: opts.camp, facing: opts.facing, staggerDmg: 34,
   }, pos);
   const cur = newPose(HIP), tgt = newPose(HIP);
+  const wanderV = new THREE.Vector3();
   let phase = rand(0, 6), speed = 0, attackCd = rand(0.5, 1.5), leapCd = rand(2, 5);
   let strafeDir = 1, swingHit = false, wanderT = rand(2, 6), wander = null, lookT = 0, lookY = 0;
   let leapTarget = new THREE.Vector3(), smashCombo = false, H = null, recoverDur = 0.7, launched = false;
@@ -65,7 +66,7 @@ export function createBokoblin(ctx, pos, opts = {}) {
         wanderT -= dt;
         if (wanderT <= 0) {
           wanderT = rand(3, 7);
-          wander = wander ? null : _v.set(e.home.x + rand(-4, 4), 0, e.home.z + rand(-4, 4)).clone();
+          wander = wander ? null : wanderV.set(e.home.x + rand(-4, 4), 0, e.home.z + rand(-4, 4));
         }
         if (wander) {
           faceTo(e, wander.x, wander.z, 4, dt);
