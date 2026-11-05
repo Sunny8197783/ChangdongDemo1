@@ -153,6 +153,15 @@ export function createLooks(game, E) {
   const useP = (cc, n) => { const k = Math.max(0, Math.min(Math.floor(n), Math.floor(cc.pLeft))); cc.pLeft -= k; return k; };
   // handle budget per cast = kit handles actually spawned with the castId (vfx.debug.byCast, the measured truth) + slash crescents
   const usedH = (cc) => { let h = 0; try { h = V()?.debug?.byCast?.(cc.castId)?.handles || 0; } catch (_) { h = 0; } return h; };   // kit handles only (§1.4 'Kit handles'); crescents are melee's pooled meshes (draw-call budget)
+  // a motif's real handle count is learned (max seen); on its first use it may spawn more than predicted, so while a motif runs the kit
+  // spawners refuse (inert handle) once the cast's §1.4 handle budget is spent — the budget is a hard cap, never overshot
+  const INERT = { alive: false, stop() { return this; }, setPos() { return this; }, setDir() { return this; }, setScale() { return this; }, setAlpha() { return this; }, push() { return this; }, setEnds() { return this; } };
+  const SPAWNERS = ['line', 'mesh', 'ribbon', 'bolt', 'decal'];   // (kit decals are linework handles too)
+  const capped = (K, cc, fn) => {
+    const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles, orig = SPAWNERS.map((k) => K[k]);
+    SPAWNERS.forEach((k, i) => { const f = orig[i]; if (typeof f === 'function') K[k] = function (...a) { if (usedH(cc) >= lim) { stats.dropped++; return INERT; } return f.apply(this, a); }; });
+    try { return fn(); } finally { SPAWNERS.forEach((k, i) => { K[k] = orig[i]; }); }
+  };
   const useH = (cc, n = 1) => { const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles; if (lim - usedH(cc) < n) { stats.dropped++; return false; } cc.hLeft = lim - usedH(cc) - n; return true; };
   L.usedH = usedH;
   L.useP = useP; L.useH = useH;
@@ -175,9 +184,10 @@ export function createLooks(game, E) {
     const cc = spec.castId ? byCast.get(spec.castId) : null;
     const key = el + ':' + kind + ':' + (spec.tier || cc?.tier || '');
     if (cc && kind !== 'spark' && !useH(cc, Math.max(HEAVY_MOTIF[kind] || 1, motifCost.get(key) || 0))) { if (kind === 'burst') { spec.n = Math.min(spec.n ?? 6, 6); return L.motif(el, 'spark', spec); } return null; }
+    if (cc && kind === 'spark') return capped(K, cc, () => ((K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) ? K.motif(el, kind, spec) : local(el, kind, spec)));
     if (cc && kind !== 'spark') {
       // learn the real handle cost of each motif (measured through vfx.debug.byCast) so later casts budget it exactly
-      const h0 = usedH(cc); const out = (K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) ? K.motif(el, kind, spec) : local(el, kind, spec);
+      const h0 = usedH(cc); const out = capped(K, cc, () => ((K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) ? K.motif(el, kind, spec) : local(el, kind, spec)));
       const d = usedH(cc) - h0; if (d > (motifCost.get(key) || 0)) motifCost.set(key, d);
       return out;
     }
@@ -416,7 +426,7 @@ export function createLooks(game, E) {
     const K = kit(); if (!K || !useH(cc)) return null;
     cc.decals++;
     const el = elOf(o, cc);
-    return K.decal(DECAL_OF[el] || 'crack', pos, Math.min(o?.radius ?? 1.5, cc.tier === 'U' || cc.tier === 'F' ? 6 : 3), Math.min(o?.duration ?? 2, cc.tier === 'U' || cc.tier === 'F' ? 6 : 2), { el, castId: cc.castId, alpha: 0.3 });
+    return K.decal(DECAL_OF[el] || 'crack', pos, Math.min(o?.radius ?? 1.5, cc.tier === 'U' || cc.tier === 'F' ? 6 : cc.tier === 'Z' ? 2.2 : 3), Math.min(o?.duration ?? 2, cc.tier === 'U' || cc.tier === 'F' ? 6 : 2), { el, castId: cc.castId, alpha: 0.3 });
   }
   function debris(cc, pos, o) {
     if (!pos) return null;
@@ -528,7 +538,7 @@ export function createLooks(game, E) {
     mesh: (cc, name, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.mesh(name, spec); },
     ribbon: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.ribbon(spec); },
     bolt: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.bolt(spec); },
-    decal: (cc, kind, pos, r, life, o = {}) => { const K = kit(); if (!K || !useH(cc)) return null; o.castId = cc.castId; return K.decal(kind, pos, r, life, o); },
+    decal: (cc, kind, pos, r, life, o = {}) => { const K = kit(); if (!K || !useH(cc)) return null; o.castId = cc.castId; cc.decals++; return K.decal(kind, pos, r, life, o); },
     spark: (cc, pos, el, n, dir, o = {}) => {
       if (!pos) return;
       const B = SPARK_O; B.count = Math.min(12, n); B.shape = o.shape || SPARK_SHAPE[el]; B.el = el; B.dir = dir || null; B.spread = dir ? 0.55 : 1;
@@ -561,6 +571,12 @@ export function createLooks(game, E) {
     const K = kit(); if (!K?.registerMotif || !K.registerShape) { warnOnce('kit', 'vfx.kit absent: melee motifs not registered (legacy-restrained looks)'); return false; }
     const api = { game, kit: K, gy, rampOf: (el) => rampOf(game, el), SPARK_SHAPE, onFrame: (fn) => { tickers.push(fn); } };
     try { installEarth(api); installNature(api); installLight(api); installShadow(api); } catch (err) { console.error('[sword:looks] motifs', err); return false; }
+    // motifs reached from outside the gate (vfx.hitFeel's once-per-cast burst, presets) for a melee castId run under the same hard handle cap
+    if (typeof K.motif === 'function' && !K.motif._meleeCap) {
+      const orig = K.motif;
+      const wrapped = function (el, kind, spec) { const cc = spec?.castId ? byCast.get(spec.castId) : null; return cc ? capped(K, cc, () => orig.call(this, el, kind, spec)) : orig.call(this, el, kind, spec); };
+      wrapped._meleeCap = true; K.motif = wrapped;
+    }
     L.motifsInstalled = true;
     return true;
   };

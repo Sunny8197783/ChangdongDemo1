@@ -77,9 +77,9 @@ const ARC_FS = /* glsl */`
     float body = 0.7 * smoothstep(0.36, 0.5, t);
     if (k > 8.5) { col = mix(uDark, uMid, smoothstep(0.3, 0.6, t)); body = 0.7 * smoothstep(0.3, 0.45, t); }                                                          // shadow: inverted value
     if (k > 3.5 && k < 4.5) { float s = abs(fract(v * 5.0 + u * 0.6) - 0.5); body *= 0.8; rimB = max(rimB, (1.0 - smoothstep(0.03, 0.03 + aa * 5.0, s)) * step(0.45, v) * 0.85); } // wind: streamlines
-    col = mix(col, mix(uMid, uLight, 0.55), rimB);
+    col = mix(col, mix(uMid, uLight, 0.15), rimB);                                     // rim stays near the saturated mid (§1.4 sat)
     float hiL = (1.0 - smoothstep(0.0, 0.18, age)) * smoothstep(e - 0.05, e - 0.035, v) * edgeA;
-    col = mix(col, uHi, hiL * 0.85);
+    col = mix(col, mix(uLight, uHi, 0.5), hiL * 0.5);
     float a = max(body, rimB * 0.95) * edgeA;
     if (tick) { col = uLight; a = 0.9; }
     a *= smoothstep(0.0, 0.04, u) * uOpacity;
@@ -192,8 +192,8 @@ const TRAIL_FS = /* glsl */`
     float body = (1.0 - smoothstep(0.0, 0.5, age)) * smoothstep(0.55, 0.7, y) * 0.6;
     float edge = smoothstep(0.86 - aa, 0.9, y) * (1.0 - smoothstep(0.0, 1.0, age)) * uEdge;
     vec3 col = mix(uDark, uMid, smoothstep(0.5, 0.7, y));
-    col = mix(col, mix(uMid, uLight, 0.6), edge);
-    col = mix(col, uHi, edge * (1.0 - smoothstep(0.0, 0.15, age)) * 0.5);
+    col = mix(col, mix(uMid, uLight, 0.25), edge);                                   // edge stays near the saturated mid (§1.4 sat)
+    col = mix(col, mix(uLight, uHi, 0.5), edge * (1.0 - smoothstep(0.0, 0.15, age)) * 0.4);
     float a = min(0.8, max(body, edge * 0.9)) * uOpacity;
     if (a < 0.12) discard;
     gl_FragColor = vec4(col * a, a);

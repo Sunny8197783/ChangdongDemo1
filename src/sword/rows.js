@@ -75,10 +75,10 @@ export const ROWS = {
   'ice.charged': { sig: 'frost lance extending from the blade + crown of crystal spikes',
     start(L, cc) { anticip(L, cc, 'ice'); },
     strike(L, cc, a) { frame(L, a, 4); const t0 = chest(L, 1.15), end = L.h.v3(F.px + F.fx * 4.6, F.py + 1.05, F.pz + F.fz * 4.6);
-      L.h.ribbon(cc, { points: [t0, end], width: 0.22, taper: 0.95, life: 0.45, el: 'ice', alpha: 0.75 });
-      L.h.line(cc, { shape: 'star', points: 6, r2: 0.3, el: 'ice', pos: end, plane: 'billboard', r: 0.7, width: 0.035, life: 0.35, tIn: 0.05, tOut: 0.2 });
+      L.h.ribbon(cc, { points: [t0, end], width: 0.3, taper: 0.95, life: 0.5, el: 'ice', alpha: 0.8 });
+      L.h.line(cc, { shape: 'star', points: 6, r2: 0.3, el: 'ice', pos: end, plane: 'billboard', r: 0.9, width: 0.035, life: 0.35, tIn: 0.05, tOut: 0.2 });
       const g = ahead(L, 4.6);
-      L.h.line(cc, { shape: 'poly', sides: 6, el: 'ice', pos: g, plane: 'ground', r: 1.2, width: 0.035, life: 0.6, tIn: 0.08, tOut: 0.3, scaleIn: 'backOut', rot: F.ang });
+      L.h.line(cc, { shape: 'poly', sides: 6, el: 'ice', pos: g, plane: 'ground', r: 1.6, width: 0.045, life: 0.7, tIn: 0.08, tOut: 0.3, scaleIn: 'backOut', rot: F.ang });
       L.h.spikes(cc, 'iceSpikes', g, 6, 1.1, 0.9);
       L.h.decal(cc, 'frost', g, 1.2, 1.4, { el: 'ice', alpha: 0.3 });
       L.h.spark(cc, end, 'ice', 8, null, { shape: 'shard', gravity: 7, speed: 4 });
@@ -105,7 +105,7 @@ export const ROWS = {
   // ======================================================================== lightning 번개
   'lightning.basic': { sig: 'arc-crawl bolt along the thrust edge + 4 crawl sparks',
     strike(L, cc, a) { frame(L, a);
-      L.h.bolt(cc, { from: onArc(L, -0.5, 1.9, 1.05), to: onArc(L, 0.55, 2.2, 1.2), forks: 0, width: 0.04, halo: 0.18, life: 0.05, afterglow: 0.18, el: 'lightning', seed: cc.castId });
+      L.h.bolt(cc, { from: onArc(L, -0.5, 1.9, 1.05), to: onArc(L, 0.55, 2.2, 1.2), forks: 0, width: 0.05, halo: 0.08, life: 0.05, afterglow: 0.18, el: 'lightning', seed: cc.castId });
       L.h.spark(cc, onArc(L, 0.2, 2), 'lightning', 4, null, { shape: 'spark', gravity: 4, speed: 4 });
     } },
   'lightning.charged': { sig: 'three forked bolts thrust forward + lichtenberg under the target',
@@ -133,13 +133,13 @@ export const ROWS = {
       L.h.spark(cc, to, 'lightning', 8, null, { shape: 'spark', gravity: 4, speed: 4 });
     } },
   'lightning.ult': { sig: 'dark cloud-glyph ring overhead + paced vertical strikes (≤ 2 per 0.3 s)',
+    mute: { beams: true, impacts: true },   // the row's paced strikes are the beams / impacts (the legacy ones would spend its handles)
     start(L, cc) { anticip(L, cc, 'lightning', 0.5); },
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0); const R = L.h.rampOf('lightning');
-      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 5.5, c.z), plane: 'flat', r: 3.2, life: 2.2, tIn: 0.3, tOut: 0.6, spin: 0.25, alpha: 0.75, color: R.mid, color2: R.dark });
-      L.h.line(cc, { shape: 'dots', n: 28, el: 'lightning', pos: L.h.v3(c.x, c.y + 5.3, c.z), plane: 'flat', r: 4.4, width: 0.08, life: 2.2, tIn: 0.3, tOut: 0.6, spin: -0.4, alpha: 0.5 });
+      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 2.8, c.z), plane: 'flat', r: 4.2, life: 2.2, tIn: 0.3, tOut: 0.6, spin: 0.25, alpha: 0.85, color: R.mid, color2: R.dark });
       for (let k = 0; k < 3; k++) { const s = k * 2.2 + cc.castId, x = c.x + Math.cos(s) * 1.6 * k, z = c.z + Math.sin(s) * 1.6 * k, q = L.h.v3(x, L.h.gy(x, z), z);
-        L.h.after(k * 0.3, () => { L.h.bolt(cc, { from: L.h.v3(q.x, q.y + 8.6, q.z), to: q, forks: 2, width: 0.1, halo: 0.3, life: 0.05, afterglow: 0.25, el: 'lightning', seed: cc.castId + k * 13 });
-          L.h.decal(cc, 'lichtenberg', q, 1.6, 1.2, { el: 'lightning', alpha: 0.3 }); }); }
+        L.h.after(k * 0.3, () => { L.h.bolt(cc, { from: L.h.v3(q.x, q.y + 8.6, q.z), to: q, forks: 2, width: 0.14, halo: 0.3, life: 0.06, afterglow: 0.3, el: 'lightning', seed: cc.castId + k * 13 });
+          L.h.decal(cc, 'lichtenberg', q, 3.2, 2.0, { el: 'lightning', alpha: 0.4 }); }); }
     } },
   // ======================================================================== wind 바람
   'wind.basic': { sig: 'thin air-blade crescent thrown off the slash + 3 leaf flecks',
@@ -237,8 +237,8 @@ export const ROWS = {
   'nature.roots': { sig: 'vine tubes growing around the target with thorn tips + leaf-glyph decal',
     start(L, cc) { anticip(L, cc, 'nature'); },
     strike(L, cc, a, ctx) { frame(L, a, 6, ctx); const g = imp(L, 0);
-      L.h.decal(cc, 'flower', g, 2.2, 3, { el: 'nature', alpha: 0.3 });
-      L.h.motif(cc, 'nature', 'pillar', { pos: g, r: 0.9, h: 1.7 });
+      L.h.decal(cc, 'flower', g, 1.2, 3, { el: 'nature', alpha: 0.3 });
+      L.h.motif(cc, 'nature', 'pillar', { pos: g, r: 0.45, h: 1.05 });
     } },
   'nature.ult': { sig: 'seed pods blooming into flowers in a ring + root zone',
     start(L, cc) { anticip(L, cc, 'nature', 0.5); },
@@ -266,22 +266,21 @@ export const ROWS = {
     strike(L, cc) { const g = feet(L), c = L.h.v3(g.x, L.h.pos().y + 1.1, g.z);
       L.h.line(cc, { shape: 'rays', n: 8, r2: 0.25, el: 'light', pos: c, plane: 'billboard', r: 2.6, width: 0.035, life: 0.32, tIn: 0, tOut: 0.2, scaleIn: 'expand' });
       L.h.line(cc, { shape: 'ticks', n: 24, r2: 0.85, el: 'light', pos: g, plane: 'ground', r: 6, width: 0.04, life: 0.5, tIn: 0, tOut: 0.3, scaleIn: 'expand' });
-      L.h.line(cc, { shape: 'ring', el: 'light', pos: g, plane: 'ground', r: 6.1, width: 0.03, life: 0.45, tIn: 0, tOut: 0.25, scaleIn: 'expand', alpha: 0.7 });
       L.h.line(cc, { shape: 'star', points: 4, r2: 0.12, el: 'light', pos: c, plane: 'billboard', r: 0.8, width: 0.03, life: 0.07, tIn: 0, tOut: 0.04 });
       L.h.spark(cc, c, 'light', 8, null, { shape: 'mote', gravity: -0.4, speed: 3 });
     } },
   'light.sanctuary': { sig: 'ground hexagram + ivory halo linework (lines only) + descending motes',
     strike(L, cc) { const g = feet(L);
       L.h.line(cc, { shape: 'glyph', glyph: 'hexagram', el: 'light', pos: g, plane: 'ground', r: 1.8, life: 8, tIn: 0.3, tOut: 0.5, spin: 0.12, alpha: 0.35 });
-      L.h.line(cc, { shape: 'ticks', n: 36, r2: 0.9, el: 'light', pos: g, plane: 'ground', r: 5, width: 0.035, life: 8, tIn: 0.3, tOut: 0.5, spin: -0.15, alpha: 0.35 });
+      L.h.line(cc, { shape: 'ticks', n: 36, r2: 0.9, el: 'light', pos: g, plane: 'ground', r: 2.6, width: 0.035, life: 8, tIn: 0.3, tOut: 0.5, spin: -0.15, alpha: 0.35 });
       L.h.spark(cc, L.h.v3(g.x, g.y + 2.6, g.z), 'light', 12, null, { shape: 'mote', gravity: 0.5, speed: 0.6 });
     } },
   'light.ult': { sig: 'prism beam framed by halo rings with ticks descending along it + ground halo (no white column)',
     start(L, cc) { anticip(L, cc, 'light', 0.5); },
     strike(L, cc, a) { frame(L, a, 6); const t0 = chest(L, 1.5), n = L.h.v3(F.fx, 0, F.fz);
-      for (let k = 0; k < 3; k++) { const d = 3 + k * 3.5; L.h.line(cc, { shape: 'ticks', n: 16, r2: 0.8, el: 'light', pos: L.h.v3(t0.x + F.fx * d, t0.y, t0.z + F.fz * d), plane: 'oriented', normal: n, r: 0.9 - k * 0.12, width: 0.03, life: 2.4, tIn: 0.15 + k * 0.12, tOut: 0.4, spin: (k % 2 ? -1 : 1) * 1.2 });
-        L.h.line(cc, { shape: 'ring', el: 'light', pos: L.h.v3(t0.x + F.fx * d, t0.y, t0.z + F.fz * d), plane: 'oriented', normal: n, r: 1.0 - k * 0.12, width: 0.025, life: 2.4, tIn: 0.15 + k * 0.12, tOut: 0.4, alpha: 0.7 }); }
-      L.h.line(cc, { shape: 'ring', el: 'light', pos: feet(L), plane: 'ground', r: 2.2, width: 0.035, life: 2.6, tIn: 0.15, tOut: 0.4, alpha: 0.5 });
+      for (let k = 0; k < 3; k++) { const d = 3 + k * 3.5; L.h.line(cc, { shape: 'ticks', n: 16, r2: 0.8, el: 'light', pos: L.h.v3(t0.x + F.fx * d, t0.y, t0.z + F.fz * d), plane: 'oriented', normal: n, r: 1.35 - k * 0.15, width: 0.04, life: 2.4, tIn: 0.15 + k * 0.12, tOut: 0.4, spin: (k % 2 ? -1 : 1) * 1.2 });
+        if (!k) L.h.line(cc, { shape: 'ring', el: 'light', pos: L.h.v3(t0.x + F.fx * d, t0.y, t0.z + F.fz * d), plane: 'oriented', normal: n, r: 1.5 - k * 0.15, width: 0.035, life: 2.4, tIn: 0.15 + k * 0.12, tOut: 0.4, alpha: 0.7 }); }
+      L.h.line(cc, { shape: 'ring', el: 'light', pos: feet(L), plane: 'ground', r: 3, width: 0.045, life: 2.6, tIn: 0.15, tOut: 0.4, alpha: 0.5 });
       L.h.line(cc, { shape: 'star', points: 4, r2: 0.12, el: 'light', pos: t0, plane: 'billboard', r: 0.7, width: 0.03, life: 0.08, tIn: 0, tOut: 0.04 });
     } },
   // ======================================================================== shadow 그림자

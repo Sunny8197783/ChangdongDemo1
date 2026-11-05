@@ -29,6 +29,7 @@ const TIER = {
 };
 // R6: light (ivory, saturation ≤ 0.35 by rule) and physical have no saturation floor
 const SAT_EXEMPT = new Set(['light', 'physical']);
+let SWATCH = {};   // ML1.c palette swatches (element → {sat, px})
 const WINDOW = { B: 0.6, C: 1.2, A: 1.2, Z: 1.5, U: 2.2, F: 3.0 };
 const EVERY = +(process.env.MELEE_EVERY || 6);
 const ELS = ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow'];
@@ -122,7 +123,7 @@ function installML() {
     const cc = g.sword.look.cast(castId);
     const out = {
       id, castId, castMs: +castMs.toFixed(2), peakT: peak?.t ?? 0,
-      detail: peak?.changed ?? 0, sat: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
+      detail: peak?.changed ?? 0, sat: +(S.reduce((t, s) => t + s.sat * s.changed, 0) / Math.max(1, S.reduce((t, s) => t + s.changed, 0))).toFixed(3), satPeak: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
       white: +Math.max(0, ...S.map((s) => s.white)).toFixed(4), whiteOver5: S.filter((s) => s.white > 0.05).length * every / 60, whiteOver6: S.filter((s) => s.white > 0.06).length * every / 60,
       rise: +Math.max(0, ...S.map((s) => s.rise)).toFixed(2),
       cov: +Math.max(cov, bc.coverage ?? 0).toFixed(3), covKit: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: bc.handles ?? 0, arcs: cc ? cc.arcs : 0, generic: !!bc.generic,
@@ -131,6 +132,18 @@ function installML() {
     if (frames) out.frames = shots;
     if (keepMask && peakD) out.mask = Array.from(peakD.mask);
     return out;
+  };
+  /** Palette swatch through the real pipeline (same method as MG1): an opaque 0.25 m `mid` ring + a `mid`-tinted FM solid, 4 m ahead on
+   *  the test ground. Its mean saturation is the most any effect of that element can reach on this ground after the post chain. */
+  ML.swatch = (el) => {
+    const K = g.vfx.kit; ML.clear();
+    const pp = g.player.object.position, f = new T.Vector3(); g.camera.getWorldDirection(f); f.y = 0; f.normalize();
+    const at = pp.clone().addScaledVector(f, 4); at.y += 1.2; const R = K.ramp(el);
+    K.line({ shape: 'ring', el, pos: at, plane: 'billboard', r: 0.8, width: 0.25, life: 5, tIn: 0, tOut: 0, alpha: 1, color: R.mid, owner: 'player' });
+    K.mesh('earth.rock', { pos: at.clone().add(new T.Vector3(0, -1.0, 0)), scale: 1.5, life: 5, tIn: 0, tOut: 0, el, color: R.mid, tintAmt: 0.5, owner: 'player' });
+    g.step(3, 1 / 60, false);
+    const d = ML.diff(); ML.clear();
+    return { sat: +d.sat.toFixed(3), px: d.changed };
   };
   /** Archetype look of element el (no bespoke row): the registered melee archetype with a ctx built like the skills runtime's. */
   ML.archCast = (name, rep, el, aim) => {
@@ -326,6 +339,10 @@ module.exports = async function (PT) {
   const rows = [];
   if (part === 'all' || part === 'measure') {
     await pg.run('ML1.c setup', () => window.ML.setup());
+    // per-element saturation reference (MG1's rule, so both families are judged alike): the §1.4 sat floor assumes the ramp's `mid`
+    // (saturation ≥ 0.5, R6) survives the pipeline; where even an opaque swatch reads lower on the test ground, the floor is 85 % of it
+    SWATCH = await pg.run('ML1.c palette swatches', (els) => { const o = {}; for (const el of els) o[el] = window.ML.swatch(el); return o; }, ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow', 'physical']) || {};
+    PT.note(`ML1.c palette swatch saturation on the test ground: ${Object.entries(SWATCH).map(([k, v]) => k + ' ' + v.sat).join(', ')}`);
     const tstart = Date.now();
     for (const id of set) {
       const tier = reg.tier[id] || 'A';
@@ -436,7 +453,8 @@ function judge(r, fails) {
   else if (r.white > T.white) why.push('white ' + r.white);
   if (r.rise > T.luma) why.push('luma +' + r.rise);
   if (r.cov > T.cov) why.push('cov ' + r.cov);
-  if (r.sat < T.sat && !SAT_EXEMPT.has(r.el)) why.push('sat ' + r.sat);
+  const satFloor = Math.min(T.sat, 0.85 * (SWATCH[r.el]?.sat ?? 1)); r.satFloor = +satFloor.toFixed(3);
+  if (r.sat < satFloor && !SAT_EXEMPT.has(r.el)) why.push('sat ' + r.sat + ' < ' + r.satFloor);
   if (r.detail < T.detail) why.push('detail ' + r.detail);
   if (r.crisp < T.crisp) why.push('crisp ' + r.crisp);
   const pmax = T.particlesPerSec ? T.particlesPerSec * Math.max(1, WINDOW[r.tier]) : T.particles;
