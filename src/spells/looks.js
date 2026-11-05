@@ -336,7 +336,7 @@ export function createLooks(S) {
     if (!on()) return null;
     const r = rowHook('blink', el, a, b); if (r !== undefined) return r;
     const out = [];
-    if (el === 'lightning') out.push(K.bolt({ from: a, to: b, forks: 1, width: 0.08, halo: 0.3, life: 0.06, afterglow: 0.25, el }));
+    if (el === 'lightning') { out.push(K.bolt({ from: a, to: b, forks: 1, width: 0.1, halo: 0.3, life: 0.06, afterglow: 0.2, el })); out.push(K.mesh('lightning.orb', { pos: b.clone(), scale: 0.6, life: 0.2, tIn: 0.02, tOut: 0.12, erode: true, grow: 1.3 })); }
     else out.push(K.ribbon({ points: [a, a.clone().lerp(b, 0.5).setY(Math.max(a.y, b.y) + 0.15), b], width: 0.16, taper: 0.9, life: 0.3, el, alpha: 0.75 }));
     motif(el, 'spark', { pos: b.clone(), n: 5 });
     return out;

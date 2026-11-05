@@ -188,7 +188,7 @@ export function createRows(L) {
   def('lightning.basic', {   // B: 2-frame spark + forked-rune glyph → BT bolt hand→target, regenerated twice → afterglow + arc-crawl sparks; no flare
     cast: (o) => { K().mesh('lightning.orb', { pos: o, scale: 0.42, life: 0.12, tIn: 0.02, tOut: 0.08, erode: true, grow: 1.2 }); return true; },   // charge knot at the tip (the 2-frame spark)
     // one bolt per cast (the kit regenerates it every 2–3 frames); the legacy re-fires of the beam are dropped
-    gate: { beam: (a) => { const c = L.cur; if (c?.data.bolt) return null; if (c) c.data.bolt = 1; return K().bolt({ from: a[0], to: a[1], forks: 1, width: 0.12, halo: 0.3, life: 0.07, afterglow: 0.25, el: 'lightning', seed: cid() * 3 }); } },
+    gate: { beam: (a) => { const c = L.cur; if (c?.data.bolt) return null; if (c) c.data.bolt = 1; return K().bolt({ from: a[0], to: a[1], forks: 1, width: 0.12, halo: 0.3, life: 0.08, afterglow: 0.15, el: 'lightning', seed: cid() * 3 }); } },
     impact: (pos) => {
       K().mesh('lightning.orb', { pos, scale: 0.7, life: 0.18, tIn: 0.02, tOut: 0.12, erode: true, grow: 1.3 });
       K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: 0.6, width: 0.045, life: 0.1, tIn: 0, tOut: 0.05, color: R('lightning').mid, color2: R('lightning').light, rot: 0.785 });
@@ -456,7 +456,7 @@ export function createRows(L) {
   // ================================================================================== 그림자 shadow
   def('shadow.basic', {   // B: crescent-eye glyph → near-black ink arrow with violet rim + ink RB
     cast: (o) => { glyph('shadow', 'shadow', o, 0.3, { life: 0.12, tIn: 0.05, tOut: 0.06, color: R('shadow').light }); return true; },
-    body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'shadow.arrow' : 'physical.shard', { el: 'shadow', color: R('shadow').light, tintAmt: 0.5, follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.95 : 0.85, life: Infinity, tIn: 0.12, tOut: 0.08 }),
+    body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'shadow.arrow' : 'physical.shard', { el: 'shadow', color: R('shadow').light, tintAmt: 0.75, follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.95 : 0.85, life: Infinity, tIn: 0.12, tOut: 0.08 }),
       K().ribbon({ follow: p.proxy, width: 0.15, taper: 1, life: 0.22, maxLen: 1.6, el: 'shadow', alpha: 0.9, colors: { head: R('shadow').light, tail: R('shadow').mid, edge: R('shadow').light } })],
     impact: (pos) => { K().line({ shape: 'crescent', el: 'shadow', pos, plane: 'billboard', r: 0.8, width: 0.05, life: 0.22, tIn: 0.03, tOut: 0.1, color: R('shadow').light, color2: R('shadow').dark, rot: cid() % TAU }); sparks('shadow', pos, 4, { shape: 'wisp', gravity: -0.5, speed: 2 }); return true; },
   });

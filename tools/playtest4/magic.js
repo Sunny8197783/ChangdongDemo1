@@ -97,7 +97,7 @@ function installMG() {
     // per-frame player-FX coverage estimator (CPU, every frame) rises above the last diffed level — so short impact frames are caught
     const N = Math.round(win * 60), maxExtra = samples + 4;
     const S = [];
-    let peak = null, peakD = null, shots = [], fragCalls = 0, fragUsed = false, covRatio = 1, covChecked = 0, extra = 0, lastF = 0, diffCv = 0, covMax = 0, reg = 0;
+    let peak = null, peakD = null, shotA = null, shotPeak = null, shotD = null, fragCalls = 0, fragUsed = false, covRatio = 1, covChecked = 0, extra = 0, lastF = 0, diffCv = 0, covMax = 0, reg = 0;
     for (let f = 1; f <= N; f++) {
       PT.keepAlive(); g.step(1, 1 / 60, false); fNow = f;
       let cv = g.vfx.debug.coverage?.()?.screens ?? 0;
@@ -120,8 +120,9 @@ function installMG() {
       lastF = f;
       S.push(rec);
       // afterHit (silhouettes): the impact frame = the peak after the first hit (hitF ≥ 0), so the shared anticipation glyph does not decide it
-      if ((!afterHit || hitF < 0 || f >= hitF) && (!peak || d.changed > peak.changed || (afterHit && hitF >= 0 && peak.t * 60 < hitF))) { peak = rec; peakD = d; }
-      if (regular) { reg++; if (frames && (reg === 2 || reg === Math.round(samples * 0.3) + 1 || reg === Math.round(samples * 0.75) + 1)) shots.push(PT.pixels.dataURL(false)); }
+      if ((!afterHit || hitF < 0 || f >= hitF) && (!peak || d.changed > peak.changed || (afterHit && hitF >= 0 && peak.t * 60 < hitF))) { peak = rec; peakD = d; if (frames) shotPeak = PT.pixels.dataURL(true); }
+      // contact sheet: anticipation (2nd grid sample), impact (the peak frame), dissipation (the last grid sample)
+      if (regular) { reg++; if (frames && reg === 2) shotA = PT.pixels.dataURL(true); if (frames && reg >= samples) shotD = PT.pixels.dataURL(true); }
     }
     try { unHit?.(); } catch (_) { /* */ }
     let crisp = 0;
@@ -136,7 +137,7 @@ function installMG() {
       cov: +covMax.toFixed(4), diffs: S.length, covFrag: fragUsed, covByCast: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: bc.handles ?? 0, generic: !!bc.generic,
       newMats: g.debug.newMaterials(), look: id ? g.debug.lookOf(id, 'caster') : null, path: g.skills.lastPath,
     };
-    if (frames) out.frames = shots;
+    if (frames) out.frames = [shotA, shotPeak, shotD].filter(Boolean);
     if (keepMask && peakD) out.mask = Array.from(peakD.mask);   // (only for IoU)
     return out;
   };
@@ -356,8 +357,8 @@ module.exports = async function (PT) {
     for (const el of ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow']) {
       const r = await pg.eval(({ name, rep, el, sheets }) => {
         const MG = window.MG; MG.setup();
-        const out = MG.measure(null, { win: 0.8, samples: 4, keepMask: true, afterHit: true, fn: (aim) => MG.archCast(name, rep, el, aim) });
-        if (sheets) out.shot = window.PT.pixels.dataURL(true);
+        const out = MG.measure(null, { win: 0.8, samples: 4, keepMask: true, afterHit: true, frames: !!sheets, fn: (aim) => MG.archCast(name, rep, el, aim) });
+        if (sheets) { out.shot = out.frames?.[1] || out.frames?.[0] || null; delete out.frames; }
         return out;
       }, { name, rep, el, sheets });
       masks[el] = r.mask; if (r.shot) frames.push({ url: r.shot, label: `${name} · ${el}` });

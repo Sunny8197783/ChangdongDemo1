@@ -160,7 +160,7 @@ export function createProps(game) {
       if (k >= 1) { scene.remove(s); sigils.splice(i, 1); sigilPool.push(s); continue; }
       const g = Math.min(1, u.t / u.grow);
       s.scale.set(g, 1, g);
-      s.material.opacity = (k < 0.8 ? 1 : 1 - (k - 0.8) / 0.2) * (0.75 + Math.sin(game.time * 20) * 0.1);
+      s.material.opacity = (k < 0.8 ? 1 : 1 - (k - 0.8) / 0.2) * (0.86 + Math.sin(game.time * 20) * 0.08);   // normal-blended: lines near-opaque
       s.material.map.rotation = u.t * u.spin;
     }
   }
