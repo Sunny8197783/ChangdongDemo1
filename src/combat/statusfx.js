@@ -15,14 +15,14 @@ const COL = {
   burn: new THREE.Color(0xff5a10), holy: new THREE.Color(0xffe6a0), necro: new THREE.Color(0x8a3cff), shock: new THREE.Color(0xc9a4ff),
   chill: new THREE.Color(0x9feaff), wet: new THREE.Color(0x3d8cff), exposed: new THREE.Color(0xd070ff), corroded: new THREE.Color(0x7a2ad0),
   radiant: new THREE.Color(0xffd36a), seeded: new THREE.Color(0x7fd84a), encrusted: new THREE.Color(0xc8955a), hexed: new THREE.Color(0x6a2acf),
-  quick: new THREE.Color(0xc8ff6a), broken: new THREE.Color(0xffffff),
+  quick: new THREE.Color(0xc8ff6a), broken: new THREE.Color(0xf4f1ea),
 };
 const PIPS = [
-  { key: 'radiant', color: [0xffffff, 0xffd36a], shape: 'star', r: 1.0, y: 0.95, speed: 2.2 },
+  { key: 'radiant', color: [0xfff8e6, 0xe8d9b0], shape: 'star', r: 1.0, y: 0.95, speed: 2.2 },
   { key: 'corroded', color: [0xd8b0ff, 0x7a2ad0], shape: 'wisp', r: 0.9, y: 0.6, speed: -1.8 },
   { key: 'seeded', color: [0xf4ffd0, 0x6fcf3a], shape: 'petal', r: 0.85, y: 0.35, speed: 1.5 },
-  { key: 'marked', color: [0xffffff, 0xb98bff], shape: 'rune', r: 0.7, y: 1.25, speed: 3.0 },
-  { key: 'chilled', color: [0xffffff, 0x9feaff], shape: 'snow', r: 0.8, y: 0.2, speed: 1.2, minStacks: 2 },
+  { key: 'marked', color: [0xd6b8ff, 0x9a5cff], shape: 'rune', r: 0.7, y: 1.25, speed: 3.0 },
+  { key: 'chilled', color: [0xe8fbff, 0x8fdcf5], shape: 'snow', r: 0.8, y: 0.2, speed: 1.2, minStacks: 2 },
 ];
 // flame layout (same as v2): 6 around + 1 centre
 const FLAMES = [0, 1, 2, 3, 4, 5, 6].map((i) => {
@@ -46,7 +46,7 @@ export function createStatusFX(game) {
   function batch(name, geo, mat, cap, { outline = null, tinted = false, order = 0 } = {}) {
     const mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    if (tinted) { mesh.setColorAt(0, C3.set(0xffffff)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage); mesh.instanceColor.needsUpdate = true; }
+    if (tinted) { mesh.setColorAt(0, C3.set(0xf4f1ea)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage); mesh.instanceColor.needsUpdate = true; }
     mesh.count = 0; mesh.visible = false; mesh.frustumCulled = false; mesh.castShadow = false; mesh.renderOrder = order; mesh.name = 'status-' + name;
     scene.add(mesh);
     let om = null;
@@ -63,7 +63,7 @@ export function createStatusFX(game) {
   const B = {
     shell: batch('shell', new THREE.SphereGeometry(1, 16, 12), shellMat(), CAP, { tinted: true, order: 5 }),
     flame: batch('flame', flameGeo(), flameMat(), CAP * 7, { order: 7 }),
-    holy: batch('holy', flameGeo(), tintFlameMat(0xffffff, 0xffc24a), CAP * 7, { order: 7 }),
+    holy: batch('holy', flameGeo(), tintFlameMat(0xfff8e6, 0xe8d9b0), CAP * 7, { order: 7 }),
     necro: batch('necro', flameGeo(), tintFlameMat(0xe0b0ff, 0x4a0b8a), CAP * 7, { order: 7 }),
     ice: batch('ice', new THREE.DodecahedronGeometry(1, 0), iceMat(), CAP, { outline: instOutlineMat(0x1d4a66, 0.04), order: 3 }),
     spike: batch('spike', crystalGeo(), iceMat(), CAP * 6, { outline: instOutlineMat(0x1d4a66, 0.05), order: 3 }),
@@ -117,13 +117,17 @@ export function createStatusFX(game) {
     return out.copy(e.object.position).setY(e.object.position.y + (e.height || 1.6) * 0.5);
   }
 
+  const dead = [];
+  const collectDead = (r, e) => { if (!e.alive || !game.entities.includes(e)) dead.push(e); };
   let arcTokens = 3;   // shocked arcs share a budget (≤ 14 beams/s across all entities)
   function update(dt, realDt) {
     uTime.value += realDt || dt;
     arcTokens = Math.min(3, arcTokens + dt * 14);
     const t = game.time;
-    for (const [e, r] of recs) if (!e.alive || !game.entities.includes(e)) {
-      if (r.wasFrozen) { try { center(e, v); vfx()?.debris?.(v, { count: 10, material: 'ice', color: 0xbff4ff, size: 0.25, speed: 6 }); } catch (_) { /* */ } }
+    dead.length = 0; recs.forEach(collectDead);     // v4 §2.7: no per-frame iterator entries
+    for (let di = 0; di < dead.length; di++) {
+      const e = dead[di], r = recs.get(e);
+      if (r?.wasFrozen) { try { center(e, v); vfx()?.debris?.(v, { count: 10, material: 'ice', color: 0x8fdcf5, size: 0.25, speed: 6 }); } catch (_) { /* */ } }
       release(e);
     }
     const ents = game.entities;
@@ -144,10 +148,10 @@ export function createStatusFX(game) {
 
       // ---- tint shell (most important status wins) ----
       let col = null, inten = 0;
-      if (s.broken) { col = COL.broken; inten = 1.2 + Math.sin(t * 20) * 0.5; }
-      else if (necro) { col = COL.necro; inten = 1.4 + Math.sin(t * 13) * 0.3; }
-      else if (burning) { col = s.burning.holy ? COL.holy : COL.burn; inten = 1.3 + Math.sin(t * 17) * 0.25; }
-      else if (shocked) { col = COL.shock; inten = Math.random() < 0.5 ? 1.8 : 0.6; }
+      if (s.broken) { col = COL.broken; inten = 0.9 + Math.sin(t * 20) * 0.3; }
+      else if (necro) { col = COL.necro; inten = 1.0 + Math.sin(t * 13) * 0.2; }
+      else if (burning) { col = s.burning.holy ? COL.holy : COL.burn; inten = 0.95 + Math.sin(t * 17) * 0.2; }
+      else if (shocked) { col = COL.shock; inten = Math.random() < 0.5 ? 1.15 : 0.55; }
       else if (chilled && !frozen) { col = COL.chill; inten = 1.0; }
       else if (s.radiant) { col = COL.radiant; inten = 0.5 + 0.18 * (s.radiant.stacks || 1) + Math.sin(t * 5) * 0.12; }
       else if (s.corroded) { col = COL.corroded; inten = 0.6 + 0.15 * (s.corroded.stacks || 1); }
@@ -168,7 +172,7 @@ export function createStatusFX(game) {
       if (fk) {
         if (!r.emBurn) {
           r.burnKind = fk;
-          const ec = fk === 'necro' ? [0xe0b0ff, 0x5b2a8a] : fk === 'holy' ? [0xffffff, 0xffc24a] : [0xffb347, 0xff4a10];
+          const ec = fk === 'necro' ? [0xd6b8ff, 0x4a1a7a] : fk === 'holy' ? [0xfff8e6, 0xe8d9b0] : [0xffa53a, 0xf0661a];
           r.emBurn = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.55, 0), rate: 22, color: ec, shape: fk === 'necro' ? 'wisp' : 'ember', speed: 2.2, speedVar: 0.8, dir: UP, spread: 0.45, size: 0.12, sizeEnd: 0.02, life: 0.7, lifeVar: 0.3, gravity: 2.5, drag: 1 });
         }
         const b = B[fk], rot = t * 0.8, sx = R * 1.25, sy = H * 0.85;
@@ -190,7 +194,7 @@ export function createStatusFX(game) {
         if (!r.emMud) r.emMud = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.25, 0), rate: 8, color: [0x8a6a3a, 0x5a4024], shape: 'puff', additive: false, speed: 0.4, spread: 1, size: 0.16, sizeEnd: 0.1, life: 0.6, gravity: -9, alpha: 0.8 });
       } else r.emMud = stopEm(r.emMud);
       if (chilled && !frozen) {
-        if (!r.emChill) r.emChill = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.5, 0), rate: 10, color: [0xffffff, 0x9feaff], shape: 'snow', speed: 0.8, spread: 1, size: 0.1, sizeEnd: 0.0, life: 0.9, gravity: -1, drag: 1.5 });
+        if (!r.emChill) r.emChill = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.5, 0), rate: 10, color: [0xe8fbff, 0x8fdcf5], shape: 'snow', speed: 0.8, spread: 1, size: 0.1, sizeEnd: 0.0, life: 0.9, gravity: -1, drag: 1.5 });
       } else r.emChill = stopEm(r.emChill);
       if (s.seeded) {
         if (!r.emSeed) r.emSeed = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.4, 0), rate: 4, color: [0xf4ffd0, 0x8fe05a], shape: 'petal', speed: 0.6, spread: 1, up: 0.6, size: 0.16, sizeEnd: 0.08, life: 1.1, gravity: 0.4, drag: 1.2, alpha: 0.9 });
@@ -201,10 +205,10 @@ export function createStatusFX(game) {
         r.emCorr?.setRate?.(3 + 2 * (s.corroded.stacks || 1));
       } else r.emCorr = stopEm(r.emCorr);
       if (s.dazzled) {
-        if (!r.emDaz) r.emDaz = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.95, 0), rate: 9, color: [0xffffff, 0xfff6c0], shape: 'star', speed: 0.5, spread: 1, size: 0.22, sizeEnd: 0.05, life: 0.4, radius: R * 0.6 });
+        if (!r.emDaz) r.emDaz = emitter({ follow: e.object, offset: new THREE.Vector3(0, H * 0.95, 0), rate: 9, color: [0xfff8e6, 0xf4ead0], shape: 'mote', speed: 0.5, spread: 1, size: 0.22, sizeEnd: 0.05, life: 0.4, radius: R * 0.6 });
       } else r.emDaz = stopEm(r.emDaz);
       if (s.asleep) {
-        if (!r.emSleep) r.emSleep = emitter({ follow: e.object, offset: new THREE.Vector3(0.2, H + 0.1, 0), rate: 2.5, color: [0xffffff, 0xc9b8ff], shape: 'bubble', speed: 0.4, dir: UP, spread: 0.3, up: 0.7, size: 0.18, sizeEnd: 0.32, life: 1.6, curl: 1.5 });
+        if (!r.emSleep) r.emSleep = emitter({ follow: e.object, offset: new THREE.Vector3(0.2, H + 0.1, 0), rate: 2.5, color: [0xd6b8ff, 0x9a5cff], shape: 'bubble', speed: 0.4, dir: UP, spread: 0.3, up: 0.7, size: 0.18, sizeEnd: 0.32, life: 1.6, curl: 1.5 });
       } else r.emSleep = stopEm(r.emSleep);
 
       // ---- stack pips: orbiting motes (count = stacks) ----
@@ -235,7 +239,7 @@ export function createStatusFX(game) {
         for (let i = 0; i < spikeL.length; i++) put(B.spike, M.multiplyMatrices(G, spikeL[i]));
       } else if (r.wasFrozen) {
         r.wasFrozen = false;
-        try { vfx()?.debris?.(v, { count: 12, material: 'ice', color: 0xbff4ff, size: 0.22 * Math.max(1, R), speed: 5, life: 1.2 }); vfx()?.burst?.(v, { count: 18, color: [0xffffff, 0x9feaff], shape: 'snow', speed: 4, spread: 1, size: 0.14, life: 0.8, gravity: -3 }); } catch (_) { /* */ }
+        try { vfx()?.debris?.(v, { count: 12, material: 'ice', color: 0xbff4ff, size: 0.22 * Math.max(1, R), speed: 5, life: 1.2 }); vfx()?.burst?.(v, { count: 10, color: [0xe8fbff, 0x8fdcf5], shape: 'snow', speed: 4, spread: 1, size: 0.14, life: 0.8, gravity: -3 }); } catch (_) { /* */ }
       }
 
       // ---- encrusted rock chips (grow in, crumble out) ----

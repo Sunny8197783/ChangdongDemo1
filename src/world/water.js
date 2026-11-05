@@ -1,6 +1,8 @@
 // Stylized water: depth gradient from the terrain height texture, toon ripples, sun sparkle, shore foam.
+// v4: OPAQUE (world transparents budget, PLAN §1.2 ≤ 0.5 screens; one opaque layer also early-z rejects the lakebed):
+// the old see-through look is kept by mixing toward the terrain colour map (sand / lakebed) with the old alpha curve.
 import * as THREE from 'three';
-import { WATER_LEVEL, TERRAIN_GLSL } from './terrain.js';
+import { WATER_LEVEL, TERRAIN_GLSL, ORIGIN, CELL, NV } from './terrain.js';
 
 export const WATER_BOX = { x0: -150, x1: 80, z0: -125, z1: 70 };
 
@@ -17,8 +19,9 @@ export function buildWater(game, terrain, sunDir, skyColor) {
     uFoam: { value: new THREE.Color(0xf4fbff) },
   }]);
   uniforms.uHeightTex = { value: terrain.heightTex };
+  uniforms.uColorTex = { value: terrain.colorTex };
   const mat = new THREE.ShaderMaterial({
-    uniforms, transparent: true, depthWrite: false, fog: true,
+    uniforms, transparent: false, depthWrite: true, fog: true,
     vertexShader: /* glsl */`
       #include <common>
       #include <fog_pars_vertex>
@@ -34,6 +37,7 @@ export function buildWater(game, terrain, sunDir, skyColor) {
       #include <common>
       #include <fog_pars_fragment>
       uniform sampler2D uHeightTex;
+      uniform sampler2D uColorTex;
       uniform float uTime, uLevel;
       uniform vec3 uSunDir, uSky, uDeep, uShallow, uFoam;
       varying vec3 vWorld;
@@ -78,13 +82,16 @@ export function buildWater(game, terrain, sunDir, skyColor) {
         float alpha = mix(0.58, 0.92, smoothstep(0.0, 2.2, depth));
         alpha = max(alpha, foam * 0.95);
         alpha *= smoothstep(-0.02, 0.06, depth);
-        gl_FragColor = vec4(col, alpha);
+        // what the old blend showed underneath: the terrain colour (lakebed / sand), darkened and tinted by the water
+        vec2 cuv = ((p - vec2(${ORIGIN.toFixed(4)})) / ${CELL.toFixed(6)} + 0.5) / ${NV.toFixed(1)};
+        vec3 bed = texture2D(uColorTex, cuv).rgb * mix(vec3(0.78, 0.9, 0.92), vec3(0.45, 0.62, 0.72), smoothstep(0.0, 1.5, depth));
+        gl_FragColor = vec4(mix(bed, col, alpha), 1.0);
         #include <fog_fragment>
       }`,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set((B.x0 + B.x1) / 2, WATER_LEVEL, (B.z0 + B.z1) / 2);
-  mesh.renderOrder = 1;
+  mesh.renderOrder = -0.4;   // opaque: drawn before the terrain so the lakebed is depth-rejected
   mesh.name = 'water';
   game.scene.add(mesh);
   return { mesh, uniforms, update(t) { uniforms.uTime.value = t; } };

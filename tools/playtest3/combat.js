@@ -417,18 +417,15 @@ module.exports = async function combat(PT) {
     PT.step(0.3);
     const lights1 = []; g.scene.traverse((o) => { if (o.isLight) lights1.push(o); });
     PT.check('impact_/explosion_ presets for all 9 elements run, no new lights', lights1.length === lights0.length, [lights0.length, lights1.length]);
-    // telegraph: decal radius = hitbox radius
-    const h = V.telegraph({ shape: 'circle', pos: pp.clone().add(new T.Vector3(0, 0, -6)), r: 3.5, dur: 0.6, color: 'damage', parryable: true });
-    PT.check('telegraph returns a handle', !!h && h.alive);
-    const tm = g.scene.children.filter((o) => o.name === 'vfx-telegraph');
-    PT.check('telegraph pool of 8 meshes', tm.length === 8, tm.length);
-    const vis = tm.find((m) => m.visible);
-    let maxR = 0;
-    if (vis) { const a = vis.geometry.attributes.position.array, c = pp.clone().add(new T.Vector3(0, 0, -6)); for (let i = 0; i < a.length; i += 3) maxR = Math.max(maxR, Math.hypot(a[i] - c.x, a[i + 2] - c.z) / Math.SQRT2); }
-    PT.check('telegraph decal radius equals the hitbox radius', Math.abs(maxR - 3.5) < 0.01, maxR);
-    PT.step(0.4); const midP = h.progress;
-    PT.step(0.4);
-    PT.check('telegraph fills and ends on time', midP > 0.4 && midP < 1 && !h.alive, midP);
+    // telegraph (v4 §7.9): with the tells stub the fixed vfx fallback draws (DoubleSide, renderOrder 30, depthTest off): > 500 px per
+    // shape and a pool of 16 via vfx.debug.telegraphs(); with the real tells module, vfx.telegraph forwards and tells.debug.pool() reports
+    const realTells = !!(g.tells && !g.tells.isStub && typeof g.tells.telegraph === 'function');
+    if (realTells) {
+      const h = V.telegraph({ shape: 'circle', pos: pp.clone().add(new T.Vector3(0, 0, -6)), r: 3.5, dur: 0.6, color: 'damage' });
+      const pool = g.tells.debug?.pool?.();
+      PT.check('telegraph forwards to tells (tells.debug.pool)', !!h && !!pool && pool.max === 16, pool);
+      PT.step(0.8);
+    }
     const line = V.telegraph({ shape: 'line', pos: pp.clone(), dir: new T.Vector3(1, 0, 0), len: 10, width: 2, dur: 0.5 });
     const cone = V.telegraph({ shape: 'cone', pos: pp.clone(), dir: new T.Vector3(0, 0, -1), r: 6, angle: 70, dur: 0.5, color: 'void' });
     const ring = V.telegraph({ shape: 'ring', pos: pp.clone(), r: 5, inner: 3, dur: 0.5, color: 'grab' });
@@ -462,6 +459,57 @@ module.exports = async function combat(PT) {
 
   PT.check('no console errors after all combat checks', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
+
+  // ------------------------------------------------------------ v4 §7.9: the fixed vfx.telegraph fallback, on the tells stub
+  const pgt = await PT.boot('&cls=mage&stub=tells');
+  if (pgt.ready) {
+    await pgt.run('telegraph fallback (stub=tells)', () => {
+      const g = game, V = g.vfx, T = g.THREE;
+      const pp = g.player.object.position;
+        const tm = g.scene.children.filter((o) => o.name === 'vfx-telegraph');
+        const dbg = V.debug?.telegraphs?.();
+        PT.check('telegraph fallback pool of 16 (vfx.debug.telegraphs)', tm.length === 16 && dbg?.max === 16 && dbg?.mode === 'fallback', { meshes: tm.length, dbg });
+        PT.check('telegraph fallback: DoubleSide, renderOrder 30, depthTest off, toneMapped off', tm.every((m) => m.material.side === T.DoubleSide && m.renderOrder === 30 && m.material.depthTest === false && m.material.toneMapped === false));
+        const h = V.telegraph({ shape: 'circle', pos: pp.clone().add(new T.Vector3(0, 0, -6)), r: 3.5, dur: 0.6, color: 'damage', parryable: true });
+        PT.check('telegraph returns a handle', !!h && h.alive);
+        const vis = tm.find((m) => m.visible);
+        let maxR = 0, upOk = false;
+        if (vis) {
+          const a = vis.geometry.attributes.position.array, c = pp.clone().add(new T.Vector3(0, 0, -6));
+          for (let i = 0; i < a.length; i += 3) maxR = Math.max(maxR, Math.hypot(a[i] - c.x, a[i + 2] - c.z) / Math.SQRT2);
+          // winding regression (v3 bug: mirrored grid → normals down, back-face culled): first triangle's normal points up
+          const ix = vis.geometry.index.array, v = (k) => new T.Vector3(a[ix[k] * 3], a[ix[k] * 3 + 1], a[ix[k] * 3 + 2]);
+          const n = new T.Vector3().crossVectors(v(1).sub(v(0)), v(2).sub(v(0)));
+          upOk = n.y > 0;
+        }
+        PT.check('telegraph decal radius equals the hitbox radius', Math.abs(maxR - 3.5) < 0.01, maxR);
+        PT.check('telegraph winding: triangle normals up', upOk);
+        PT.step(0.3); const midP = h.progress;
+        PT.check('telegraph fill is linear in time (±0.03)', Math.abs(midP - 0.3 / 0.6) < 0.03, midP);
+        PT.step(0.4);
+        PT.check('telegraph fills and ends on time', !h.alive);
+        // pixels: each shape alone in front of the camera (> 500 changed px)
+        const gl = g.renderer.getContext();
+        const read = () => { g.renderNow(); const w = gl.drawingBufferWidth, hh = gl.drawingBufferHeight, px = new Uint8Array(w * hh * 4); gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.readPixels(0, 0, w, hh, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+        const cam = g.camera, fw = new T.Vector3(); cam.getWorldDirection(fw); fw.y = 0; fw.normalize();
+        const at = cam.position.clone().addScaledVector(fw, 8); at.y = g.world.getHeight ? g.world.getHeight(at.x, at.z) : 0;
+        const specs = { circle: { r: 3 }, ring: { r: 5, inner: 2 }, cone: { r: 4, angle: 90 }, line: { len: 8, width: 1.6 } };
+        const px = {};
+        for (const [shape, o] of Object.entries(specs)) {
+          const base = shape === 'line' || shape === 'cone' ? at.clone().addScaledVector(fw, -3) : at;
+          const th = V.telegraph({ shape, pos: base, dir: fw, dur: 5, ...o });
+          PT.step(0.05);
+          const A = read(); const mesh = tm.find((m) => m.visible); if (mesh) mesh.visible = false;
+          const B = read(); if (mesh) mesh.visible = true;
+          let n = 0; for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 25) n++;
+          px[shape] = n; th?.stop?.();
+        }
+        PT.check('telegraph fallback renders every shape (> 500 changed px each)', Object.values(px).every((n) => n > 500), px);
+
+    });
+    PT.check('telegraph fallback page: no console errors', pgt.errors().length === 0, pgt.errors().slice(0, 6));
+  } else PT.check('telegraph fallback page boots', false);
+  await pgt.close();
 
   // fresh page for the perf spot (earlier blocks leave many dummies around)
   const pgs = await PT.boot('&cls=mage');
