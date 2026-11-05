@@ -96,31 +96,85 @@ function rockVariant(seed, mossy = true, lod = 0) {
   return p;
 }
 
-// Per-instance culled sets: ONE InstancedMesh per variant holding only the instances that are inside the (padded)
-// camera frustum and draw distance, or near the player (shadow casters). Outlines are a second InstancedMesh that
-// only holds the instances within the outline distance. Refreshed when the camera moves/turns noticeably.
+// Per-instance culled sets: ONE InstancedMesh per variant holding only the instances inside the (padded) camera
+// frustum and draw distance, a far-LOD InstancedMesh, and an outline InstancedMesh within the outline distance.
+// v4 (PLAN §2.6/§2.7): the scene meshes never cast; shadows come from ONE shadow-only InstancedMesh per family
+// (deciduous / pine / rock) using the family's far-LOD geometry, on layer SHADOW_LAYER (seen by the sun's shadow camera
+// only), holding the instances within the caster radius of the player (rocks: near only). Uploads are live ranges only
+// (addUpdateRange) and skipped when the culled set did not change.
+export const SHADOW_LAYER = 1;
 const SETS = [];
 const _sph = new THREE.Sphere();
-function compactMesh(group, geo, material, n, colors, opts = {}) {
+
+// ---- texture-indexed instancing (v4 uploads): every set keeps ALL its instance matrices + colours in one static
+// RGBA32F texture (5 texels per instance) and the static instanceMatrix; a culled draw only uploads a Float32
+// index list (`awIdx`, 4 B per drawn instance, live range). The patched vertex shader replaces instanceMatrix /
+// instanceColor by the fetched values (includes expanded first, so every chunk that reads them is covered).
+function expandIncludes(src) {
+  return src.replace(/^[ \t]*#include +<([\w\d./]+)>/gm, (m, name) => {
+    const c = THREE.ShaderChunk[name];
+    return c === undefined ? m : expandIncludes(c);
+  });
+}
+const INST_HEAD = /* glsl */`
+  uniform highp sampler2D uInstTex; attribute float awIdx;
+  mat4 awInstM; vec3 awInstC;
+  void awInstFetch() {
+    int i = int(awIdx + 0.5);
+    awInstM = mat4(texelFetch(uInstTex, ivec2(0, i), 0), texelFetch(uInstTex, ivec2(1, i), 0), texelFetch(uInstTex, ivec2(2, i), 0), texelFetch(uInstTex, ivec2(3, i), 0));
+    awInstC = texelFetch(uInstTex, ivec2(4, i), 0).rgb;
+  }
+`;
+function texInstanced(mat, uTex) {
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+  mat.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    sh.uniforms.uInstTex = uTex;
+    let vs = expandIncludes(sh.vertexShader).replace(/\binstanceMatrix\b/g, 'awInstM').replace(/\binstanceColor\b/g, 'awInstC');
+    vs = vs.replace(/void\s+main\s*\(\s*\)\s*\{/, (m) => m + '\n  awInstFetch();');
+    sh.vertexShader = INST_HEAD + vs;
+  };
+  mat.customProgramCacheKey = function () { return (prevKey ? prevKey.call(this) : '') + '|awinst'; };
+  return mat;
+}
+function instTexture(src, srcCol, n) {
+  const data = new Float32Array(5 * 4 * Math.max(1, n));
+  for (let i = 0; i < n; i++) {
+    data.set(src.subarray(i * 16, i * 16 + 16), i * 20);
+    if (srcCol) { data[i * 20 + 16] = srcCol[i * 3]; data[i * 20 + 17] = srcCol[i * 3 + 1]; data[i * 20 + 18] = srcCol[i * 3 + 2]; }
+    else { data[i * 20 + 16] = data[i * 20 + 17] = data[i * 20 + 18] = 1; }
+    data[i * 20 + 19] = 1;
+  }
+  const t = new THREE.DataTexture(data, 5, Math.max(1, n), THREE.RGBAFormat, THREE.FloatType);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return t;
+}
+/** Geometry view sharing every attribute of `geo` + its own instanced index attribute. */
+function indexedGeo(geo, n) {
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = geo.index;
+  for (const k in geo.attributes) g.setAttribute(k, geo.attributes[k]);
+  g.boundingSphere = geo.boundingSphere; g.boundingBox = geo.boundingBox;
+  const idx = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1);
+  idx.setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('awIdx', idx);
+  return g;
+}
+function compactMesh(group, geo, material, n, src, srcCol, opts = {}) {
   const m = new THREE.InstancedMesh(geo, material, n);
-  if (colors) { for (let i = 0; i < n; i++) m.setColorAt(i, colors[i] || colors[0]); }
+  m.instanceMatrix.array.set(src.subarray(0, n * 16)); m.instanceMatrix.needsUpdate = true;   // static (raycasts; uploaded once)
+  if (srcCol) { m.instanceColor = new THREE.InstancedBufferAttribute(srcCol.slice(0, n * 3), 3); }
   m.frustumCulled = false; m.count = 0;
   m.castShadow = !!opts.cast; m.receiveShadow = opts.receive !== false;
   if (opts.layer != null) m.layers.set(opts.layer);
+  m.matrixAutoUpdate = false;
   group.add(m);
   return m;
 }
 function chunked(group, geo, mats, opts, _size = 80, small = false) {
   if (!geo.boundingSphere) geo.computeBoundingSphere();
   const n = mats.length;
-  const material = occludable(opts.material || toonMat(0xffffff, { vertexColors: true }));
   const cols = opts.colors;
-  const cast = opts.cast !== false;
-  // near LOD casts shadows and always also holds the instances around the player (shadow casters behind the camera);
-  // the far LOD never casts (outside the shadow box anyway)
-  const mesh = compactMesh(group, geo, material, n, cols, { cast });
-  const far = opts.lodGeo ? compactMesh(group, opts.lodGeo, material, n, cols, { cast: false }) : null;
-  const shadow = null;
   const src = new Float32Array(n * 16), cen = new Float32Array(n * 4);
   const srcCol = cols ? new Float32Array(n * 3) : null;
   const bs = geo.boundingSphere;
@@ -130,49 +184,52 @@ function chunked(group, geo, mats, opts, _size = 80, small = false) {
     cen[i * 4] = e[12] + bs.center.x * sc; cen[i * 4 + 1] = e[13] + bs.center.y * sc; cen[i * 4 + 2] = e[14] + bs.center.z * sc; cen[i * 4 + 3] = bs.radius * sc;
     if (srcCol) { const c = cols[i]; srcCol[i * 3] = c.r; srcCol[i * 3 + 1] = c.g; srcCol[i * 3 + 2] = c.b; }
   }
+  const uTex = { value: instTexture(src, srcCol, n) };
+  const base = typeof opts.material === 'function' ? opts.material() : (opts.material || toonMat(0xffffff, { vertexColors: true }));
+  const material = texInstanced(occludable(base), uTex);
+  const mesh = compactMesh(group, indexedGeo(geo, n), material, n, src, srcCol);
+  const far = opts.lodGeo ? compactMesh(group, indexedGeo(opts.lodGeo, n), material, n, src, srcCol) : null;
   let outline = null;
   if (opts.outline) {
-    outline = new THREE.InstancedMesh(geo, outlineMat(opts.outline, opts.outlineColor ?? 0x1a1410, opts.sway), n);
+    const om0 = outlineMat(opts.outline, opts.outlineColor ?? 0x1a1410, opts.sway);
+    const om = om0.clone(); for (const k in om0.uniforms) om.uniforms[k] = om0.uniforms[k];   // shared uniform objects (OCC, time)
+    outline = new THREE.InstancedMesh(indexedGeo(geo, n), texInstanced(om, uTex), n);
     outline.frustumCulled = false; outline.castShadow = false; outline.receiveShadow = false; outline.raycast = () => {};
-    outline.count = 0;
+    outline.count = 0; outline.matrixAutoUpdate = false;
     group.add(outline);
   }
-  SETS.push({ mesh, far, shadow, outline, n, src, cen, srcCol, small, lodD: small ? 35 : 70 });
+  SETS.push({ mesh, far, outline, n, src, cen, srcCol, small, lodD: small ? 35 : 70, family: opts.cast === false ? null : (opts.family || null),
+    shadowGeo: opts.lodGeo || geo, hN: -1, hF: -1, hO: -1, famBase: 0 });
 }
 
-function copy16(dst, di, src, si) { for (let k = 0; k < 16; k++) dst[di * 16 + k] = src[si * 16 + k]; }
-function refreshSet(S, cam, frustum, focus, maxD, outD, shadowR) {
-  const { mesh, far, shadow, outline, n, src, cen, srcCol } = S;
-  const dst = mesh.instanceMatrix.array, dcol = mesh.instanceColor ? mesh.instanceColor.array : null;
-  const fdst = far ? far.instanceMatrix.array : null, fcol = far && far.instanceColor ? far.instanceColor.array : null;
-  const sdst = shadow ? shadow.instanceMatrix.array : null;
-  const odst = outline ? outline.instanceMatrix.array : null;
+/** Live-range upload of the first k indices (skipped when count and content hash are unchanged). */
+function fin(m, k, hash, S, key) {
+  if (!m) return 0;
+  if (S[key] === hash && m.count === k) return 0;
+  S[key] = hash;
+  m.count = k; m.visible = k > 0;
+  const A = m.geometry.attributes.awIdx; A.clearUpdateRanges(); if (k) { A.addUpdateRange(0, k); A.needsUpdate = true; }
+  return k;
+}
+function refreshSet(S, cam, frustum, maxD, outD) {
+  const { mesh, far, outline, n, cen } = S;
+  const dst = mesh.geometry.attributes.awIdx.array;
+  const fdst = far ? far.geometry.attributes.awIdx.array : null;
+  const odst = outline ? outline.geometry.attributes.awIdx.array : null;
   const px = cam.position.x, pz = cam.position.z;
-  const maxD2 = maxD * maxD, outD2 = outD * outD, lod2 = S.lodD * S.lodD, sh2 = shadowR * shadowR;
-  let c = 0, fc = 0, sc = 0, oc = 0;
+  const maxD2 = maxD * maxD, outD2 = outD * outD, lod2 = S.lodD * S.lodD;
+  let c = 0, fc = 0, oc = 0, hn = 7, hf = 7, ho = 7;
   for (let i = 0; i < n; i++) {
     const x = cen[i * 4], y = cen[i * 4 + 1], z = cen[i * 4 + 2], r = cen[i * 4 + 3];
     const dx = x - px, dz = z - pz, d2 = dx * dx + dz * dz;
-    let caster = false;
-    if (focus && mesh.castShadow) { const fx = x - focus.x, fz = z - focus.z; caster = fx * fx + fz * fz < sh2; }
-    _sph.center.set(x, y, z); _sph.radius = r + 4;
-    if (d2 > maxD2 || !frustum.intersectsSphere(_sph)) {
-      if (caster) { copy16(dst, c, src, i); if (dcol && srcCol) { dcol[c * 3] = srcCol[i * 3]; dcol[c * 3 + 1] = srcCol[i * 3 + 1]; dcol[c * 3 + 2] = srcCol[i * 3 + 2]; } c++; sc++; }
-      continue;
-    }
-    if (far && d2 > lod2 && !caster) {
-      copy16(fdst, fc, src, i);
-      if (fcol && srcCol) { fcol[fc * 3] = srcCol[i * 3]; fcol[fc * 3 + 1] = srcCol[i * 3 + 1]; fcol[fc * 3 + 2] = srcCol[i * 3 + 2]; }
-      fc++;
-    } else {
-      copy16(dst, c, src, i);
-      if (dcol && srcCol) { dcol[c * 3] = srcCol[i * 3]; dcol[c * 3 + 1] = srcCol[i * 3 + 1]; dcol[c * 3 + 2] = srcCol[i * 3 + 2]; }
-      c++;
-    }
-    if (odst && d2 < outD2) copy16(odst, oc++, src, i);
+    if (d2 > maxD2) continue;
+    _sph.center.set(x, y, z); _sph.radius = r + 2;
+    if (!frustum.intersectsSphere(_sph)) continue;
+    if (far && d2 > lod2) { fdst[fc++] = i; hf = (hf * 31 + i) | 0; }
+    else { dst[c++] = i; hn = (hn * 31 + i) | 0; }
+    if (odst && d2 < outD2) { odst[oc++] = i; ho = (ho * 31 + i) | 0; }
   }
-  const fin = (m, k, col) => { if (!m) return; m.count = k; m.visible = k > 0; m.instanceMatrix.needsUpdate = true; if (col && m.instanceColor) m.instanceColor.needsUpdate = true; };
-  fin(mesh, c, true); fin(far, fc, true); fin(shadow, sc, false); fin(outline, oc, false);
+  fin(mesh, c, hn, S, 'hN'); fin(far, fc, hf, S, 'hF'); fin(outline, oc, ho, S, 'hO');
 }
 
 export function buildFlora(game, world, uTime) {
@@ -255,7 +312,7 @@ export function buildFlora(game, world, uTime) {
     addDec(x, z, s); placed++;
   }
   for (let v = 0; v < 3; v++) if (decMats[v].length) {
-    chunked(group, decGeos[v], decMats[v], { lodGeo: decLod[v], colors: decCols[v], material: swayMaterial(uTime), outline: 0.045, outlineColor: 0x1d3318, sway: uTime });
+    chunked(group, decGeos[v], decMats[v], { family: 'dec', lodGeo: decLod[v], colors: decCols[v], material: swayMaterial(uTime), outline: 0.045, outlineColor: 0x1d3318, sway: uTime });
   }
 
   // ---------------- pines: foot of mountains + clusters
@@ -280,7 +337,7 @@ export function buildFlora(game, world, uTime) {
     occupy(x, z, 1.8 * s); placed++;
   }
   for (let v = 0; v < 2; v++) if (pineMats[v].length) {
-    chunked(group, pineGeos[v], pineMats[v], { lodGeo: pineLod[v], colors: pineCols[v], material: swayMaterial(uTime), outline: 0.04, outlineColor: 0x14281c, sway: uTime });
+    chunked(group, pineGeos[v], pineMats[v], { family: 'pine', lodGeo: pineLod[v], colors: pineCols[v], material: swayMaterial(uTime), outline: 0.04, outlineColor: 0x14281c, sway: uTime });
   }
 
   // ---------------- bushes
@@ -302,7 +359,7 @@ export function buildFlora(game, world, uTime) {
 
   // ---------------- rocks
   const rockGeos = [0, 1, 2].map((i) => rockVariant(800 + i, i !== 2)), rockLod = [0, 1, 2].map((i) => rockVariant(800 + i, i !== 2, 1));
-  const rockMat = toonMat(0xffffff, { vertexColors: true, flatShading: true });
+  const rockMat = () => toonMat(0xffffff, { vertexColors: true, flatShading: true });   // v4: one material per set (own instance texture)
   const rockM = [[], [], []], rockS = [[], [], []];
   const addRock = (x, z, s, sink = 0.3) => {
     const v = Math.floor(rnd() * 3);
@@ -340,33 +397,92 @@ export function buildFlora(game, world, uTime) {
     const v = 2;
     rockM[v].push(mat4(x, WATER_LEVEL - 0.25, z, 0, rnd() * 6, 0, 0.62, 0.38, 0.55));
   }
-  for (let v = 0; v < 3; v++) if (rockM[v].length) chunked(group, rockGeos[v], rockM[v], { lodGeo: rockLod[v], material: rockMat, outline: 0.035, outlineColor: 0x2a2520 });
+  for (let v = 0; v < 3; v++) if (rockM[v].length) chunked(group, rockGeos[v], rockM[v], { family: 'rock', lodGeo: rockLod[v], material: rockMat, outline: 0.035, outlineColor: 0x2a2520 });
   for (let v = 0; v < 3; v++) if (rockS[v].length) chunked(group, rockGeos[v], rockS[v], { lodGeo: rockLod[v], material: rockMat, outline: 0.03, outlineColor: 0x2a2520, cast: false }, 80, true);
 
-  // per-instance culling (see chunked()). drawDistance scales the tree/rock range; small props vanish sooner.
+  // per-instance culling (see chunked()). v4: tree range = settings.treeDist (120/200/350 m) × budget.floraMul × the
+  // legacy drawDistance factor; small props at half that; outlines within budget.floraOutlineDist (20/35/55 m).
   const sets = SETS.splice(0);
+  // shadow-only casters: one InstancedMesh per family (far-LOD geometry of its first variant) over a family texture of
+  // every member's instances; its customDepthMaterial reads the same texture (4 B per caster uploaded per change)
+  const shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+  const families = {};
+  for (const S of sets) {
+    if (!S.family) continue;
+    const F = families[S.family] || (families[S.family] = { sets: [], n: 0, geo: S.shadowGeo, mesh: null, h: -1, r: S.family === 'rock' ? 22 : 48 });
+    S.famBase = F.n; F.sets.push(S); F.n += S.n;
+  }
+  for (const k in families) {
+    const F = families[k];
+    const src = new Float32Array(F.n * 16);
+    for (const S of F.sets) src.set(S.src, S.famBase * 16);
+    const uTex = { value: instTexture(src, null, F.n) };
+    F.mesh = compactMesh(group, indexedGeo(F.geo, F.n), shadowMat, F.n, src, null, { cast: true, receive: false, layer: SHADOW_LAYER });
+    F.mesh.customDepthMaterial = texInstanced(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), uTex);
+    F.mesh.name = 'floraShadow_' + k;
+  }
   const frustum = new THREE.Frustum(), pm = new THREE.Matrix4();
+  const cullCam = new THREE.PerspectiveCamera();
   const lastPos = new THREE.Vector3(1e9, 0, 0), lastDir = new THREE.Vector3(), dir = new THREE.Vector3();
-  let drawDist = 0.8, frame = 0, dirty = true, shadowR = 48;
+  let ddMul = 1, frame = 0, dirty = true, shadowR = 48, since = 99, lastFov = 0;
+  const range = { treeDist: 200, outlineDist: 35, mul: 1 };
   const lastFocus = new THREE.Vector3(1e9, 0, 0);
-  const stats = { instances: 0, outlines: 0 };
-  function update(cam, focus) {
-    frame++;
-    cam.getWorldDirection(dir);
-    if (!dirty && lastPos.distanceToSquared(cam.position) < 1.0 && dir.dot(lastDir) > 0.9986 && (!focus || lastFocus.distanceToSquared(focus) < 4) && frame % 20) return;
-    dirty = false;
-    if (focus) lastFocus.copy(focus);
-    lastPos.copy(cam.position); lastDir.copy(dir);
-    cam.updateMatrixWorld();
-    pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-    frustum.setFromProjectionMatrix(pm);
-    const maxD = 150 + 250 * drawDist, smallD = 50 + 70 * drawDist, outD = 50 + 15 * drawDist;
-    stats.instances = 0; stats.far = 0; stats.outlines = 0; stats.shadow = 0;
-    for (const S of sets) {
-      refreshSet(S, cam, frustum, focus, S.small ? smallD : maxD, outD, shadowR);
-      stats.instances += S.mesh.count; stats.far += S.far ? S.far.count : 0;
-      stats.outlines += S.outline ? S.outline.count : 0; stats.shadow += S.shadow ? S.shadow.count : 0;
+  const stats = { instances: 0, far: 0, outlines: 0, shadow: 0, culls: 0, maxD: 0, outD: 0 };
+  const COS2 = Math.cos(2 * Math.PI / 180);
+  function refreshShadows(focus) {
+    if (!focus) return;
+    for (const k in families) {
+      const F = families[k], dst = F.mesh.geometry.attributes.awIdx.array;
+      const R = Math.min(F.r, shadowR), R2 = R * R;
+      let c = 0, h = 7;
+      for (const S of F.sets) {
+        const { cen, n, famBase } = S;
+        for (let i = 0; i < n; i++) {
+          const dx = cen[i * 4] - focus.x, dz = cen[i * 4 + 2] - focus.z;
+          if (dx * dx + dz * dz > R2) continue;
+          dst[c++] = famBase + i; h = (h * 31 + famBase + i) | 0;
+        }
+      }
+      fin(F.mesh, c, h, F, 'h');
+      stats.shadow += c;
     }
   }
-  return { group, update, stats, setDrawDistance(v) { drawDist = v; dirty = true; }, setShadowRadius(r) { shadowR = r; dirty = true; } };
+  function update(cam, focus) {
+    frame++; since++;
+    cam.getWorldDirection(dir);
+    const moved = lastPos.distanceToSquared(cam.position) > 1.0 || dir.dot(lastDir) < COS2 || (focus && lastFocus.distanceToSquared(focus) > 4) || cam.fov !== lastFov;
+    // re-cull at most every 4th frame (padded frustum covers the frames in between), or at once when marked dirty
+    if (!dirty && !(moved && since >= 4)) return;
+    dirty = false; since = 0; stats.culls++;
+    if (focus) lastFocus.copy(focus);
+    lastPos.copy(cam.position); lastDir.copy(dir); lastFov = cam.fov;
+    cam.updateMatrixWorld();
+    cullCam.copy(cam, false);
+    cullCam.fov = Math.min(150, cam.fov + 16); cullCam.updateProjectionMatrix();
+    pm.multiplyMatrices(cullCam.projectionMatrix, cam.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(pm);
+    const maxD = range.treeDist * ddMul * range.mul, smallD = maxD * 0.5, outD = range.outlineDist;
+    stats.instances = 0; stats.far = 0; stats.outlines = 0; stats.shadow = 0; stats.maxD = maxD; stats.outD = outD;
+    for (const S of sets) {
+      refreshSet(S, cam, frustum, S.small ? smallD : maxD, outD);
+      stats.instances += S.mesh.count; stats.far += S.far ? S.far.count : 0;
+      stats.outlines += S.outline ? S.outline.count : 0;
+    }
+    refreshShadows(focus);
+  }
+  return {
+    group, update, stats, families,
+    /** Legacy 0..1 slider (v3 drawDistance; boss-fight LOD passes 0.3): factor relative to the 0.8 default. */
+    setDrawDistance(v) { const m = Math.max(0.25, Math.min(1.25, (v ?? 0.8) / 0.8)); if (m !== ddMul) { ddMul = m; dirty = true; } },
+    /** v4: preset ranges (metres) and the governor multiplier. */
+    setRange({ treeDist, outlineDist, mul } = {}) {
+      let ch = false;
+      if (Number.isFinite(treeDist) && treeDist !== range.treeDist) { range.treeDist = treeDist; ch = true; }
+      if (Number.isFinite(outlineDist) && outlineDist !== range.outlineDist) { range.outlineDist = outlineDist; ch = true; }
+      if (Number.isFinite(mul) && mul !== range.mul) { range.mul = mul; ch = true; }
+      if (ch) dirty = true;
+    },
+    setShadowRadius(r) { if (r !== shadowR) { shadowR = r; dirty = true; } },
+    markDirty() { dirty = true; },
+  };
 }

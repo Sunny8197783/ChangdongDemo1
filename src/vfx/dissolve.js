@@ -10,7 +10,7 @@ const isToon = (m) => !!m && typeof m.customProgramCacheKey === 'function' && ((
 export function createDissolve(game, vfx) {
   const jobs = [];
   const _v = new THREE.Vector3(), _box = new THREE.Box3();
-  const emberOpts = { count: 1, shape: 'ember', color: [0xffffff, 0x9a5cff], speed: 1.2, up: 1.6, drag: 1, size: 0.16, sizeEnd: 0.03, life: 0.8, radius: 0.1, flicker: true };
+  const emberOpts = { count: 1, shape: 'ember', color: [0xd6b8ff, 0x9a5cff], speed: 1.2, up: 1.6, drag: 1, size: 0.16, sizeEnd: 0.03, life: 0.8, radius: 0.1, flicker: true };
 
   function cloneFor(mesh, list) {
     if (!mesh.userData._disOrig) mesh.userData._disOrig = mesh.material;
