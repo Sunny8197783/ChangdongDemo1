@@ -484,7 +484,7 @@ export function finishBoss(ctx, e, o = {}) {
   if (!Array.isArray(e.weakness)) e.weakness = cx ? cx.weak.map((w) => w.el) : [];
   e.immune = o.immune || e.immune || [];
   e.attacks = attacksOf(type);
-  e.debugAttack = (id) => { try { return o.debugAttack ? o.debugAttack(id) : null; } catch (err) { console.error('[bosses] debugAttack', id, err); return null; } };
+  e.debugAttack = (id) => { e.vulnerableUntil = -1; e.bossBrokenUntil = -1; try { return o.debugAttack ? o.debugAttack(id) : null; } catch (err) { console.error('[bosses] debugAttack', id, err); return null; } };
   e.timeMul = e.timeMul ?? 1;
   e.cameraHint = o.cameraHint || null;
   e.codexKey = type;
