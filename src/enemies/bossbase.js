@@ -408,7 +408,7 @@ export function bossAttack(ctx, e, id, over = null) {
   const L = e._handles || (e._handles = []);
   for (let i = L.length - 1; i >= 0; i--) if (!L[i].alive) L.splice(i, 1);
   L.push(h);
-  if (!over || over.hold !== false) e._holdH = h;
+  if (!over || over.hold !== false) { const H = e._holds || (e._holds = []); H.push(h); e._holdH = h; }
   game.events.emit('enemyAttack', { enemy: e, kind: id.slice(id.indexOf('.') + 1), id, nameKo: S.nameKo, tell: S.tell, windup: h.dur });
   return h;
 }
@@ -416,7 +416,7 @@ export function bossAttack(ctx, e, id, over = null) {
 export function stopAttacks(e, reason = 'cancel') {
   const L = e?._handles; if (!L) return;
   for (let i = 0; i < L.length; i++) if (L[i].alive) { try { L[i].stop(reason); } catch (_) { /* */ } }
-  L.length = 0; e._holdH = null;
+  L.length = 0; e._holdH = null; if (e._holds) e._holds.length = 0;
 }
 /** Rhythm phase of handle h on enemy time: anticipation → hold (≤ 0.15 s, from lock) → strike (last 0.12 s) → done. */
 export function rhythm(game, h) {
@@ -563,8 +563,13 @@ export function finishBoss(ctx, e, o = {}) {
   e.pose = (dt, sm, stunned) => {
     acc += dt;
     if (game.frame && game.frame.lastStep === false) return;
-    const h = e._holdH;
-    if (h) { const ph = rhythm(game, h); if (ph === 'hold') { acc = 0; return; } if (ph === 'done') e._holdH = null; }
+    // hold at the top of every live windup (several heads / hands may wind up at once)
+    const H = e._holds;
+    if (H && H.length) {
+      let hold = false;
+      for (let i = H.length - 1; i >= 0; i--) { const ph = rhythm(game, H[i]); if (ph === 'hold') hold = true; else if (ph === 'done') H.splice(i, 1); }
+      if (hold) { acc = 0; return; }
+    }
     const cam = game.camera;
     if (cam && !e.defeated) {
       const p = e.object.position, dx = p.x - cam.position.x, dz = p.z - cam.position.z, d2 = dx * dx + dz * dz;

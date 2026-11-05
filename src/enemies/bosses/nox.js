@@ -117,6 +117,7 @@ export function buildNox(clone = false) {
 let spare = null, spareClone = null;
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _f = new THREE.Vector3();
 const BASE = newPose(HIP);
+const ARRIVE = [[0, 4.2], [-0.5, 4.2], [0.5, 4.2], [0, 3.2], [-0.9, 3.2], [0.9, 3.2], [0, 2.4], [-1.4, 2.4], [1.4, 2.4], [0, 1.8]];
 
 /** Shared brain for Nox and his clone (same tells): teleport-slash (parry), raven volley, shadow wave. */
 function brain(ctx, e, model, D, isClone) {
@@ -133,10 +134,16 @@ function brain(ctx, e, model, D, isClone) {
   function arrival(out) {
     const pp = ctx.playerPos, cam = game.camera;
     if (cam) { cam.getWorldDirection(_f); _f.y = 0; if (_f.lengthSq() < 1e-6) _f.set(0, 0, 1); _f.normalize(); } else _f.set(0, 0, 1);
-    const a = Math.atan2(_f.x, _f.z) + rand(-0.7, 0.7);
-    out.set(pp.x + Math.sin(a) * 4.2, 0, pp.z + Math.cos(a) * 4.2);
-    const A = e.arena || e.parentBoss?.arena;
-    if (A) { const dx = out.x - A.position.x, dz = out.z - A.position.z, d = Math.hypot(dx, dz), R = A.radius - 1.5; if (d > R) { out.x = A.position.x + dx / d * R; out.z = A.position.z + dz / d * R; } }
+    const yaw = Math.atan2(_f.x, _f.z), A = e.arena || e.parentBoss?.arena, R = A ? A.radius - 1.5 : 1e9;
+    const off = rand(-0.7, 0.7);
+    // candidates inside the view cone (±0.7 rad) and inside the arena; nearest-to-random first
+    let ok = false;
+    for (let i = 0; i < ARRIVE.length && !ok; i++) {
+      const a = yaw + clamp(off + ARRIVE[i][0], -0.75, 0.75), r = ARRIVE[i][1];
+      out.set(pp.x + Math.sin(a) * r, 0, pp.z + Math.cos(a) * r);
+      ok = !A || Math.hypot(out.x - A.position.x, out.z - A.position.z) <= R;
+    }
+    if (!ok && A) { const dx = out.x - A.position.x, dz = out.z - A.position.z, d = Math.hypot(dx, dz) || 1; out.x = A.position.x + dx / d * R; out.z = A.position.z + dz / d * R; }
     out.y = ctx.groundH(out.x, out.z);
     return out;
   }

@@ -239,12 +239,14 @@ module.exports = async function bosses(PT) {
       const g = game, b = BT.boss(), T = g.THREE;
       // break → 3.5 s stagger + bossBroken, no attacks during it
       PT.events('bossBroken').length = 0; PT.events('tellStart').length = 0;
-      b.vulnerableUntil = -1; b.bossBreakCdUntil = -1; b.transitioning = false;
+      b.vulnerableUntil = -1; b.bossBreakCdUntil = -1; b.bossBrokenUntil = -1; b.transitioning = false; b._brokenT = 0; b.breakValue = b.breakMax;
+      BT.run(0.6);                      // let any attack in flight finish first
+      PT.events('bossBroken').length = 0; PT.events('tellStart').length = 0;
       try { g.combat.addBreak(b, 9999); } catch (_) { b.onBreak?.(); }
       const bb = PT.events('bossBroken')[0];
       BT.run(3.3);
       const starts = PT.events('tellStart').filter((r) => r.p.enemy === b).length;
-      PT.check('break → bossBroken {boss, dur 3.5}, no attacks during the stagger', bb && bb.p.boss === b && Math.abs(bb.p.dur - 3.5) < 1e-6 && starts === 0 && b.isBroken(), { bb: bb && bb.p.dur, starts });
+      PT.check('break → bossBroken {boss, dur 3.5}, no attacks during the stagger', bb && bb.p.boss === b && Math.abs(bb.p.dur - 3.5) < 1e-6 && starts === 0 && b.isBroken(), { bb: bb && bb.p.dur, starts, ids: PT.events('tellStart').map((r) => r.p.id) });
       BT.run(1.0);
       if (id === 'hydra') {
         // AI: ≤ 1 bite at a time + ≤ 1 other attack
@@ -260,6 +262,7 @@ module.exports = async function bosses(PT) {
       if (id === 'nox') {
         // the arrival marker sits in front of / beside the player inside the camera view (±0.87 rad of camera forward)
         let worst = 0, n = 0;
+        const A0 = b.arena; if (A0) PT.tp(A0.position.x + 2, A0.position.z + 2);
         for (let k = 0; k < 6; k++) {
           PT.look(k * 1.05, -0.2); BT.run(0.05);
           b.vulnerableUntil = -1; b._slashH = null;

@@ -19,7 +19,8 @@ export const BOSS_ATTACKS = {
   'hydra.tide': { tell: 'danger', cls: 'bossAoE', windup: 2.0, kind: 'melee', anchor: 'core', melee: false, shape: { kind: 'ring', inner: 5.5, r: 19 } },
   'hydra.spouts': { tell: 'danger', cls: 'boss', windup: 1.2, kind: 'hazard', anchor: 'core', melee: false, shape: { kind: 'circle', r: 2.6 }, stagger: [1.2, 1.55, 1.9] },
   // 녹스
-  'nox.teleportSlash': { tell: 'parry', cls: 'boss', windup: 1.1, marker: 0.3, punishDur: 2.0, punishMul: 1.5, kind: 'melee', anchor: 'weapon', shape: { kind: 'line', len: 7, width: 1.6 } },
+  'nox.teleportSlash': { tell: 'parry', cls: 'boss', windup: 1.1, marker: 0.3, melee: false,     // he strikes from the in-view arrival marker
+    punishDur: 2.0, punishMul: 1.5, kind: 'melee', anchor: 'weapon', shape: { kind: 'line', len: 7, width: 1.6 } },
   'nox.volley': { tell: 'projectile', cls: 'boss', windup: 1.0, kind: 'projectile', anchor: 'weapon', melee: false, orbs: 3, orbs2: 4, homing: 0.5 },
   'nox.wave': { tell: 'danger', cls: 'bossAoE', windup: 1.1, kind: 'melee', anchor: 'weapon', shape: { kind: 'cone', r: 7, angle: 0.61 } },
   // 모르그로스

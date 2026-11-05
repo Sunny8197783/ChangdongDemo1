@@ -389,7 +389,7 @@ export function createTreant(ctx, arena, opts = {}) {
   finishBoss(ctx, e, { type: 'treant', cameraHint: { dist: 1.7, height: 1.6 }, preview: () => buildTreant().root, noDistanceRate: true,
     debugAttack: (id) => {
       stopAttacks(e); atk = null; tele = null; roots = [];
-      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9; podTick(0); return pod.h; }
+      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9.5; podTick(0); return pod.h; }
       return start(String(id).replace(/^treant\./, ''));
     },
     onBroken: () => { atk = null; tele = null; roots = []; } });
