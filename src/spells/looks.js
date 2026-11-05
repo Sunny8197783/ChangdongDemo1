@@ -106,10 +106,10 @@ export function createLooks(S) {
     // line weight: a 2 px screen-space floor (1.8 px on the ground) so the thin precise lines keep a saturated core instead of an AA fringe
     const VIOLET = { lightning: 1, shadow: 1 };
     const mid = (s) => {
-      const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = k.ramp(el).light;
+      const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = el === 'lightning' ? k.ramp(el).mid : k.ramp(el).light;   // lightning's `light` step is pastel (sat 0.39)
       if (s.minPx == null) s.minPx = !s.plane || s.plane === 'ground' ? 1.8 : 2.2;
       // violet bodies (lightning, shadow) mix to grey with the green ground at partial coverage: a fuller line core, opaque off the ground
-      if (VIOLET[el] && !s.owner) { s.minPx = Math.max(s.minPx, 2.6); if (s.plane && s.plane !== 'ground' && s.role !== 'fill') s.alpha = Math.max(s.alpha ?? 0.85, 1); }
+      if (VIOLET[el] && !s.owner) { s.minPx = Math.max(s.minPx, 2.6); if (s.role !== 'fill') s.alpha = Math.max(s.alpha ?? 0.85, s.plane && s.plane !== 'ground' ? 1 : 0.8); }
       return s;
     };
     const F = Object.create(k);
