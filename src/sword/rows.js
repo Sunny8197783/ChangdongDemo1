@@ -135,8 +135,8 @@ export const ROWS = {
   'lightning.ult': { sig: 'dark cloud-glyph ring overhead + paced vertical strikes (≤ 2 per 0.3 s)',
     start(L, cc) { anticip(L, cc, 'lightning', 0.5); },
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0); const R = L.h.rampOf('lightning');
-      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 9, c.z), plane: 'flat', r: 3.2, life: 2.2, tIn: 0.3, tOut: 0.6, spin: 0.25, alpha: 0.75, color: R.mid, color2: R.dark });
-      L.h.line(cc, { shape: 'dots', n: 28, el: 'lightning', pos: L.h.v3(c.x, c.y + 8.8, c.z), plane: 'flat', r: 4.4, width: 0.08, life: 2.2, tIn: 0.3, tOut: 0.6, spin: -0.4, alpha: 0.5 });
+      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 5.5, c.z), plane: 'flat', r: 3.2, life: 2.2, tIn: 0.3, tOut: 0.6, spin: 0.25, alpha: 0.75, color: R.mid, color2: R.dark });
+      L.h.line(cc, { shape: 'dots', n: 28, el: 'lightning', pos: L.h.v3(c.x, c.y + 5.3, c.z), plane: 'flat', r: 4.4, width: 0.08, life: 2.2, tIn: 0.3, tOut: 0.6, spin: -0.4, alpha: 0.5 });
       for (let k = 0; k < 3; k++) { const s = k * 2.2 + cc.castId, x = c.x + Math.cos(s) * 1.6 * k, z = c.z + Math.sin(s) * 1.6 * k, q = L.h.v3(x, L.h.gy(x, z), z);
         L.h.after(k * 0.3, () => { L.h.bolt(cc, { from: L.h.v3(q.x, q.y + 8.6, q.z), to: q, forks: 2, width: 0.1, halo: 0.3, life: 0.05, afterglow: 0.25, el: 'lightning', seed: cc.castId + k * 13 });
           L.h.decal(cc, 'lichtenberg', q, 1.6, 1.2, { el: 'lightning', alpha: 0.3 }); }); }
@@ -308,7 +308,7 @@ export const ROWS = {
     } },
   'shadow.hex': { sig: 'small crescent-eye glyph over the target (kept readable)',
     strike(L, cc, a, ctx) { frame(L, a, 6, ctx); const g = imp(L, 0);
-      L.h.line(cc, { shape: 'glyph', glyph: 'shadow', el: 'shadow', pos: L.h.v3(g.x, g.y + 2.4, g.z), plane: 'billboard', r: 0.5, life: 1.4, tIn: 0.12, tOut: 0.3, spin: 0.4 });
+      L.h.line(cc, { shape: 'glyph', glyph: 'shadow', el: 'shadow', pos: L.h.v3(g.x, g.y + 2.4, g.z), plane: 'billboard', r: 0.8, life: 1.4, tIn: 0.12, tOut: 0.3, spin: 0.4 });
       L.h.line(cc, { shape: 'dots', n: 16, el: 'shadow', pos: g, plane: 'ground', r: 4, width: 0.05, life: 1.2, tIn: 0.12, tOut: 0.4, spin: 0.6, alpha: 0.35, color: L.h.rampOf('shadow').light });
       L.h.spark(cc, L.h.v3(g.x, g.y + 1, g.z), 'shadow', 8, null, { shape: 'wisp', gravity: -0.4, speed: 1.5 });
     } },
@@ -329,8 +329,8 @@ export const ROWS = {
 const burstAt = (L, cc, el, p, r) => { if (cc.bursts >= 1) return null; cc.bursts++; return L.h.motif(cc, el, 'burst', { pos: p, r, n: 8, tier: cc.tier }); };
 const fwd = (L) => L.h.v3(F.fx, 0, F.fz);
 const ARCH = {
-  hit: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 5, ctx); burstAt(L, cc, cc.el, imp(L, 1.0), r); } }),
-  ground: (len) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); L.h.motif(cc, cc.el, 'wave', { pos: ahead(L, 1.2), dir: fwd(L), r: len, arc: 0.5 }); } }),
+  hit: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 5, ctx); burstAt(L, cc, cc.el, imp(L, 1.0), r * (cc.tier === 'B' ? 1 : 1.35)); } }),
+  ground: (len) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); L.h.motif(cc, cc.el, 'wave', { pos: ahead(L, 1.2), dir: fwd(L), r: len, arc: 0.5 }); burstAt(L, cc, cc.el, ahead(L, Math.min(len * 0.6, 5)), 1.3); } }),
   nova: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); const g = ahead(L, 1.6); burstAt(L, cc, cc.el, g, r);
     L.h.line(cc, { shape: 'ring', el: cc.el, pos: g, plane: 'ground', r: r * 2, width: 0.045, life: 0.45, tIn: 0, tOut: 0.25, scaleIn: 'expand', alpha: 0.75 }); } }),
   pillar: () => ({ strike(L, cc, a, ctx) { frame(L, a, 4, ctx); L.h.motif(cc, cc.el, 'pillar', { pos: imp(L, 0), r: 0.7, h: 3 }); } }),
@@ -345,7 +345,7 @@ export const ARCH_LOOKS = {
   projectile: withCast(ARCH.hit(1.0)), volley: withCast(ARCH.hit(1.0)), lob: withCast(ARCH.hit(1.4)), chain: withCast(ARCH.hit(0.9)),
   mark: withCast(ARCH.hit(0.8)), bubble: withCast(ARCH.hit(1.0)), tether: withCast(ARCH.hit(0.9)), grapple: withCast(ARCH.hit(0.9)), chainbind: withCast(ARCH.hit(1.0)),
   crawler: withCast(ARCH.ground(6)), lane: withCast(ARCH.ground(6)), dash: withCast(ARCH.ground(5)), blink: withCast(ARCH.ground(4)), beam: withCast(ARCH.ground(8)),
-  nova: withCast(ARCH.nova(1.6)), leapslam: withCast(ARCH.nova(1.8)), rain: withCast(ARCH.nova(2.2)),
+  nova: withCast(ARCH.nova(1.6)), leapslam: withCast(ARCH.nova(1.8)), rain: withCast(ARCH.nova(3)),
   pillar: withCast(ARCH.pillar()), cone: withCast(ARCH.cone()),
   zone: withCast(ARCH.zone(3, 3)), wall: withCast(ARCH.zone(2.5, 3)), mine: withCast(ARCH.zone(1.2, 2)),
   summon: withCast(ARCH.summon()), buff: withCast(ARCH.aura()),

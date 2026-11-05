@@ -56,6 +56,9 @@ export function createSword(game) {
     const pool = fx[k], raw = pool.spawn.bind(pool);
     pool.spawn = (p, h, w, delay, life, tilt, color) => (look.spikeOk() ? raw(p, h, w, delay, life, tilt, k === 'crystal' ? crystalTint(color) : color, look.cur?.castId || 0) : null);
   }
+  // falling stone swords land later (fx update, outside the cast): their onLand runs inside the cast that spawned them
+  { const st = fx.stones, rawS = st.spawn.bind(st);
+    st.spawn = (t, sc, fall, onLand) => { const cc = look.cur; return rawS(t, sc, fall, onLand ? (x) => { const prev = look.cur; look.cur = cc || prev; try { return onLand(x); } finally { look.cur = prev; } } : null); }; }
   const crystalTint = (hex) => { const el = look.cur?.el || element; const R = look.h.rampOf(el); return hex == null || hex >= 0xe0e0e0 ? R.mid : hex; };
 
   // ---------------- look engine (cast contexts + vfx gate + motifs; registered in the FACTORY before the boot prewarm) ----------------
@@ -100,6 +103,7 @@ export function createSword(game) {
 
   // ---------------- scheduler (gameplay time: hitstop stretches it) ----------------
   // tasks carry the cast context they were scheduled in (their vfx stay attributed to that castId and its budget)
+  let tickDepth = 0;
   function after(t, fn) { tasks.push({ t, fn, every: 0, left: 0, look: look.cur }); }
   function every(interval, duration, fn) { tasks.push({ t: 0, fn, every: interval, left: duration, look: look.cur }); }
   function runTasks(dt) {
@@ -111,7 +115,8 @@ export function createSword(game) {
       look.cur = k.look;
       if (k.every) {
         k.left -= dt;
-        if (k.t <= 0) { k.t += k.every; try { if (k.fn(k) === false) k.left = 0; } catch (err) { console.error('[sword] task', err); k.left = 0; } }
+        // repeating tasks are multi-hit ticks of their cast (§5.10: no hitstop, one feel per castId) → their hits carry the 'tick' tag
+        if (k.t <= 0) { k.t += k.every; tickDepth++; try { if (k.fn(k) === false) k.left = 0; } catch (err) { console.error('[sword] task', err); k.left = 0; } finally { tickDepth--; } }
         if (k.left <= 0) { const j = tasks.indexOf(k); if (j >= 0) tasks.splice(j, 1); }
       } else if (k.t <= 0) { const j = tasks.indexOf(k); if (j >= 0) tasks.splice(j, 1); try { k.fn(); } catch (err) { console.error('[sword] task', err); } }
     }
@@ -176,6 +181,10 @@ export function createSword(game) {
     const tags = ['melee', weapon.id];
     if (spec.tags) for (const t of spec.tags) tags.push(t);
     if (counter) tags.push('counter');
+    // repeated hits of one cast on the same target from a repeating task (orbiting blades, zones, travelling waves re-hitting)
+    // are multi-hit ticks (§5.10: one hitstop / feel per castId) → 'tick' tag
+    { const cc0 = look.cur; if (cc0) { const hs = cc0.hitTargets || (cc0.hitTargets = new WeakSet());
+      if (hs.has(e)) { if (tickDepth > 0 && !tags.includes('tick')) tags.push('tick'); } else hs.add(e); } }
     const kind = act?.kind;
     let tier = spec.tier;
     if (!tier) tier = counter ? 'crit' : spec.heavy ? ((kind === 'ultimate' || kind === 'finisher') ? 'ult' : 'heavy') : 'light';
@@ -204,7 +213,8 @@ export function createSword(game) {
     else if (act && act.tagSkill) { hit.skillId = act.tagSkill; hit.slot = act.tagSlot; }
     // v4: castId on every hit (one hitstop / feel per cast); melee plays its own contact sparks + final burst (§3.6)
     const cc = look.cur;
-    hit.castId = cc?.castId || spec.ctx?.castId || hit.castId || 0;
+    const cid = cc?.castId || spec.ctx?.castId || hit.castId || 0;
+    if (cid) hit.castId = cid;   // hits outside any cast keep no castId (legacy rule), never 0
     if (game.vfx?.kit) hit.noImpactFx = true;
     let res = null;
     try { res = game.combat?.dealDamage?.(e, hit); } catch (err) { console.error('[sword] dealDamage', err); }

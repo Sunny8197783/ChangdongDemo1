@@ -101,7 +101,7 @@ function installML() {
     const castMs = performance.now() - t0;
     const n = Math.max(3, Math.round(win * 60 / every));
     const S = [];
-    let peak = null, peakD = null, cov = 0; const shots = [];
+    let peak = null, peakD = null, cov = 0, peakShot = null; const shots = [];
     for (let k = 0; k < n; k++) {
       for (let j = 0; j < every; j++) { PT.keepAlive(); g.step(1, 1 / 60, false); if (g.state !== 'playing' && g.state !== 'cinematic') break; }
       const d = ML.diff();
@@ -109,10 +109,13 @@ function installML() {
       S.push(rec);
       if (!peak || d.changed > peak.changed) {
         peak = rec; peakD = d;
+        if (frames && k > 0) peakShot = PT.pixels.dataURL(true);
         if (!peak.cov || d.changed > (peak.covAt || 0) * 1.15) { const f = PT.fragments({ owner: 'player' }); rec.cov = f.scene; rec.covAt = d.changed; cov = Math.max(cov, f.scene); }
       }
-      if (frames && (k === 1 || k === Math.round(n * 0.3) || k === Math.round(n * 0.75))) shots.push(PT.pixels.dataURL(false));
+      if (frames && k === 0) shots[0] = PT.pixels.dataURL(true);
+      if (frames && k === Math.round(n * 0.8)) shots[2] = PT.pixels.dataURL(true);
     }
+    if (frames) { shots[1] = peakShot || shots[0]; if (!shots[2]) shots[2] = PT.pixels.dataURL(true); }
     let crisp = 0;
     if (peakD && peakD.changed > 0) crisp = PT.pixels.sobel({ mask: peakD.mask, w: peakD.w, h: peakD.h }, peakD.on);
     const bc = g.vfx.debug.byCast(castId) || {};
@@ -122,7 +125,7 @@ function installML() {
       detail: peak?.changed ?? 0, sat: +(peak?.sat ?? 0).toFixed(3), crisp: +crisp.toFixed(3),
       white: +Math.max(0, ...S.map((s) => s.white)).toFixed(4), whiteOver5: S.filter((s) => s.white > 0.05).length * every / 60, whiteOver6: S.filter((s) => s.white > 0.06).length * every / 60,
       rise: +Math.max(0, ...S.map((s) => s.rise)).toFixed(2),
-      cov: +Math.max(cov, bc.coverage ?? 0).toFixed(3), covKit: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: (bc.handles ?? 0) + (cc ? cc.arcs : 0), generic: !!bc.generic,
+      cov: +Math.max(cov, bc.coverage ?? 0).toFixed(3), covKit: bc.coverage ?? 0, particles: bc.particles ?? 0, handles: bc.handles ?? 0, arcs: cc ? cc.arcs : 0, generic: !!bc.generic,
       newMats: g.debug.newMaterials(), look: id ? g.debug.lookOf(id, 'melee') : null, path: g.skills.lastPath, tierCC: cc?.tier || null,
     };
     if (frames) out.frames = shots;
@@ -256,7 +259,10 @@ module.exports = async function (PT) {
   // dev probe: MELEE_PART=probe MELEE_PROBE=<file exporting an in-page function source> (diagnostics only)
   if (part === 'probe' && process.env.MELEE_PROBE) {
     const src = fs.readFileSync(process.env.MELEE_PROBE, 'utf8');
-    const out = await pg.eval(new Function('return ' + src)(), process.env.MELEE_PROBE_ARG || null);
+    let pp = pg;
+    if (process.env.MELEE_PROBE_Q) { pp = await PT.boot(process.env.MELEE_PROBE_Q, { w: 640, h: 360 }); await pp.eval(installML); }
+    const out = await pp.eval(new Function('return ' + src)(), process.env.MELEE_PROBE_ARG || null);
+    if (pp !== pg) await pp.close();
     console.log(JSON.stringify(out, null, 1));
     await pg.close(); return;
   }

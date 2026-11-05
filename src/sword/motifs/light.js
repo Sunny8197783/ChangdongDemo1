@@ -47,7 +47,6 @@ export function installLight(api) {
       const r = Math.max(0.4, Math.min(s.r ?? 1.1, 4)), out = [];
       out.push(star4(s, s.pos, r * 0.7, 0.08));
       out.push(...haloTicks(s, s.pos, r, 'billboard', 0.42, 1.1));
-      out.push(K.line({ shape: 'rays', n: 8, r2: 0.55, el: 'light', pos: s.pos, plane: 'billboard', r: r * 1.5, width: 0.02, life: 0.3, tIn: 0.04, tOut: 0.2, scaleIn: 'expand', castId: cid(s), alpha: 0.7 }));
       motes(s, K.v3(s.pos.x, s.pos.y + 0.6, s.pos.z), Math.min(8, s.n ?? 6));
       return out;
     },

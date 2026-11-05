@@ -152,7 +152,7 @@ export function createLooks(game, E) {
   };
   const useP = (cc, n) => { const k = Math.max(0, Math.min(Math.floor(n), Math.floor(cc.pLeft))); cc.pLeft -= k; return k; };
   // handle budget per cast = kit handles actually spawned with the castId (vfx.debug.byCast, the measured truth) + slash crescents
-  const usedH = (cc) => { let h = 0; try { h = V()?.debug?.byCast?.(cc.castId)?.handles || 0; } catch (_) { h = 0; } return h + cc.arcs; };
+  const usedH = (cc) => { let h = 0; try { h = V()?.debug?.byCast?.(cc.castId)?.handles || 0; } catch (_) { h = 0; } return h; };   // kit handles only (§1.4 'Kit handles'); crescents are melee's pooled meshes (draw-call budget)
   const useH = (cc, n = 1) => { const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles; if (lim - usedH(cc) < n) { stats.dropped++; return false; } cc.hLeft = lim - usedH(cc) - n; return true; };
   L.usedH = usedH;
   L.useP = useP; L.useH = useH;
@@ -258,8 +258,9 @@ export function createLooks(game, E) {
       }
       case 'zone': {
         const rr = Math.max(0.6, Math.min(s.r ?? 3, 10)), life = s.life ?? 3;
-        out.push(ln({ shape: el === 'ice' ? 'poly' : el === 'wind' ? 'spiral' : el === 'water' ? 'ripple' : 'dots', sides: 6, turns: 1.2, arms: 3, n: Math.round(10 + rr * 6), el, pos: G, plane: 'ground', r: rr, width: 0.035, life, tIn: 0.25, tOut: 0.4, spin: el === 'wind' ? 0.8 : 0.25, alpha: 0.35, castId: cid, follow: s.follow }));
-        out.push(K.decal(DECAL_OF[el] || 'crack', G, rr * 0.9, Math.min(life, 6), { el, castId: cid, alpha: 0.28 }));
+        out.push(ln({ shape: el === 'ice' ? 'poly' : el === 'wind' ? 'spiral' : el === 'water' ? 'ripple' : 'dots', sides: 6, turns: 1.2, arms: 3, n: Math.round(10 + rr * 6), el, pos: G, plane: 'ground', r: el === 'wind' ? rr * 1.25 : rr, width: 0.035, life, tIn: 0.25, tOut: 0.4, spin: el === 'wind' ? 0.8 : 0.25, alpha: 0.35, castId: cid, follow: s.follow }));
+        // wind: polar spiral arms only (translucent, no ground fill); the others add their element decal
+        if (el !== 'wind') out.push(K.decal(DECAL_OF[el] || 'crack', G, rr * 0.9, Math.min(life, 6), { el, castId: cid, alpha: 0.28 }));
         return out;
       }
       case 'aura': {
