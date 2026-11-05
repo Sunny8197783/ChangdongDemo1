@@ -34,10 +34,12 @@ export function createThreatUI(game, { parent, onFirstArrow }) {
   let arcT = 0, arcRot = 0, hazT = 0, hazName = '', hazShown = '';
   const seenIds = new Set();
 
-  /** Screen angle (0 = up, clockwise) of a world point around the camera's ground heading. */
+  /** Screen angle (0 = up / ahead, clockwise) of a world point around the PLAYER, in the camera's heading frame
+   *  (an attacker behind the player points down even when it is in front of the camera). */
   function angleOf(p) {
-    const cam = game.camera;
-    v.copy(p).applyMatrix4(cam.matrixWorldInverse);
+    const cam = game.camera, pp = game.player?.object?.position;
+    v.copy(p); if (pp) v.sub(pp); else v.sub(cam.position);
+    v.transformDirection(cam.matrixWorldInverse);
     return Math.atan2(v.x, -v.z);
   }
   function place(o, a, rx, ry, cx, cy) {
@@ -134,7 +136,7 @@ export function createThreatUI(game, { parent, onFirstArrow }) {
     let dx = d.x, dz = d.z;
     if (sp) { dx = sp.x - pp.x; dz = sp.z - pp.z; }
     v.set(pp.x + dx, pp.y, pp.z + dz);
-    const a = angleOf(v) - angleOf(pp);
+    const a = angleOf(v);
     arcRot = Math.round(a * 57.2958);
     arc.style.transform = `rotate(${arcRot}deg)`;
     arc.style.opacity = '1'; arc.classList.add('on');

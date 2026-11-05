@@ -254,6 +254,8 @@ export function createCinematic(game) {
   const _burst = new THREE.Vector3();
 
   const api = {
+    /** v4 test/introspection: total seconds of the playing sequence (shot durations + end fade). */
+    get seqDuration() { return seq ? seq.shots.reduce((a, s) => a + (+s.duration || 0), 0) + (+seq.opts.endFade || 0) : 0; },
     active: false, timeScale: 1, overlay: ov, grade, EASE,
     play, orbit, dolly, skip, stop: () => finish(true),
     get shotIndex() { return seq?.i ?? -1; },

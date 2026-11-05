@@ -156,7 +156,7 @@ export function createHints(game, { parent, fmt, canParry, anim }) {
     shows: (id) => shows[id] || 0,
     flag(k, v) { if (v !== undefined) flags[k] = v; return flags[k]; },
     queued: () => queue.length,
-    reset() { shows = {}; flags = {}; queue.length = 0; dismiss(); punished = weakDone = guardDone = hazardDone = equipDone = legendDone = mpShown = sprintSeen = false; walked = 0; },
+    reset() { shows = {}; flags = {}; queue.length = 0; dismiss(); gap = 0; punished = weakDone = guardDone = hazardDone = equipDone = legendDone = mpShown = sprintSeen = false; walked = 0; },
     el,
   };
 }

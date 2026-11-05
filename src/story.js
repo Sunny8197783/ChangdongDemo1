@@ -651,8 +651,9 @@ export function createStory(game) {
     if (game.ui?.anyModalOpen) return;
     const hold = ok && (raw.down('Space') || raw.down('KeyF'));
     D.ffHeld = hold ? (D.ffHeld || 0) + realDt : 0;
-    const ff = D.ffHeld > 0.25;
-    if (ok && raw.pressed('Escape') && !D.choices) { askSkip(); return; }
+    const ff = D.ffHeld > 0.2;
+    // next frame: the ui's Escape cascade runs after story this frame and would close the confirm at once
+    if (ok && raw.pressed('Escape') && !D.choices) { after(0.01, askSkip); return; }
     if (D.typing) {
       D.charT -= realDt * (ff ? 4 : 1);
       let blips = 0;
@@ -1062,7 +1063,7 @@ export function createStory(game) {
         const A = W()?.bossArena;
         if (A?.position && Math.hypot(Pp.x - A.position.x, Pp.z - A.position.z) < (A.radius || 20) + 6) {
           S.arenaBanner = true;
-          ui.banner('봉인의 유적', S.stage === 'boss' ? '안개에 잠식된 수문장 — 고대 바위 골렘' : '천 년의 봉인이 잠든 곳');
+          (game.ui?.deferBanner || ((f) => f()))(() => ui.banner('봉인의 유적', S.stage === 'boss' ? '안개에 잠식된 수문장 — 고대 바위 골렘' : '천 년의 봉인이 잠든 곳'));
           audio('cinematic_whoosh');
         }
       }
@@ -1396,6 +1397,8 @@ export function createStory(game) {
     getMarkers() { if (dirty) refresh(); return markers; },
     /** Shim (CONTRACT §3.3): any interact offer is current. */
     hasPrompt() { return game.interact?.current ? !!game.interact.current() : (!!promptNpc && game.state === 'playing'); },
+    /** Test hook: play a script.js dialogue (e.g. 'elderWake') with an NPC. */
+    debugTalk(fn, npcId = 'elder') { const f = SC[fn], n = npcs[npcId]; if (typeof f !== 'function' || !n || D.active || game.state !== 'playing') return false; startDialogue(f(S), n); return true; },
     /** Start talking to an NPC by id (tests / scripted). */
     talkTo(id) { const n = npcs[id]; if (n && !n.hidden && game.state === 'playing') talk(n); return !!n && !n.hidden; },
     advance() { if (!D.active) return false; if (D.typing) finishTyping(); else if (!D.choices) nextNode(); return true; },
@@ -1406,7 +1409,7 @@ export function createStory(game) {
       return D.active ? { npc: D.npc?.id, speaker: D.node?.s, text: D.node?.t, typing: D.typing, choices: D.choices?.map((c) => c.t) || null } : null;
     },
     bark(id, text, sec) { bark(id, text, sec); },
-    banner(title, sub) { ui.banner(title, sub); },
+    banner(title, sub) { const f = () => ui.banner(title, sub); if (game.ui?.deferBanner) game.ui.deferBanner(f); else f(); },
     /** Spawn the village reaction trainer now (tests; it spawns by itself near the spot in normal play). */
     spawnReactionTrainer() { RT.forced = true; RT.chk = 0; updateReactionTrainer(1); return RT.d; },
     get reactionTrainer() { return RT.d; },
