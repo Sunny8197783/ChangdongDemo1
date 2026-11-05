@@ -361,7 +361,7 @@ module.exports = async function (PT) {
       const tier = reg.tier[id] || 'A';
       const r = await pg.eval(({ id, win, frames, every }) => window.ML.measure(id, { win, frames, every }), { id, win: WINDOW[tier], frames: sheets && sheetSet.has(id), every: EVERY });
       r.tier = tier; r.el = reg.el[id] || 'physical'; rows.push(r);
-      if (process.env.MELEE_VERBOSE) { const f = []; judge(r, f); console.log('   ', id, tier, JSON.stringify({ pre: r.pre, d: r.detail, c: r.crisp, s: r.sat, w: r.white, cov: r.cov, p: r.particles, h: r.handles, why: r.why })); }
+      if (process.env.MELEE_VERBOSE) { const f = []; judge(r, f); console.log('   ', id, tier, JSON.stringify({ pre: r.pre, ck: r.covKit, d: r.detail, c: r.crisp, s: r.sat, w: r.white, cov: r.cov, p: r.particles, h: r.handles, why: r.why })); }
       if (r.frames) {
         await PT.sheet(pg, r.frames.map((u, i) => ({ url: u, label: `${id} ${['anticipation', 'impact', 'dissipation'][i] || ''}` })), path.join(root, 'tools/playtest4/sheets/melee', id + '.png'), { cols: 3, cellW: 320, cellH: 180, title: `${id} (melee, ${tier}, ${r.look})` });
         delete r.frames;

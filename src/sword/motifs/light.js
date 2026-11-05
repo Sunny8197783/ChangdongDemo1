@@ -9,8 +9,8 @@ const _q = new THREE.Quaternion();
 export function installLight(api) {
   const { kit: K, gy } = api;
   // ---- geometry
-  { // ray: thin hexagonal wedge column 3 m (radius 0.18 → 0.04), vertical gradient
-    const g = new THREE.CylinderGeometry(0.04, 0.18, 3, 6, 4, true); g.translate(0, 1.5, 0);
+  { // ray: thin hexagonal wedge column 3 m (radius 0.5 → 0.11, scaled to the pillar r), vertical gradient
+    const g = new THREE.CylinderGeometry(0.11, 0.5, 3, 6, 4, true); g.translate(0, 1.5, 0);   // built at the usual pillar width: uniform-ish scale keeps the kit's coverage estimate honest
     K.registerShape('light.ray', faceted(g, (x, y) => 0.95 - y * 0.22), { blend: 'alpha', outline: false });
   }
   { // halo: flat torus with 12 tick blocks (lies in XZ)
@@ -58,7 +58,7 @@ export function installLight(api) {
     },
     pillar(s) {
       const g = G(s.pos), h = Math.min(8, s.h ?? 4), r = Math.min(0.6, s.r ?? 0.5), out = [];
-      out.push(K.mesh('light.ray', { pos: g, scale: K.v3(r / 0.18, h / 3, r / 0.18), life: 0.55, tIn: 0.08, tOut: 0.3, erode: false, castId: cid(s), owner: 'player', alpha: 0.7 }));
+      out.push(K.mesh('light.ray', { pos: g, scale: K.v3(r / 0.5, h / 3, r / 0.5), life: 0.55, tIn: 0.08, tOut: 0.3, erode: false, castId: cid(s), owner: 'player', alpha: 0.7 }));
       out.push(...haloTicks(s, K.v3(g.x, g.y + 0.06, g.z), r * 2.6, 'ground', 0.6, 0.6));
       out.push(K.mesh('light.halo', { pos: K.v3(g.x, g.y + h * 0.75, g.z), scale: r * 2, life: 0.55, tIn: 0.15, tOut: 0.25, erode: false, castId: cid(s), owner: 'player', spin: 1.6 }));
       motes(s, K.v3(g.x, g.y + h * 0.8, g.z), 5);

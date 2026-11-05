@@ -143,7 +143,21 @@ export function createLooks(game, E) {
   };
   // Z tier: particles refill at ≤ 30 /s (persistent parts)
   const tickers = [];
+  // FX solids the camera comes close to (a lunge carries the chase camera through the impact point) fade out instead of filling
+  // the screen (§1.4 coverage ceiling; the threat read stays clear)
+  const NEAR = new Array(48).fill(null); let nearI = 0; const _cp = new THREE.Vector3(), _cf = new THREE.Vector3();
+  function nearWatch(h) { if (h && h._r) { NEAR[nearI] = h; nearI = (nearI + 1) % NEAR.length; } return h; }
   L.update = (dt) => {
+    const cam = game.camera;
+    if (cam) {
+      cam.getWorldPosition(_cp); cam.getWorldDirection(_cf);
+      for (let i = 0; i < NEAR.length; i++) {
+        const h = NEAR[i]; if (!h) continue; if (!h.alive) { NEAR[i] = null; continue; }
+        const p = h._r.pos; if (!p) continue;
+        const depth = (p.x - _cp.x) * _cf.x + (p.y - _cp.y) * _cf.y + (p.z - _cp.z) * _cf.z;
+        if (depth < 2.5 || _cp.distanceToSquared(p) < 9) { h.stop(false); NEAR[i] = null; }   // beside / behind / at the camera
+      }
+    }
     for (let i = 0; i < tickers.length; i++) { try { tickers[i](dt); } catch (err) { warnOnce('ticker', err); } }
     for (const cc of byCast.values()) {
       if (cc.tier !== 'Z') continue;
@@ -159,7 +173,7 @@ export function createLooks(game, E) {
   const SPAWNERS = ['line', 'mesh', 'ribbon', 'bolt', 'decal'];   // (kit decals are linework handles too)
   const capped = (K, cc, fn) => {
     const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles, orig = SPAWNERS.map((k) => K[k]);
-    SPAWNERS.forEach((k, i) => { const f = orig[i]; if (typeof f === 'function') K[k] = function (...a) { if (usedH(cc) >= lim) { stats.dropped++; return INERT; } return f.apply(this, a); }; });
+    SPAWNERS.forEach((k, i) => { const f = orig[i]; if (typeof f === 'function') K[k] = function (...a) { if (usedH(cc) >= lim) { stats.dropped++; return INERT; } const h = f.apply(this, a); if (k === 'mesh') nearWatch(h); return h; }; });
     try { return fn(); } finally { SPAWNERS.forEach((k, i) => { K[k] = orig[i]; }); }
   };
   const useH = (cc, n = 1) => { const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles; if (lim - usedH(cc) < n) { stats.dropped++; return false; } cc.hLeft = lim - usedH(cc) - n; return true; };
@@ -535,7 +549,7 @@ export function createLooks(game, E) {
       if (spec.color == null && spec.el && spec.el !== 'light') { const R = rampOf(game, spec.el); spec.color = R.mid; if (spec.color2 == null) spec.color2 = R.light; }
       return K.line(spec);
     },
-    mesh: (cc, name, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.mesh(name, spec); },
+    mesh: (cc, name, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return nearWatch(K.mesh(name, spec)); },
     ribbon: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.ribbon(spec); },
     bolt: (cc, spec) => { const K = kit(); if (!K || !useH(cc)) return null; spec.castId = cc.castId; spec.owner = 'player'; return K.bolt(spec); },
     decal: (cc, kind, pos, r, life, o = {}) => { const K = kit(); if (!K || !useH(cc)) return null; o.castId = cc.castId; cc.decals++; return K.decal(kind, pos, r, life, o); },

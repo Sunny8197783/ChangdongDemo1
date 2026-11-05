@@ -16,7 +16,11 @@ const F = { px: 0, py: 0, pz: 0, yaw: 0, fx: 0, fz: 1, ang: 0, ix: 0, iy: 0, iz:
 function frame(L, a, dflt = 3, ctx = null) {
   const h = L.h, p = h.pos();
   F.px = p?.x ?? 0; F.py = p?.y ?? 0; F.pz = p?.z ?? 0;
-  F.yaw = a?.yaw0 ?? h.yaw();
+  // the action's swing yaw, unless the player has turned away from it since (charged releases keep the yaw of the charge start;
+  // a stale yaw would lay the look behind the player, under the camera)
+  const yNow = h.yaw(); let yA = a?.yaw0 ?? yNow; const dy = Math.atan2(Math.sin(yA - yNow), Math.cos(yA - yNow));
+  if (!Number.isFinite(yA) || Math.abs(dy) > Math.PI / 2) yA = yNow;
+  F.yaw = yA;
   F.fx = Math.sin(F.yaw); F.fz = Math.cos(F.yaw); F.ang = Math.atan2(F.fz, F.fx);
   const t = ctx?.aim?.target?.alive ? ctx.aim.target : a?.target?.alive ? a.target : null;
   F.tgt = t;
@@ -60,10 +64,11 @@ export const ROWS = {
   'fire.ult': { sig: '16-ray flare ring r 7 + crater cracks glowing at the bottom',
     start(L, cc) { anticip(L, cc, 'fire', 0.5); },
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0); const R = L.h.rampOf('fire');
-      L.h.line(cc, { shape: 'rays', n: 16, r2: 0.45, el: 'fire', pos: c, plane: 'ground', r: 7, width: 0.08, life: 0.7, tIn: 0.08, tOut: 0.35, scaleIn: 'expand', erode: true, color: R.mid, color2: R.light });
-      L.h.line(cc, { shape: 'ring', el: 'fire', pos: c, plane: 'ground', r: 7, width: 0.05, life: 0.45, tIn: 0, tOut: 0.25, scaleIn: 'expand' });
-      L.h.decal(cc, 'crack', c, 4.5, 6, { el: 'fire', alpha: 0.3 });
-      L.h.decal(cc, 'scorch', c, 3, 4, { el: 'fire', alpha: 0.28 });
+      L.h.line(cc, { shape: 'rays', n: 16, r2: 0.45, el: 'fire', pos: c, plane: 'ground', r: 7, width: 0.18, life: 0.8, tIn: 0.08, tOut: 0.35, scaleIn: 'expand', erode: true, color: R.mid, color2: R.light });
+      L.h.line(cc, { shape: 'ring', el: 'fire', pos: c, plane: 'ground', r: 7, width: 0.08, life: 0.6, tIn: 0, tOut: 0.3, scaleIn: 'expand' });
+      L.h.line(cc, { shape: 'ring', el: 'fire', pos: c, plane: 'ground', r: 3.2, width: 0.07, life: 0.6, tIn: 0.05, tOut: 0.3, scaleIn: 'backOut' });
+      L.h.decal(cc, 'crack', c, 4.5, 6, { el: 'fire', alpha: 0.35 });
+      L.h.decal(cc, 'scorch', c, 4.5, 4, { el: 'fire', alpha: 0.35 });
       L.h.spark(cc, imp(L, 0.4), 'fire', 24, _UP, { shape: 'ember', gravity: -2, speed: 7 });
     } },
   // ======================================================================== ice 빙결
@@ -136,9 +141,9 @@ export const ROWS = {
     mute: { beams: true, impacts: true },   // the row's paced strikes are the beams / impacts (the legacy ones would spend its handles)
     start(L, cc) { anticip(L, cc, 'lightning', 0.5); },
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0); const R = L.h.rampOf('lightning');
-      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 2.8, c.z), plane: 'flat', r: 4.2, life: 2.2, tIn: 0.3, tOut: 0.6, spin: 0.25, alpha: 0.85, color: R.mid, color2: R.dark });
+      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 2.8, c.z), plane: 'flat', r: 4.2, width: 0.07, life: 2.2, tIn: 0.3, tOut: 0.6, spin: 0.25, alpha: 0.85, color: R.mid, color2: R.dark });
       for (let k = 0; k < 3; k++) { const s = k * 2.2 + cc.castId, x = c.x + Math.cos(s) * 1.6 * k, z = c.z + Math.sin(s) * 1.6 * k, q = L.h.v3(x, L.h.gy(x, z), z);
-        L.h.after(k * 0.3, () => { L.h.bolt(cc, { from: L.h.v3(q.x, q.y + 8.6, q.z), to: q, forks: 2, width: 0.14, halo: 0.3, life: 0.06, afterglow: 0.3, el: 'lightning', seed: cc.castId + k * 13 });
+        L.h.after(k * 0.3, () => { L.h.bolt(cc, { from: L.h.v3(q.x, q.y + 8.6, q.z), to: q, forks: 2, width: 0.2, halo: 0.25, life: 0.08, afterglow: 0.35, el: 'lightning', seed: cc.castId + k * 13 });
           L.h.decal(cc, 'lichtenberg', q, 3.2, 2.0, { el: 'lightning', alpha: 0.4 }); }); }
     } },
   // ======================================================================== wind 바람
