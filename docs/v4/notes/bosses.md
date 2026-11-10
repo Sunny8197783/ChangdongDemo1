@@ -61,10 +61,30 @@
 golem.js exports `createGolem`, `prewarmGolem(game)`.
 
 ## Measured (branch; 640×360, SwiftShader, prod=1 governor=0 seed=1)
-RESULTS_PLACEHOLDER
+`node tools/playtest4.js bosses`: **207 passed, 0 failed, 6 skipped** (557 s; skips = `enemies.registerCodex` absent until `mobs-b`).
+
+| boss | body tris (budget) | proxy tris | boss draw calls (budget) | shadow calls |
+|---|---|---|---|---|
+| golem | 5 096 (≤ 14k) | 892 | 3 (≤ 22) | 1 |
+| hydra | 12 144 (P1 ≤ 32k) | 1 214 | 7 (≤ 22) | 1 |
+| nox | 5 592 (≤ 16k) | 444 | 4 (≤ 22) | 1 |
+| treant | 7 375 (≤ 32k) | 432 | 4 (≤ 22) | 1 |
+| kalis | 4 486 (≤ 16k) | 444 | 5 (≤ 22) | 1 |
+| nidhoggra | 12 028 (P1 ≤ 60k) | 11 016 | 27 (≤ 40) | 4 (≤ 6) |
+
+All §4.9–4.14 attack ids: tellStart windup ≥ §5.7 floor, hold ≥ 0.1 s at lock (0.367 s measured), decal = hitbox (±0.3 m), metadata on every
+hit, punish windows block attacks, break → `bossBroken {dur 3.5}` with 0 attack starts; 0 boss first draws during the fights; enemy-owned FX
+coverage p95 ≤ 0.004 screens branch-side (budget ≤ 1.0); no console errors in any B-* scene.
 
 ## Legacy tests
-LEGACY_PLACEHOLDER
+- `tools/bootcheck.js`: all configs `playing`, no console errors.
+- `tools/playtest.js --quick`: all PASS (exit 0).
+- `tools/playtest2.js`: story / settings / perf all PASS; sword logs one FAIL "wind combo hitstop on the first hit of each castId" — it comes
+  from the merged `vfx-b` (§5.10 light-tier 0.025 s hits; vfx notes hand it to core per §7.9), passes on `core-b`, not boss code.
+- `tools/playtest3.js` (all sections): **1265 passed, 1 failed, 1 skipped** before the fix below; the failure (narrative "village draw calls
+  ≤ 290": 513) was caused by golem warms queued at spawn and flushed in a later rendered frame outside the fight (see requests/core: the warm
+  layer = the hero's hidden layer 30). Fixed (golem materials shared, warm immediate and only when not yet warm): `playtest3.js narrative`
+  154 / 0, `playtest3.js enemies` 138 / 0 / 1 skipped, `playtest4.js bosses` (golem) 36 / 0 re-run after the fix.
 No playtest3 section is owned by bosses; the boss expectations for `tools/playtest3/enemies.js` (mobs) are filed in `docs/v4/requests/bosses.md`.
 
 ## P1 status

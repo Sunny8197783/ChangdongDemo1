@@ -20,6 +20,11 @@ Boss expectations for the boss part of `tools/playtest3/enemies.js` (PLAN §7.9;
 ## core
 - `game.render.warm(obj)` / the boot warm-up do not compile **shadow-depth** programs: a skinned shadow caster first drawn later compiles `MeshDepthMaterial` + skinning on its first shadowed frame. Bosses work around it (`bossbase.warmSkinnedShadow`: compile a skinned `MeshDepthMaterial(RGBADepthPacking)` into a render target with the main scene's lights and no fog). Please warm the shadow variants in `render.warm` / the boot warm-up so every owner gets it.
 
+- **`render.js` `WARM_LAYER = 30` equals `player/model.js` `HIDDEN_LAYER = 30`**: every `realDraw(…, 'layer')` (each flushed or immediate
+  `render.warm`) also draws the hero's ~270 hidden rigid parts + outlines (+275 draw calls in that frame). Seen as the narrative "village draw
+  calls ≤ 290" failure (513) when a queued warm was flushed in the village. Please move the warm layer to a free layer (e.g. 29) or exclude
+  the hidden layer. Bosses now warm immediately and only once per session (golem), so the bosses branch no longer triggers it.
+
 ## ux
 - `bossBroken {boss, dur}` → the "붕괴!" banner; `bossCheck` kinds `freeze` (hydra), `stagger` (kalis: bar + 3 crystal targets, `BOSS_UI.crystal`), `rods`, `tide` (nidhoggra); labels in `src/enemies/bosses/codex.js` `BOSS_UI.checkLabel`.
 - Boss codex: `src/enemies/bosses/codex.js` `BOSS_CODEX` (registered via `enemies.registerCodex`; previews via `enemies.registerPreview`).

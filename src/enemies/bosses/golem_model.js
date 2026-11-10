@@ -35,6 +35,7 @@ function geos() {
 }
 
 /** Build one golem model (one per fight; geometry built here, materials per instance so the phase colour is a uniform). */
+let _glowMat = null;
 export function buildGolemModel() {
   const G = geos();
   const root = new THREE.Group(); root.name = 'golem';
@@ -117,9 +118,10 @@ export function buildGolemModel() {
   };
   const lR = leg(-1), lL = leg(1);
 
-  // ---- materials (per instance: the phase colour is a material colour = uniform)
-  const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: GOLEM_COLORS.p1 });
-  glowMat.name = 'golemGlow';
+  // ---- materials: one golem fights at a time, so the glow material (phase colour = material colour) is shared by every
+  //      build — a rebuilt golem (2nd spawn, codex preview) is already warm and queues no render.warm
+  if (!_glowMat) { _glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: GOLEM_COLORS.p1 }); _glowMat.name = 'golemGlow'; }
+  const glowMat = _glowMat; glowMat.color.setHex(GOLEM_COLORS.p1);
   const sk = buildSkin('golem4', root, bones, [
     { name: 'rock', mat: vcFlatMat(), parts: rocks, shadow: false },
     { name: 'glow', mat: glowMat, parts: glowParts, shadow: false },

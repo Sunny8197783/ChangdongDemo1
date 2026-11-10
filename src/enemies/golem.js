@@ -26,8 +26,15 @@ let spare = null;
 export function prewarmGolem(game) {
   try { registerBossCodex(game); game?.enemies?.registerPreview?.('golem', previewGolem); } catch (_) { /* */ }
   if (!spare) spare = buildGolemModel();
-  try { game?.render?.warm?.(spare.root); game?.render?.warm?.(spare.thrown); } catch (_) { /* */ }
+  warmOnce(game, spare);
   return spare.root;
+}
+/** Warm only materials not yet warm, immediately (never queued): a queued warm of a golem that despawns before the next
+ *  rendered frame would be drawn later, outside the fight, through the warm layer (which also holds the hero's hidden
+ *  rigid parts — core request). All golem materials are shared, so this runs once per session. */
+function warmOnce(game, m) {
+  const R = game?.render; if (!R?.warm) return;
+  try { for (const o of [m.root, m.thrown]) if (o && !(R.isWarm?.(o))) R.warm(o, { now: true }); } catch (_) { /* */ }
 }
 function takeModel() { const m = spare || buildGolemModel(); spare = null; return m; }
 
@@ -430,6 +437,6 @@ export function createGolem(ctx, pos, opts = {}) {
     get() { return payloadFn ? () => { const o = payloadFn(); if (o && !o.brief) o.brief = e.brief.slice(); return o; } : null; },
     set(fn) { payloadFn = fn; },
   });
-  try { game.render?.warm?.(model.root); game.render?.warm?.(model.thrown); } catch (_) { /* */ }
+  warmOnce(game, model);
   return e;
 }
