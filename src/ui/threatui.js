@@ -11,6 +11,8 @@ const MAX_ARROWS = 4, MAX_DOTS = 6, RING_C = 2 * Math.PI * 15;
 const ARC_LIFE = 0.6, HAZ_HOLD = 0.7;
 
 export function createThreatUI(game, { parent, onFirstArrow }) {
+  // the directional damage arc replaces vfx's radial hurt vignette (vfx request; integration fix: both were shown)
+  if (game.vfx && !game.vfx.isStub) game.vfx.hurtVignette = false;
   const layer = parent.appendChild(h('div', 'aw-threat'));
   const arrows = [];
   for (let i = 0; i < MAX_ARROWS; i++) {

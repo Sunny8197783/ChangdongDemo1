@@ -25,5 +25,5 @@
 - magic / melee on the kit, castIds, `applyPlayerFx`: **done** (both branches build on `kit-p0a`+).
 - mobs / bosses `owner:'enemy'`, `attack` on player hits, `flashUniform`: **done**.
 - tells footprints / forward: **done**.
-- ux `hurtVignette`: ux keeps the vfx vignette (no directional arc replacement shipped) — **no action**.
+- ux `hurtVignette`: **done** — integration fix: ux's directional damage arc (`ui/threatui.js`) shipped but never switched the radial vignette off; `createThreatUI` now sets `game.vfx.hurtVignette = false`.
 - core playtest2 hitstop assertion: **done** in `core-b` (§7.9). Half-res soft-smoke target: **rejected for round 1** (P1, vfx marked it not needed for P0).

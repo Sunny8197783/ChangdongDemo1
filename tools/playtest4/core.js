@@ -790,7 +790,7 @@ async function c8(PT) {
       return { samples: C.renderTarget1.samples };
     }, id);
     const ia = await a.eval(prep, id), ib = await b.eval(prep, id);
-    const r = await PT.gpuRatioPages(a, b, { pairs: 5, reps: 2 });
+    const r = await PT.gpuRatioPages(a, b, { pairs: +(process.env.PT4_PAIRS || 9), reps: 3 });
     res[id] = { ...r, v4: ia, v3: { ...ib, ...v3 } };
     PT.check(`C8 ${id}: GPU ratio v4 medium ÷ v3 medium (MSAA 4), ABAB ${r.pairs.length} pairs median ${r.ratio} ≤ ${gate}`, r.ratio <= gate, res[id]);
     await a.close(); await b.close();
