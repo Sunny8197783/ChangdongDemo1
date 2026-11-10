@@ -107,7 +107,8 @@ export function createLooks(S) {
     const VIOLET = { lightning: 1, shadow: 1 };
     const mid = (s) => {
       const el = s.el || 'physical'; if (s.color == null) s.color = k.ramp(el).mid; if (s.color2 == null) s.color2 = el === 'lightning' ? k.ramp(el).mid : k.ramp(el).light;   // lightning's `light` step is pastel (sat 0.39)
-      if (s.minPx == null) s.minPx = !s.plane || s.plane === 'ground' ? 1.8 : 2.2;
+      // (2.4 / 2.8 px since the v4 combat camera sits farther back: the same precise lines, one legible weight at gameplay distance)
+      if (s.minPx == null) s.minPx = !s.plane || s.plane === 'ground' ? 2.4 : 2.8;
       // violet bodies (lightning, shadow) mix to grey with the green ground at partial coverage: a fuller line core, opaque off the ground
       if (VIOLET[el] && !s.owner) { s.minPx = Math.max(s.minPx, 2.6); if (s.role !== 'fill') s.alpha = Math.max(s.alpha ?? 0.85, s.plane && s.plane !== 'ground' ? 1 : 0.8); }
       return s;
@@ -266,12 +267,24 @@ export function createLooks(S) {
     const big = key === 'inferno' ? 1.35 : 1;
     return toArr(motif(el, 'trail', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: sc * big * (c?.tier === 'B' ? 0.9 : 1), shape, len: o.len }));
   }
+  /** Metres spanning `frac` of the screen height at pos (§1.4 detail floor at the shipped combat camera: the primary shape of every
+   *  cast is sized in screen terms, so it stays one legible glyph / ring / arc however far the boom sits; widths too). */
+  const _cp = new THREE.Vector3();
+  function px(pos, frac) {
+    const cam = game.camera; if (!cam || !pos) return 0;
+    cam.getWorldPosition(_cp);
+    const d = Math.max(3, Math.min(40, _cp.distanceTo(pos)));
+    return frac * 2 * d * Math.tan(((cam.fov || 60) * Math.PI / 180) / 2);
+  }
+  const INK = { light: 1, nature: 1, wind: 1 };
+  const PXR = { B: 0.07, C: 0.1, A: 0.1, Z: 0.09, U: 0.14, F: 0.14 };
   /** Impact at the epicentre: the full burst once per castId, per-target sparks after that. */
   function impact(pos, o = {}) {
     if (!pos) return null;
     if (!on()) return null;
     const c = cur, el = o.el || c?.el || 'physical';
-    const r = Math.max(0.5, Math.min(7, o.r ?? (o.big ? 1.6 : 1.0) * (o.scale ?? 1)));
+    let r = Math.max(0.5, Math.min(7, o.r ?? (o.big ? 1.6 : 1.0) * (o.scale ?? 1)));
+    if (c && c.burst === 0) r = Math.max(r, Math.min(4, px(pos, PXR[c.tier] || 0.1)));
     if (!c) return motif(el, 'spark', { pos: pos.clone ? pos.clone() : pos, n: 4 });
     if (c.burst > 0 && !o.force) return motif(el, 'spark', { pos: pos.clone ? pos.clone() : pos, n: 4, dir: o.dir });
     c.burst++;
@@ -347,17 +360,83 @@ export function createLooks(S) {
     const c = cur;
     if (!on() || !c || c.tier === 'U' || c.tier === 'F' || c.row?.keepSigil) return raw(pos, o);
     const el = c.el || 'physical', r = Math.max(0.6, Math.min(4, (o.radius ?? 2) * 0.85));
-    return K.line({ shape: 'glyph', glyph: EL9.includes(el) ? el : 'hexagram', el, pos: v1.set(pos.x, S.height(pos.x, pos.z) + 0.05, pos.z).clone(), plane: 'ground', r, width: 0.04,
-      life: Math.min(1.2, o.duration ?? 0.8), tIn: 0.28, tOut: 0.3, spin: Math.sign(o.spin ?? 1) * 0.9, alpha: 0.8 });
+    // ground ink: elements whose `mid` is pale or grass-coloured (light ivory, nature / wind green) draw the circle in their `dark` step,
+    // the others in `mid`; the weight is held at gameplay distance (§1.4 detail floor)
+    const gpos = v1.set(pos.x, S.height(pos.x, pos.z) + 0.05, pos.z).clone();
+    return K.line({ shape: 'glyph', glyph: EL9.includes(el) ? el : 'hexagram', el, pos: gpos, plane: 'ground', r, width: Math.max(0.04, px(gpos, INK[el] ? 0.009 : 0.006)),
+      life: Math.min(1.2, o.duration ?? 0.8), tIn: 0.28, tOut: 0.3, spin: Math.sign(o.spin ?? 1) * 0.9, alpha: INK[el] ? 0.95 : 0.85, color: INK[el] ? rampOf(el).dark : undefined });
   }
-  /** props.spikes eruption (ice): rows decide (ice.ult wave front); default = one FM prism within the cast budget. */
+  /** props.spikes / props.pillars eruption: rows decide (ice.ult wave front); default = one FM shape within the cast budget — an ice prism,
+   *  or (earth) a strata shard in the earth `light` step with its dark outline edge (no near-black opaque slabs). Every eruption is an
+   *  occluder: it fades while it stands between the camera and the player or an enemy (§5.4 readability; returns false when refused,
+   *  so the caller's instanced prop keeps platforms and walls visible). */
+  const occl = [];
+  let zig = 0; const _qz = new THREE.Quaternion(), _zAx = new THREE.Vector3(0, 0, 1);
+  const COLUMN = { fire: 'fire.flame', lightning: 'lightning.spike', wind: 'wind.crescent', water: 'water.droplet', nature: 'nature.leaf', light: 'light.feather', shadow: 'shadow.tendril' };
   function spike(x, y, z, o = {}) {
     if (!on()) return false;
     const r = rowHook('spike', x, y, z, o); if (r !== undefined) return r;
-    const h = Math.max(0.6, o.height || 1.6) * 0.62;
-    K.mesh('ice.prism', { pos: new THREE.Vector3(x, y, z), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tiltX || 0, o.yaw || 0, o.tiltZ || 0)), scale: h,
-      life: (o.rise ?? 0.14) + (o.hold ?? 1.5) + (o.sink ?? 0.45), tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true });
+    // a wall / pillar eruption of a non-earth cast takes the element's own column shape (fire tongue, lightning spike, water droplet …):
+    // every element used to raise the same rock row (MG1.f wall silhouettes 0.8+ between elements)
+    const ce = o.el === 'earth' ? cur?.el : null, colName = ce && COLUMN[ce] && kitReal?._fm?.hasShape?.(COLUMN[ce]) ? COLUMN[ce] : null;
+    if (colName) {
+      const H = Math.max(0.6, o.height || 1.6), rad = kitReal._fm.shapeOf(colName)?.radius || 0.5;
+      const life = (o.rise ?? 0.14) + (o.hold ?? 1.5) + (o.sink ?? 0.45);
+      const hc = K.mesh(colName, { pos: new THREE.Vector3(x, y + H * 0.45, z), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tiltX || 0, o.yaw || 0, o.tiltZ || 0)),
+        scale: H / (2 * rad), life, tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true, el: ce, alpha: 0.85 });
+      if (!hc || hc === DEAD || hc.alive === false) return !o.keep;
+      if (H >= 1.2 && occl.length < 48) occl.push({ h: hc, x, z, y, top: y + H, r: Math.max(0.5, (o.width || 1) * 0.6), a: 1 });
+      return true;
+    }
+    const earth = o.el === 'earth';
+    const life = (o.rise ?? 0.14) + (o.hold ?? 1.5) + (o.sink ?? 0.45), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tiltX || 0, o.yaw || 0, o.tiltZ || 0));
+    let h, top;
+    if (earth) {
+      const H = Math.max(0.6, o.height || 1.6), W = Math.max(0.4, o.width || 1);
+      // upright rows (walls, steps) lean alternately along the row: a zig-zag of strata, never the ice row's upright prisms
+      if (!o.tiltX && !o.tiltZ) { const lean = (zig++ % 2 ? 0.5 : -0.5); q.multiply(_qz.setFromAxisAngle(_zAx, lean)); }
+      const sc = new THREE.Vector3(W * 1.7, H * 0.78, W * 1.7);   // physical.shard: 0.4 × 1.2 octahedron → ≈ 0.94 H tall, 0.7 W wide
+      h = K.mesh('physical.shard', { pos: new THREE.Vector3(x, y + H * 0.25, z), quat: q, scale: sc, life, tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true,
+        el: 'earth', color: rampOf('earth').light, tintAmt: 0.85, alpha: 0.9 });
+      top = y + H * 0.95;
+    } else {
+      const s = Math.max(0.6, o.height || 1.6) * 0.62;
+      h = K.mesh('ice.prism', { pos: new THREE.Vector3(x, y, z), quat: q, scale: s, life, tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true });
+      top = y + (o.height || 1.6);
+    }
+    if (!h || h === DEAD || h.alive === false) return !o.keep;   // refused: dropped (v4 budget), except walls / steps / pillars that carry a collider (o.keep: the instanced prop stays)
+    if ((o.height || 1.6) >= 1.2 && occl.length < 48) occl.push({ h, x, z, y, top, r: Math.max(0.5, (o.width || 1) * 0.6), a: 1 });
     return true;
+  }
+  /** Once per frame: eruptions between the camera and the player / a nearby enemy fade to 0.25 (§5.4 near-camera / camera-segment fade
+   *  for spell objects; crystals and strata no longer hide what is attacking). */
+  const _oc = new THREE.Vector3(), _near = [];
+  function occlusion(dt) {
+    if (!occl.length) return;
+    const cam = game.camera; if (!cam) return;
+    cam.getWorldPosition(_oc);
+    const pp = game.player?.object?.position;
+    _near.length = 0;
+    try { if (pp) game.combat?.queryRadius?.(pp, 30, '!player', _near); } catch (_) { _near.length = 0; }
+    const k = Math.min(1, dt * 10);
+    for (let i = occl.length - 1; i >= 0; i--) {
+      const O = occl[i];
+      if (!O.h.alive) { occl.splice(i, 1); continue; }
+      let hide = pp ? blocks(O, pp.x, pp.y + 1, pp.z) : false;
+      for (let j = 0; !hide && j < _near.length && j < 12; j++) { const e = _near[j], ep = e?.object?.position; if (e?.alive && ep && !e.isProp) hide = blocks(O, ep.x, ep.y + (e.height || 1.6) * 0.5, ep.z); }
+      O.a += ((hide ? 0.25 : 1) - O.a) * k;
+      O.h.setAlpha?.(O.a);
+    }
+  }
+  /** Does the vertical occluder O cut the camera → (tx, ty, tz) segment (in front of the target, within its radius + 0.6 m, below its top)? */
+  function blocks(O, tx, ty, tz) {
+    const dx = tx - _oc.x, dz = tz - _oc.z, L2 = dx * dx + dz * dz; if (L2 < 1e-4) return false;
+    const t = ((O.x - _oc.x) * dx + (O.z - _oc.z) * dz) / L2;
+    if (t <= 0 || t >= 0.97) return false;
+    const qx = _oc.x + dx * t - O.x, qz = _oc.z + dz * t - O.z, rr = O.r + 0.6;
+    if (qx * qx + qz * qz > rr * rr) return false;
+    const yAt = _oc.y + (ty - _oc.y) * t;
+    return yAt < O.top + 0.3 && yAt > O.y - 0.5;
   }
   /** buff aura following the caster for dur. */
   function aura(el, obj, dur) {
@@ -592,7 +671,7 @@ export function createLooks(S) {
 
   const api = {
     adopt, install, on, begin, end, within, swap, bind, stamp, motif, motifSource, castFx, body, impact, target, zone, fx, stopAll, toArr,
-    crawl, crawlTick, nova, wave, strike, blink, aura, rowHook, spike, sigil, warmup,
+    crawl, crawlTick, nova, wave, strike, blink, aura, rowHook, spike, occlusion, sigil, warmup, px, PXR, INK,
     tracing: false, trace: (id) => { const c = byId.get(id); return c ? { h: c.h, refused: c.refused, list: c.trace } : null; },
     lock, castLock, lookOf, tierOf: tierOfDef, skillOfSpell, takeIssued, CAPS, BESPOKE_IDS, MAGIC_ELEMENTS,
     get cur() { return cur; }, get kit() { return K; }, get rows() { return ROWS; }, get installed() { return installed; },

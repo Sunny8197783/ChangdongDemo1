@@ -190,6 +190,7 @@ export function createSpells(game) {
   try {
     const kids = game.scene?.children || [];
     if (S.props.spikes) S.props.spikes.override = (x, y, z, o) => L.spike(x, y, z, o);
+    if (S.props.pillars) S.props.pillars.override = (x, y, z, o) => L.spike(x, y, z, Object.assign(o, { el: 'earth' }));
     const rawSigil = S.props.sigil;
     S.props.sigil = (pos, o = {}) => L.sigil(pos, o, rawSigil);
     for (const s of S.props.sigilPool || []) L.adopt(s, { role: 'line' });
@@ -566,6 +567,7 @@ export function createSpells(game) {
     S.projectiles.update(dt);
     S.zones.update(dt);
     S.props.update(dt);
+    S.looks?.occlusion?.(dt);
     S.support.update(dt, realDt || dt);
     S.setPieces.update(realDt || dt);
     // v3 runtime

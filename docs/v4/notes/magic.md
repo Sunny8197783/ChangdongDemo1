@@ -94,3 +94,25 @@ one sword-section line `FAIL wind combo hitstop on the first hit of each castId`
   (more chroma at lower luma), a larger grapple anchor glyph in screen space, and a measurement that averages 2 casts per row.
 
 Final tag: `magic-b`.
+
+## Fix round 1 (review.md caster items, merged build with the v4 combat camera)
+
+Measured on the merged state (`node tools/playtest4.js magic --sheets`, 640×360, 48 casts, 1,297 s run).
+
+| Item | Before | After | Root cause / change |
+|---|---|---|---|
+| Bespoke detail floors (§1.4) at the v4 camera | 14 of 36 bespoke rows under the floor on the integrated build (fire.basic 425, fire.charged 1,764, nature.roots 983 …) | 2 of 36 (`wind.basic` 365, `lightning.basic` 466; both flap between 365 and 1,362 from run to run); bespoke median 3,017 px | The camera sits 13.3 m from the dummy (fov 66°, about 21 px/m at 360 p), so fixed metre sizes became 3 to 10 px slivers. `looks.px(pos, frac)` sizes each cast's primary shape and its line weight as a fraction of the screen height (B 0.07 to 0.09, C/A 0.10 to 0.13). The impact radius floor is in `looks.impact`, and the line floor goes from 1.8/2.2 to 2.4/2.8 px. Short flares (0.07 s) now hold for 0.3 s. Impact shares put the legible shape first (ice.charged). The nature flower sits above the grass in the `light` step, and the salamander head rides above the grass. MG1.c also takes a diff 4 and 10 frames after a cast spawns new shapes, so a burst between two grid samples is measured. |
+| 0 new materials per cast | F-mage rotation 31, F-ranger 12, MG1.d --full 33 | F-mage 0 from magic (4 from `enemies/base.js:74`), F-ranger 0, MG1.d 0 / 48. All 104 registry casts repeated: 0 outside the cinematic | Pool misses built new materials. Zone ground discs and tornado parts now share one material per kind or role, and their per-object uniforms are copied in `onBeforeRender` with `uniformsNeedUpdate`. Meteor, aura and tornado-core materials are cached, and the per-element ones are built at boot. The 33 under --full are `src/cinematic/assets.js` finisher materials (ux), now reported separately by MG1.d. |
+| Ult circles faint (light, nature, wind) | pale / grass-green circle | ground ink: light, nature and wind circles in the `dark` step, at 0.95 alpha and ≥ 0.009 screen-height weight. Impact sigils added (light hexagram, nature glyph) | |
+| U sheets with only 2 frames | 8 of 8 U sheets | 3 frames | The grid holds floor(N / every) < `samples` samples, so the last grid sample is now the dissipation frame. |
+| earth.charged / ult / wall slabs | near-black opaque instanced rocks | `props.pillars` → `looks.spike`: earth strata as FM `physical.shard` in the earth `light` step with a dark outline, leaning in a zig-zag. Other elements' walls and pillars use the element column (fire tongue, lightning spike, water droplet, wind crescent, leaf, feather, tendril) | Collider props (`keep`) fall back to the instanced prop only when refused. |
+| water.charged dome | 0.85-alpha sheet growing ×1.7 | 0.22-alpha low sheet plus 2 travelling crest arcs (linework) | |
+| fire.phoenix framing | camera inside the mage | the dash dummy sits 1.2 m off the path, so the boom no longer collides with it | The dash leaves the player's black `spawnGhost` silhouette (player). |
+| Archetype sheets too small | 27 cells of ≈ 95 px | `arch_<name>_{1,2,3}.png`, 3 elements each; every sheet is cropped to the action (≥ 208×117 window around the peak mask, player and dummy) | The 150 KB cap still downscales grass-heavy cells to about 0.5. |
+| Ice prison / pillar crystals hide enemies | solid crystals between camera and enemies | every eruption ≥ 1.2 m is an occluder: when it cuts the camera → player or camera → enemy segment (12 nearest enemies within 30 m) it fades to 0.25 alpha (`looks.occlusion`, once per frame). The prison uses 4 prisms instead of 6 | |
+| MG1.f IoU | wall fire/earth 0.86 | wall 0.48 (ice/water); projectile 0.36, nova 0.38, cone 0.18, zone 0.48 | All non-ice walls had raised the same rock row. |
+
+Still open (not in this round's items, cross-owner):
+- **Handles over the cap**: earth.charged 15, earth.ult 19, light.ult 29, earth.basic 11, nature.basic 10, nature.charged 13 and others. The magic facade stays within the cap (traces show 4 to 8). The rest comes from `vfx` hitFeel per-target bursts that use melee's earth, nature, light and shadow motifs under the same castId.
+- **Saturation**: violet saturation stays at the floor (`lightning.basic` 0.33 to 0.38, `shadow.ult` 0.33); see requests core (4).
+- **Archetype representatives under the floor**: ice.prison 1,417, ice.slide 1,154, lightning.mine (its trigger is refused once the placement has spent the Z budget), shadow.chains, nature.grapple and lightning.thunderclap.

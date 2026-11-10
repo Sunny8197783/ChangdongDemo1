@@ -102,23 +102,27 @@ export function createProjectiles(S) {
     },
     meteor() {
       const g = new THREE.Group();
-      const r = new THREE.Mesh(rockGeo(), toonMat(0x5a2c1c, { flatShading: true, emissive: 0xff3a00, emissiveIntensity: 0.35 }));
+      const r = new THREE.Mesh(rockGeo(), cmat('meteorRock', () => toonMat(0x5a2c1c, { flatShading: true, emissive: 0xff3a00, emissiveIntensity: 0.35 })));
       r.scale.setScalar(5); addOutline(r, 0.025);
       g.add(r); g.userData.spin = r;
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 3.4, 20, 14), fresnelMat(0xff6a1f, { power: 1.2, intensity: 1.2, core: 0.1 })));
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 4.6, 20, 14), fresnelMat(0xffc060, { power: 2.5, intensity: 1.2 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 3.4, 20, 14), cmat('meteorRim', () => fresnelMat(0xff6a1f, { power: 1.2, intensity: 1.2, core: 0.1 }))));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 4.6, 20, 14), cmat('meteorHalo', () => fresnelMat(0xffc060, { power: 2.5, intensity: 1.2 }))));
       const fl = new THREE.Mesh(flameGeo(), flameMat()); fl.scale.set(9, 9, 9); fl.position.y = 1; g.add(fl);
       return g;
     },
   };
   Object.assign(factories, extraFactories(game, glowCore));
+  // v4 §2: 0 new materials per cast — pooled meshes created on a pool miss reuse one material per key
+  const _mats = new Map();
+  const cmat = (k, fn) => { let m = _mats.get(k); if (!m) { m = fn(); _mats.set(k, m); } return m; };
+  for (const el of ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow']) cmat('aura.' + el, () => fresnelMat(elColor(el, 'hex'), { power: 1.3, intensity: 1.2 }));   // infusion auras: boot
   function takeMesh(key) {
     if (!factories[key]) key = 'orb';
     const p = pools[key] || (pools[key] = []);
     const m = p.pop() || factories[key]();
     m.userData.key = key;
     if (!m.userData.aura) {
-      const aura = new THREE.Mesh(sharedGeo('SphereGeometry', 0.75, 14, 10), fresnelMat(GLINT, { power: 1.3, intensity: 1.2 }));
+      const aura = new THREE.Mesh(sharedGeo('SphereGeometry', 0.75, 14, 10), cmat('aura', () => fresnelMat(GLINT, { power: 1.3, intensity: 1.2 })));
       aura.visible = false; m.add(aura); m.userData.aura = aura;
     }
     m.userData.aura.visible = false;
@@ -230,7 +234,7 @@ export function createProjectiles(S) {
       return true;
     }
     const a = p.mesh.userData.aura;
-    a.visible = true; a.material.uniforms.color.value.setHex(elColor(el, 'hex'));
+    a.visible = true; a.material = cmat('aura.' + el, () => fresnelMat(elColor(el, 'hex'), { power: 1.3, intensity: 1.2 }));   // one per element (cached)
     if (p.mesh.userData.tint) p.mesh.userData.tint.color.setHex(el === 'fire' ? 0xffa040 : el === 'ice' ? 0xbff4ff : elColor(el, 'mid'));
     try { const em = game.vfx?.emitter?.({ follow: p.mesh, rate: 40, color: [elColor(el, 'hex'), glint(elColor(el, 'hex'))], shape, speed: 1.5, spread: 1, size: 0.18, sizeEnd: 0, life: 0.5, drag: 1 }); if (em?.stop) p.emitters.push(em); } catch (_) { /* */ }
     S.vfx('burst', p.pos, { count: 26, color: [elColor(el, 'hex'), glint(elColor(el, 'hex'))], shape, speed: 6, spread: 1, size: 0.18, life: 0.5, drag: 2 });

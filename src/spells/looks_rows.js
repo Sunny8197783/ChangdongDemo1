@@ -28,6 +28,8 @@ export function createRows(L) {
   const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
   const gp = (p, lift = 0.05) => v3(p.x, S.height(p.x, p.z) + lift, p.z);
   const cid = () => L.cur?.castId || 0;
+  // §1.4 detail floor at the shipped combat camera: primary shapes sized in screen terms (fraction of the screen height at pos)
+  const sz = (pos, base, frac) => Math.max(base, L.px(pos, frac));
   const charge = () => { const c = L.cur; return c?.data?.charge ?? 1; };
   const M = (el, kind, spec) => L.motif(el, kind, spec);
   const ring = (el, pos, r, o = {}) => K().line({ shape: 'ring', el, pos, plane: o.plane || 'ground', r, width: o.width ?? 0.04, life: o.life ?? 0.4, tIn: o.tIn ?? 0, tOut: o.tOut ?? 0.25,
@@ -48,7 +50,7 @@ export function createRows(L) {
         K().ribbon({ follow: p.proxy, width: 0.17 * s, taper: 0.95, life: 0.2, maxLen: 1.2, el: 'fire', tailSat: 0.25 })];
     },
     impact: (pos) => {
-      K().line({ shape: 'crescent', el: 'fire', pos, plane: 'billboard', r: 0.8, width: 0.05, life: 0.07, tIn: 0, tOut: 0.04, color: R('fire').light, color2: R('fire').hi, additiveCore: 0.6, rot: (cid() * 0.7) % TAU });
+      K().line({ shape: 'crescent', el: 'fire', pos, plane: 'billboard', r: sz(pos, 0.8, 0.075), width: sz(pos, 0.05, 0.008), life: 0.3, tIn: 0, tOut: 0.2, scaleIn: 'backOut', color: R('fire').mid, color2: R('fire').light, rot: (cid() * 0.7) % TAU });
       sparks('fire', pos, 4, { shape: 'ember', gravity: -3, speed: 4, life: 0.35 });
       return true;
     },
@@ -63,7 +65,7 @@ export function createRows(L) {
       K().ribbon({ follow: p.proxy, width: 0.3, taper: 0.9, life: 0.25, maxLen: 2.2, el: 'fire', tailSat: 0.25 })],
     impact: (pos, r) => {
       const g = gp(pos), R2 = Math.max(2, Math.min(6, r * 1.6));
-      K().line({ shape: 'rays', n: 8, r2: 0.28, el: 'fire', pos, plane: 'billboard', r: 1.6, width: 0.12, life: 0.4, tIn: 0.2, tOut: 0.18, scaleIn: 'backOut', color: R('fire').mid, color2: R('fire').light, rot: (cid() * 0.37) % TAU });
+      K().line({ shape: 'rays', n: 8, r2: 0.28, el: 'fire', pos, plane: 'billboard', r: sz(pos, 1.6, 0.125), width: sz(pos, 0.12, 0.01), life: 0.4, tIn: 0.2, tOut: 0.18, scaleIn: 'backOut', color: R('fire').mid, color2: R('fire').light, rot: (cid() * 0.37) % TAU });
       ring('fire', g, R2, { width: 0.035, life: 0.35 });
       K().line({ shape: 'star', points: 8, r2: 0.5, el: 'fire', pos: g, plane: 'ground', r: R2 * 0.7, width: 0.06, life: 0.5, tIn: 0.2, tOut: 0.25, scaleIn: 'backOut', color: R('fire').light, color2: R('fire').mid, rot: (cid() * 0.37) % TAU });
       sparks('fire', pos, 12, { shape: 'ember', gravity: -3, speed: 7, life: 0.5 });
@@ -74,11 +76,12 @@ export function createRows(L) {
     quiet: { shockwave: 1 },
   });
   def('fire.salamander', {   // A: salamander glyph at the feet → crawling head of 3 tongues + instanced tongues along an ember line → erode at the end
-    cast: () => { const pp = game.player?.object?.position; if (pp) glyph('fire', 'fire', gp(pp), 0.8, { plane: 'ground', life: 0.3, spin: 1.5 }); return true; },
+    cast: () => { const pp = game.player?.object?.position; if (pp) glyph('fire', 'fire', gp(pp), 1.1, { plane: 'ground', width: 0.06, life: 0.45, spin: 1.5 }); return true; },
     crawl: (c) => [
-      K().mesh('fire.flame', { follow: c.proxy, pos: c.proxy.position, followOff: v3(0, -0.35, 0), scale: 0.6, life: Infinity, tIn: 0.1, tOut: 0.2, erode: true, spin: 2 }),
-      K().mesh('fire.tongue', { follow: c.proxy, pos: c.proxy.position, followOff: v3(0, -0.35, 0), scale: 0.75, life: Infinity, tIn: 0.12, tOut: 0.2, erode: true, spin: -1.5 }),
-      K().ribbon({ follow: c.proxy, width: 0.18, taper: 0.8, life: 0.5, maxLen: 1.4, el: 'fire', alpha: 0.7, colors: { head: R('fire').mid, edge: R('fire').dark } }),
+      // the head rides above tall grass (in it, the crawl was invisible at the combat camera)
+      K().mesh('fire.flame', { follow: c.proxy, pos: c.proxy.position, followOff: v3(0, 0.2, 0), scale: 0.85, life: Infinity, tIn: 0.1, tOut: 0.2, erode: true, spin: 2 }),
+      K().mesh('fire.tongue', { follow: c.proxy, pos: c.proxy.position, followOff: v3(0, 0.2, 0), scale: 1.05, life: Infinity, tIn: 0.12, tOut: 0.2, erode: true, spin: -1.5 }),
+      K().ribbon({ follow: c.proxy, width: sz(c.proxy.position, 0.18, 0.012), taper: 0.8, life: 0.5, maxLen: 2.2, el: 'fire', alpha: 0.8, colors: { head: R('fire').mid, edge: R('fire').dark } }),
     ],
     crawlTick: (c, dt) => {
       c.lookD = (c.lookD ?? 0) + c.speed * dt;
@@ -146,7 +149,9 @@ export function createRows(L) {
       K().ribbon({ follow: p.proxy, width: 0.14, taper: 1, life: 0.18, maxLen: 3, el: 'ice', tailSat: 0.2 })],
     impact: (pos) => {
       const g = gp(pos, 0), a0 = (cid() * 0.61) % TAU;
-      for (let i = 0; i < 4; i++) { const a = a0 + i * TAU / 4; prism(v3(g.x + Math.cos(a) * 1.1, g.y, g.z + Math.sin(a) * 1.1), 1.25 + (i % 2) * 0.4, 0.8, { a, lean: 0.45, tIn: 0.14, tOut: 0.35 }); }
+      // the legible primary first (the impact share is spent in call order): a frost star at the hit, then the prism crown
+      K().line({ shape: 'star', points: 6, r2: 0.3, el: 'ice', pos, plane: 'billboard', r: sz(pos, 1, 0.12), width: sz(pos, 0.04, 0.008), life: 0.6, tIn: 0.05, tOut: 0.3, scaleIn: 'backOut', spin: 0.8, color: R('ice').mid, rot: a0 });
+      for (let i = 0; i < 3; i++) { const a = a0 + i * TAU / 3; prism(v3(g.x + Math.cos(a) * 1.1, g.y, g.z + Math.sin(a) * 1.1), 1.25 + (i % 2) * 0.4, 0.8, { a, lean: 0.45, tIn: 0.14, tOut: 0.35 }); }
       K().decal('frost', gp(pos), 1.6, 0.9, { el: 'ice', alpha: 0.3, rot: a0 });
       sparks('ice', pos, 10, { shape: 'shard', gravity: 9, speed: 6, life: 0.45 });
       return true;
@@ -191,7 +196,7 @@ export function createRows(L) {
     gate: { beam: (a) => { const c = L.cur; if (c?.data.bolt) return null; if (c) c.data.bolt = 1; return K().bolt({ from: a[0], to: a[1], forks: 1, width: 0.12, halo: 0.3, life: 0.08, afterglow: 0.15, el: 'lightning', seed: cid() * 3 }); } },
     impact: (pos) => {
       K().mesh('lightning.orb', { color: R('lightning').mid, tintAmt: 0.85, pos, scale: 0.7, life: 0.18, tIn: 0.02, tOut: 0.12, erode: true, grow: 1.3 });
-      K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: 0.6, width: 0.045, life: 0.1, tIn: 0, tOut: 0.05, color: R('lightning').mid, color2: R('lightning').mid, rot: 0.785 });
+      K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: sz(pos, 0.6, 0.075), width: sz(pos, 0.045, 0.008), life: 0.3, tIn: 0, tOut: 0.18, scaleIn: 'backOut', color: R('lightning').mid, color2: R('lightning').mid, rot: 0.785 });
       sparks('lightning', pos, 3, { speed: 6, life: 0.18 }); return true;
     },
   });
@@ -199,8 +204,8 @@ export function createRows(L) {
     cast: (o) => { const a = cid(); K().bolt({ from: o, to: v3(o.x + Math.cos(a) * 0.5, o.y + 0.35, o.z + Math.sin(a) * 0.5), forks: 0, width: 0.04, halo: 0.12, life: 0.05, afterglow: 0.12, el: 'lightning' }); return true; },
     gate: {
       beam: (a) => { const c = L.cur; if (c && (c.data.jumps = (c.data.jumps || 0) + 1) > 4) return null;
-        if (a[1] && (c?.data.jumps ?? 1) <= 2) K().line({ shape: 'star', points: 4, r2: 0.14, el: 'lightning', pos: a[1], plane: 'billboard', r: 0.85, width: 0.05, life: 0.16, tIn: 0, tOut: 0.08, color: R('lightning').mid, color2: R('lightning').hi, additiveCore: 0.5, rot: 0.785 });
-        if (a[1] && (c?.data.jumps ?? 1) === 1) K().line({ shape: 'ticks', n: 12, r2: 0.7, el: 'lightning', pos: a[1], plane: 'billboard', r: 1.45, width: 0.05, life: 0.4, tIn: 0.05, tOut: 0.2, scaleIn: 'backOut', spin: 2.5 });
+        if (a[1] && (c?.data.jumps ?? 1) <= 2) K().line({ shape: 'star', points: 4, r2: 0.14, el: 'lightning', pos: a[1], plane: 'billboard', r: sz(a[1], 0.85, 0.08), width: sz(a[1], 0.05, 0.008), life: 0.16, tIn: 0, tOut: 0.08, color: R('lightning').mid, color2: R('lightning').hi, additiveCore: 0.5, rot: 0.785 });
+        if (a[1] && (c?.data.jumps ?? 1) === 1) K().line({ shape: 'ticks', n: 12, r2: 0.7, el: 'lightning', pos: a[1], plane: 'billboard', r: sz(a[1], 1.45, 0.13), width: sz(a[1], 0.05, 0.009), life: 0.6, tIn: 0.05, tOut: 0.2, scaleIn: 'backOut', spin: 2.5 });
         return K().bolt({ from: a[0], to: a[1], forks: 2, width: 0.14, halo: 0.4, life: 0.09, afterglow: 0.32, el: 'lightning', seed: cid() * 5 + (c?.h || 0) }); },
       burst: (a) => { if (a[0]) { const c = L.cur; if (c && (c.data.lich = (c.data.lich || 0) + 1) <= 2) K().decal('lichtenberg', gp(a[0]), 2.6, 0.7, { el: 'lightning', alpha: 0.35 }); sparks('lightning', a[0], 5, { speed: 6, life: 0.2 }); } return null; },
     },
@@ -229,9 +234,9 @@ export function createRows(L) {
   // ================================================================================== 바람 wind
   def('wind.basic', {   // B: triple-spiral glyph → thin spinning crescent blade (alpha body, hi leading edge) + streamline → leaf flecks + crescent
     cast: (o) => { glyph('wind', 'wind', o, 0.32, { life: 0.12, tIn: 0.05, tOut: 0.06, spin: 3 }); return true; },
-    body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'wind.arrow' : 'wind.crescent', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.85 : 1.1, life: Infinity, tIn: 0.12, tOut: 0.1, erode: true, alpha: 0.85, spin: o.mesh === 'arrow' ? 0 : 0 }),
+    body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'wind.arrow' : 'wind.crescent', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.85 : 1.45, life: Infinity, tIn: 0.12, tOut: 0.1, erode: true, alpha: 0.85, spin: o.mesh === 'arrow' ? 0 : 0 }),
       K().ribbon({ follow: p.proxy, width: 0.09, taper: 1, life: 0.22, maxLen: 1.8, el: 'wind', alpha: 0.6, tailSat: 0.2 })],
-    impact: (pos) => { K().line({ shape: 'crescent', el: 'wind', pos, plane: 'billboard', r: 0.6, width: 0.03, life: 0.12, tIn: 0, tOut: 0.06, color: R('wind').mid, color2: R('wind').hi, additiveCore: 0.6, rot: cid() % TAU }); sparks('wind', pos, 3, { shape: 'leaf', gravity: 1, speed: 4, life: 0.5 }); return true; },
+    impact: (pos) => { K().line({ shape: 'crescent', el: 'wind', pos, plane: 'billboard', r: sz(pos, 0.6, 0.09), width: sz(pos, 0.03, 0.009), life: 0.3, tIn: 0, tOut: 0.2, scaleIn: 'backOut', color: R('wind').mid, color2: R('wind').mid, rot: cid() % TAU }); sparks('wind', pos, 3, { shape: 'leaf', gravity: 1, speed: 4, life: 0.5 }); return true; },
   });
   const gustWave = (o, dir, len, angDeg, n) => {
     const d = flatDir(dir), a = Math.atan2(d.z, d.x), half = Math.min(1.3, (angDeg || 60) * Math.PI / 360), base = gp(o, 0.25);
@@ -271,7 +276,7 @@ export function createRows(L) {
     cast: () => true,
     zone: (kind, pos, r, life, o) => {
       const g = gp(pos), out = [];
-      out.push(K().line({ shape: 'spiral', turns: 1.4, arms: 3, r2: 0.08, el: 'wind', pos: g, follow: o.follow, followOff: v3(0, 0.05, 0), plane: 'ground', r: r * 1.15, width: 0.05, life, tIn: 0.3, tOut: 0.5, spin: 3, alpha: 0.38 }));
+      out.push(K().line({ shape: 'spiral', turns: 1.4, arms: 3, r2: 0.08, el: 'wind', pos: g, follow: o.follow, followOff: v3(0, 0.05, 0), plane: 'ground', r: r * 1.15, width: sz(g, 0.05, 0.006), life, tIn: 0.3, tOut: 0.5, spin: 3, alpha: 0.9, color: R('wind').dark }));
       for (let i = 0; i < 6; i++) {
         const h = 0.8 + i * 1.7, rr = 1 + (i / 5) * 3;
         out.push(K().line({ shape: 'spiral', turns: 0.55, arms: 2, r2: 0.72, el: 'wind', pos: v3(g.x, g.y + h, g.z), follow: o.follow, followOff: v3(0, h, 0), plane: 'flat', r: rr, width: 0.05, life, tIn: 0.2 + i * 0.06, tOut: 0.45, spin: 4.5 - i * 0.35, alpha: 0.4, color: R('wind').mid, color2: R('wind').mid }));
@@ -285,14 +290,16 @@ export function createRows(L) {
   def('water.basic', {   // B: wave glyph → 3 FM droplets + tiny RB → droplet crown + ripple
     cast: () => true,
     body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'water.arrow' : 'water.droplet', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.85 : 1.2, life: Infinity, tIn: 0.12, tOut: 0.08, erode: true })],
-    impact: (pos) => { K().line({ shape: 'ring', el: 'water', pos: gp(pos), plane: 'ground', r: 0.8, width: 0.03, life: 0.4, tIn: 0, tOut: 0.25, scaleIn: 'expand', color: R('water').light }); sparks('water', pos, 6, { shape: 'droplet', gravity: 10, speed: 4, life: 0.4 }); return true; },
+    impact: (pos) => { glyph('water', 'water', pos, sz(pos, 0.6, 0.065), { width: sz(pos, 0.03, 0.007), life: 0.45, tIn: 0.06, tOut: 0.25, spin: 0.8 }); sparks('water', pos, 6, { shape: 'droplet', gravity: 10, speed: 4, life: 0.4 }); return true; },
   });
   def('water.charged', {   // C: curling wave sheet (crest line, foam edge) sweeps the cone → foam rings
     cast: (o) => { glyph('water', 'water', o, 0.4, { life: 0.22 }); return true; },
     wave: (o, dir, len, ang) => {
       const d = flatDir(dir), a = Math.atan2(d.z, d.x), half = Math.min(1.3, (ang || 60) * Math.PI / 360), g0 = gp(o, 0);
       const width = Math.max(1.6, Math.min(4.5, len * Math.tan(half) * 0.8)), speed = len / 0.55;
-      K().mesh('water.sheet', { pos: v3(g0.x + d.x * 0.8, g0.y, g0.z + d.z * 0.8), quat: new THREE.Quaternion().setFromUnitVectors(v3(0, 0, 1), d), scale: v3(width, Math.min(1.8, 0.7 + len * 0.1), 1), life: 0.6, tIn: 0.12, tOut: 0.25, erode: true, vel: v3(d.x * speed, 0, d.z * speed), alpha: 0.85, grow: 1.7 });
+      // linework, not fill (review: the sheet read as an opaque dome): a thin translucent crest sheet + two travelling crest arcs
+      K().mesh('water.sheet', { pos: v3(g0.x + d.x * 0.8, g0.y, g0.z + d.z * 0.8), quat: new THREE.Quaternion().setFromUnitVectors(v3(0, 0, 1), d), scale: v3(width * 0.8, 0.45, 1), life: 0.45, tIn: 0.1, tOut: 0.2, erode: true, vel: v3(d.x * speed, 0, d.z * speed), alpha: 0.22, grow: 1.15 });
+      K().line({ shape: 'arc', arc: [a - half * 0.8, a + half * 0.8], el: 'water', pos: gp(o, 0.5), plane: 'ground', r: len * 0.7, width: sz(g0, 0.06, 0.008), life: 0.5, tIn: 0.1, tOut: 0.25, scaleIn: 'expand', color: R('water').mid });
       K().line({ shape: 'arc', arc: [a - half, a + half], el: 'water', pos: gp(o), plane: 'ground', r: len, width: 0.045, life: 0.55, tOut: 0.3, scaleIn: 'expand', color: R('water').light });
       K().decal('ripple', gp(v3(o.x + d.x * len * 0.6, 0, o.z + d.z * len * 0.6)), len * 0.45, 1, { el: 'water', alpha: 0.3 });
       sparks('water', g0, 8, { shape: 'droplet', gravity: 10, speed: 7, dir: d, life: 0.5 });
@@ -328,7 +335,7 @@ export function createRows(L) {
       decal: (a) => { const to = a[0], pp = game.player?.object?.position; if (!to || !pp) return null; const mid = v3((to.x + pp.x) / 2, 0, (to.z + pp.z) / 2);
         return K().decal('crack', gp(mid), Math.max(1.5, Math.hypot(to.x - pp.x, to.z - pp.z) / 2), 0.9, { el: 'earth', alpha: 0.32, rot: Math.atan2(to.z - pp.z, to.x - pp.x) }); },
       shockwave: (a) => { const p = a[0]; if (!p) return null; const a0 = (cid() * 0.7) % TAU, g = gp(p, 0);
-        for (let i = 0; i < 3; i++) { const an = a0 + i * TAU / 3; K().mesh('physical.shard', { el: 'earth', pos: v3(g.x + Math.cos(an) * 0.6, g.y, g.z + Math.sin(an) * 0.6), quat: qYawTilt(Math.PI / 2 - an, 0.45), scale: v3(1.1, 2.4, 1.1), life: 0.9, tIn: 0.12, tOut: 0.35, erode: true }); }
+        for (let i = 0; i < 3; i++) { const an = a0 + i * TAU / 3; K().mesh('physical.shard', { el: 'earth', pos: v3(g.x + Math.cos(an) * 0.6, g.y, g.z + Math.sin(an) * 0.6), quat: qYawTilt(Math.PI / 2 - an, 0.45), scale: v3(0.8, 1.7, 0.8), life: 0.8, tIn: 0.12, tOut: 0.35, erode: true, color: R('earth').light, tintAmt: 0.85, alpha: 0.85 }); }
         return ring('earth', gp(p), (a[1]?.radius || 3) * 0.9, { width: 0.04, life: 0.35 }); },
     },
     impact: (pos) => { sparks('earth', pos, 10, { gravity: 16, speed: 7, life: 0.6 }); return true; },
@@ -358,7 +365,8 @@ export function createRows(L) {
     body: (p) => [K().mesh('physical.chunk', { el: 'nature', follow: p.proxy, pos: p.pos, scale: 0.6, life: Infinity, tIn: 0.12, tOut: 0.08, spin: 3 }), K().ribbon({ follow: p.proxy, width: 0.11, taper: 1, life: 0.22, maxLen: 1.5, el: 'nature', alpha: 0.75 })],
     impact: (pos, r) => {
       const g = gp(pos), rr = Math.max(1.5, Math.min(5, r * 1.6));
-      K().line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: v3(pos.x, pos.y + 0.2, pos.z), plane: 'billboard', r: 1.25, width: 0.055, life: 0.55, tIn: 0.15, tOut: 0.25, spin: 1.2, scaleIn: 'backOut', color: R('nature').mid, color2: R('nature').light });
+      // above the tall grass, in the lime `light` step (the `mid` green vanished into the meadow)
+      K().line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: v3(pos.x, Math.max(pos.y, S.height(pos.x, pos.z) + 1.1), pos.z), plane: 'billboard', r: sz(pos, 1.25, 0.11), width: sz(pos, 0.055, 0.009), life: 0.7, tIn: 0.15, tOut: 0.3, spin: 1.2, scaleIn: 'backOut', color: R('nature').light, color2: R('nature').mid });
       K().line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: g, plane: 'ground', r: rr, width: 0.045, life: 0.9, tIn: 0.2, tOut: 0.35, spin: 0.5, scaleIn: 'backOut', color: R('nature').light });
       for (let i = 0; i < 2; i++) { const a = cid() * 0.7 + i * Math.PI; vine(arcPoints(gp(pos, 0.15), rr * 0.6, a, a + 2.4, 8), { life: 0.6 }); }
       sparks('nature', v3(g.x, g.y + 0.4, g.z), 16, { shape: 'petal', gravity: 1.2, speed: 5, life: 0.8 });
@@ -370,10 +378,10 @@ export function createRows(L) {
   def('nature.roots', {   // Z ★: vine tubes per target grow along splines (0.3 s) with thorn tips + leaf glyph decal → wither. No glare balls.
     cast: () => true,
     zone: (kind, pos, r) => {
-      const g = gp(pos, 0), out = [K().line({ shape: 'glyph', glyph: 'nature', el: 'nature', pos: gp(pos), plane: 'ground', r: Math.min(6, r), width: 0.035, life: 1.6, tIn: 0.25, tOut: 0.5, spin: 0.2, alpha: 0.35 })];
+      const g = gp(pos, 0), out = [K().line({ shape: 'glyph', glyph: 'nature', el: 'nature', pos: gp(pos), plane: 'ground', r: Math.min(6, r), width: sz(g, 0.035, 0.006), life: 1.6, tIn: 0.25, tOut: 0.5, spin: 0.2, alpha: 0.6 })];
       const rnd = rng(cid() * 31 + 2);
       for (let i = 0; i < 4; i++) { const a = rnd() * TAU, d = Math.sqrt(rnd()) * r * 0.75, c = v3(g.x + Math.cos(a) * d, g.y, g.z + Math.sin(a) * d);
-        out.push(vine(helixPoints(c, 0.55, 0.12, 1.7, 0.75, a, 9), { life: 1.2, width: 0.12 })); }
+        out.push(vine(helixPoints(c, 0.55, 0.12, 1.7, 0.75, a, 9), { life: 1.2, width: sz(c, 0.12, 0.009) })); }
       return out;
     },
     gate: { burst: (a) => { if (a[0]) sparks('nature', a[0], 3, { shape: 'leaf', gravity: 1, speed: 2 }); return null; } },
@@ -389,7 +397,9 @@ export function createRows(L) {
   def('nature.ult', {   // U: falling seed pods bloom into 5-petal flowers, root vines erupt
     cast: () => true,
     strike: (el, q, Rr) => { K().line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: gp(q), plane: 'ground', r: Math.min(3, Rr), width: 0.045, life: 0.8, tIn: 0.2, tOut: 0.3, scaleIn: 'backOut', spin: 0.6, color: R('nature').light }); sparks('nature', gp(q, 0.4), 6, { shape: 'petal', gravity: 1, speed: 4 }); return true; },
-    impact: (pos) => { const g = gp(pos, 0); for (let i = 0; i < 3; i++) vine(helixPoints(g, 0.9, 0.2, 2.2, 0.8, i * TAU / 3, 10), { life: 1 }); return true; },
+    impact: (pos) => { const g = gp(pos, 0);
+      K().line({ shape: 'glyph', glyph: 'nature', el: 'nature', pos: gp(pos), plane: 'ground', r: Math.min(4, sz(g, 2.2, 0.13)), width: sz(g, 0.04, 0.006), life: 1.1, tIn: 0.15, tOut: 0.45, scaleIn: 'backOut', spin: 0.4, alpha: 0.95, color: R('nature').dark });
+      for (let i = 0; i < 3; i++) vine(helixPoints(g, 0.9, 0.2, 2.2, 0.8, i * TAU / 3, 10), { life: 1 }); return true; },
     quiet: { burst: 1 },
   });
 
@@ -446,10 +456,12 @@ export function createRows(L) {
         const o = a[2] || {};
         return K().bolt({ from: a[0], to: a[1], forks: 0, jagged: 0, width: n === 1 ? 0.12 : 0.06, halo: n === 1 ? 0.5 : 0.18, life: Math.max(0.2, o.duration ?? 0.5), afterglow: 0.3, el: 'light' });
       },
-      runeCircle: (a) => { const p = a[0]; if (!p) return null; for (let i = 0; i < 3; i++) K().line({ shape: 'ticks', n: 16, r2: 0.85, el: 'light', pos: v3(p.x, p.y + 1 + i * 1.6, p.z), plane: 'flat', r: 1.4 - i * 0.25, width: 0.03, life: 1.2, tIn: 0.2 + i * 0.1, tOut: 0.4, spin: 1.5 - i, color: R('light').light });
+      runeCircle: (a) => { const p = a[0]; if (!p) return null; for (let i = 0; i < 3; i++) K().line({ shape: 'ticks', n: 16, r2: 0.85, el: 'light', pos: v3(p.x, p.y + 1 + i * 1.6, p.z), plane: 'flat', r: 1.4 - i * 0.25, width: sz(p, 0.03, 0.006), life: 1.2, tIn: 0.2 + i * 0.1, tOut: 0.4, spin: 1.5 - i, color: R('light').mid, alpha: 0.95 });
         return null; },
     },
-    impact: (pos) => { sparks('light', pos, 12, { shape: 'mote', gravity: -0.5, speed: 2, life: 0.9 }); return true; },
+    impact: (pos) => {   // the judgement circle under the target (ground ink: the ivory `mid` vanished on sunlit grass)
+      const g = gp(pos); K().line({ shape: 'glyph', glyph: 'hexagram', el: 'light', pos: g, plane: 'ground', r: Math.min(4, sz(g, 2.2, 0.13)), width: sz(g, 0.04, 0.006), life: 1.1, tIn: 0.15, tOut: 0.45, scaleIn: 'backOut', spin: 0.5, alpha: 0.95, color: R('light').dark });
+      sparks('light', pos, 12, { shape: 'mote', gravity: -0.5, speed: 2, life: 0.9 }); return true; },
     quiet: { burst: 1, shockwave: 1 },
   });
 

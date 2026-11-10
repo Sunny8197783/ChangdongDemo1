@@ -29,12 +29,43 @@ export function createZones(S) {
   // geometries shared by every pooled visual of a type (built once, never per pooled visual)
   const _geo = new Map();
   const sgeo = (k, fn) => { let g = _geo.get(k); if (!g) { g = fn(); _geo.set(k, g); } return g; };
+  const _groundMats = new Map();
+  const sharedGroundMat = (kind) => { let m = _groundMats.get(kind); if (!m) { m = groundMat(kind); _groundMats.set(kind, m); } return m; };
+  function discUniforms(r, sc, cam, geo, mat) {
+    const u = this.userData.u, mu = mat.uniforms;
+    mu.fade.value = u.fade.value; mu.radius.value = u.radius.value; mu.zap.value = u.zap.value; mu.seed.value = u.seed.value;
+    mat.uniformsNeedUpdate = true;
+  }
+  const _tornMats = new Map();
+  const sharedTornadoMat = (role) => { let m = _tornMats.get(role); if (!m) { m = tornadoMat(); _tornMats.set(role, m); } return m; };
+  function tornadoUniforms(r, sc, cam, geo, mat) {
+    const u = this.userData.mat.uniforms, mu = mat.uniforms;
+    mu.colA.value.copy(u.colA.value); mu.colB.value.copy(u.colB.value); mu.opacity.value = u.opacity.value; mu.speed.value = u.speed.value;
+    mat.uniformsNeedUpdate = true;
+  }
+  const _coreMats = new Map();
+  function tornadoCoreMat(el) {
+    const inf = el && el !== 'wind', key = inf ? el : 'wind';
+    let m = _coreMats.get(key);
+    if (!m) {
+      const b = (TORNADO_COLORS[key] || TORNADO_COLORS.wind)[1];
+      m = toonMat(0x9cc8b4, { emissive: 0x2a5a48, emissiveIntensity: 0.2 });
+      if (inf) { m.color.set(b).lerp(WHITE, 0.25); m.emissive.set(b); m.emissiveIntensity = 0.5; }
+      _coreMats.set(key, m);
+    }
+    return m;
+  }
+  for (const k of Object.keys(TORNADO_COLORS)) tornadoCoreMat(k);   // boot, not on the first infusion
   function makeVisual(type) {
     const g = new THREE.Group();
     const parts = { group: g };
     if (type !== 'tornado') {
       const kind = type === 'storm' ? 'water' : type;
-      const disc = new THREE.Mesh(makeGroundDisc(type === 'storm' ? 20 : 18), groundMat(kind));   // per visual: conformed to the terrain in place
+      // geometry per visual (conformed to the terrain in place); ONE material per kind (v4 §2: 0 new materials per cast): the per-disc
+      // uniforms live in disc.userData.u and are copied in just before the disc draws
+      const disc = new THREE.Mesh(makeGroundDisc(type === 'storm' ? 20 : 18), sharedGroundMat(kind));
+      disc.userData.u = { fade: { value: 1 }, radius: { value: 3 }, zap: { value: 0 }, seed: { value: Math.random() * 10 } };
+      disc.onBeforeRender = discUniforms;
       disc.renderOrder = 2; disc.frustumCulled = false;
       g.add(disc); parts.disc = disc;
     }
@@ -83,19 +114,20 @@ export function createZones(S) {
       g.add(cloud, ol, rain); parts.cloud = cloud; parts.cloudOutline = ol; parts.rain = rain;
     }
     if (type === 'tornado') {
-      const mat1 = tornadoMat(), mat2 = tornadoMat();
-      const outer = new THREE.Mesh(tornadoGeo(), mat1);
-      const inner = new THREE.Mesh(tornadoGeo(), mat2);
+      // shared materials (one per role); per-visual colour / opacity / speed in mesh.userData.mat (same shape as material.uniforms)
+      const tw = (role, speed) => { const u = { uniforms: { colA: { value: new THREE.Color(0xeafff6) }, colB: { value: new THREE.Color(0x5fa890) }, opacity: { value: 1 }, speed: { value: speed } } }; return u; };
+      const u1 = tw('outer', 1), u2 = tw('inner', 1.6), u3 = tw('base', 1);
+      const outer = new THREE.Mesh(tornadoGeo(), sharedTornadoMat('outer')); outer.userData.mat = u1; outer.onBeforeRender = tornadoUniforms;
+      const inner = new THREE.Mesh(tornadoGeo(), sharedTornadoMat('inner')); inner.userData.mat = u2; inner.onBeforeRender = tornadoUniforms;
       inner.scale.set(0.62, 0.95, 0.62);
-      mat2.uniforms.speed.value = 1.6;
-      const base = new THREE.Mesh(sgeo('torus', () => new THREE.TorusGeometry(1, 0.35, 8, 32)), tornadoMat());
+      const base = new THREE.Mesh(sgeo('torus', () => new THREE.TorusGeometry(1, 0.35, 8, 32)), sharedTornadoMat('base')); base.userData.mat = u3; base.onBeforeRender = tornadoUniforms;
       base.rotation.x = Math.PI / 2; base.position.y = 0.3; base.scale.set(2.2, 2.2, 1);
       outer.renderOrder = inner.renderOrder = 6;
-      // opaque toon-shaded core gives the funnel a readable body against the sky
-      const core = new THREE.Mesh(tornadoGeo(), toonMat(0x9cc8b4, { emissive: 0x2a5a48, emissiveIntensity: 0.2 }));
+      // opaque toon-shaded core gives the funnel a readable body against the sky (one cached material per infusion element)
+      const core = new THREE.Mesh(tornadoGeo(), tornadoCoreMat('wind'));
       core.castShadow = true;
       g.add(outer, inner, base, core); parts.outer = outer; parts.inner = inner; parts.base = base; parts.core = core;
-      parts.mats = [mat1, mat2, base.material];
+      parts.mats = [u1, u2, u3];
     }
     return parts;
   }
@@ -146,8 +178,8 @@ export function createZones(S) {
     if (p.disc) {
       conformDisc(p.disc.geometry, game.world, z.pos.x, z.pos.z, z.type === 'storm' ? R * 0.9 : R, LIFT[z.type] + Math.random() * 0.02);
       p.disc.position.set(z.pos.x, 0, z.pos.z);
-      p.disc.material.uniforms.radius.value = z.type === 'storm' ? R * 0.9 : R;
-      p.disc.material.uniforms.seed.value = Math.random() * 20;
+      p.disc.userData.u.radius.value = z.type === 'storm' ? R * 0.9 : R;
+      p.disc.userData.u.seed.value = Math.random() * 20;
     }
     if (p.crystals) {
       const d = p.crystalData;
@@ -177,7 +209,7 @@ export function createZones(S) {
   function setTornadoColor(z, el) {
     const [a, b] = TORNADO_COLORS[el] || TORNADO_COLORS.wind;
     for (const m of z.vis.mats) { m.uniforms.colA.value.set(a); m.uniforms.colB.value.set(b); }
-    if (z.vis.core) { const inf = el && el !== 'wind'; const m = z.vis.core.material; m.color.set(inf ? b : 0x9cc8b4); if (inf) m.color.lerp(WHITE, 0.25); m.emissive.set(inf ? b : 0x2a5a48); m.emissiveIntensity = inf ? 0.5 : 0.2; }
+    if (z.vis.core) z.vis.core.material = tornadoCoreMat(el);
   }
 
   function dropLook(z) {
@@ -268,7 +300,7 @@ export function createZones(S) {
       S.combat.applyStatus(e, 'stunned', 1);
       S.combat.dealDamage(e, { amount: 16, element: 'lightning', source: 'player', point: center(e, new THREE.Vector3()), status: { shocked: 3 }, noReaction: true, tags: ['fusion'] });
     }, 0.5);
-    if (z.vis.disc) z.vis.disc.material.uniforms.zap.value = 1;
+    if (z.vis.disc) z.vis.disc.userData.u.zap.value = 1;
     S.combo('electro_water', '전기 수면', surf);
   }
   function freezeWater(z) {
@@ -369,7 +401,7 @@ export function createZones(S) {
       const fade = fadeIn * fadeOut;
       const p = z.vis;
       if (p.disc) {
-        const u = p.disc.material.uniforms;
+        const u = p.disc.userData.u;
         u.fade.value = fade;
         u.zap.value = Math.max(0, u.zap.value - dt * 2.5);
       }
@@ -458,7 +490,7 @@ export function createZones(S) {
     if (p.cloudMat) { p.flick = Math.max(0, (p.flick || 0) - dt * 4); p.cloudMat.emissiveIntensity = 0.15 + p.flick * p.flick * 0.7 + Math.sin(t * 7.3) * 0.03; }
     p.rain.material.uniforms.opacity.value = Math.min(1, z.age / 0.8) * Math.min(1, z.time / 0.6);
     p.rain.material.uniforms.top.value = 13;
-    if (p.disc) p.disc.material.uniforms.fade.value = Math.min(1, z.age / 2.5) * Math.min(1, z.time / 0.6);
+    if (p.disc) p.disc.userData.u.fade.value = Math.min(1, z.age / 2.5) * Math.min(1, z.time / 0.6);
     if (tickNow) hitAll(z, (e) => S.combat.applyStatus(e, 'wet', 4));
     // lightning strikes
     z.strikeT -= dt;
