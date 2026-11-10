@@ -14,7 +14,7 @@ import { makeEnemy, faceTo, moveForward, angleToPlayer, newPose, dampPose, apply
 const GM = await import('./bosses/golem_model.js').catch(() => null);
 const previewGolem = GM ? GM.previewGolem : null;
 function buildGolemModel() { if (!GM) throw new Error('[bosses] golem model missing (src/enemies/bosses/ absent)'); return GM.buildGolemModel(); }
-import { bossAttack, bossHit, bossPunish, rhythm, cancelled, finishBoss, stopAttacks } from './bossbase.js';
+import { warmInstancedToon, bossAttack, bossHit, bossPunish, rhythm, cancelled, finishBoss, stopAttacks } from './bossbase.js';
 import { codexOf, registerBossCodex } from './bossbase.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -27,6 +27,7 @@ const ROCK_G = 22;
 let spare = null;
 /** Build (once) and warm the golem model ahead of the fight; returns its root for the caller's compile staging. */
 export function prewarmGolem(game) {
+  try { warmInstancedToon(game); } catch (_) { /* */ }
   if (!GM) return null;
   try { registerBossCodex(game); game?.enemies?.registerPreview?.('golem', previewGolem); } catch (_) { /* */ }
   if (!spare) spare = buildGolemModel();
