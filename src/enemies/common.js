@@ -318,7 +318,7 @@ export function integrate(game, e, dt) {
   if (want > 0.25 && !e.isBoss) {
     e._stT = (e._stT || 0) + dt;
     if (e._stT >= 1) {
-      const moved = Math.hypot(p.x - (e._stX ?? p.x), p.z - (e._stZ ?? p.z));
+      const mvx = p.x - (e._stX ?? p.x), mvz = p.z - (e._stZ ?? p.z), moved = Math.sqrt(mvx * mvx + mvz * mvz);
       if (moved < 0.3 && !(e.detourT > 0)) { e.detourSign = -(e.detourSign || -1); e.detourT = 1.5; }
       e._stT = 0; e._stX = p.x; e._stZ = p.z;
     }

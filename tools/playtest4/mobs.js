@@ -282,6 +282,16 @@ module.exports = async function mobs(PT) {
     PT.check('codex: every mob type + 8 말랑이 variants complete', missing.length === 0 && TYPES.length === 16, missing.slice(0, 10));
     PT.check('codex copy: no windup seconds, key names only via tokens, parry advice only in parryKo', badText.length === 0, badText.slice(0, 6));
     PT.check('codex: parryKo present for bokoblin / shaman / voidknight', ['bokoblin', 'shaman', 'voidknight'].every((t) => (book[t]?.attacks || []).some((a) => /\{defendKey\}/.test(a.parryKo || ''))));
+    // ---- codex thumbnails (§1.3 / §6.5): a preview model for EVERY codex key ('chuchu:<variant>' parsed; bosses once bossesReady)
+    {
+      await E.bossesReady;
+      const nullPv = [];
+      for (const k of Object.keys(book)) {
+        let o = null; try { o = E.previewModel(k); } catch (_) { /* */ }
+        if (!o) nullPv.push(k);
+      }
+      PT.check(`codex: previewModel non-null for all ${Object.keys(book).length} codex keys (variants + bosses)`, nullPv.length === 0 && Object.keys(book).length >= 22, nullPv);
+    }
     // ---- weakness fields on every entity
     for (const e of E.all.slice()) if (!e.isBoss) E.remove(e);
     const pp = g.player.object.position;
@@ -303,6 +313,21 @@ module.exports = async function mobs(PT) {
       chuNormal: by('chuchu', 'normal').weakness.length === 0,
     };
     PT.check('§4 weakness values (incl. CHU_WEAK)', Object.values(W).every(Boolean), W);
+    // ---- training dummies beyond 60 m of the camera are hidden (world request); within 58 m they show again
+    {
+      const d = PT.spawnAt('dummy', pp.x + 75, pp.z); PT.step(0.1);
+      const farHidden = !!d && d.object.visible === false;
+      d.object.position.x = pp.x + 8; PT.step(0.1);
+      const nearShown = d.object.visible === true;
+      PT.check('training dummy hidden beyond 60 m, shown again near', farHidden && nearShown, { farHidden, nearShown });
+      E.remove(d);
+    }
+    // ---- one hidden class for every regular enemy (§2.7: AI sites stay monomorphic, no boxed doubles)
+    {
+      const keyStr = (e) => Object.keys(e).join(',');
+      const shapes = new Set(spawned.filter((e) => !e.isBoss).map(keyStr));
+      PT.check(`regular enemies share one property layout (${shapes.size} layout(s) over ${spawned.length})`, shapes.size === 1, shapes.size);
+    }
     for (const e of spawned) E.remove(e);
     // ---- playerHurt metadata per attack (from M1)
     const meta = Object.entries(m1 || {}).filter(([, r]) => r && typeof r === 'object');

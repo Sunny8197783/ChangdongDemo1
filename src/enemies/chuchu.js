@@ -117,7 +117,7 @@ export function createChuchu(ctx, pos, opts = {}) {
         idleHopT -= dt;
         if (idleHopT <= 0 && e.grounded) {
           idleHopT = rand(1.5, 3.5);
-          const a = Math.hypot(p.x - e.home.x, p.z - e.home.z) > 4 ? Math.atan2(e.home.x - p.x, e.home.z - p.z) : rand(0, 6.28);
+          const a = Math.sqrt((p.x - e.home.x) * (p.x - e.home.x) + (p.z - e.home.z) * (p.z - e.home.z)) > 4 ? Math.atan2(e.home.x - p.x, e.home.z - p.z) : rand(0, 6.28);
           e.facing = a; crouch = 0.25;
           setTimeoutHop(() => hop(Math.sin(a), Math.cos(a), 1.6, 4.2));
         }

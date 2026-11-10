@@ -47,7 +47,7 @@ export function createDummy(ctx, pos, opts = {}) {
     const target = kindArg ? game.player?.entity : arg;
     if (prac || !target?.object) return null;
     const tp = target.object.position, p = e.object.position;
-    const d = Math.hypot(tp.x - p.x, tp.z - p.z);
+    const d = Math.sqrt((tp.x - p.x) * (tp.x - p.x) + (tp.z - p.z) * (tp.z - p.z));
     const kind = kindArg ? 'swing' : d <= SWING_REACH + 0.3 ? 'swing' : 'orb';
     prac = { phase: 'tell', t: 0, target, kind, done: false, H: null };
     if (kind === 'swing' && !kindArg) {
@@ -90,7 +90,7 @@ export function createDummy(ctx, pos, opts = {}) {
       if (!P.done && P.t > 0.1) {
         P.done = true;
         const te = P.target;
-        const d = Math.hypot(tp.x - p.x, tp.z - p.z);
+        const d = Math.sqrt((tp.x - p.x) * (tp.x - p.x) + (tp.z - p.z) * (tp.z - p.z));
         if (te.alive !== false && (P.H ? P.H.contains(tp) : d < SWING_REACH + (te.radius || 0.4)) && Math.abs(tp.y - p.y) < 2.5) {
           _v.set(tp.x - p.x, 0, tp.z - p.z).normalize();
           te.getCenter ? te.getCenter(_c) : _c.copy(tp).setY(tp.y + 1);

@@ -457,22 +457,44 @@ export function createEnemies(game) {
   });
 
   // ------------------------------------------------------------------ separation between enemies
+  // Allocation-free (§2.7): positions / radii / weights are gathered into reused Float64Arrays once per call, the O(n²) pair
+  // loop reads only those (monomorphic, never deopts on a new enemy shape), and each moved enemy is written back once.
+  let sepCap = 0, sX = null, sZ = null, sR = null, sM = null, sDX = null, sDZ = null, sF = null;
   function separate() {
-    for (let i = 0; i < all.length; i++) {
-      const a = all[i]; if (a.dying || a.isDummy) continue;
-      const pa = a.object.position;
-      for (let j = i + 1; j < all.length; j++) {
-        const b = all[j]; if (b.dying) continue;
-        const pb = b.object.position;
-        const dx = pb.x - pa.x, dz = pb.z - pa.z, rr = a.radius + b.radius;
-        if (Math.abs(dx) > rr || Math.abs(dz) > rr) continue;
+    const n = all.length;
+    if (n > sepCap) {
+      sepCap = Math.max(64, n * 2);
+      sX = new Float64Array(sepCap); sZ = new Float64Array(sepCap); sR = new Float64Array(sepCap); sM = new Float64Array(sepCap);
+      sDX = new Float64Array(sepCap); sDZ = new Float64Array(sepCap); sF = new Uint8Array(sepCap);
+    }
+    for (let i = 0; i < n; i++) {
+      const e = all[i], p = e.object.position;
+      sX[i] = p.x; sZ[i] = p.z; sR[i] = e.radius; sDX[i] = 0; sDZ[i] = 0;
+      // flags: 1 = skip as the moving side (dying or dummy), 2 = skip entirely (dying), 4 = immovable (boss / dummy as the pushed side)
+      sF[i] = e.dying ? 3 : (e.isDummy ? 5 : e.isBoss ? 4 : 0);
+      sM[i] = e.isBoss ? 1e6 : (e.mass || 1);
+    }
+    let moved = false;
+    for (let i = 0; i < n; i++) {
+      if (sF[i] & 1) continue;
+      const ax = sX[i], az = sZ[i], ar = sR[i], ma = sM[i];
+      for (let j = i + 1; j < n; j++) {
+        const fb = sF[j]; if (fb & 2) continue;
+        const dx = sX[j] - ax, dz = sZ[j] - az, rr = ar + sR[j];
+        if (dx > rr || dx < -rr || dz > rr || dz < -rr) continue;
         const d2 = dx * dx + dz * dz;
         if (d2 >= rr * rr || d2 < 1e-8) continue;
         const d = Math.sqrt(d2), push = (rr - d) / d;
-        const ma = a.isBoss ? 1e6 : (a.mass || 1), mb = b.isDummy || b.isBoss ? 1e6 : (b.mass || 1), wa = mb / (ma + mb), wb = ma / (ma + mb);
-        pa.x -= dx * push * wa; pa.z -= dz * push * wa;
-        pb.x += dx * push * wb; pb.z += dz * push * wb;
+        const mb = fb & 4 ? 1e6 : sM[j], wa = mb / (ma + mb), wb = ma / (ma + mb);
+        sDX[i] -= dx * push * wa; sDZ[i] -= dz * push * wa;
+        sDX[j] += dx * push * wb; sDZ[j] += dz * push * wb;
+        moved = true;
       }
+    }
+    if (!moved) return;
+    for (let i = 0; i < n; i++) {
+      if (sDX[i] === 0 && sDZ[i] === 0) continue;
+      const p = all[i].object.position; p.x += sDX[i]; p.z += sDZ[i];
     }
   }
 
@@ -546,10 +568,17 @@ export function createEnemies(game) {
     aggroCount() { let n = 0; for (const e of all) if (e.alive && !e.dying && e.aggro && !e.isDummy && !e.bench) n++; return n; },
     orbCount() { return ctx.projectiles?.orbCount?.() ?? 0; },
     orbEta(pos) { return ctx.projectiles?.orbEta?.(pos) ?? Infinity; },
+    /**
+     * Codex thumbnail model for a codex key: 'bokoblin', 'chuchu:<variant>' (variant parsed and passed to the model registry)
+     * or a boss id (registered by the bosses module once `bossesReady` resolves; null before that — await bossesReady first).
+     */
     previewModel(type, opts = {}) {
       const f = previews.get(type);
       if (f) { try { return f(opts) || null; } catch (err) { warnOnce('pv:' + type, 'preview failed', type, err?.message); return null; } }
-      try { return MobModels.preview?.(type, opts) || null; } catch (err) { warnOnce('pv:' + type, 'preview failed', type, err?.message); return null; }
+      const c = typeof type === 'string' ? type.indexOf(':') : -1;
+      const base = c > 0 ? type.slice(0, c) : type;
+      const o = c > 0 ? { ...opts, variant: type.slice(c + 1) } : opts;
+      try { return MobModels.preview?.(base, o) || null; } catch (err) { warnOnce('pv:' + type, 'preview failed', type, err?.message); return null; }
     },
     registerPreview(type, fn) { if (type && typeof fn === 'function') previews.set(type, fn); },
     /** Benchmark mobs (§2.8): never deal damage, drop loot, give XP or count for quests. */
@@ -684,7 +713,7 @@ export function createEnemies(game) {
       threat.update(dt);
       ctx.cine = !!game.cinematic?.active;
       const V = ctx.village = game.world.village?.center ? game.world.village : null;
-      ctx.playerInVillage = !!V && Math.hypot(ctx.realPlayerPos.x - V.center.x, ctx.realPlayerPos.z - V.center.z) < V.radius + 4;
+      ctx.playerInVillage = !!V && Math.sqrt((ctx.realPlayerPos.x - V.center.x) * (ctx.realPlayerPos.x - V.center.x) + (ctx.realPlayerPos.z - V.center.z) * (ctx.realPlayerPos.z - V.center.z)) < V.radius + 4;
       for (let i = all.length - 1; i >= 0; i--) {
         const e = all[i];
         if (!e) continue;

@@ -48,7 +48,7 @@ export class EnemyProjectiles {
         if (!p || p.element !== 'fire' || p.isPlayer || !p.point || !this.clouds) return;
         for (const c of this.clouds) {
           if (!c.active || c.delay > 0) continue;
-          if (Math.hypot(p.point.x - c.pos.x, p.point.z - c.pos.z) <= c.r + 0.8) { c.active = false; c.hz?.stop?.(); c.hz = null; }
+          if (Math.sqrt((p.point.x - c.pos.x) * (p.point.x - c.pos.x) + (p.point.z - c.pos.z) * (p.point.z - c.pos.z)) <= c.r + 0.8) { c.active = false; c.hz?.stop?.(); c.hz = null; }
         }
       });
     } catch (_) { /* */ }
@@ -165,7 +165,7 @@ export class EnemyProjectiles {
     for (const o of this.orbs) {
       if (!o.active || o.reflected) continue;
       const p = o.g.position, v = o.vel;
-      const sp = Math.hypot(v.x, v.z); if (sp < 1e-3) continue;
+      const sp = Math.sqrt(v.x * v.x + v.z * v.z); if (sp < 1e-3) continue;
       const ux = v.x / sp, uz = v.z / sp, dx = pos.x - p.x, dz = pos.z - p.z;
       const along = dx * ux + dz * uz; if (along < 0) continue;
       const perp = Math.abs(-dx * uz + dz * ux);
@@ -195,8 +195,8 @@ export class EnemyProjectiles {
     for (const o of this.orbs) {
       if (!o.active || o.reflected) continue;
       const p = o.g.position;
-      const dx = p.x - origin.x, dz = p.z - origin.z, d = Math.hypot(dx, dz);
-      if (d > len || (d > 0.5 && (dx * dir.x + dz * dir.z) / (d * (Math.hypot(dir.x, dir.z) || 1)) < cosH)) continue;
+      const dx = p.x - origin.x, dz = p.z - origin.z, d = Math.sqrt(dx * dx + dz * dz);
+      if (d > len || (d > 0.5 && (dx * dir.x + dz * dir.z) / (d * (Math.sqrt(dir.x * dir.x + dir.z * dir.z) || 1)) < cosH)) continue;
       this._reflect(o, 'player'); n++;
     }
     return n;
@@ -340,7 +340,7 @@ export class EnemyProjectiles {
       if (this._blocked(p) || (b.t > 0.12 && p.y < gh + 0.2) || b.t > b.T + 0.8) {
         b.active = false; b.g.visible = false; b.em?.stop?.(); b.em = null; b.tele?.stop?.(); b.tele = null;
         // the cloud sits on the drawn landing circle (hitbox = decal) unless a collider stopped the sac early
-        const onTarget = Math.hypot(p.x - b.to.x, p.z - b.to.z) < 1.5;
+        const onTarget = Math.sqrt((p.x - b.to.x) * (p.x - b.to.x) + (p.z - b.to.z) * (p.z - b.to.z)) < 1.5;
         this.cloud(onTarget ? b.to : p, b.source, { attackId: b.attackId });
       }
     }
@@ -360,7 +360,7 @@ export class EnemyProjectiles {
         c.tick = 0.8;
         const pe = game.player?.entity, pp = ctx.realPlayerPos || ctx.playerPos;
         const live = c.hz ? c.hz.alive !== false : !game.tells?.hazard;   // ticks only while the hazard decal is up
-        if (live && pe && pe.alive && !c.source?.noDamage && Math.hypot(pp.x - c.pos.x, pp.z - c.pos.z) <= c.r + 0.15 && Math.abs(pp.y - c.pos.y) < 2.5) {
+        if (live && pe && pe.alive && !c.source?.noDamage && Math.sqrt((pp.x - c.pos.x) * (pp.x - c.pos.x) + (pp.z - c.pos.z) * (pp.z - c.pos.z)) <= c.r + 0.15 && Math.abs(pp.y - c.pos.y) < 2.5) {
           game.combat.dealDamage(pe, { amount: 3, element: 'nature', source: c.source && c.source.alive ? c.source : null, point: pp, status: { seeded: { dur: 6, stacks: 1 } }, tags: ['zone'],
             attack: c.attack || undefined, dot: true, sourceName: c.source?.name });
         }

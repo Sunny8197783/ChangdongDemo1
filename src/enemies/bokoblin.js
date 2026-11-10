@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { rand, clamp, pick } from '../core/utils.js';
 import { buildBokoblin } from './models.js';
 import { makeEnemy, faceTo, moveTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid, walkCycle, reactionPose,
-  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, attackMeta, rhythmDamp } from './base.js';
+  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, attackMeta, rhythmDamp, copyPose } from './base.js';
 import { typeName } from './codex.js';
 
 const _v = new THREE.Vector3(), _dir = new THREE.Vector3();
@@ -158,11 +158,11 @@ export function createBokoblin(ctx, pos, opts = {}) {
         break;
       }
     }
-    speed = Math.hypot(e.move.x, e.move.z);
+    speed = Math.sqrt(e.move.x * e.move.x + e.move.z * e.move.z);
   };
 
   e.pose = (dt, sm, stunned) => {
-    Object.assign(tgt, BASE);
+    copyPose(tgt, BASE);
     const AH = liveAttack(e), ph = attackPhase(AH), holding = ph === 1;
     const t = game.time + e.id.length;
     let lambda = 12, rl = 0;

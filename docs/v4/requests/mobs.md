@@ -26,3 +26,10 @@
 - bosses (base.js exports, exact `meleeCheck`, orb caps, `docs/v4/requests/bosses.md`, entity fields): **done** — bosses wrote the requests file and use `game.tells.attack` with their own spec table (`bosses/codex.js`).
 - ux (story training `dummy.practice`, codex keys, `weakKo`/`parryKo`): **done** on `ux-b` (feature-detected).
 - core: none.
+
+## Fix round 1
+- **ux** (`src/ui/monsters.js` `nextThumb`): `await game.enemies.bossesReady` before `previewModel(type)` (or do not cache a null
+  thumbnail): when the codex is opened right after boot the boss import is still pending, the 5 boss thumbnails are cached as null
+  and stay glyphs for the session. `previewModel('chuchu:<variant>')` now returns the variant model (fixed on `v4/mobs`).
+- **ux** (UX1 thumbnail check): count every codex key in the denominator (`Object.keys(game.enemies.codex())`, 22), not only the
+  keys whose `previewModel` is non-null.

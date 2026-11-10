@@ -34,7 +34,7 @@ export function createWolf(ctx, pos, opts = {}) {
   function startBite(force) {
     if (!force && (!busyFree() || !ctx.takeToken(e))) return false;
     const pp = ctx.playerPos, p = e.object.position;
-    dartLen = Math.min(9, Math.hypot(pp.x - p.x, pp.z - p.z) + 1.2);
+    dartLen = Math.min(9, Math.sqrt((pp.x - p.x) * (pp.x - p.x) + (pp.z - p.z) * (pp.z - p.z)) + 1.2);
     biteShape.len = dartLen;
     biteDir.set(pp.x - p.x, 0, pp.z - p.z).normalize();
     H = beginAttack(ctx, e, 'wolf.bite', biteShape);
@@ -115,7 +115,7 @@ export function createWolf(ctx, pos, opts = {}) {
         if (moveTo(e, e.home.x, e.home.z, 4.5 * sm, 0.8) < 1) e.setState('idle');
         break;
     }
-    speed = Math.hypot(e.move.x, e.move.z);
+    speed = Math.sqrt(e.move.x * e.move.x + e.move.z * e.move.z);
   };
 
   // quadruped pose: trot/gallop gait (diagonal pairs), body pitch on accel, jaw, tail, howl

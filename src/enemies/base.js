@@ -44,6 +44,22 @@ export function makeEnemy(ctx, cfg, pos) {
       e.sq.x = Math.min(e.sq.x, -0.06 - 0.12 * k); e.sq.v = 0;
       e.hurtSnap = Math.max(e.hurtSnap, 0.8 + 0.45 * k);
     },
+    // v4 (§2.7): every field any species / module adds later is declared here, so all regular enemies share ONE hidden class.
+    // AI code reads and writes these on every enemy each frame; with 14 shapes those sites went megamorphic and every double
+    // load / store boxed a fresh HeapNumber (≈ 0.4 MB per game-second in F-mage). Numeric timers start as numbers (unboxed
+    // double fields); the rest stay undefined until set.
+    type: undefined, timeMul: 1, hitstopUntil: 0, vulnerableUntil: 0, vulnerableMul: 1,
+    _visDt: 0, _visTick: 0, curAttack: undefined, attackStarters: undefined, rimSource: undefined, tellAnchor: undefined,
+    flashUniform: undefined, attacks: undefined, debugAttack: undefined, weakness: undefined, immune: undefined, sitting: false,
+    variant: undefined, element: undefined, dizzyT: 0, amphibious: undefined, interrupt: undefined, react: undefined, isVoid: undefined,
+    onResume: undefined, codexKey: undefined, onDummyParried: undefined, pack: undefined, voidShield: undefined, armor: undefined, think: undefined,
+    friction: undefined, packSlot: undefined, voidShieldMax: undefined, die: undefined, practice: undefined, dissolveColor: undefined,
+    breakMax: undefined, hover: undefined, pose: undefined, _scaled: undefined, zoneId: undefined, sinceHurt: 99, zoneMin: undefined,
+    _farHidden: false, ptArmor: undefined, _spec: undefined, _stT: 0, deathUpdate: undefined, debugAggro: undefined, onBreak: undefined,
+    _stX: undefined, alert: undefined, onBeforeDamage: undefined, _stZ: undefined, landed: 0, blocked: undefined, waterBlockT: 0,
+    _homeInV: undefined, iconDur: 0, iconW: undefined, auraOrder: undefined, provokedT: 0, giveUpT: 0, _auraGlow: undefined,
+    leashBonus: 0, leaping: false, _alertDelay: 0, breakValue: undefined, detourSign: 0, detourT: 0,
+    _brokenT: 0, _rxT: undefined,
     setState(s) { e.state = s; e.stateT = 0; },
   };
   // v4 (PLAN §4.0, §7.4.5): model contract forwards, time / punish fields, attack table, weakness data
@@ -133,7 +149,7 @@ function perceive(ctx, e, dt = 0.016) {
     if (e.sightMul != null && (e.sightMulUntil || 0) > (ctx.game.time || 0)) sight *= e.sightMul;   // raven swarm etc. (enemies.setSightMul)
     if (pAlive && e.distP < sight && Math.abs(pp.y - e.object.position.y) < 14) alert(ctx, e);
   } else {
-    const leashD = Math.hypot(pp.x - e.home.x, pp.z - e.home.z);
+    const leashD = Math.sqrt((pp.x - e.home.x) * (pp.x - e.home.x) + (pp.z - e.home.z) * (pp.z - e.home.z));
     const L = e.leash + (e.provokedT > 0 ? (e.leashBonus || 0) : 0);
     if (e.giveUp) { e.giveUp = false; e.provokedT = 0; e.giveUpT = 5; }
     if (e.giveUpT > 0 || !pAlive || (!(e.provokedT > 0) && (leashD > L || e.distP > L + 12)) || e.distP > L + 40) {
@@ -170,7 +186,7 @@ function onParried(ctx, e, by) {
   if (e.dying) return;
   const bp = by?.object?.position;
   // ranged attacks (shaman orbs) get reflected instead; only stagger attackers in melee reach
-  if (bp && Math.hypot(bp.x - e.object.position.x, bp.z - e.object.position.z) > e.radius + 4.5) return;
+  if (bp && Math.sqrt((bp.x - e.object.position.x) * (bp.x - e.object.position.x) + (bp.z - e.object.position.z) * (bp.z - e.object.position.z)) > e.radius + 4.5) return;
   if (bp) {
     _v.set(e.object.position.x - bp.x, 0, e.object.position.z - bp.z);
     if (_v.lengthSq() < 1e-6) _v.set(-Math.sin(e.facing), 0, -Math.cos(e.facing)); _v.normalize();
@@ -382,11 +398,22 @@ export function updateEnemy(ctx, e, dt) {
   }
   // per-entity hitstop (§2.5): the frozen enemy skips AI, animation and movement (tells extends its TellHandles)
   if (e.hitstopUntil > (game.realTime ?? 0)) { e.object.rotation.y = e.facing; return; }
+  // training dummies beyond 60 m of the camera are hidden and skipped (world request: their draw calls were still submitted
+  // from the plains spot ~100 m away); 4 m hysteresis so the edge does not flicker
+  if (e.isDummy) {
+    const cp = game.camera?.position;
+    if (cp) {
+      const op = e.object.position, fx = cp.x - op.x, fz = cp.z - op.z, d2 = fx * fx + fz * fz;
+      const far = e._farHidden ? d2 > 3364 : d2 > 3844;   // 58² / 62²
+      if (far !== !!e._farHidden) { e._farHidden = far; e.object.visible = !far; }
+      if (far) return;
+    }
+  }
   // AI targeting goes through enemies.getThreatTarget (CONTRACT §14): ctx.playerPos / playerCenter / target become this
   // enemy's target for the rest of its update (the real player is restored by ctx.retarget for the next enemy)
   ctx.retarget?.(e);
   const pp = ctx.playerPos, p = e.object.position;
-  e.distP = Math.hypot(pp.x - p.x, pp.z - p.z);
+  e.distP = Math.sqrt((pp.x - p.x) * (pp.x - p.x) + (pp.z - p.z) * (pp.z - p.z));
   // cinematic: AI frozen, no movement or attacks; pose held (except fresh hit snaps so finisher impacts read)
   if (ctx.cine) {
     if (e.hurtSnap > 0) { visuals(ctx, e, dt, 0, false); e.hurtSnap = Math.max(0, e.hurtSnap - dt * 5); }
@@ -494,7 +521,7 @@ function visuals(ctx, e, dt, sm, stunned, frozen = false) {
 function homeInVillage(ctx, e) {
   if (e._homeInV === undefined) {
     const V = ctx.village;
-    e._homeInV = Math.hypot(e.home.x - V.center.x, e.home.z - V.center.z) < V.radius + 2;
+    e._homeInV = Math.sqrt((e.home.x - V.center.x) * (e.home.x - V.center.x) + (e.home.z - V.center.z) * (e.home.z - V.center.z)) < V.radius + 2;
   }
   return e._homeInV;
 }
@@ -543,9 +570,54 @@ export const HUMAN_KEYS = ['hipY', 'hipZ', 'pitch', 'roll', 'spineX', 'spineY', 
 export function newPose(hipY) {
   const p = {}; for (const k of HUMAN_KEYS) p[k] = 0; p.hipY = hipY; return p;
 }
-export function dampPose(cur, tgt, lambda, dt) {
+// Named (not keyed / Object.assign) property access: pose fields stay unboxed doubles, so these allocate nothing per frame (§2.7).
+/** Copies every HUMAN_KEYS field of `s` into `d` (replaces Object.assign(tgt, BASE) in the per-frame pose code). */
+export function copyPose(d, s) {
+  d.hipY = s.hipY;
+  d.hipZ = s.hipZ;
+  d.pitch = s.pitch;
+  d.roll = s.roll;
+  d.spineX = s.spineX;
+  d.spineY = s.spineY;
+  d.headX = s.headX;
+  d.headY = s.headY;
+  d.headZ = s.headZ;
+  d.aRx = s.aRx;
+  d.aRz = s.aRz;
+  d.fRx = s.fRx;
+  d.aLx = s.aLx;
+  d.aLz = s.aLz;
+  d.fLx = s.fLx;
+  d.lRx = s.lRx;
+  d.lRz = s.lRz;
+  d.kR = s.kR;
+  d.lLx = s.lLx;
+  d.lLz = s.lLz;
+  d.kL = s.kL;
+}
+export function dampPose(c, t, lambda, dt) {
   const k = 1 - Math.exp(-lambda * dt);
-  for (let i = 0; i < HUMAN_KEYS.length; i++) { const key = HUMAN_KEYS[i]; cur[key] += (tgt[key] - cur[key]) * k; }
+  c.hipY += (t.hipY - c.hipY) * k;
+  c.hipZ += (t.hipZ - c.hipZ) * k;
+  c.pitch += (t.pitch - c.pitch) * k;
+  c.roll += (t.roll - c.roll) * k;
+  c.spineX += (t.spineX - c.spineX) * k;
+  c.spineY += (t.spineY - c.spineY) * k;
+  c.headX += (t.headX - c.headX) * k;
+  c.headY += (t.headY - c.headY) * k;
+  c.headZ += (t.headZ - c.headZ) * k;
+  c.aRx += (t.aRx - c.aRx) * k;
+  c.aRz += (t.aRz - c.aRz) * k;
+  c.fRx += (t.fRx - c.fRx) * k;
+  c.aLx += (t.aLx - c.aLx) * k;
+  c.aLz += (t.aLz - c.aLz) * k;
+  c.fLx += (t.fLx - c.fLx) * k;
+  c.lRx += (t.lRx - c.lRx) * k;
+  c.lRz += (t.lRz - c.lRz) * k;
+  c.kR += (t.kR - c.kR) * k;
+  c.lLx += (t.lLx - c.lLx) * k;
+  c.lLz += (t.lLz - c.lLz) * k;
+  c.kL += (t.kL - c.kL) * k;
 }
 export function applyHumanoid(m, p) {
   m.rig.position.set(0, p.hipY, p.hipZ);
