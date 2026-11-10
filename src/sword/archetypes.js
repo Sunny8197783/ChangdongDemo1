@@ -774,7 +774,7 @@ export function registerMeleeArchetypes(game, E) {
     // v4: every skill runs inside its cast context (castId from the skills runtime, tier from the def, bespoke row if any)
     const wrapped = (ctx) => {
       const L = E.look;
-      const cc = L ? L.begin({ skillId: ctx.skillId, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx), archetype: name }) : null;
+      const cc = L ? L.begin({ skillId: ctx.skillId, def: ctx.def, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx), archetype: name }) : null;
       const prev = L ? L.cur : null; if (L) L.cur = cc;
       try { fn(ctx); } catch (err) { warnOnce(name, err); throw err; } finally {
         // a skill that started no engine action still gets its look (start + strike at once)

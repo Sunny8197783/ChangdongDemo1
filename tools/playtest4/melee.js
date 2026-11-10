@@ -64,7 +64,7 @@ function installML() {
   const SPOT = ML.SPOT = window.__ML_SPOT || { x: -30, z: 30 };
   // the background must not change between casts (MG1's rule): soak the test meadow (fire cannot ignite it; scorched / frozen grass
   // would shift every later measurement) and regrow anything already burnt
-  ML.soak = () => { try { const sf = g.world?.surface, c = new T.Vector3(SPOT.x, 0, SPOT.z); sf?.wet?.(c, 40, 3600); sf?.regrow?.(c, 40); } catch (_) { /* */ } };
+  ML.soak = () => { try { const sf = g.world?.surface, c = new T.Vector3(SPOT.x, 0, SPOT.z); sf?.wet?.(c, 40, 3600); sf?.regrow?.(c, 40); g.world?.surface2?.clear?.(c, 40); } catch (_) { /* */ } };
   ML.setup = (dist = 3.4) => {
     PT.tp(SPOT.x, SPOT.z, 0.1); PT.clearEnemies?.(false);
     ML.soak();
@@ -428,8 +428,8 @@ module.exports = async function (PT) {
       for (const el of ELS) {
         const r = await pg.eval(({ name, rep, el, sheets }) => {
           const ML = window.ML; ML.setup();
-          const out = ML.measure(null, { win: 0.8, every: 3, keepMask: true, fn: (aim) => (name === 'basic' ? ML.basicCast(el) : ML.archCast(name, rep, el, aim)) });
-          if (sheets) out.shot = window.PT.pixels.dataURL(true);
+          const out = ML.measure(null, { win: 0.8, every: 3, keepMask: true, frames: sheets, fn: (aim) => (name === 'basic' ? ML.basicCast(el) : ML.archCast(name, rep, el, aim)) });
+          if (sheets) { out.shot = out.frames[1]; delete out.frames; }   // the impact (peak) frame the mask comes from
           return out;
         }, { name, rep, el, sheets });
         masks[el] = r.mask; raw(`arch_${name}_${el}`, r.shot); if (r.shot) frames.push({ url: r.shot, label: `${name} · ${el}` });

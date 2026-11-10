@@ -63,9 +63,9 @@ export function installNature(api) {
     spark(s) { petals(s, Math.min(6, s.n ?? 4), 3); return null; },
     zone(s) {
       const r = Math.max(0.6, Math.min(s.r ?? 3, 10)), life = s.life ?? 3, g = G(s.pos), out = [];
-      out.push(K.line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: g, plane: 'ground', r, width: 0.035, life, tIn: 0.3, tOut: 0.4, spin: 0.12, alpha: 0.32, castId: cid(s), follow: s.follow, role: 'fill', color2: api.rampOf('nature').dark }));
-      out.push(K.line({ shape: 'dots', n: Math.round(10 + r * 5), el: 'nature', pos: g, plane: 'ground', r: r * 1.04, width: 0.04, life, tIn: 0.25, tOut: 0.4, spin: -0.3, alpha: 0.35, castId: cid(s), follow: s.follow }));
-      for (let i = 0; i < 3; i++) { const a = i * 2.094 + cid(s) * 0.4; out.push(vine(s, K.v3(g.x + Math.cos(a) * r * 0.7, 0, g.z + Math.sin(a) * r * 0.7), 1.1, { x: -Math.cos(a), z: -Math.sin(a) }, 0.05 * i, Math.min(life, 2.5))); }
+      out.push(K.line({ shape: 'glyph', glyph: 'flower5', el: 'nature', pos: g, plane: 'ground', r, width: 0.05, life, tIn: 0.3, tOut: 0.4, spin: 0.12, alpha: 0.55, castId: cid(s), follow: s.follow, role: 'fill', color2: api.rampOf('nature').dark }));
+      out.push(K.line({ shape: 'dots', n: Math.round(10 + r * 5), el: 'nature', pos: g, plane: 'ground', r: r * 1.04, width: 0.055, life, tIn: 0.25, tOut: 0.4, spin: -0.3, alpha: 0.6, castId: cid(s), follow: s.follow }));
+      for (let i = 0; i < 3; i++) { const a = i * 2.094 + cid(s) * 0.4; out.push(vine(s, K.v3(g.x + Math.cos(a) * r * 0.7, 0, g.z + Math.sin(a) * r * 0.7), 1.4, { x: -Math.cos(a), z: -Math.sin(a) }, 0.05 * i, Math.min(life, 2.5))); }
       return out;
     },
     pillar(s) {

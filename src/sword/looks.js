@@ -114,7 +114,7 @@ export function createLooks(game, E) {
   // ------------------------------------------------------------------ cast contexts
   /** info: {skillId, slot, el, castId, kind:'combo'|'heavy'|'skill'|'ultimate'|'finisher'|'support'|'counter', archetype, tier} */
   L.begin = (info = {}) => {
-    const def = info.skillId ? defOf(info.skillId) : null;
+    const def = (info.skillId ? defOf(info.skillId) : null) || info.def || null;
     let tier = info.tier;
     if (!tier) {
       if (def) tier = tierOf(def, info.skillId);
@@ -171,9 +171,14 @@ export function createLooks(game, E) {
   // spawners refuse (inert handle) once the cast's §1.4 handle budget is spent — the budget is a hard cap, never overshot
   const INERT = { alive: false, stop() { return this; }, setPos() { return this; }, setDir() { return this; }, setScale() { return this; }, setAlpha() { return this; }, push() { return this; }, setEnds() { return this; } };
   const SPAWNERS = ['line', 'mesh', 'ribbon', 'bolt', 'decal'];   // (kit decals are linework handles too)
+  const FIRE_SOLID = { 'fire.flame': 1, 'fire.petal': 1 };
   const capped = (K, cc, fn) => {
     const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles, orig = SPAWNERS.map((k) => K[k]);
-    SPAWNERS.forEach((k, i) => { const f = orig[i]; if (typeof f === 'function') K[k] = function (...a) { if (usedH(cc) >= lim) { stats.dropped++; return INERT; } const h = f.apply(this, a); if (k === 'mesh') nearWatch(h); return h; }; });
+    let solids = 0;   // fire restraint: ≤ 2 flame solids (fire.flame / fire.petal) per motif call, at 0.75 scale — linework carries melee fire
+    SPAWNERS.forEach((k, i) => { const f = orig[i]; if (typeof f === 'function') K[k] = function (...a) {
+      if (usedH(cc) >= lim) { stats.dropped++; return INERT; }
+      if (k === 'mesh' && FIRE_SOLID[a[0]]) { if (++solids > 2) { stats.dropped++; return INERT; } const o = a[1]; if (o) o.scale = typeof o.scale === 'number' ? o.scale * 0.75 : o.scale?.isVector3 ? o.scale.clone().multiplyScalar(0.75) : 0.75; }
+      const h = f.apply(this, a); if (k === 'mesh') nearWatch(h); return h; }; });
     try { return fn(); } finally { SPAWNERS.forEach((k, i) => { K[k] = orig[i]; }); }
   };
   const MELEE_MOTIF_EL = { earth: 1, nature: 1, light: 1, shadow: 1 };
@@ -206,6 +211,9 @@ export function createLooks(game, E) {
     spec.owner = 'player';
     if (spec.castId == null && L.cur) spec.castId = L.cur.castId;
     const cc = spec.castId ? byCast.get(spec.castId) : null;
+    // fire restraint in melee looks (review: the fire family stacked tall flame solids = fill): ≤ 3 tongues per zone / wave and a
+    // short, slim pillar; the linework (sigil, rings, crescents) carries the look
+    if (el === 'fire') { spec.tongues = Math.min(spec.tongues ?? 3, 3); if (kind === 'pillar') { spec.h = Math.min(spec.h ?? 3, 2.2); spec.r = Math.min(spec.r ?? 0.7, 0.5); } }
     const key = el + ':' + kind + ':' + (spec.tier || cc?.tier || '');
     if (cc && kind !== 'spark' && !useH(cc, Math.max(HEAVY_MOTIF[kind] || 1, motifCost.get(key) || 0))) { if (kind === 'burst') { spec.n = Math.min(spec.n ?? 6, 6); return L.motif(el, 'spark', spec); } return null; }
     if (cc && kind === 'spark') return capped(K, cc, () => ((K.motifSource?.(el, kind) === 'registered' || K.hasMotif?.(el, kind)) ? K.motif(el, kind, spec) : local(el, kind, spec)));
@@ -604,7 +612,12 @@ export function createLooks(game, E) {
         // a caster cast (magic) reaching a melee motif: spawn through magic's budget facade so the cast's §1.4 handle / particle
         // caps count these parts too (earth.charged 12 / light.ult 29 handles when they bypassed it)
         const F = spec?.castId && MELEE_MOTIF_EL[el] ? game.spells?.looks?.kit : null;
-        if (F && F !== K && typeof F.line === 'function') return viaFacade(K, F, () => orig.call(this, el, kind, spec));
+        if (F && F !== K && typeof F.line === 'function') {
+          const self = this, run = () => orig.call(self, el, kind, spec);
+          // magic's impact policy too (one burst per cast, burst ≤ ½ / spark ≤ ¼ of the cast's handles: the row's primary is never starved)
+          const fn = typeof F.sub === 'function' ? F.sub(kind, run) : run;
+          return viaFacade(K, F, () => fn(spec, K));
+        }
         return orig.call(this, el, kind, spec);
       };
       wrapped._meleeCap = true; K.motif = wrapped;

@@ -66,7 +66,8 @@ export const ROWS = {
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0); const R = L.h.rampOf('fire');
       L.h.line(cc, { shape: 'rays', n: 16, r2: 0.45, el: 'fire', pos: c, plane: 'ground', r: 7, width: 0.18, life: 0.8, tIn: 0.08, tOut: 0.35, scaleIn: 'expand', erode: true, color: R.mid, color2: R.light });
       L.h.line(cc, { shape: 'ring', el: 'fire', pos: c, plane: 'ground', r: 7, width: 0.12, life: 0.6, tIn: 0, tOut: 0.3, scaleIn: 'expand' });
-      // the flare ring also stands upright over the crater: ground linework alone reads as a few px at the v4 combat camera
+      // the flare ring also stands upright over the crater (hollow: rays only outside 1.6 m, the target body stays clear): ground
+      // linework alone reads as a few px at the v4 combat camera
       L.h.line(cc, { shape: 'rays', n: 16, r2: 0.5, el: 'fire', pos: imp(L, 2.3), plane: 'billboard', r: 3.2, width: 0.15, life: 0.7, tIn: 0.05, tOut: 0.3, scaleIn: 'backOut', spin: 0.5, color: R.mid, color2: R.dark });
       L.h.decal(cc, 'crack', c, 4.5, 6, { el: 'fire', alpha: 0.35 });
       L.h.decal(cc, 'scorch', c, 4.5, 4, { el: 'fire', alpha: 0.35 });
@@ -82,9 +83,9 @@ export const ROWS = {
     start(L, cc) { anticip(L, cc, 'ice'); },
     strike(L, cc, a) { frame(L, a, 4); const t0 = chest(L, 1.15), end = L.h.v3(F.px + F.fx * 4.6, F.py + 1.05, F.pz + F.fz * 4.6);
       L.h.ribbon(cc, { points: [t0, end], width: 0.3, taper: 0.95, life: 0.5, el: 'ice', alpha: 0.8 });
-      L.h.line(cc, { shape: 'star', points: 6, r2: 0.3, el: 'ice', pos: end, plane: 'billboard', r: 0.9, width: 0.035, life: 0.35, tIn: 0.05, tOut: 0.2 });
+      L.h.line(cc, { shape: 'star', points: 6, r2: 0.3, el: 'ice', pos: end, plane: 'billboard', r: 1.7, width: 0.085, life: 0.4, tIn: 0.05, tOut: 0.2 });
       const g = ahead(L, 4.6);
-      L.h.line(cc, { shape: 'poly', sides: 6, el: 'ice', pos: g, plane: 'ground', r: 1.6, width: 0.045, life: 0.7, tIn: 0.08, tOut: 0.3, scaleIn: 'backOut', rot: F.ang });
+      L.h.line(cc, { shape: 'poly', sides: 6, el: 'ice', pos: g, plane: 'ground', r: 1.9, width: 0.07, life: 0.7, tIn: 0.08, tOut: 0.3, scaleIn: 'backOut', rot: F.ang });
       L.h.spikes(cc, 'iceSpikes', g, 6, 1.1, 0.9);
       L.h.decal(cc, 'frost', g, 1.2, 1.4, { el: 'ice', alpha: 0.3 });
       L.h.spark(cc, end, 'ice', 8, null, { shape: 'shard', gravity: 7, speed: 4 });
@@ -144,7 +145,7 @@ export const ROWS = {
     start(L, cc) { anticip(L, cc, 'lightning', 0.5); },
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0); const R = L.h.rampOf('lightning');
       // the storm sigil faces the camera high over the strike area (a flat ring at 2.8 m was edge-on to the v4 combat camera)
-      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 3.8, c.z), plane: 'billboard', r: 2.6, width: 0.11, life: 2.2, tIn: 0.2, tOut: 0.6, spin: 0.25, alpha: 0.95, color: R.mid, color2: R.dark });
+      L.h.line(cc, { shape: 'glyph', glyph: 'lightning', el: 'lightning', pos: L.h.v3(c.x, c.y + 4.6, c.z), plane: 'billboard', r: 2.6, width: 0.11, life: 2.2, tIn: 0.2, tOut: 0.6, spin: 0.25, alpha: 0.95, color: R.mid, color2: R.dark });
       for (let k = 0; k < 3; k++) { const s = k * 2.2 + cc.castId, x = c.x + Math.cos(s) * 1.6 * k, z = c.z + Math.sin(s) * 1.6 * k, q = L.h.v3(x, L.h.gy(x, z), z);
         L.h.after(k * 0.3, () => { L.h.bolt(cc, { from: L.h.v3(q.x, q.y + 8.6, q.z), to: q, forks: 2, width: 0.2, halo: 0.25, life: 0.08, afterglow: 0.35, el: 'lightning', seed: cc.castId + k * 13 });
           L.h.decal(cc, 'lichtenberg', q, 3.2, 2.0, { el: 'lightning', alpha: 0.4 }); }); }
@@ -176,7 +177,7 @@ export const ROWS = {
     start(L, cc) { anticip(L, cc, 'wind', 0.5); },
     strike(L, cc, a) { frame(L, a, 5); const c = imp(L, 0);
       L.h.line(cc, { shape: 'spiral', turns: 1.4, arms: 3, r2: 0.15, el: 'wind', pos: c, plane: 'ground', r: 4.2, width: 0.06, life: 2.4, tIn: 0.2, tOut: 0.6, spin: 1.6, alpha: 0.5 });
-      L.h.line(cc, { shape: 'glyph', glyph: 'wind', el: 'wind', pos: imp(L, 4.2), plane: 'billboard', r: 2.7, width: 0.11, life: 1.6, tIn: 0.15, tOut: 0.5, spin: 1.2, alpha: 0.9, color: L.h.rampOf('wind').mid, color2: L.h.rampOf('wind').dark });
+      L.h.line(cc, { shape: 'glyph', glyph: 'wind', el: 'wind', pos: imp(L, 4.7), plane: 'billboard', r: 2.7, width: 0.11, life: 1.6, tIn: 0.15, tOut: 0.5, spin: 1.2, alpha: 0.9, color: L.h.rampOf('wind').mid, color2: L.h.rampOf('wind').dark });
       for (let i = 0; i < 3; i++) { const pts = [];
         for (let k = 0; k < 7; k++) { const t = k / 6, s = i * 2.094 + t * 5, r = 1 + t * 2.6; pts.push(L.h.v3(c.x + Math.cos(s) * r, c.y + 0.3 + t * 8, c.z + Math.sin(s) * r)); }
         L.h.ribbon(cc, { points: pts, width: 0.22, taper: 0.8, life: 1.2, el: 'wind', alpha: 0.4 }); }
@@ -316,7 +317,7 @@ export const ROWS = {
     } },
   'shadow.hex': { sig: 'small crescent-eye glyph over the target (kept readable)',
     strike(L, cc, a, ctx) { frame(L, a, 6, ctx); const g = imp(L, 0);
-      L.h.line(cc, { shape: 'glyph', glyph: 'shadow', el: 'shadow', pos: L.h.v3(g.x, g.y + 2.7, g.z), plane: 'billboard', r: 1.5, width: 0.09, life: 1.4, tIn: 0.12, tOut: 0.3, spin: 0.4 });
+      L.h.line(cc, { shape: 'glyph', glyph: 'shadow', el: 'shadow', pos: L.h.v3(g.x, g.y + 3.7, g.z), plane: 'billboard', r: 1.8, width: 0.1, life: 1.4, tIn: 0.12, tOut: 0.3, spin: 0.4 });
       L.h.line(cc, { shape: 'dots', n: 16, el: 'shadow', pos: g, plane: 'ground', r: 4, width: 0.05, life: 1.2, tIn: 0.12, tOut: 0.4, spin: 0.6, alpha: 0.35, color: L.h.rampOf('shadow').light });
       L.h.spark(cc, L.h.v3(g.x, g.y + 1, g.z), 'shadow', 8, null, { shape: 'wisp', gravity: -0.4, speed: 1.5 });
     } },
@@ -340,21 +341,25 @@ const fwd = (L) => L.h.v3(F.fx, 0, F.fz);
 // an upright element sigil in kit linework, raised above head height so it never covers an enemy body, authored first so the
 // cast's handle cap never starves it. Each element's glyph differs (fire flame, ice hex, wind spiral …): the archetype's identity.
 const SIGIL_R = { B: 0.6, C: 1.5, A: 1.5, Z: 1.5, U: 2.1, F: 2.1 };
-function sigil(L, cc, p, k = 1) {
-  const r = (SIGIL_R[cc.tier] || 1.1) * k, el = cc.el, R = L.h.rampOf(el);
+// per element: [scale, height offset m, side offset m (camera right)] — the sigils of two elements never sit on the same footprint
+const SIGIL_EL = { fire: [1.05, 0.3, 0], ice: [0.9, 0, 0.8], lightning: [1.0, 0.6, -0.7], wind: [1.1, 0.1, 1.0], water: [0.85, 0.25, -0.3],
+  earth: [0.8, 0, 0.25], nature: [1.0, 0.15, -1.1], light: [0.75, 0.8, 0.3], shadow: [0.95, 0.45, 0.6], physical: [0.9, 0, 0] };
+/** g: ground point of the strike; the sigil's lowest point stays ≥ 1.9 m above it (above an enemy's head: never over a body or a tell). */
+function sigil(L, cc, g, k = 1) {
+  const el = cc.el, R = L.h.rampOf(el), E = SIGIL_EL[el] || SIGIL_EL.physical, r = (SIGIL_R[cc.tier] || 1.1) * k * E[0];
+  const p = L.h.v3(g.x + F.fz * E[2], g.y + 1.9 + r + E[1], g.z - F.fx * E[2]);
   L.h.line(cc, { shape: 'glyph', glyph: el, el, pos: p, plane: 'billboard', r, width: 0.09, life: 0.6, tIn: 0.06, tOut: 0.28, scaleIn: 'backOut', spin: 0.7, alpha: 0.95, color: R.mid, color2: R.dark });
 }
-const over = (L, p, y = 2.5) => L.h.v3(p.x, p.y + y, p.z);
 const ARCH = {
-  hit: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 5, ctx); sigil(L, cc, over(L, imp(L, 0))); burstAt(L, cc, cc.el, imp(L, 1.0), r * (cc.tier === 'B' ? 1 : 1.35)); } }),
-  ground: (len) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); sigil(L, cc, over(L, ahead(L, Math.min(len * 0.6, 5)), 2.2)); L.h.motif(cc, cc.el, 'wave', { pos: ahead(L, 1.2), dir: fwd(L), r: len, arc: 0.5 }); burstAt(L, cc, cc.el, ahead(L, Math.min(len * 0.6, 5)), 1.3); } }),
-  nova: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); const g = ahead(L, 1.6); sigil(L, cc, over(L, g, 2.2)); burstAt(L, cc, cc.el, g, r);
+  hit: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 5, ctx); sigil(L, cc, imp(L, 0)); burstAt(L, cc, cc.el, imp(L, 1.0), r * (cc.tier === 'B' ? 1 : 1.35)); } }),
+  ground: (len) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); sigil(L, cc, ahead(L, Math.min(len * 0.6, 5))); L.h.motif(cc, cc.el, 'wave', { pos: ahead(L, 1.2), dir: fwd(L), r: len, arc: 0.5 }); burstAt(L, cc, cc.el, ahead(L, Math.min(len * 0.6, 5)), 1.3); } }),
+  nova: (r) => ({ strike(L, cc, a, ctx) { frame(L, a, 2, ctx); const g = ahead(L, 1.6); sigil(L, cc, g); burstAt(L, cc, cc.el, g, r);
     L.h.line(cc, { shape: 'ring', el: cc.el, pos: g, plane: 'ground', r: r * 2, width: 0.045, life: 0.45, tIn: 0, tOut: 0.25, scaleIn: 'expand', alpha: 0.75 }); } }),
-  pillar: () => ({ strike(L, cc, a, ctx) { frame(L, a, 4, ctx); sigil(L, cc, over(L, imp(L, 0), 3.4), 0.8); L.h.motif(cc, cc.el, 'pillar', { pos: imp(L, 0), r: 0.7, h: 3 }); } }),
-  zone: (r, life) => ({ strike(L, cc, a, ctx) { frame(L, a, 3, ctx); sigil(L, cc, over(L, imp(L, 0), 2.2)); L.h.motif(cc, cc.el, 'zone', { pos: imp(L, 0), r, life }); } }),
-  aura: () => ({ strike(L, cc) { const f = feet(L); sigil(L, cc, over(L, f, 2.6), 0.6); L.h.motif(cc, cc.el, 'aura', { pos: feet(L), follow: L.h.playerObj?.(), r: 0.9, life: 1.6 }); } }),
-  summon: () => ({ strike(L, cc, a, ctx) { frame(L, a, 2.5, ctx); sigil(L, cc, over(L, imp(L, 0), 2.2)); L.h.motif(cc, cc.el, 'summon', { pos: imp(L, 0), r: 1 }); } }),
-  cone: () => ({ strike(L, cc, a, ctx) { frame(L, a, 3, ctx); sigil(L, cc, over(L, ahead(L, 3.2), 2.0)); L.h.motif(cc, cc.el, 'wave', { pos: ahead(L, 0.8), dir: fwd(L), r: 5, arc: 0.8 }); } }),
+  pillar: () => ({ strike(L, cc, a, ctx) { frame(L, a, 4, ctx); sigil(L, cc, imp(L, 0), 0.8); L.h.motif(cc, cc.el, 'pillar', { pos: imp(L, 0), r: 0.7, h: 3 }); } }),
+  zone: (r, life) => ({ strike(L, cc, a, ctx) { frame(L, a, 3, ctx); sigil(L, cc, imp(L, 0)); L.h.motif(cc, cc.el, 'zone', { pos: imp(L, 0), r, life }); } }),
+  aura: () => ({ strike(L, cc) { const f = feet(L); sigil(L, cc, f, 0.6); L.h.motif(cc, cc.el, 'aura', { pos: feet(L), follow: L.h.playerObj?.(), r: 0.9, life: 1.6 }); } }),
+  summon: () => ({ strike(L, cc, a, ctx) { frame(L, a, 2.5, ctx); sigil(L, cc, imp(L, 0)); L.h.motif(cc, cc.el, 'summon', { pos: imp(L, 0), r: 1 }); } }),
+  cone: () => ({ strike(L, cc, a, ctx) { frame(L, a, 3, ctx); sigil(L, cc, ahead(L, 3.2)); L.h.motif(cc, cc.el, 'wave', { pos: ahead(L, 0.8), dir: fwd(L), r: 5, arc: 0.8 }); } }),
 };
 const cast = { start(L, cc) { anticip(L, cc, cc.el); } };
 const withCast = (o) => Object.assign({}, cast, o);
