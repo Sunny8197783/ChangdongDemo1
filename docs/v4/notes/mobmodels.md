@@ -62,6 +62,14 @@ Branch `v4/mobmodels` (from `core-p0a`), worktree `/home/user/wt4/mobmodels`. Ta
   framed at the distance that fits, labelled) + `wolf_alpha.png` + `chuchu_variants.png`, each ≤ 150 KB.
 
 ## Palette deviations (documented)
+- **Fix round 1 (docs/v4/review.md mobs table)**: voidknight, wolf and wraith albedo darkened back to the v3 void identity (wolf fur `#434056`,
+  stripe `#221E2C`, muzzle `#8C86A2`; knight plate `#4A4366`/`#5C547A`, recess `#1C1828`, joints `#2C2840`, cloth `#4C2C74`; wraith robe `#4E4270`/`#3A3056`/`#1E1630`).
+  Violet runes / cracks / eye glow are unchanged and stay the bright accents. Elderwood body luma now 0.063–0.094 (was 0.184–0.209): the PLAN §1
+  "≥ 0.18" readability row is what washed them to light grey/lavender, so the playtest gate for these four is now a 0.06–0.16 band (dark, not black)
+  and readability rests on the 4-side outline check (still passing) and the accents; every other body keeps ≥ 0.12. Integrator: the PLAN §1 row conflicts with the review.
+- LOD / outline distance now reads the root position after `updateWorldMatrix(true, false)` (was the stale matrixWorld before the first render
+  after a move → LOD on the first frame after a spawn/teleport).
+The entries below are superseded for these three species:
 - wolf flank fur `#6A6682` instead of `#5E5A72` (with `#5E5A72` the body measured 0.168–0.177 < 0.18 on the Elderwood floor); muzzle/chest `#B9B3C8` as specified.
 - voidknight: `#3B3550` only in recesses; plate faces `#7A72A0`/`#9890BC`, trim `#8C93B8` (`#3B3550`-dominant plates measured 0.129).
 

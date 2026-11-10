@@ -5,8 +5,8 @@
 // there is no black on black; trim #8C93B8.
 import { P, S, C, K, B, CAP, T, CARD, OCT, both, humanoid2, bone, mixInto } from './rig.js';
 
-const VK = { base: 0x3b3550, plate: 0x7a72a0, plateLight: 0x9890bc, trim: 0x8c93b8, trimLight: 0xb8bedc, cloth: 0x6a4498, clothDark: 0x4a3070, leather: 0x4a382c,
-  rivet: 0xc8cce0, void: 0xb36bff, core: 0xf0d8ff, blade: 0x7a7ea0, bladeEdge: 0xc4c8e0 };
+const VK = { base: 0x1c1828, plate: 0x4a4366, plateLight: 0x5c547a, trim: 0x6a6490, trimLight: 0x8c88b4, cloth: 0x4c2c74, clothDark: 0x2e1c4a, leather: 0x4a382c,
+  rivet: 0x9894b4, void: 0xb36bff, core: 0xf0d8ff, blade: 0x464860, bladeEdge: 0x9ca2c4 };
 const HIP = 1.02;
 
 /** Plate painter: lighter trim band where the normal turns away from the plate face (bevel/edge rim). */
@@ -40,7 +40,7 @@ export function voidknightDef() {
     rivets('arm' + s2, [[sx * 0.1, 0.2, 0.2], [sx * 0.1, 0.2, -0.2]], 0.02);
   }
   // ---------------------------------------------------------------- pelvis: belt, faulds, tabard front/back (springs)
-  add(P('rig', S(0.34, 10, 8), 0x5a5478, [0, 0, 0], [0, 0, 0], [1.15, 0.7, 0.95]));
+  add(P('rig', S(0.34, 10, 8), 0x2c2840, [0, 0, 0], [0, 0, 0], [1.15, 0.7, 0.95]));
   add(P('rig', T(0.36, 0.06, 16, 4), VK.leather, [0, 0.06, 0], [Math.PI / 2, 0, 0]));
   add(P('rig', B(0.15, 0.12, 0.06), VK.trim, [0, 0.06, 0.35]));
   add(...both([P('rig', B(0.26, 0.42, 0.05), plateCol(VK.plate), [-0.22, -0.22, 0.2], [0.1, 0, 0.12])]));          // faulds
@@ -57,8 +57,8 @@ export function voidknightDef() {
   glow.push(P('neck', B(0.28, 0.03, 0.02), VK.core, [0, 0.14, 0.275], [0, 0, 0], [1, 1, 1], { glowK: 1.15, eyeball: true }));        // visor
   // ---------------------------------------------------------------- arms: mail sleeve + plate vambrace + gauntlets with fingers
   for (const s2 of ['R', 'L']) {
-    add(P('arm' + s2, CAP(0.13, 0.22, 8, 2), 0x5a5478, [0, -0.18, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.07 } }));
-    add(P('fore' + s2, CAP(0.12, 0.18, 8, 2), 0x5a5478, [0, -0.16, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.06 } }));
+    add(P('arm' + s2, CAP(0.13, 0.22, 8, 2), 0x2c2840, [0, -0.18, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.07 } }));
+    add(P('fore' + s2, CAP(0.12, 0.18, 8, 2), 0x2c2840, [0, -0.16, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.06 } }));
     add(P('fore' + s2, C(0.16, 0.13, 0.24, 8), plateCol(VK.plateLight), [0, -0.24, 0]));
     add(P('fore' + s2, T(0.155, 0.014, 10, 3), VK.trim, [0, -0.13, 0], [Math.PI / 2, 0, 0], [1, 1, 1], { small: true }));
     add(P('fore' + s2, S(0.1, 8, 6), plateCol(VK.plate), [0, 0.0, 0.0], [0, 0, 0], [1.05, 0.8, 1.1]));                 // couter
@@ -68,7 +68,7 @@ export function voidknightDef() {
   }
   // ---------------------------------------------------------------- legs: cuisses, knee cops, greaves, sabatons
   for (const s2 of ['R', 'L']) {
-    add(P('leg' + s2, CAP(0.15, 0.2, 8, 2), 0x5a5478, [0, -0.18, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.07 } }));
+    add(P('leg' + s2, CAP(0.15, 0.2, 8, 2), 0x2c2840, [0, -0.18, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.07 } }));
     add(P('leg' + s2, B(0.22, 0.32, 0.08), plateCol(VK.plate), [0, -0.17, 0.13]));
     add(P('knee' + s2, CAP(0.13, 0.2, 8, 2), plateCol(VK.plate), [0, -0.17, 0], [0, 0, 0], [1, 1, 1], { blend: { axis: '-y', band: 0.06 } }));
     add(P('knee' + s2, S(0.12, 8, 6), plateCol(VK.plateLight), [0, -0.01, 0.1], [0, 0, 0], [1, 1, 0.8]));
