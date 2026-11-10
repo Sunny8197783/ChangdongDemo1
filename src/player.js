@@ -83,7 +83,7 @@ export function createPlayer(game) {
   const pfx = (m, o) => { try { game.vfx?.applyPlayerFx?.(m, o); } catch (err) { /* vfx stub */ } };
   const chargeCircle = new RuneCircle(scene, 1.15, pfx);
   const sigil = new RuneCircle(scene, 1.9, pfx);
-  const ghosts = new Afterimages(scene, root, 5, pfx);
+  const ghosts = new Afterimages(scene, root, 5, pfx, rig.skin);   // GPU-skinned proxy snapshots when the rig is merged
   const barrier = new Barrier(scene, pfx);
   if (rig.haloMat) pfx(rig.haloMat, { additive: true, role: 'fill' });
   const WARD_COL = new THREE.Color(0.55, 1, 0.65), WARD_COL2 = new THREE.Color(0.78, 0.95, 0.8);
@@ -107,15 +107,29 @@ export function createPlayer(game) {
 
   // ---------- state ----------
   const hv = new THREE.Vector3();          // controlled horizontal velocity
-  let vy = 0, grounded = true, wasGrounded = true, airTime = 0, coyote = 0, jumpBuffer = 0, peakY = 0;
-  let facing = Math.PI, prevFacing = Math.PI, bank = 0, turnRate = 0;
-  let yaw = 0, pitch = -0.12;
+  // v4: per-frame numeric state as double fields of one object (closure lets box a new heap number on every double write)
+  const PS = {
+    vy: 0, airTime: 0, coyote: 0, jumpBuffer: 0, peakY: 0, facing: Math.PI, prevFacing: Math.PI, bank: 0,
+    turnRate: 0, yaw: 0, pitch: -0.12, invulT: 0, ghostTimer: 0, shieldT: 0, castT: 0, castRecent: 0,
+    gemFlare: 0, chargeFrac: 0, hurt: 0, squash: 0, deadW: 0, deadTime: 0, phase: 0, lastSin: 0,
+    stepSide: 1, wSprint: 0, wAir: 0, wGlide: 0, wAction: 0, wAim: 0, speedFrac: 0, wFov: 0,
+    wBowAim: 0, wFocus: 0, wLand: 0, accelF: 0, lastSpeed: 0, sparkleT: 0, convergeT: 0, wadeT: 0,
+    aimPitch: 0, dodgeT: 0, dodgeDur: 0, dodgeIframeT: 0, dodgeStartT: -10, dodgeEndT: -10, dodgeCd: 0, dodgeCharges: 1,
+    dodgeRecharge: 0, superArmorT: 0, ghostT2: 0, blockT: 0, guardBreakT: 0, wardHp: 0, wardRechargeT: 0, counterT: 0,
+    counterCd: 0, decoyT: 0, decoyFxT: 0, counterReady: 0, perfectFx: 0, updraftT: 0, airJumps: 0, drawnW: 0,
+    fidgetT: 0, fidgetNext: 9, idleT: 0, mageRuneT: 0, bowDraw: 0, stringVel: 0, stringOff: 0, protectUntil: -10,
+    witchReadyAt: 0, lastPerfectRt: -10, tellHead: 0, hitstopUntil: 0, reviveT: 0, wCombat: 0, wBossTell: 0, wHintD: 1,
+    wHintH: 1, camDist: CAM_DIST, dodgedFxT: -10, camHoldT: 0,
+  };
+  let grounded = true, wasGrounded = true;
+  
+  
   let gliding = false, sprinting = false;
-  let invulT = 0, ghostTimer = 0, shieldT = 0;
-  let castKind = null, castT = 0, castRecent = 0, gemFlare = 0;
-  let charging = false, chargeFrac = 0, chargeEl = null;
-  let hurt = 0, squash = 0, deadW = 0, dying = false, deadTime = 0, respawnTimer = null;
-  let phase = 0, lastSin = 0, stepSide = 1;
+  
+  let castKind = null;
+  let charging = false, chargeEl = null;
+  let dying = false, respawnTimer = null;
+  
   let element = 'fire';
   const elemColor = new THREE.Color(elColor('fire'));
   const gemColor = new THREE.Color(), gemLight = new THREE.Color(elColor('fire'));
@@ -126,31 +140,31 @@ export function createPlayer(game) {
   const STEP_DUST = { count: 3, color: C_DUST, speed: 0.9, spread: 0.6, dir: null, size: 0.22, sizeEnd: 0.55, life: 0.5, shape: 'smoke', additive: false, drag: 3 };
   const WADE = { count: 4, color: 0xd8eef4, speed: 1.8, spread: 0.6, dir: null, size: 0.12, life: 0.4, gravity: 9, shape: 'soft', additive: false };
   const UPDRAFT = { count: 1, color: [0xffd090, 0xff8040], speed: 4, spread: 0.1, dir: null, size: 0.06, sizeEnd: 0, life: 0.5, shape: 'spark' };
-  let wSprint = 0, wAir = 0, wGlide = 0, wAction = 0, wAim = 0, speedFrac = 0, wFov = 0, wBowAim = 0, wFocus = 0, wLand = 0;
-  let accelF = 0, lastSpeed = 0;
-  let sparkleT = 0, convergeT = 0, wadeT = 0;
-  let aimPitch = 0;
+  
+  
+  
+  
   // ---- class & kit ----
   let cls = null;   // null until the class is chosen (neutral villager look, no Q/E skills)
   let kit = kitOf(null);
   // dodge state (all kit types)
-  let dodgeT = 0, dodgeDur = 0, dodgeIframeT = 0, dodgeStartT = -10, dodgeEndT = -10, dodgeCd = 0, dodgeType = 'none';
-  let dodgeCharges = 1, dodgeRecharge = 0, superArmorT = 0, ghostT2 = 0;
+  let dodgeType = 'none';
+  
   const dodgeDir = new THREE.Vector3(), blinkFrom = new THREE.Vector3(), blinkTo = new THREE.Vector3();
   let blinking = false;   // blink-type dodge (invisible travel)
   // defend state
-  let blocking = false, blockT = 0, blockHeld = false, guardBreakT = 0;
-  let wardHp = 0, wardBroken = false, wardRechargeT = 0;
-  let counterT = 0, counterCd = 0;
+  let blocking = false, blockHeld = false;
+  let wardBroken = false;
+  
   let focusing = false;
-  let decoyT = 0; const decoyPos = new THREE.Vector3(); let decoyFxT = 0;
+   const decoyPos = new THREE.Vector3(); 
   // perfect / counter
-  let counterReady = 0, counterTarget = null, perfectFx = 0;
-  let inUpdraft = false, updraftT = 0, airJumps = 0;
-  let drawnW = 0, swordDrawn = false;
-  let fidgetT = 0, fidgetNext = 9, fidgetKind = null, idleT = 0;
-  let mageRuneT = 0; const mageRunePos = new THREE.Vector3(); let mageRuneEl = 'fire';
-  let bowDraw = 0, stringVel = 0, stringOff = 0;
+  let counterTarget = null;
+  let inUpdraft = false;
+  let swordDrawn = false;
+  let fidgetKind = null;
+   const mageRunePos = new THREE.Vector3(); let mageRuneEl = 'fire';
+  
   let platformHandle = null;
   // ---- v4 dodge / defence (§5.8–5.9) ----
   /** 0.25 s input buffer for dodge / dodgeAlt / defend pressed while a lock holds (api.inputBuffer → {action, t} | null). */
@@ -159,16 +173,16 @@ export function createPlayer(game) {
   const pending = { on: false, kind: null, until: 0, enemy: null, targetsPlayer: false, noInfo: false, t0: 0 };
   /** the last enemy hit (from playerHurt) for the after-impact grace refund; api.lastEnemyHit is a reused view. */
   const lastHit = { valid: false, refunded: false, rt: -10, t: -10, amount: 0, attacker: null, attack: null, statuses: [], view: { t: 0, amount: 0, attacker: null, attack: null, appliedStatuses: null } };
-  let protectUntil = -10;            // post-hit protection (game.time): melee hits ignored
-  let witchReadyAt = 0;              // game.realTime when the next witch time may start
-  let lastPerfectRt = -10;
+              // post-hit protection (game.time): melee hits ignored
+                // game.realTime when the next witch time may start
+  
   const TELL_RING = 8, tellRing = [];      // recent tellStart {enemy, targetsPlayer, rt}
   for (let i = 0; i < TELL_RING; i++) tellRing.push({ enemy: null, targetsPlayer: false, rt: -10 });
-  let tellHead = 0;
-  let hitstopUntil = 0;              // per-entity hitstop: the animation freezes while game.realTime < this (input keeps buffering)
-  let reviveT = 0;                   // story auto-revive timer
+  
+                // per-entity hitstop: the animation freezes while game.realTime < this (input keeps buffering)
+                     // story auto-revive timer
   // combat camera state
-  let wCombat = 0, wBossTell = 0, wHintD = 1, wHintH = 1;
+  
   const camInfo = { hint: null, dist: CAM_DIST, fov: 62, combat: 0, bossTell: 0, shoulder: SHOULDER };
   /** Written every frame by the sword module (game.sword); consumed by the player on its next update. */
   const action = {
@@ -197,7 +211,7 @@ export function createPlayer(game) {
   // camera state
   const pivot = new THREE.Vector3();
   const camPos = new THREE.Vector3(), camFwd = new THREE.Vector3(0, 0, -1), camRight = new THREE.Vector3(1, 0, 0);
-  let camDist = CAM_DIST, camSnap = true;
+  let camSnap = true;
   const camEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
   // scratch
@@ -228,6 +242,13 @@ export function createPlayer(game) {
   };
   /** The camera and the slope probe only look at the terrain/ground under the hero's height. */
   const groundAtFeet = (x, z) => groundAt(x, z, pos.y);
+  /** Slope limit probe (update): can't walk / jump-climb faces steeper than ~53 degrees from (px, pz) with ground g0. */
+  const tooSteep = (gx, gz, px, pz, yh, g0) => {
+    const dx = gx - px, dz = gz - pz, st = Math.sqrt(dx * dx + dz * dz); if (st < 1e-5) return false;
+    const gg = groundAt(gx, gz, yh);
+    if (wasGrounded) return (gg - g0) / st > 1.33 && gg > g0 + 0.05;
+    return gg > pos.y + 0.6; // airborne: walls block rather than teleport us up
+  };
   const waterLevel = () => { const w = W()?.waterLevel; return Number.isFinite(w) ? w : -1e9; };
   /** water depth at (x,z) given ground height h (0 when dry). */
   const waterDepth = (x, z, h) => {
@@ -268,13 +289,15 @@ export function createPlayer(game) {
   const lightOf = (el) => pair(el)[1];
   const assist = () => game.assist || null;
   /** per-entity hitstop on the player (core stamps entity.hitstopUntil / player.hitstopUntil in game.realTime seconds). */
-  const animFrozen = () => Math.max(hitstopUntil, entity.hitstopUntil || 0, game.playerHitstopUntil || 0) > (game.realTime || 0);
+  const animFrozen = () => Math.max(PS.hitstopUntil, entity.hitstopUntil || 0, game.playerHitstopUntil || 0) > (game.realTime || 0);
   const perfectMul = () => { const m = +assist()?.perfectMul; return m > 0 ? m : 1; };
   const iframeMul = () => { const m = +assist()?.iframeMul; return m > 0 ? m : 1; };
   const ts = () => game.timeScale;
   const slow = (id, scale, dur) => { try { if (ts()?.set) ts().set(id, scale, dur); else game.slowmo?.(scale, dur); } catch (_) { /* */ } };
-  const isMelee = () => familyOf(cls) === 'melee';
-  const style = () => (cls ? styleOf(cls) : 'staff');
+  // cached per class (setClass): keyed CLASS_DEFS lookups in the per-frame update deoptimised it back to baseline code
+  let clsMelee = false, clsStyle = 'staff';
+  const isMelee = () => clsMelee;
+  const style = () => clsStyle;
   const talentOn = (id) => {
     try {
       if (game.stats?.has?.('talent:' + id)) return true;
@@ -298,7 +321,7 @@ export function createPlayer(game) {
     gear.gemMat.color.copy(elemColor).multiplyScalar(1.2);
     gear.edgeMat.uniforms.uColor.value.copy(elemColor);
     if (changed && game.state === 'playing') {
-      gemFlare = Math.max(gemFlare, 0.6);
+      PS.gemFlare = Math.max(PS.gemFlare, 0.6);
       api.getWeaponTip('main', v4);
       vfxCall('burst', v4, { count: 14, color: pair(el), speed: 2.2, spread: 1, size: 0.09, sizeEnd: 0, life: 0.45, shape: 'spark', drag: 2 });
     }
@@ -310,10 +333,10 @@ export function createPlayer(game) {
     if (sp) pos.set(sp.x, 0, sp.z); else pos.set(0, 0, 120);
     if (useCheckpoint && checkpoint) { try { W()?.resolveCollision?.(pos, entity.radius + 0.6); } catch (e) { /* */ } }
     pos.y = groundAt(pos.x, pos.z);
-    vy = 0; hv.set(0, 0, 0); velocity.set(0, 0, 0);
-    grounded = wasGrounded = true; peakY = pos.y;
-    yaw = 0; pitch = -0.12; facing = prevFacing = Math.PI;
-    root.rotation.set(0, facing, 0);
+    PS.vy = 0; hv.set(0, 0, 0); velocity.set(0, 0, 0);
+    grounded = wasGrounded = true; PS.peakY = pos.y;
+    PS.yaw = 0; PS.pitch = -0.12; PS.facing = PS.prevFacing = Math.PI;
+    root.rotation.set(0, PS.facing, 0);
     root.updateMatrixWorld(true);
     cape.reset(); springs.reset();
     camSnap = true;
@@ -351,7 +374,7 @@ export function createPlayer(game) {
     }
     const hpDropped = regen.afterHit();
     if (hit?._pbdRes?.cancel || result?.blocked) return;
-    if (hit?._pbdRes?.mul != null) { velocity.multiplyScalar(0.35); hurt = Math.max(hurt, 0.35); return; }
+    if (hit?._pbdRes?.mul != null) { velocity.multiplyScalar(0.35); PS.hurt = Math.max(PS.hurt, 0.35); return; }
     if (!hpDropped) return;
     const isDot = !!hit?.isDot || (hit?.tags || []).includes('dot');
     // directional hurt pose from the hit direction (or the source position)
@@ -360,15 +383,15 @@ export function createPlayer(game) {
       v1.setY(0);
       if (v1.lengthSq() > 1e-6) {
         v1.normalize();
-        const cf = Math.cos(facing), sf = Math.sin(facing);
+        const cf = Math.cos(PS.facing), sf = Math.sin(PS.facing);
         anim.hurtKick(v1.x * cf - v1.z * sf, v1.x * sf + v1.z * cf, clamp(dmg / Math.max(20, entity.maxHp * 0.15), 0.3, 1.2));
       }
     }
     // support buffs: stagger immunity / shield step super armor
-    if (statGet('noKnockback', false) || action.superArmor || superArmorT > 0) { velocity.set(0, 0, 0); hurt = Math.max(hurt, 0.3); return; }
-    if (isDot) { hurt = Math.max(hurt, 0.25); return; }
-    hurt = 1;
-    if (charging) gemFlare = 0.3;
+    if (statGet('noKnockback', false) || action.superArmor || PS.superArmorT > 0) { velocity.set(0, 0, 0); PS.hurt = Math.max(PS.hurt, 0.3); return; }
+    if (isDot) { PS.hurt = Math.max(PS.hurt, 0.25); return; }
+    PS.hurt = 1;
+    if (charging) PS.gemFlare = 0.3;
   }
 
   // ---------- defend / dodge evaluation ----------
@@ -382,7 +405,7 @@ export function createPlayer(game) {
     if (!sourcePos(hit, v4)) return true;
     v4.sub(pos).setY(0);
     if (v4.lengthSq() <= 0.04) return true;
-    return v4.normalize().dot(v3.set(Math.sin(facing), 0, Math.cos(facing))) > arc;
+    return v4.normalize().dot(v3.set(Math.sin(PS.facing), 0, Math.cos(PS.facing))) > arc;
   };
   const parryWindow = (base, hit) => {
     let w = base + (statGet('parryWindowAdd', 0) || 0);
@@ -425,18 +448,18 @@ export function createPlayer(game) {
     if (hit.isDot || tags.includes('dot') || tags.includes('tick') || !entity.alive || dying) return null;
     let r = null;
     const D = kit.defend, DG = kit.dodge;
-    if (game.time < protectUntil && attackKindOf(hit) === 'melee') {
+    if (game.time < PS.protectUntil && attackKindOf(hit) === 'melee') {
       // post-hit protection: no melee chains for 0.35 s after a real hit (projectiles, hazards and surfaces still apply)
       r = { cancel: true, dodged: true, protected: true };
-    } else if (decoyT > 0) {
+    } else if (PS.decoyT > 0) {
       // 정령 교대: the wisp left behind absorbs one hit
-      decoyT = 0; popDecoy();
+      PS.decoyT = 0; popDecoy();
       r = { cancel: true, dodged: true };
       if (pendingCovers(hit, 'dodge')) { pending.on = false; perfectDodge(hit); }
-    } else if (counterT > 0 && D.type === 'counter') {
+    } else if (PS.counterT > 0 && D.type === 'counter') {
       r = { cancel: true, parried: true, perfect: true };
       doCounter(hit);
-    } else if (dodgeIframeT > 0) {
+    } else if (PS.dodgeIframeT > 0) {
       const perfect = DG.perfectWin > 0 && pendingCovers(hit, 'dodge');
       if (perfect) pending.on = false;
       if (perfect && DG.brace) {
@@ -452,7 +475,7 @@ export function createPlayer(game) {
       const omni = t === 'barrier' || t === 'ward';
       if (omni || frontOf(hit, D.arc ?? -0.25)) {
         const amt = hit.amount || 0;
-        const perfect = D.perfect > 0 && (blockT <= parryWindow(D.perfect * perfectMul(), hit) || pendingCovers(hit, 'defend'));
+        const perfect = D.perfect > 0 && (PS.blockT <= parryWindow(D.perfect * perfectMul(), hit) || pendingCovers(hit, 'defend'));
         if (perfect) {
           pending.on = false;
           const reflect = t !== 'shield' || talentOn('paladin.t10');
@@ -465,12 +488,12 @@ export function createPlayer(game) {
           if (R.mp <= 0.5) breakBlock();
         } else if (t === 'ward') {
           const absorbed = amt * (1 - D.mul);
-          wardHp -= absorbed;
+          PS.wardHp -= absorbed;
           r = { mul: D.mul };
           blockFx(hit, false);
-          if (wardHp <= 0) {
+          if (PS.wardHp <= 0) {
             // the dome breaks: the overflow goes through at full damage
-            const over = -wardHp; wardHp = 0;
+            const over = -PS.wardHp; PS.wardHp = 0;
             if (amt > 0) r.mul = clamp(D.mul + over / amt, D.mul, 1);
             wardBreak();
           }
@@ -488,8 +511,8 @@ export function createPlayer(game) {
     return r;
   }
   function blockFx(hit, perfect) {
-    if (!sourcePos(hit, v4)) v4.set(pos.x + Math.sin(facing), pos.y, pos.z + Math.cos(facing));
-    v4.sub(pos).setY(0); if (v4.lengthSq() < 1e-4) v4.set(Math.sin(facing), 0, Math.cos(facing)); v4.normalize();
+    if (!sourcePos(hit, v4)) v4.set(pos.x + Math.sin(PS.facing), pos.y, pos.z + Math.cos(PS.facing));
+    v4.sub(pos).setY(0); if (v4.lengthSq() < 1e-4) v4.set(Math.sin(PS.facing), 0, Math.cos(PS.facing)); v4.normalize();
     const t = kit.defend.type;
     if (t === 'barrier' || t === 'ward') {
       barrier.hit(v4, perfect);
@@ -532,25 +555,25 @@ export function createPlayer(game) {
     const A = assist();
     if (A && A.witchSlowmo === false) return false;
     if (!A && game.settings?.values?.witchSlowmo === false) return false;
-    if (game.realTime < witchReadyAt) return false;
+    if (game.realTime < PS.witchReadyAt) return false;
     if (!tellTargetedPlayer(attacker) || otherTellSoon(attacker)) return false;
     let ok = false;
     try { ok = ts()?.set?.('witch', WITCH.scale, WITCH.dur, { compensate: true }) !== false && !!ts()?.set; } catch (_) { ok = false; }
     if (!ok) return false;
     try { game.post?.setGrade?.('witch', WITCH.grade, { durReal: WITCH.dur }); } catch (_) { /* */ }
     try { vfx()?.fxFactor?.('witch', WITCH.fx, WITCH.dur); } catch (_) { /* */ }
-    witchReadyAt = game.realTime + WITCH.dur + WITCH.cd;
+    PS.witchReadyAt = game.realTime + WITCH.dur + WITCH.cd;
     return true;
   }
   /** Always: perfectDodge {attacker, witch, grace} (+ calloutKo), counterReady 1.2 s (next basic attack = class counter). */
   function onPerfect(kind, hit, grace = false) {
     const rt = game.realTime;
-    if (rt - lastPerfectRt < 0.25) return false;   // one reward per exchange (multi-hit attacks)
-    lastPerfectRt = rt;
+    if (rt - PS.lastPerfectRt < 0.25) return false;   // one reward per exchange (multi-hit attacks)
+    PS.lastPerfectRt = rt;
     const attacker = srcEntity(hit);
     const witch = tryWitch(attacker);
-    counterReady = COUNTER_DUR; counterTarget = attacker;
-    perfectFx = 1;
+    PS.counterReady = COUNTER_DUR; counterTarget = attacker;
+    PS.perfectFx = 1;
     const calloutKo = kind === 'barrier' ? PERFECT_KO.barrier : kind === 'dodge' ? PERFECT_KO.dodge : PERFECT_KO.parry;
     const k = kind === 'dodge' || kind === 'brace' ? kit.dodge.type : kit.defend.type;
     ev('perfectDodge', { source: attacker, attacker, witch, grace: !!grace, kind, calloutKo, position: pos.clone(), cls, kit: k });
@@ -584,9 +607,9 @@ export function createPlayer(game) {
   }
   /** 반격 자세: negate the hit, teleport behind the attacker, next hit crits. */
   function doCounter(hit) {
-    counterT = 0; counterCd = kit.defend.cd ?? 1;
+    PS.counterT = 0; PS.counterCd = kit.defend.cd ?? 1;
     const s = hit?.source;
-    ghosts.spawn(pos, facing, SHADOW_COL, 0.6, 0.9);
+    ghosts.spawn(pos, PS.facing, SHADOW_COL, 0.6, 0.9);
     vfxCall('burst', v1.copy(pos).setY(pos.y + 1), { count: 22, color: [0xb98bff, 0x1a0b2e], speed: 3.5, spread: 1, size: 0.14, sizeEnd: 0, life: 0.45, shape: 'smoke', additive: false, drag: 3 });
     if (s && typeof s === 'object' && s.object) {
       const sp = s.object.position;
@@ -608,29 +631,29 @@ export function createPlayer(game) {
   function perfectDodge(hit, grace = false) {
     const type = kit.dodge.type;
     if (type === 'blink' || type === 'spiritswap') { perfectBlink(hit, grace); return; }
-    if (game.realTime - lastPerfectRt < 0.25) return;
+    if (game.realTime - PS.lastPerfectRt < 0.25) return;
     vfxCall('fovKick', 6, 0.5);
-    ghosts.spawn(pos, facing, type === 'shadowroll' ? SHADOW_COL : DODGE_COL, 0.8, 1);
+    ghosts.spawn(pos, PS.facing, type === 'shadowroll' ? SHADOW_COL : DODGE_COL, 0.8, 1);
     const target = srcEntity(hit);
     if (type === 'shadowroll' && target?.object && !grace) {
       // 그림자 구르기: a perfect roll ends behind the attacker
       const sp = target.object.position, sf = Number.isFinite(target.facing) ? target.facing : Math.atan2(pos.x - sp.x, pos.z - sp.z);
       v2.set(sp.x - Math.sin(sf) * ((target.radius || 0.6) + 1.0), pos.y, sp.z - Math.cos(sf) * ((target.radius || 0.6) + 1.0));
-      if (!outOfBounds(v2.x, v2.z)) { api.teleport(v2, true); api.setFacing(Math.atan2(sp.x - pos.x, sp.z - pos.z)); dodgeT = 0; hv.set(0, 0, 0); }
+      if (!outOfBounds(v2.x, v2.z)) { api.teleport(v2, true); api.setFacing(Math.atan2(sp.x - pos.x, sp.z - pos.z)); PS.dodgeT = 0; hv.set(0, 0, 0); }
       if (talentOn('shadowblade.t25b')) { try { game.enemies?.setPlayerStealth?.(true, 2); } catch (_) { /* */ } }
     }
     if (type === 'backflip' && talentOn('ranger.t25b')) R.stamina = Math.min(R.maxStamina, R.stamina + 15);
     onPerfect('dodge', hit, grace);
   }
-  let dodgedFxT = -10;
+  
   function dodgedFx() {
-    if (game.time - dodgedFxT < 0.3) return;
-    dodgedFxT = game.time;
+    if (game.time - PS.dodgedFxT < 0.3) return;
+    PS.dodgedFxT = game.time;
     game.audio?.play?.('dash', { position: pos, volume: 0.5 });
     vfxCall('burst', v1.copy(pos).setY(pos.y + 1), { count: 8, color: C_DODGED, speed: 3, spread: 1, size: 0.08, sizeEnd: 0, life: 0.25, shape: 'spark', drag: 3 });
   }
   function perfectBlink(hit, grace = false) {
-    if (game.realTime - lastPerfectRt < 0.25) return;
+    if (game.realTime - PS.lastPerfectRt < 0.25) return;
     vfxCall('fovKick', 4, 0.35);
     R.mp = Math.min(R.maxMp, R.mp + (kit.dodge.mpRefund || 0));
     onPerfect('dodge', hit, grace);
@@ -645,7 +668,7 @@ export function createPlayer(game) {
     lastHit.refunded = true;
     entity.hp = Math.min(entity.maxHp, entity.hp + lastHit.amount);
     for (let i = 0; i < lastHit.statuses.length; i++) { try { game.combat?.clearStatus?.(entity, lastHit.statuses[i]); } catch (_) { /* */ } }
-    hurt = 0; velocity.set(0, 0, 0);
+    PS.hurt = 0; velocity.set(0, 0, 0);
     try { regen.afterHit?.(); } catch (_) { /* */ }
     graceHit.source = lastHit.attacker; graceHit.sourceEntity = lastHit.attacker;
     if (kind === 'dodge') perfectDodge(graceHit, true);
@@ -684,18 +707,18 @@ export function createPlayer(game) {
   }
   function breakBlock() {
     if (!blocking) return;
-    blocking = false; blockT = 0;
+    blocking = false; PS.blockT = 0;
     game.audio?.play?.(kit.defend.type === 'barrier' ? 'mana_empty' : 'guard_break', { position: pos });
   }
   function guardBreak() {
     breakBlock();
-    guardBreakT = GUARD_BREAK_T; R.exhausted = true; hurt = 1;
+    PS.guardBreakT = GUARD_BREAK_T; R.exhausted = true; PS.hurt = 1;
     vfxCall('burst', v1.copy(pos).setY(pos.y + 1.2), { count: 16, color: C_GUARD, speed: 5, spread: 1, size: 0.1, life: 0.4, shape: 'spark', drag: 3 });
     vfxCall('shake', 0.3);
     ev('guardBreak', { position: pos.clone() });
   }
   function wardBreak() {
-    wardBroken = true; wardRechargeT = 0;
+    wardBroken = true; PS.wardRechargeT = 0;
     breakBlock();
     vfxCall('burst', v1.copy(pos).setY(pos.y + 1), { count: 24, color: C_SPIRIT, speed: 5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, shape: 'leaf', drag: 2.5 });
     vfxCall('shockwave', v1, { color: 0x9dffb0, radius: 2.2, duration: 0.35, opacity: 0.7, thickness: 0.15 });
@@ -706,14 +729,14 @@ export function createPlayer(game) {
   function canStartBlock() {
     const D = kit.defend;
     if (D.type === 'barrier') return R.mp >= (D.minMp ?? 3);
-    if (D.type === 'ward') return !wardBroken && wardHp >= wardCap() * (D.minFrac ?? 0.15);
+    if (D.type === 'ward') return !wardBroken && PS.wardHp >= wardCap() * (D.minFrac ?? 0.15);
     if (D.type === 'guard' || D.type === 'shield') return R.stamina >= (D.minStam ?? 5);
     return false;
   }
   function startBlock(pressRt = game.realTime) {
-    if (blocking || guardBreakT > 0 || dodgeT > 0) return false;
+    if (blocking || PS.guardBreakT > 0 || PS.dodgeT > 0) return false;
     if (!canStartBlock()) return false;
-    blocking = true; blockT = 0;
+    blocking = true; PS.blockT = 0;
     if (kit.defend.perfect > 0) { armPending('defend', kit.defend.perfect); graceRefund(pressRt, 'defend'); }
     endGlide();
     const t = kit.defend.type;
@@ -725,11 +748,11 @@ export function createPlayer(game) {
   /** → 'ok' | 'cooldown' | 'stamina' */
   function startCounter(pressRt = game.realTime) {
     const D = kit.defend;
-    if (counterT > 0 || counterCd > 0 || guardBreakT > 0) return 'cooldown';
+    if (PS.counterT > 0 || PS.counterCd > 0 || PS.guardBreakT > 0) return 'cooldown';
     if (!R.spendStamina(D.cost ?? 6)) { game.audio?.play?.('guard_break', { volume: 0.3, pitch: 1.6 }); return 'stamina'; }
-    counterT = (D.window ?? 0.3) * perfectMul(); swordDrawn = true; api.swordIdleT = 0;
+    PS.counterT = (D.window ?? 0.3) * perfectMul(); swordDrawn = true; api.swordIdleT = 0;
     graceRefund(pressRt, 'defend');
-    ghosts.spawn(pos, facing, SHADOW_COL, 0.3, 0.5);
+    ghosts.spawn(pos, PS.facing, SHADOW_COL, 0.3, 0.5);
     vfxCall('burst', v1.copy(pos).setY(pos.y + 1.1), { count: 10, color: C_SHADOW, speed: 1.5, spread: 1, size: 0.08, sizeEnd: 0, life: 0.3, shape: 'spark', drag: 3 });
     game.audio?.play?.('block', { position: pos, pitch: 1.4 });
     ev('counterStance', { position: pos.clone() });
@@ -739,8 +762,8 @@ export function createPlayer(game) {
   // ---------- dodge (Q): one entry point, behaviour by kit type ----------
   function dodgeAvailable() {
     const DG = kit.dodge;
-    if (DG.charges) return dodgeCharges > 0;
-    return dodgeCd <= 0;
+    if (DG.charges) return PS.dodgeCharges > 0;
+    return PS.dodgeCd <= 0;
   }
   /**
    * One dodge entry point, behaviour by kit type → 'ok' | 'locked' | 'cooldown' | 'stamina' | 'none'.
@@ -750,38 +773,38 @@ export function createPlayer(game) {
   function tryDodge(canAct, pressRt = game.realTime) {
     const DG = kit.dodge;
     if (DG.type === 'none' || !entity.alive || dying) return 'none';
-    if (dodgeT > 0 || !canAct || guardBreakT > 0) return 'locked';
+    if (PS.dodgeT > 0 || !canAct || PS.guardBreakT > 0) return 'locked';
     if (!dodgeAvailable()) return 'cooldown';
     if (R.exhausted && R.stamina < DG.cost) { game.audio?.play?.('guard_break', { volume: 0.3, pitch: 1.6 }); return 'stamina'; }
     R.spendStamina(DG.cost, true);
     if (DG.charges) {
       const maxC = DG.charges + (statGet('extraDash', 0) || 0);
-      if (dodgeCharges === maxC) dodgeRecharge = DG.recharge * (statGet('dodgeCdMul', 1) || 1);
-      dodgeCharges--;
-    } else dodgeCd = DG.cd * (statGet('dodgeCdMul', 1) || 1);   // wind.cap 순풍의 가호 −25%
+      if (PS.dodgeCharges === maxC) PS.dodgeRecharge = DG.recharge * (statGet('dodgeCdMul', 1) || 1);
+      PS.dodgeCharges--;
+    } else PS.dodgeCd = DG.cd * (statGet('dodgeCdMul', 1) || 1);   // wind.cap 순풍의 가호 −25%
     const type = DG.type;
     dodgeType = type;
     // direction: the held movement input, else the kit default (blink/swap forward, backflip backward, rolls away from the camera view)
     const held = wishRaw.lengthSq() > 0.01;
     if (held) dodgeDir.copy(wishRaw).setY(0).normalize();
-    else if (type === 'backflip') dodgeDir.set(-Math.sin(facing), 0, -Math.cos(facing));
-    else if (type === 'blink' || type === 'spiritswap') dodgeDir.set(Math.sin(facing), 0, Math.cos(facing));
-    else dodgeDir.set(Math.sin(yaw), 0, Math.cos(yaw));
-    blocking = false; counterT = 0;
+    else if (type === 'backflip') dodgeDir.set(-Math.sin(PS.facing), 0, -Math.cos(PS.facing));
+    else if (type === 'blink' || type === 'spiritswap') dodgeDir.set(Math.sin(PS.facing), 0, Math.cos(PS.facing));
+    else dodgeDir.set(Math.sin(PS.yaw), 0, Math.cos(PS.yaw));
+    blocking = false; PS.counterT = 0;
     endGlide();
-    dodgeStartT = game.time; ghostT2 = 0; ghostTimer = 0;
-    dodgeIframeT = (DG.iframes || 0) * iframeMul();
-    superArmorT = DG.superArmor || 0;
+    PS.dodgeStartT = game.time; PS.ghostT2 = 0; PS.ghostTimer = 0;
+    PS.dodgeIframeT = (DG.iframes || 0) * iframeMul();
+    PS.superArmorT = DG.superArmor || 0;
     armPending('dodge', DG.perfectWin);
     const dist = DG.dist * (statGet('dashDistMul', 1) || 1);
     if (type === 'blink' || type === 'spiritswap') startBlink(dist, type);
     else {
-      dodgeT = dodgeDur = DG.time;
+      PS.dodgeT = PS.dodgeDur = DG.time;
       // the backflip faces away from its travel direction (a real backflip toward the input); the rest face it
-      if (type === 'backflip') { if (held) facing = prevFacing = Math.atan2(-dodgeDir.x, -dodgeDir.z); }
-      else facing = Math.atan2(dodgeDir.x, dodgeDir.z);
-      if (type === 'backflip') { vy = DG.hop || 5; grounded = false; airTime = 0.05; }
-      else if (grounded) vy = 0;
+      if (type === 'backflip') { if (held) PS.facing = PS.prevFacing = Math.atan2(-dodgeDir.x, -dodgeDir.z); }
+      else PS.facing = Math.atan2(dodgeDir.x, dodgeDir.z);
+      if (type === 'backflip') { PS.vy = DG.hop || 5; grounded = false; PS.airTime = 0.05; }
+      else if (grounded) PS.vy = 0;
       v1.copy(pos).setY(pos.y + 0.3);
       vfxCall('burst', v1, { count: 8, color: C_DUST, speed: 2.5, spread: 0.5, dir: v2.copy(dodgeDir).negate().setY(0.3), size: 0.35, sizeEnd: 0.9, life: 0.45, shape: 'smoke', additive: false, drag: 3 });
       if (type === 'shadowroll') vfxCall('burst', v1.setY(pos.y + 0.8), { count: 10, color: [0x5b2a8a, 0x1a0b2e], speed: 2, spread: 0.8, dir: v2.copy(dodgeDir).negate(), size: 0.4, sizeEnd: 0.9, life: 0.5, shape: 'smoke', additive: false, drag: 3 });
@@ -819,19 +842,19 @@ export function createPlayer(game) {
     const th = groundAt(blinkTo.x, blinkTo.z, pos.y + 1);
     blinkTo.y = grounded ? th : Math.max(th, pos.y + 0.3);
     const DG = kit.dodge;
-    dodgeT = dodgeDur = DG.time; blinking = true;
+    PS.dodgeT = PS.dodgeDur = DG.time; blinking = true;
     gliding && endGlide();
-    vy = 0;
+    PS.vy = 0;
     const spirit = type === 'spiritswap';
     const c = spirit ? 0x9dffb0 : elHex();
     v1.copy(pos).setY(pos.y + 0.9);
-    ghosts.spawn(pos, facing, spirit ? SPIRIT_COL : elemColor, spirit ? 0.9 : 0.5, 1);
+    ghosts.spawn(pos, PS.facing, spirit ? SPIRIT_COL : elemColor, spirit ? 0.9 : 0.5, 1);
     vfxCall('burst', v1, { count: 18, color: spirit ? C_SPIRIT : pair(element), speed: 4.5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.42, shape: spirit ? 'leaf' : 'spark', drag: 3 });
     vfxCall('burst', v1, { count: 4, color: c, speed: 1.2, spread: 1, size: 0.4, sizeEnd: 0.9, life: 0.35, shape: 'soft', drag: 2 });
     vfxCall('flash', v1, { color: c, intensity: 1.2, distance: 6, duration: 0.15 });
     vfxCall('fovKick', 5, 0.25);
-    if (spirit) { decoyT = DG.decoyLife || 4; decoyPos.copy(blinkFrom); decoyFxT = 0; try { game.enemies?.setTauntTarget?.({ object: { position: decoyPos }, team: 'player', isDecoy: true, alive: true }, decoyT); } catch (_) { /* */ } }
-    if (type === 'blink' && talentOn('mage.t20')) { mageRuneT = 1.5; mageRunePos.copy(blinkFrom); mageRuneEl = element; }
+    if (spirit) { PS.decoyT = DG.decoyLife || 4; decoyPos.copy(blinkFrom); PS.decoyFxT = 0; try { game.enemies?.setTauntTarget?.({ object: { position: decoyPos }, team: 'player', isDecoy: true, alive: true }, PS.decoyT); } catch (_) { /* */ } }
+    if (type === 'blink' && talentOn('mage.t20')) { PS.mageRuneT = 1.5; mageRunePos.copy(blinkFrom); mageRuneEl = element; }
     ev('blink', { position: pos.clone(), kit: type });
   }
   function endBlink() {
@@ -845,8 +868,8 @@ export function createPlayer(game) {
     vfxCall('burst', v1, { count: 16, color: kit.dodge.type === 'spiritswap' ? C_SPIRIT : pair(element), speed: 3.5, spread: 1, size: 0.11, sizeEnd: 0, life: 0.45, shape: 'spark', drag: 3 });
     vfxCall('shockwave', v1.set(pos.x, pos.y + 0.9, pos.z), { color: c, radius: 1.6, duration: 0.3, vertical: true, opacity: 0.6, thickness: 0.15 });
     hv.copy(dodgeDir).multiplyScalar(WALK * 0.8);
-    squash = Math.max(squash, 0.35);
-    dodgeEndT = game.time;
+    PS.squash = Math.max(PS.squash, 0.35);
+    PS.dodgeEndT = game.time;
   }
   function popDecoy() {
     vfxCall('burst', v1.copy(decoyPos).setY(decoyPos.y + 1), { count: 20, color: C_SPIRIT, speed: 4, spread: 1, size: 0.12, sizeEnd: 0, life: 0.55, shape: 'leaf', drag: 2.5 });
@@ -859,18 +882,18 @@ export function createPlayer(game) {
     regen.afterHit();
     void result; void hit;
     if (dying) return;
-    dying = true; deadTime = 0;
+    dying = true; PS.deadTime = 0;
     gliding = false; charging = false; castKind = null; stopFocus();
     ev('playerDeath', {});
     vfxCall('burst', v1.copy(pos).setY(pos.y + 1), { count: 20, color: pair(element), speed: 3, spread: 1, size: 0.12, life: 0.9, shape: 'spark', gravity: -1 });
   }
 
   function resetKitState() {
-    inputBuf.action = null; pending.on = false; lastHit.valid = false; protectUntil = -10; reviveT = 0;
-    blocking = false; blockT = 0; guardBreakT = 0; dodgeT = 0; dodgeIframeT = 0; blinking = false; superArmorT = 0;
-    counterReady = 0; counterT = 0; counterCd = 0; decoyT = 0; dodgeCd = 0;
-    dodgeCharges = (kit.dodge.charges || 1) + (kit.dodge.charges ? (statGet('extraDash', 0) || 0) : 0);
-    wardHp = wardCap(); wardBroken = false;
+    inputBuf.action = null; pending.on = false; lastHit.valid = false; PS.protectUntil = -10; PS.reviveT = 0;
+    blocking = false; PS.blockT = 0; PS.guardBreakT = 0; PS.dodgeT = 0; PS.dodgeIframeT = 0; blinking = false; PS.superArmorT = 0;
+    PS.counterReady = 0; PS.counterT = 0; PS.counterCd = 0; PS.decoyT = 0; PS.dodgeCd = 0;
+    PS.dodgeCharges = (kit.dodge.charges || 1) + (kit.dodge.charges ? (statGet('extraDash', 0) || 0) : 0);
+    PS.wardHp = wardCap(); wardBroken = false;
     stopFocus();
   }
   /** Story auto-revive (§5.12): back on your feet where you fell, with 50 % HP, after 2 s (no respawn screen). */
@@ -880,7 +903,7 @@ export function createPlayer(game) {
     for (const k of Object.keys(st)) { try { game.combat?.clearStatus?.(entity, k); } catch (e) { /* */ } }
     for (const k of Object.keys(st)) delete st[k];
     entity.alive = true; entity.hp = Math.max(1, Math.round(entity.maxHp * AUTO_REVIVE_HP));
-    dying = false; deadW = 0; deadTime = 0; hurt = 0; invulT = 2; entity.invulnerable = true;
+    dying = false; PS.deadW = 0; PS.deadTime = 0; PS.hurt = 0; PS.invulT = 2; entity.invulnerable = true;
     resetKitState(); regen.reset();
     root.visible = true; cape.mesh.visible = true;
     if (!game.entities.includes(entity)) game.combat?.register?.(entity);
@@ -895,21 +918,21 @@ export function createPlayer(game) {
     for (const k of Object.keys(entity.statuses)) delete entity.statuses[k];
     R.refresh(false);
     entity.alive = true; entity.hp = entity.maxHp; R.fill();
-    dying = false; deadW = 0; deadTime = 0; hurt = 0; invulT = 1.5; entity.invulnerable = true;
+    dying = false; PS.deadW = 0; PS.deadTime = 0; PS.hurt = 0; PS.invulT = 1.5; entity.invulnerable = true;
     resetKitState(); regen.reset();
     root.visible = true; cape.mesh.visible = true;
     if (!game.entities.includes(entity)) game.combat?.register?.(entity);
     placeAtSpawn(true);
     if (checkpoint) {
       // face the objective (north) from the checkpoint
-      yaw = 0; facing = prevFacing = Math.PI; root.rotation.set(0, facing, 0);
+      PS.yaw = 0; PS.facing = PS.prevFacing = Math.PI; root.rotation.set(0, PS.facing, 0);
       const A = checkpoint.bossId && checkpoint.bossId !== 'golem' ? W()?.bossArenas?.[checkpoint.bossId] : null;
       if (A?.position) {
         // boss checkpoint: face the arena and get a short grace window to re-engage
         const dx = A.position.x - pos.x, dz = A.position.z - pos.z;
-        facing = prevFacing = Math.atan2(dx, dz); yaw = Math.atan2(-dx, -dz);
-        root.rotation.set(0, facing, 0);
-        invulT = Math.max(invulT, 3);
+        PS.facing = PS.prevFacing = Math.atan2(dx, dz); PS.yaw = Math.atan2(-dx, -dz);
+        root.rotation.set(0, PS.facing, 0);
+        PS.invulT = Math.max(PS.invulT, 3);
       }
     }
     ev('playerRespawn', {});
@@ -941,16 +964,17 @@ export function createPlayer(game) {
     c = c && CLASS_DEFS[c] ? c : null;
     const prev = cls;
     cls = c;
+    clsMelee = !!c && familyOf(c) === 'melee'; clsStyle = c ? styleOf(c) : 'staff';
     kit = kitOf(c);
     setClassOutfit(rig, cg, cape, c);
     try { rig.skin?.refresh?.(); } catch (err) { console.warn('[player] rig refresh', err); }
     entity.name = c ? CLASS_DEFS[c].nameKo : '바람결의 젊은이';
-    swordDrawn = false; drawnW = 0;
+    swordDrawn = false; PS.drawnW = 0;
     weaponVisibility();
     if (kit.defend.type === 'ward') barrier.setColor(WARD_COL, WARD_COL2); else barrier.setColor(elemColor, gemLight);
     R.refresh(prev !== null || R._init);
     resetKitState();
-    fidgetNext = 8 + Math.random() * 6; fidgetKind = null;
+    PS.fidgetNext = 8 + Math.random() * 6; fidgetKind = null;
     springs.reset();
   }
   /** Melee weapons: in hand while drawn, sheathed otherwise (longsword / hammer / daggers). */
@@ -986,21 +1010,21 @@ export function createPlayer(game) {
     get exhausted() { return R.exhausted; },
     get gliding() { return gliding; }, get sprinting() { return sprinting; },
     get grounded() { return grounded; },
-    get blinkCooldown() { return kit.dodge.charges ? 0 : dodgeCd; },
+    get blinkCooldown() { return kit.dodge.charges ? 0 : PS.dodgeCd; },
     get blinkCooldownMax() { return kit.dodge.cd || 1; },
     get blinkCost() { return kit.dodge.cost || 0; },
     get element() { return element; },
     get cls() { return cls; },
-    get blocking() { return blocking || counterT > 0; },
-    get dashing() { return dodgeT > 0; },
-    get guardBroken() { return guardBreakT > 0; },
-    get counterReady() { return counterReady; },
+    get blocking() { return blocking || PS.counterT > 0; },
+    get dashing() { return PS.dodgeT > 0; },
+    get guardBroken() { return PS.guardBreakT > 0; },
+    get counterReady() { return PS.counterReady; },
     get counterTarget() { return counterTarget; },
-    consumeCounter() { const t = counterTarget; counterReady = 0; counterTarget = null; return t; },
-    get facing() { return facing; },
+    consumeCounter() { const t = counterTarget; PS.counterReady = 0; counterTarget = null; return t; },
+    get facing() { return PS.facing; },
     get swordDrawn() { return swordDrawn; },
     get focusing() { return focusing; },
-    get superArmor() { return superArmorT > 0 || action.superArmor; },
+    get superArmor() { return PS.superArmorT > 0 || action.superArmor; },
     /** HP regen state (CONTRACT §10.3): {active, delay, delayLeft, inCombat, rate}. Reused object — read only. */
     get regen() { return regen.state; },
     get lastHurtT() { return regen.lastHurtT; }, set lastHurtT(v) { if (Number.isFinite(v)) regen.lastHurtT = v; },
@@ -1061,12 +1085,12 @@ export function createPlayer(game) {
       try { W()?.resolveCollision?.(pos, entity.radius); } catch (e) { /* */ }
       clampBounds(pos);
       const gh = groundAt(pos.x, pos.z, p.y + 0.5);
-      if (snapGround || pos.y < gh) { pos.y = gh; vy = 0; grounded = true; }
+      if (snapGround || pos.y < gh) { pos.y = gh; PS.vy = 0; grounded = true; }
       cape.shift(pos.x - ox, pos.y - oy, pos.z - oz);
       root.updateMatrixWorld(true);
     },
-    setFacing(a) { facing = prevFacing = a; root.rotation.y = a; },
-    spawnGhost(color, life = 0.35, opacity = 0.8) { ghosts.spawn(pos, facing + action.bodyYaw, color, life, opacity); },
+    setFacing(a) { PS.facing = PS.prevFacing = a; root.rotation.y = a; },
+    spawnGhost(color, life = 0.35, opacity = 0.8) { ghosts.spawn(pos, PS.facing + action.bodyYaw, color, life, opacity); },
     /** Compensated-time factor (CONTRACT §3.3, PLAN §2.5): game.timeScale.comp() — 1/scale while 'focus' or a compensate:true entry (witch, teach) is active. */
     timeComp() {
       const T = ts();
@@ -1075,22 +1099,22 @@ export function createPlayer(game) {
     },
     getDefenseHud() {
       const hud = defHud, D = kit.defend, DG = kit.dodge;
-      hud.block.active = blocking || counterT > 0;
-      hud.block.perfect = blocking && D.perfect > 0 && blockT <= D.perfect + (statGet('parryWindowAdd', 0) || 0);
+      hud.block.active = blocking || PS.counterT > 0;
+      hud.block.perfect = blocking && D.perfect > 0 && PS.blockT <= D.perfect + (statGet('parryWindowAdd', 0) || 0);
       hud.block.type = legacyBlockType(D.type);
       hud.dodgeType = DG.type; hud.defendType = D.type;
       hud.dodgeName = KIT_NAMES[DG.type] || ''; hud.defendName = KIT_NAMES[D.type] || '';
       if (DG.charges) {
         const maxC = DG.charges + (statGet('extraDash', 0) || 0);
-        hud.dash.charges = dodgeCharges; hud.dash.maxCharges = maxC;
-        hud.dash.cooldownFrac = dodgeCharges < maxC ? clamp(dodgeRecharge / (DG.recharge || 1), 0, 1) : 0;
+        hud.dash.charges = PS.dodgeCharges; hud.dash.maxCharges = maxC;
+        hud.dash.cooldownFrac = PS.dodgeCharges < maxC ? clamp(PS.dodgeRecharge / (DG.recharge || 1), 0, 1) : 0;
       } else {
-        hud.dash.charges = dodgeCd <= 0 ? 1 : 0; hud.dash.maxCharges = 1; hud.dash.cooldownFrac = clamp(dodgeCd / (DG.cd || 1), 0, 1);
+        hud.dash.charges = PS.dodgeCd <= 0 ? 1 : 0; hud.dash.maxCharges = 1; hud.dash.cooldownFrac = clamp(PS.dodgeCd / (DG.cd || 1), 0, 1);
       }
-      hud.ward.frac = D.type === 'ward' ? clamp(wardHp / Math.max(1, wardCap()), 0, 1) : 1;
+      hud.ward.frac = D.type === 'ward' ? clamp(PS.wardHp / Math.max(1, wardCap()), 0, 1) : 1;
       hud.ward.broken = wardBroken;
       hud.focus = focusing;
-      hud.counter = counterT > 0 ? 1 : clamp(1 - counterCd / (D.cd || 1), 0, 1);
+      hud.counter = PS.counterT > 0 ? 1 : clamp(1 - PS.counterCd / (D.cd || 1), 0, 1);
       return hud;
     },
     /** New game: put the hero in their home in the village. */
@@ -1099,23 +1123,23 @@ export function createPlayer(game) {
       for (const k of Object.keys(entity.statuses || {})) delete entity.statuses[k];
       R.refresh(false);
       entity.alive = true; entity.hp = entity.maxHp; R.fill();
-      dying = false; deadW = 0; hurt = 0;
+      dying = false; PS.deadW = 0; PS.hurt = 0;
       resetKitState(); regen.reset();
       root.visible = true; cape.mesh.visible = true;
       const home = W()?.village?.playerHome || W()?.playerSpawn;
       if (home) { pos.set(home.x, 0, home.z); try { W()?.resolveCollision?.(pos, entity.radius + 0.3); } catch (e) { /* */ } }
       else pos.set(0, 0, 120);
       pos.y = groundAt(pos.x, pos.z);
-      vy = 0; hv.set(0, 0, 0); velocity.set(0, 0, 0); grounded = wasGrounded = true; peakY = pos.y;
+      PS.vy = 0; hv.set(0, 0, 0); velocity.set(0, 0, 0); grounded = wasGrounded = true; PS.peakY = pos.y;
       const yawH = W()?.village?.playerHomeYaw;
-      facing = prevFacing = Number.isFinite(yawH) ? yawH : Math.PI;
-      yaw = facing - Math.PI; pitch = -0.12;
-      root.rotation.set(0, facing, 0); root.updateMatrixWorld(true);
+      PS.facing = PS.prevFacing = Number.isFinite(yawH) ? yawH : Math.PI;
+      PS.yaw = PS.facing - Math.PI; PS.pitch = -0.12;
+      root.rotation.set(0, PS.facing, 0); root.updateMatrixWorld(true);
       cape.reset(); springs.reset(); camSnap = true;
     },
-    get yaw() { return yaw; }, get pitch() { return pitch; },
+    get yaw() { return PS.yaw; }, get pitch() { return PS.pitch; },
     /** Test hook: set camera look angles directly. */
-    setLook(y, p = pitch) { yaw = y; pitch = clamp(p, PITCH_MIN, PITCH_MAX); },
+    setLook(y, p = PS.pitch) { PS.yaw = y; PS.pitch = clamp(p, PITCH_MIN, PITCH_MAX); },
 
     init() {
       placeAtSpawn();
@@ -1153,12 +1177,12 @@ export function createPlayer(game) {
         lastHit.attacker = p.source && typeof p.source === 'object' ? p.source : null; lastHit.attack = p.attack || null;
         lastHit.statuses.length = 0;
         const st = p.appliedStatuses; if (st) for (let i = 0; i < st.length; i++) lastHit.statuses.push(st[i]);
-        if (amt >= PROTECT_MIN) protectUntil = game.time + PROTECT_SEC;
+        if (amt >= PROTECT_MIN) PS.protectUntil = game.time + PROTECT_SEC;
       });
       // recent tells (witch-time condition: the dodged attack's tell targeted the player)
       events.on('tellStart', (p) => {
         if (!p?.enemy) return;
-        const r = tellRing[tellHead]; tellHead = (tellHead + 1) % TELL_RING;
+        const r = tellRing[PS.tellHead]; PS.tellHead = (PS.tellHead + 1) % TELL_RING;
         r.enemy = p.enemy; r.targetsPlayer = p.targetsPlayer !== false; r.rt = game.realTime;
       });
       events.on('stateChange', (p) => { if (p?.state === 'playing' && (p.prev === 'title' || p.prev === 'cutscene')) camSnap = true; });
@@ -1190,27 +1214,27 @@ export function createPlayer(game) {
     /** Invulnerability for `seconds` (blink / dash / leap skills), merged with the respawn i-frames. */
     grantIframes(seconds) {
       const s = +seconds || 0; if (s <= 0) return;
-      invulT = Math.max(invulT, s); entity.invulnerable = true;
+      PS.invulT = Math.max(PS.invulT, s); entity.invulnerable = true;
     },
     /** Absorb shield (crystal pickups, light.aegis, crystallize): combat subtracts entity.shieldHp before HP. */
     addShield(amount, seconds = 6, opts = {}) {
       const a = +amount || 0; if (a <= 0) return false;
-      entity.shieldHp = Math.max(entity.shieldHp || 0, a); shieldT = Math.max(shieldT, +seconds || 6);
+      entity.shieldHp = Math.max(entity.shieldHp || 0, a); PS.shieldT = Math.max(PS.shieldT, +seconds || 6);
       vfxCall('burst', v1.copy(pos).setY(pos.y + 1.1), { count: 12, shape: 'shard', color: opts?.element ? pair(opts.element) : C_HOLY, speed: 3, spread: 1, size: 0.12, life: 0.4, drag: 2 });
-      ev('playerShield', { amount: a, seconds: shieldT });
+      ev('playerShield', { amount: a, seconds: PS.shieldT });
       return true;
     },
     get shield() { return entity.shieldHp || 0; },
     /** wind.step: give back n dash pips (charge-based dodges only). */
     refundDash(n = 1) {
-      const DG = kit.dodge; if (!DG.charges) { dodgeCd = 0; return; }
+      const DG = kit.dodge; if (!DG.charges) { PS.dodgeCd = 0; return; }
       const maxC = DG.charges + (statGet('extraDash', 0) || 0);
-      dodgeCharges = Math.min(maxC, dodgeCharges + (n | 0 || 1));
+      PS.dodgeCharges = Math.min(maxC, PS.dodgeCharges + (n | 0 || 1));
     },
     /** Start gliding right away when airborne (wind.m3b). The glide continues while Space is held, as usual. */
     startGlide() {
       if (grounded || gliding || statGet('noGlide', false)) return false;
-      airTime = Math.max(airTime, 0.3); vy = Math.min(vy, 0.4);
+      PS.airTime = Math.max(PS.airTime, 0.3); PS.vy = Math.min(PS.vy, 0.4);
       gliding = true; ev('glideStart', { position: pos.clone() });
       return true;
     },
@@ -1222,7 +1246,7 @@ export function createPlayer(game) {
 
     getAim() {
       const origin = api.getWeaponTip('main', new THREE.Vector3());
-      const start = v1.copy(camPos).addScaledVector(camFwd, Math.max(0.5, camDist * 0.95));
+      const start = v1.copy(camPos).addScaledVector(camFwd, Math.max(0.5, PS.camDist * 0.95));
       let point = null, best = Infinity, target = null;
       try {
         const hit = W()?.raycast?.(start, camFwd, 120);
@@ -1245,7 +1269,7 @@ export function createPlayer(game) {
           if (d < 1 || d > 120) continue;
           const cs = v3.dot(camFwd) / d;
           if (cs <= bestCos) continue;
-          if (best < Infinity && d > best + camDist + 3) continue; // occluded by terrain
+          if (best < Infinity && d > best + PS.camDist + 3) continue; // occluded by terrain
           bestCos = cs; target = e;
           point = (point || new THREE.Vector3()).copy(c);
         }
@@ -1262,9 +1286,9 @@ export function createPlayer(game) {
     playCast(kind, el) {
       kind = castKindOf(kind, style(), (k) => !!CAST_DUR[k]);
       if (el) setStaffElement(el);
-      castKind = kind; castT = 0; castRecent = CAST_DUR[kind] + 0.45;
-      gemFlare = 1; fidgetKind = null;
-      if (kind === 'bowRelease') { stringVel = -6; }
+      castKind = kind; PS.castT = 0; PS.castRecent = CAST_DUR[kind] + 0.45;
+      PS.gemFlare = 1; fidgetKind = null;
+      if (kind === 'bowRelease') { PS.stringVel = -6; }
       api.getWeaponTip('main', v4);
       vfxCall('burst', v4, { count: kind === 'basic' || kind === 'bowRelease' ? 6 : 12, color: pair(element), speed: 2.5, spread: 1, size: 0.1, sizeEnd: 0, life: 0.35, shape: 'spark', drag: 3 });
     },
@@ -1273,20 +1297,20 @@ export function createPlayer(game) {
       if (el) setStaffElement(el);
       const was = charging;
       charging = !!active && entity.alive && !dying;
-      chargeFrac = clamp(frac || 0, 0, 1);
+      PS.chargeFrac = clamp(frac || 0, 0, 1);
       chargeEl = el || element;
-      if (charging) { castRecent = Math.max(castRecent, 0.5); fidgetKind = null; }
-      if (was && !charging) chargeFrac = 0;
+      if (charging) { PS.castRecent = Math.max(PS.castRecent, 0.5); fidgetKind = null; }
+      if (was && !charging) PS.chargeFrac = 0;
     },
 
     setStaffElement,
     respawn,
     /** Test/debug: per-frame internals (read only). */
     debugState() {
-      return { cls, kit: kit.dodge.type + '/' + kit.defend.type, dodgeT, dodgeIframeT, blocking, counterT, focusing, decoyT, wardHp, superArmorT, platform: !!platformHandle, ikDrop: footIK.drop, springs: springs.stats(),
+      return { cls, kit: kit.dodge.type + '/' + kit.defend.type, dodgeT: PS.dodgeT, dodgeIframeT: PS.dodgeIframeT, blocking, counterT: PS.counterT, focusing, decoyT: PS.decoyT, wardHp: PS.wardHp, superArmorT: PS.superArmorT, platform: !!platformHandle, ikDrop: footIK.drop, springs: springs.stats(),
         pending: pending.on ? { kind: pending.kind, noInfo: pending.noInfo, left: pending.until - (game.enemyTime ?? game.time), targetsPlayer: pending.targetsPlayer } : null,
-        buffer: inputBuf.action, protect: Math.max(0, protectUntil - game.time), witchReadyIn: Math.max(0, witchReadyAt - game.realTime), dodgeDir: { x: dodgeDir.x, z: dodgeDir.z },
-        animFrozen: animFrozen(), revive: reviveT };
+        buffer: inputBuf.action, protect: Math.max(0, PS.protectUntil - game.time), witchReadyIn: Math.max(0, PS.witchReadyAt - game.realTime), dodgeDir: { x: dodgeDir.x, z: dodgeDir.z },
+        animFrozen: animFrozen(), revive: PS.reviveT };
     },
     /** v4 (§7.4.8): the queued dodge / defend press {action, t} or null (reused view). */
     get inputBuffer() { if (!inputBuf.action) return null; inputBuf.view.action = inputBuf.action; inputBuf.view.t = inputBuf.t; return inputBuf.view; },
@@ -1299,17 +1323,19 @@ export function createPlayer(game) {
     /** v4 sub-steps (PLAN §2.5, core-b): gameplay runs every sub-step, the visual block only on game.frame.lastStep. */
     substeps: true,
     /** v4 per-entity hitstop: the animation freezes while game.realTime < hitstopUntil (also honours entity.hitstopUntil and game.playerHitstopUntil). */
-    get hitstopUntil() { return Math.max(hitstopUntil, entity.hitstopUntil || 0, game.playerHitstopUntil || 0); },
-    set hitstopUntil(v) { hitstopUntil = Number.isFinite(+v) ? +v : 0; },
+    get hitstopUntil() { return Math.max(PS.hitstopUntil, entity.hitstopUntil || 0, game.playerHitstopUntil || 0); },
+    set hitstopUntil(v) { PS.hitstopUntil = Number.isFinite(+v) ? +v : 0; },
     /** v4 combat camera state (read only): {hint, dist, fov, combat, bossTell, shoulder}. */
     camera: camInfo,
+    /** null (default: combat framing eases in near aggroed enemies) | 'explore' (pinned out-of-combat framing, for captures). */
+    framing: null,
 
     update(dt, realDt) {
       const gameDt = dt;
       dt *= api.timeComp();
       const t = game.time;
       const combat = game.combat;
-      let canAct = entity.alive && !dying && guardBreakT <= 0;
+      let canAct = entity.alive && !dying && PS.guardBreakT <= 0;
       try { if (canAct && combat?.canAct) canAct = combat.canAct(entity) !== false; } catch (e) { /* */ }
       let sm = 1;
       try { sm = combat?.speedMul ? (combat.speedMul(entity) ?? 1) : 1; } catch (e) { /* */ }
@@ -1320,63 +1346,63 @@ export function createPlayer(game) {
       if (!dying) {
         const sv = game.settings?.values;
         const sens = SENS * (Number.isFinite(sv?.mouseSens) ? sv.mouseSens : 1);
-        yaw -= input.mouseDX * sens;
-        pitch = clamp(pitch - input.mouseDY * sens * (sv?.invertY ? -1 : 1), PITCH_MIN, PITCH_MAX);
+        PS.yaw -= input.mouseDX * sens;
+        PS.pitch = clamp(PS.pitch - input.mouseDY * sens * (sv?.invertY ? -1 : 1), PITCH_MIN, PITCH_MAX);
       }
-      camFwd.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-      camRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
+      camFwd.set(-Math.sin(PS.yaw) * Math.cos(PS.pitch), Math.sin(PS.pitch), -Math.cos(PS.yaw) * Math.cos(PS.pitch));
+      camRight.set(Math.cos(PS.yaw), 0, -Math.sin(PS.yaw));
 
       // ---------- timers ----------
-      if (dodgeCd > 0) dodgeCd = Math.max(0, dodgeCd - dt);
-      if (invulT > 0) { invulT -= dt; if (invulT <= 0) entity.invulnerable = false; }
-      if (shieldT > 0) { shieldT -= dt; if (shieldT <= 0 || !(entity.shieldHp > 0)) { shieldT = 0; entity.shieldHp = 0; } }
+      if (PS.dodgeCd > 0) PS.dodgeCd = Math.max(0, PS.dodgeCd - dt);
+      if (PS.invulT > 0) { PS.invulT -= dt; if (PS.invulT <= 0) entity.invulnerable = false; }
+      if (PS.shieldT > 0) { PS.shieldT -= dt; if (PS.shieldT <= 0 || !(entity.shieldHp > 0)) { PS.shieldT = 0; entity.shieldHp = 0; } }
       // i-frames / super armour / parry windows run on game time (uncompensated): under a compensated slow motion (witch,
       // teaching) the player moves at full speed while the protection keeps pace with the slowed enemies
-      if (dodgeIframeT > 0) dodgeIframeT -= gameDt;
-      if (superArmorT > 0) superArmorT -= gameDt;
-      castRecent = Math.max(0, castRecent - dt);
-      gemFlare = Math.max(0, gemFlare - dt * 2.2);
-      hurt = Math.max(0, hurt - dt * 3.2);
-      squash = Math.max(0, squash - dt * 4);
-      wLand = Math.max(0, wLand - dt * 2.2);
-      jumpBuffer = Math.max(0, jumpBuffer - dt);
-      if (castKind) { castT += dt; if (castT >= CAST_DUR[castKind]) castKind = null; }
-      if (guardBreakT > 0) guardBreakT -= dt;
-      if (counterReady > 0) { counterReady -= realDt; if (counterReady <= 0) counterTarget = null; }
-      if (counterT > 0) { counterT -= gameDt; if (counterT <= 0) counterCd = D.cd ?? 1; }
-      else if (counterCd > 0) counterCd -= dt;
-      perfectFx = Math.max(0, perfectFx - realDt * 2);
+      if (PS.dodgeIframeT > 0) PS.dodgeIframeT -= gameDt;
+      if (PS.superArmorT > 0) PS.superArmorT -= gameDt;
+      PS.castRecent = Math.max(0, PS.castRecent - dt);
+      PS.gemFlare = Math.max(0, PS.gemFlare - dt * 2.2);
+      PS.hurt = Math.max(0, PS.hurt - dt * 3.2);
+      PS.squash = Math.max(0, PS.squash - dt * 4);
+      PS.wLand = Math.max(0, PS.wLand - dt * 2.2);
+      PS.jumpBuffer = Math.max(0, PS.jumpBuffer - dt);
+      if (castKind) { PS.castT += dt; if (PS.castT >= CAST_DUR[castKind]) castKind = null; }
+      if (PS.guardBreakT > 0) PS.guardBreakT -= dt;
+      if (PS.counterReady > 0) { PS.counterReady -= realDt; if (PS.counterReady <= 0) counterTarget = null; }
+      if (PS.counterT > 0) { PS.counterT -= gameDt; if (PS.counterT <= 0) PS.counterCd = D.cd ?? 1; }
+      else if (PS.counterCd > 0) PS.counterCd -= dt;
+      PS.perfectFx = Math.max(0, PS.perfectFx - realDt * 2);
       if (DG.charges) {
         const maxC = DG.charges + (statGet('extraDash', 0) || 0);
-        if (dodgeCharges > maxC) dodgeCharges = maxC;
-        if (dodgeCharges < maxC) { dodgeRecharge -= dt; if (dodgeRecharge <= 0) { dodgeCharges++; dodgeRecharge = dodgeCharges < maxC ? DG.recharge : 0; } }
+        if (PS.dodgeCharges > maxC) PS.dodgeCharges = maxC;
+        if (PS.dodgeCharges < maxC) { PS.dodgeRecharge -= dt; if (PS.dodgeRecharge <= 0) { PS.dodgeCharges++; PS.dodgeRecharge = PS.dodgeCharges < maxC ? DG.recharge : 0; } }
       }
       // ward capacity recharges over `recharge` seconds once broken (and slowly tops up while lowered)
       if (D.type === 'ward') {
         const cap = wardCap();
-        if (wardBroken) { wardRechargeT += gameDt; wardHp = cap * clamp(wardRechargeT / (D.recharge || 8), 0, 1); if (wardRechargeT >= (D.recharge || 8)) { wardBroken = false; wardHp = cap; } }
-        else if (!blocking) wardHp = Math.min(cap, wardHp + cap / (D.recharge || 8) * gameDt);
+        if (wardBroken) { PS.wardRechargeT += gameDt; PS.wardHp = cap * clamp(PS.wardRechargeT / (D.recharge || 8), 0, 1); if (PS.wardRechargeT >= (D.recharge || 8)) { wardBroken = false; PS.wardHp = cap; } }
+        else if (!blocking) PS.wardHp = Math.min(cap, PS.wardHp + cap / (D.recharge || 8) * gameDt);
       }
-      if (decoyT > 0) {
-        decoyT -= gameDt;
-        decoyFxT -= gameDt;
-        if (decoyFxT <= 0) {
-          decoyFxT = 0.12;
+      if (PS.decoyT > 0) {
+        PS.decoyT -= gameDt;
+        PS.decoyFxT -= gameDt;
+        if (PS.decoyFxT <= 0) {
+          PS.decoyFxT = 0.12;
           v1.set(decoyPos.x + rand(-0.25, 0.25), decoyPos.y + 0.8 + Math.sin(t * 3) * 0.15, decoyPos.z + rand(-0.25, 0.25));
           vfxCall('burst', v1, DECOY_WISP);
         }
-        if (decoyT <= 0) { try { game.enemies?.clearTauntTarget?.(); } catch (_) { /* */ } vfxCall('burst', v1.copy(decoyPos).setY(decoyPos.y + 0.9), { count: 10, color: C_SPIRIT, speed: 1.5, spread: 1, size: 0.08, sizeEnd: 0, life: 0.5, shape: 'spark', drag: 2 }); }
+        if (PS.decoyT <= 0) { try { game.enemies?.clearTauntTarget?.(); } catch (_) { /* */ } vfxCall('burst', v1.copy(decoyPos).setY(decoyPos.y + 0.9), { count: 10, color: C_SPIRIT, speed: 1.5, spread: 1, size: 0.08, sizeEnd: 0, life: 0.5, shape: 'spark', drag: 2 }); }
       }
-      if (mageRuneT > 0) {
-        mageRuneT -= gameDt;
-        if (mageRuneT <= 0) mageRuneBurst();
+      if (PS.mageRuneT > 0) {
+        PS.mageRuneT -= gameDt;
+        if (PS.mageRuneT <= 0) mageRuneBurst();
       }
       if (!melee && action.active) action.active = false;
 
       // ---------- move intent ----------
       const ix = (input.down('KeyD') ? 1 : 0) - (input.down('KeyA') ? 1 : 0);
       const iz = (input.down('KeyW') ? 1 : 0) - (input.down('KeyS') ? 1 : 0);
-      v1.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+      v1.set(-Math.sin(PS.yaw), 0, -Math.cos(PS.yaw));
       wish.set(0, 0, 0).addScaledVector(camRight, ix).addScaledVector(v1, iz);
       if (wish.lengthSq() > 1) wish.normalize();
       wishRaw.copy(wish);                       // the held direction, before action / stun scaling (dodges follow it)
@@ -1396,7 +1422,7 @@ export function createPlayer(game) {
       const dt0 = D.type;
       if (dt0 === 'focus') {
         // 집중: hold defend while airborne / gliding / just after a dodge → time ×0.35 (refreshed every frame)
-        const inWin = !grounded || gliding || t - dodgeEndT <= (D.afterDodge ?? 0.6) || dodgeT > 0;
+        const inWin = !grounded || gliding || t - PS.dodgeEndT <= (D.afterDodge ?? 0.6) || PS.dodgeT > 0;
         const want = blockHeld && R.stamina > (focusing ? 0 : (D.minStam ?? 4)) && !R.exhausted && inWin;
         if (want) {
           if (!focusing) startFocus();
@@ -1409,7 +1435,7 @@ export function createPlayer(game) {
           else bufferPress('defend', 'locked');
         }
       } else if (blocking) {
-        blockT += gameDt;
+        PS.blockT += gameDt;
         if (!blockHeld || !canAct) breakBlock();
         else if (dt0 === 'barrier') {
           R.mp -= (D.drain ?? 6) * dt; R.lastMpSpend = t;
@@ -1422,7 +1448,7 @@ export function createPlayer(game) {
         } else if (defendPress) bufferPress('defend', 'locked');
       }
 
-      if (kPressed('jump') && canAct && !(actOn && !action.cancelable)) jumpBuffer = 0.12;
+      if (kPressed('jump') && canAct && !(actOn && !action.cancelable)) PS.jumpBuffer = 0.12;
       if (dodgePress) {
         if (dodgeOk) {
           const r = tryDodge(canAct);
@@ -1458,13 +1484,13 @@ export function createPlayer(game) {
 
       // ---------- death ----------
       if (dying) {
-        deadTime += dt;
-        deadW = Math.min(1, deadW + dt * 2.2);
+        PS.deadTime += dt;
+        PS.deadW = Math.min(1, PS.deadW + dt * 2.2);
         if (assist()?.autoRevive) {
           // 이야기 difficulty: revive in place with 50 % HP after 2 s instead of the respawn screen (§5.12)
-          reviveT += gameDt;
-          if (reviveT >= AUTO_REVIVE_SEC) reviveInPlace();
-        } else if (deadTime > 1.5 && game.state === 'playing') {
+          PS.reviveT += gameDt;
+          if (PS.reviveT >= AUTO_REVIVE_SEC) reviveInPlace();
+        } else if (PS.deadTime > 1.5 && game.state === 'playing') {
           if (game.setState) game.setState('dead'); else game.state = 'dead';
           if (!respawnTimer) respawnTimer = setTimeout(() => { respawnTimer = null; if (!entity.alive || dying) respawn(); }, 2000);
         }
@@ -1477,20 +1503,20 @@ export function createPlayer(game) {
 
       if (blinking) {
         // ---------- blink / spirit swap travel ----------
-        dodgeT -= dt;
-        const k = 1 - Math.max(0, dodgeT) / dodgeDur;
+        PS.dodgeT -= dt;
+        const k = 1 - Math.max(0, PS.dodgeT) / PS.dodgeDur;
         const e = 1 - (1 - k) * (1 - k);
         const ox = pos.x, oy = pos.y, oz = pos.z;
         pos.lerpVectors(blinkFrom, blinkTo, e);
         cape.shift(pos.x - ox, pos.y - oy, pos.z - oz);
         root.visible = false; cape.mesh.visible = false;
-        ghostTimer -= dt;
-        if (ghostTimer <= 0) { ghostTimer = 0.05; ghosts.spawn(pos, facing, DG.type === 'spiritswap' ? SPIRIT_COL : elemColor, 0.38, 0.75); }
-        if (dodgeT <= 0) { dodgeT = 0; endBlink(); }
-        vy = 0; grounded = dodgeT > 0 ? grounded : pos.y <= groundAt(pos.x, pos.z, pos.y + 0.3) + 0.01;
+        PS.ghostTimer -= dt;
+        if (PS.ghostTimer <= 0) { PS.ghostTimer = 0.05; ghosts.spawn(pos, PS.facing, DG.type === 'spiritswap' ? SPIRIT_COL : elemColor, 0.38, 0.75); }
+        if (PS.dodgeT <= 0) { PS.dodgeT = 0; endBlink(); }
+        PS.vy = 0; grounded = PS.dodgeT > 0 ? grounded : pos.y <= groundAt(pos.x, pos.z, pos.y + 0.3) + 0.01;
       } else {
         // ---------- stamina / sprint ----------
-        const wantSprint = kDown('sprint') && moving && grounded && !R.exhausted && canAct && !charging && !blocking && !actOn && dodgeT <= 0;
+        const wantSprint = kDown('sprint') && moving && grounded && !R.exhausted && canAct && !charging && !blocking && !actOn && PS.dodgeT <= 0;
         sprinting = wantSprint && R.stamina > 0;
         // ---------- water ----------
         let gh = groundAt(pos.x, pos.z, pos.y);
@@ -1500,24 +1526,24 @@ export function createPlayer(game) {
 
         let speed = sprinting ? SPRINT : WALK;
         if (charging) speed *= 0.55;
-        else if (castKind || castRecent > 0.3) speed *= 0.8;
+        else if (castKind || PS.castRecent > 0.3) speed *= 0.8;
         if (blocking) speed *= D.moveMul ?? 0.55;
-        if (wLand > 0.2) speed *= 1 - wLand * 0.6;
+        if (PS.wLand > 0.2) speed *= 1 - PS.wLand * 0.6;
         speed *= sm * wade * (statGet('moveMul', 1) || 1) * (CLASS_DEFS[cls]?.base?.move || 1);
         if (swimming) speed = Math.min(speed, 2.6);
 
         // ---------- jump ----------
-        if (grounded) { coyote = 0.12; airTime = 0; } else { coyote -= dt; airTime += dt; }
-        if (grounded) airJumps = 0;
+        if (grounded) { PS.coyote = 0.12; PS.airTime = 0; } else { PS.coyote -= dt; PS.airTime += dt; }
+        if (grounded) PS.airJumps = 0;
         const extraJumps = statGet('extraJumps', 0) || 0;
-        if (jumpBuffer > 0 && coyote <= 0 && !grounded && extraJumps > 0 && airJumps < extraJumps && canAct && !swimming && !gliding && airTime > 0.1) {
-          airJumps++; vy = JUMP_VEL * 0.95; jumpBuffer = 0; airTime = 0.05; peakY = pos.y;
+        if (PS.jumpBuffer > 0 && PS.coyote <= 0 && !grounded && extraJumps > 0 && PS.airJumps < extraJumps && canAct && !swimming && !gliding && PS.airTime > 0.1) {
+          PS.airJumps++; PS.vy = JUMP_VEL * 0.95; PS.jumpBuffer = 0; PS.airTime = 0.05; PS.peakY = pos.y;
           ev('jump', { position: pos.clone(), double: true });
           vfxCall('burst', v1.copy(pos).setY(pos.y + 0.1), { count: 12, color: pair('wind'), speed: 3, spread: 0.3, dir: v2.set(0, -1, 0), size: 0.1, sizeEnd: 0, life: 0.4, shape: 'spark', drag: 3 });
           vfxCall('shockwave', v1, { color: elColor('wind'), radius: 1.6, duration: 0.3, opacity: 0.7, thickness: 0.12 });
         }
-        if (jumpBuffer > 0 && coyote > 0 && canAct && !swimming) {
-          vy = JUMP_VEL; grounded = false; coyote = 0; jumpBuffer = 0;
+        if (PS.jumpBuffer > 0 && PS.coyote > 0 && canAct && !swimming) {
+          PS.vy = JUMP_VEL; grounded = false; PS.coyote = 0; PS.jumpBuffer = 0;
           ev('jump', { position: pos.clone() });
           vfxCall('burst', v1.copy(pos).setY(pos.y + 0.05), { count: 6, color: 0xe9dfc4, speed: 1.4, spread: 0.7, dir: UP, size: 0.3, sizeEnd: 0.7, life: 0.45, shape: 'smoke', additive: false, drag: 3 });
         }
@@ -1525,27 +1551,27 @@ export function createPlayer(game) {
         // ---------- glide ----------
         const heightAbove = pos.y - (depth > 0 ? Math.max(gh, wl) : gh);
         const infGlide = !!statGet('infiniteGlide', false);
-        const canGlide = !grounded && kDown('jump') && canAct && (!R.exhausted || infGlide) && (R.stamina > 0 || infGlide) && airTime > 0.22 && (gliding || vy < 0.5) && heightAbove > 0.9
-          && !(actOn && action.noGlide) && !statGet('noGlide', false) && dodgeT <= 0 && !blocking;
+        const canGlide = !grounded && kDown('jump') && canAct && (!R.exhausted || infGlide) && (R.stamina > 0 || infGlide) && PS.airTime > 0.22 && (gliding || PS.vy < 0.5) && heightAbove > 0.9
+          && !(actOn && action.noGlide) && !statGet('noGlide', false) && PS.dodgeT <= 0 && !blocking;
         if (canGlide && !gliding) {
           gliding = true; ev('glideStart', { position: pos.clone() });
           vfxCall('burst', v1.copy(pos).setY(pos.y - 0.1), { count: 14, color: pair(element), speed: 3, spread: 0.25, dir: v2.set(0, -0.2, 0), size: 0.1, life: 0.6, shape: 'spark', drag: 2 });
         } else if (!canGlide && gliding) endGlide();
 
         // ---------- horizontal ----------
-        if (dodgeT > 0) {
-          const k = 1 - dodgeT / dodgeDur;
+        if (PS.dodgeT > 0) {
+          const k = 1 - PS.dodgeT / PS.dodgeDur;
           const dist = DG.dist * (statGet('dashDistMul', 1) || 1);
-          const v = (dist / (dodgeDur * 0.7)) * (1 - 0.6 * k);
+          const v = (dist / (PS.dodgeDur * 0.7)) * (1 - 0.6 * k);
           hv.copy(dodgeDir).multiplyScalar(v);
-          dodgeT -= dt;
-          ghostT2 -= dt;
-          const gcol = DG.type === 'shadowroll' ? SHADOW_COL : DG.type === 'shieldstep' ? HOLY_COL : perfectFx > 0 ? DODGE_COL : DASH_COL;
-          if (ghostT2 <= 0) { ghostT2 = DG.type === 'shieldstep' ? 0.07 : 0.045; ghosts.spawn(pos, facing, gcol, 0.3, DG.type === 'shadowroll' ? 0.75 : 0.55); }
-          if (dodgeT <= 0) { dodgeT = 0; hv.copy(dodgeDir).multiplyScalar(WALK * 0.7); squash = Math.max(squash, 0.25); dodgeEndT = t; if (DG.type === 'backflip' && talentOn('ranger.t25b')) R.stamina = Math.min(R.maxStamina, R.stamina + 15); }
+          PS.dodgeT -= dt;
+          PS.ghostT2 -= dt;
+          const gcol = DG.type === 'shadowroll' ? SHADOW_COL : DG.type === 'shieldstep' ? HOLY_COL : PS.perfectFx > 0 ? DODGE_COL : DASH_COL;
+          if (PS.ghostT2 <= 0) { PS.ghostT2 = DG.type === 'shieldstep' ? 0.07 : 0.045; ghosts.spawn(pos, PS.facing, gcol, 0.3, DG.type === 'shadowroll' ? 0.75 : 0.55); }
+          if (PS.dodgeT <= 0) { PS.dodgeT = 0; hv.copy(dodgeDir).multiplyScalar(WALK * 0.7); PS.squash = Math.max(PS.squash, 0.25); PS.dodgeEndT = t; if (DG.type === 'backflip' && talentOn('ranger.t25b')) R.stamina = Math.min(R.maxStamina, R.stamina + 15); }
         } else if (gliding) {
           if (moving) v2.copy(wish).multiplyScalar(GLIDE_SPEED * sm);
-          else v2.set(Math.sin(facing), 0, Math.cos(facing)).multiplyScalar(GLIDE_SPEED * 0.55 * sm);
+          else v2.set(Math.sin(PS.facing), 0, Math.cos(PS.facing)).multiplyScalar(GLIDE_SPEED * 0.55 * sm);
           hv.x = damp(hv.x, v2.x, 2.2, dt); hv.z = damp(hv.z, v2.z, 2.2, dt);
         } else {
           const lam = grounded ? (moving ? 12 : 16) : 3.5;
@@ -1555,30 +1581,30 @@ export function createPlayer(game) {
 
         // ---------- vertical ----------
         // fold external vertical velocity (launch) into own vy
-        if (Math.abs(velocity.y) > 1e-4) { vy += velocity.y; velocity.y = 0; if (vy > 0) grounded = false; }
-        if (actOn && Number.isFinite(action.setVy)) { vy = action.setVy; if (vy > 0) grounded = false; }
-        const vyBefore = vy;
+        if (Math.abs(velocity.y) > 1e-4) { PS.vy += velocity.y; velocity.y = 0; if (PS.vy > 0) grounded = false; }
+        if (actOn && Number.isFinite(action.setVy)) { PS.vy = action.setVy; if (PS.vy > 0) grounded = false; }
+        const vyBefore = PS.vy;
         if (!grounded) {
           if (gliding) {
-            if (vy < -GLIDE_FALL) vy = damp(vy, -GLIDE_FALL, 6, dt);
-            else vy = Math.max(vy - GRAVITY * 0.25 * dt, -GLIDE_FALL);
+            if (PS.vy < -GLIDE_FALL) PS.vy = damp(PS.vy, -GLIDE_FALL, 6, dt);
+            else PS.vy = Math.max(PS.vy - GRAVITY * 0.25 * dt, -GLIDE_FALL);
             // rising heat from burning grass / spirit updrafts lift the glider (BotW updraft)
             let up = 0;
             try { up = W()?.surface?.getUpdraft?.(pos) || 0; } catch (e) { up = 0; }
             if (up > 0) {
-              vy = Math.min(vy + up * dt, UPDRAFT_VY_CAP);
-              updraftT = 0.25;
+              PS.vy = Math.min(PS.vy + up * dt, UPDRAFT_VY_CAP);
+              PS.updraftT = 0.25;
               if (!inUpdraft) { inUpdraft = true; ev('updraftEnter', { position: pos.clone() }); }
               if (Math.random() < 0.3) { UPDRAFT.dir = UP; vfxCall('burst', v1.set(pos.x + rand(-0.8, 0.8), pos.y - 0.6, pos.z + rand(-0.8, 0.8)), UPDRAFT); }
-            } else if (inUpdraft) { updraftT -= dt; if (updraftT <= 0) { inUpdraft = false; ev('updraftExit', { position: pos.clone() }); } }
-          } else vy -= GRAVITY * dt * (actOn ? action.gravityMul : 1);
-          peakY = Math.max(peakY, pos.y);
+            } else if (inUpdraft) { PS.updraftT -= dt; if (PS.updraftT <= 0) { inUpdraft = false; ev('updraftExit', { position: pos.clone() }); } }
+          } else PS.vy -= GRAVITY * dt * (actOn ? action.gravityMul : 1);
+          PS.peakY = Math.max(PS.peakY, pos.y);
         }
 
         // ---------- integrate ----------
         pos.x += (hv.x + velocity.x + (actOn ? action.vel.x : 0)) * dt;
         pos.z += (hv.z + velocity.z + (actOn ? action.vel.z : 0)) * dt;
-        pos.y += vy * dt;
+        pos.y += PS.vy * dt;
         const fr = grounded ? 9 : 0.8;
         velocity.x *= Math.exp(-fr * dt); velocity.z *= Math.exp(-fr * dt);
 
@@ -1590,16 +1616,11 @@ export function createPlayer(game) {
           const yh = pos.y + 0.6;
           if (step > 1e-4) {
             const g0 = groundAt(prevX, prevZ, yh), g1 = groundAt(pos.x, pos.z, yh);
-            const tooSteep = (gx, gz) => {
-              const st = Math.hypot(gx - prevX, gz - prevZ); if (st < 1e-5) return false;
-              const gg = groundAt(gx, gz, yh);
-              if (wasGrounded) return (gg - g0) / st > 1.33 && gg > g0 + 0.05;
-              return gg > pos.y + 0.6; // airborne: walls block rather than teleport us up
-            };
-            if (tooSteep(pos.x, pos.z) && g1 > g0) {
+            // (tooSteep is a createPlayer-level helper: a closure here would move this frame's locals into a heap context)
+            if (tooSteep(pos.x, pos.z, prevX, prevZ, yh, g0) && g1 > g0) {
               // slide along the contour: try each axis separately
-              if (!tooSteep(pos.x, prevZ)) pos.z = prevZ;
-              else if (!tooSteep(prevX, pos.z)) pos.x = prevX;
+              if (!tooSteep(pos.x, prevZ, prevX, prevZ, yh, g0)) pos.z = prevZ;
+              else if (!tooSteep(prevX, pos.z, prevX, prevZ, yh, g0)) pos.x = prevX;
               else { pos.x = prevX; pos.z = prevZ; }
               if (wasGrounded) { hv.multiplyScalar(0.6); }
             }
@@ -1621,17 +1642,17 @@ export function createPlayer(game) {
         const floor = depth > DEEP_WATER ? wl - DEEP_WATER : gh;
 
         // ---------- ground ----------
-        const snap = wasGrounded && vy <= 0 ? 0.45 : 0;
-        if (pos.y <= floor + snap && vy <= 0) {
+        const snap = wasGrounded && PS.vy <= 0 ? 0.45 : 0;
+        if (pos.y <= floor + snap && PS.vy <= 0) {
           pos.y = floor;
-          if (!wasGrounded && airTime > 0.12) {
-            const impact = Math.min(vyBefore, vy);
-            squash = clamp(-impact / 16, 0.2, 1);
-            const fell = peakY - pos.y;
+          if (!wasGrounded && PS.airTime > 0.12) {
+            const impact = Math.min(vyBefore, PS.vy);
+            PS.squash = clamp(-impact / 16, 0.2, 1);
+            const fell = PS.peakY - pos.y;
             ev('land', { position: pos.clone(), height: fell });
-            if (fell > HARD_LAND_H && !gliding && dodgeT <= 0) {
+            if (fell > HARD_LAND_H && !gliding && PS.dodgeT <= 0) {
               // hard landing: recovery crouch (DESIGN §9 A9)
-              wLand = 1; squash = 1;
+              PS.wLand = 1; PS.squash = 1;
               vfxCall('shake', 0.22);
               ev('hardLanding', { position: pos.clone(), height: fell });
             }
@@ -1643,7 +1664,7 @@ export function createPlayer(game) {
             }
             endGlide();
           }
-          vy = 0; grounded = true; peakY = pos.y;
+          PS.vy = 0; grounded = true; PS.peakY = pos.y;
         } else grounded = false;
         // stand-on platforms (CONTRACT §10.5): carry handle.delta when the platform under us moved
         platformHandle = null;
@@ -1662,9 +1683,9 @@ export function createPlayer(game) {
 
         // ---------- water fx ----------
         if (depth > 0.05 && grounded || depth > DEEP_WATER) {
-          wadeT -= dt;
-          if (wadeT <= 0 && hv.lengthSq() > 2) {
-            wadeT = 0.12;
+          PS.wadeT -= dt;
+          if (PS.wadeT <= 0 && hv.lengthSq() > 2) {
+            PS.wadeT = 0.12;
             WADE.dir = UP;
             vfxCall('burst', v1.set(pos.x, wl + 0.02, pos.z), WADE);
           }
@@ -1678,31 +1699,31 @@ export function createPlayer(game) {
       regen.update(gameDt);
 
       // ---------- facing ----------
-      const aimStance = kit.aim && (charging || castRecent > 0 || (blocking && (D.type === 'barrier' || D.type === 'ward')) || (D.type === 'focus' && blockHeld)) && !dying;
+      const aimStance = kit.aim && (charging || PS.castRecent > 0 || (blocking && (D.type === 'barrier' || D.type === 'ward')) || (D.type === 'focus' && blockHeld)) && !dying;
       const hspeed = Math.hypot(hv.x, hv.z);
-      let target = facing, turnL = aimStance ? 22 : (gliding ? 5 : 12);
-      if (aimStance) target = yaw + Math.PI;
+      let target = PS.facing, turnL = aimStance ? 22 : (gliding ? 5 : 12);
+      if (aimStance) target = PS.yaw + Math.PI;
       else if (actOn && action.facing != null) { target = action.facing; turnL = action.turn; }
-      else if (melee && (blocking || counterT > 0)) { target = yaw + Math.PI; turnL = 16; }
-      else if (actOn) target = facing;
-      else if (dodgeT > 0) target = facing;
+      else if (melee && (blocking || PS.counterT > 0)) { target = PS.yaw + Math.PI; turnL = 16; }
+      else if (actOn) target = PS.facing;
+      else if (PS.dodgeT > 0) target = PS.facing;
       else if (hspeed > 0.6 && !blinking) target = Math.atan2(hv.x, hv.z);
-      prevFacing = facing;
-      if (!dying && canAct) facing = dampAngle(facing, target, turnL, dt);
-      root.rotation.set(0, facing + (actOn ? action.bodyYaw : 0), 0);
-      turnRate = dt > 0 ? damp(turnRate, angleDiff(prevFacing, facing) / dt, 10, dt) : turnRate;
+      PS.prevFacing = PS.facing;
+      if (!dying && canAct) PS.facing = dampAngle(PS.facing, target, turnL, dt);
+      root.rotation.set(0, PS.facing + (actOn ? action.bodyYaw : 0), 0);
+      PS.turnRate = dt > 0 ? damp(PS.turnRate, angleDiff(PS.prevFacing, PS.facing) / dt, 10, dt) : PS.turnRate;
       // turn lean (≤ 12°) + glide bank
-      bank = damp(bank, clamp(-turnRate * 0.045 * clamp(hspeed / 6, 0, 1.4), -0.21, 0.21) + (gliding ? clamp(-turnRate * 0.12, -0.45, 0.45) : 0), 8, dt);
+      PS.bank = damp(PS.bank, clamp(-PS.turnRate * 0.045 * clamp(hspeed / 6, 0, 1.4), -0.21, 0.21) + (gliding ? clamp(-PS.turnRate * 0.12, -0.45, 0.45) : 0), 8, dt);
 
       // ---------- footsteps ----------
-      const gSpeed = grounded && !blinking && dodgeT <= 0 ? hspeed : 0;
+      const gSpeed = grounded && !blinking && PS.dodgeT <= 0 ? hspeed : 0;
       const stride = 2.0 + gSpeed * 0.09;
-      phase += (gSpeed / stride) * Math.PI * 2 * dt;
-      if (gSpeed < 0.3) phase = damp(phase, Math.round(phase / Math.PI) * Math.PI, 6, dt);
-      const s = Math.sin(phase);
-      if (gSpeed > 1 && Math.sign(s) !== Math.sign(lastSin) && lastSin !== 0) {
-        stepSide = -stepSide;
-        v1.set(Math.cos(facing), 0, -Math.sin(facing)).multiplyScalar(0.1 * stepSide).add(pos);
+      PS.phase += (gSpeed / stride) * Math.PI * 2 * dt;
+      if (gSpeed < 0.3) PS.phase = damp(PS.phase, Math.round(PS.phase / Math.PI) * Math.PI, 6, dt);
+      const s = Math.sin(PS.phase);
+      if (gSpeed > 1 && Math.sign(s) !== Math.sign(PS.lastSin) && PS.lastSin !== 0) {
+        PS.stepSide = -PS.stepSide;
+        v1.set(Math.cos(PS.facing), 0, -Math.sin(PS.facing)).multiplyScalar(0.1 * PS.stepSide).add(pos);
         ev('footstep', { position: v1.clone() });
         if (gSpeed > 6.5 && depth <= 0.05) {
           v1.y += 0.04;
@@ -1710,7 +1731,7 @@ export function createPlayer(game) {
           vfxCall('burst', v1, STEP_DUST);
         }
       }
-      lastSin = s;
+      PS.lastSin = s;
 
       // ---------- visual-only work below: once per frame on game.frame.lastStep (frameDt), frozen while a per-entity hitstop
       // holds on the player (input buffering above keeps running) — PLAN §2.5 ----------
@@ -1720,82 +1741,82 @@ export function createPlayer(game) {
       if (animFrozen()) { updateCamera(realDt); return; }
 
       // ---------- idle fidgets (8–14 s of standing still) ----------
-      const idle = grounded && gSpeed < 0.3 && !castKind && !charging && !blocking && !actOn && dodgeT <= 0 && !dying && castRecent <= 0 && !!cls;
+      const idle = grounded && gSpeed < 0.3 && !castKind && !charging && !blocking && !actOn && PS.dodgeT <= 0 && !dying && PS.castRecent <= 0 && !!cls;
       if (idle) {
-        idleT += dt;
-        if (!fidgetKind && idleT > fidgetNext && kit.idleFidget && FIDGETS[kit.idleFidget]) { fidgetKind = kit.idleFidget; fidgetT = 0; }
-      } else { idleT = 0; if (fidgetKind && fidgetT < 0.85 * FIDGETS[fidgetKind].dur) fidgetKind = null; }
+        PS.idleT += dt;
+        if (!fidgetKind && PS.idleT > PS.fidgetNext && kit.idleFidget && FIDGETS[kit.idleFidget]) { fidgetKind = kit.idleFidget; PS.fidgetT = 0; }
+      } else { PS.idleT = 0; if (fidgetKind && PS.fidgetT < 0.85 * FIDGETS[fidgetKind].dur) fidgetKind = null; }
       if (fidgetKind) {
-        fidgetT += dt;
-        if (fidgetT >= FIDGETS[fidgetKind].dur) { fidgetKind = null; idleT = 0; fidgetNext = 8 + Math.random() * 6; }
+        PS.fidgetT += dt;
+        if (PS.fidgetT >= FIDGETS[fidgetKind].dur) { fidgetKind = null; PS.idleT = 0; PS.fidgetNext = 8 + Math.random() * 6; }
       }
 
       // ---------- animation weights ----------
-      speedFrac = damp(speedFrac, clamp(gSpeed / WALK, 0, 1.7), 10, dt);
-      wSprint = damp(wSprint, sprinting ? 1 : 0, 6, dt);
-      wAir = damp(wAir, !grounded && !gliding && !blinking ? 1 : 0, grounded ? 14 : 7, dt);
-      wGlide = damp(wGlide, gliding ? 1 : 0, 6, dt);
+      PS.speedFrac = damp(PS.speedFrac, clamp(gSpeed / WALK, 0, 1.7), 10, dt);
+      PS.wSprint = damp(PS.wSprint, sprinting ? 1 : 0, 6, dt);
+      PS.wAir = damp(PS.wAir, !grounded && !gliding && !blinking ? 1 : 0, grounded ? 14 : 7, dt);
+      PS.wGlide = damp(PS.wGlide, gliding ? 1 : 0, 6, dt);
       const casterBlockPose = blocking && (D.type === 'barrier' || D.type === 'ward');
       const actionTarget = (castKind || charging || casterBlockPose) && !dying ? 1 : 0;
-      wAction = damp(wAction, actionTarget, actionTarget ? 22 : 7, dt);
+      PS.wAction = damp(PS.wAction, actionTarget, actionTarget ? 22 : 7, dt);
       const aimingCam = aimStance || (D.type === 'focus' && blockHeld && grounded);
-      wAim = damp(wAim, aimingCam ? 1 : 0, 7, realDt);
-      wBowAim = damp(wBowAim, style() === 'bow' && (aimingCam || charging) ? 1 : 0, 9, dt);
-      wFocus = damp(wFocus, focusing ? 1 : 0, 10, realDt);
-      wFov = damp(wFov, sprinting ? 1 : gliding ? 0.6 : 0, 4, realDt);
-      const accel = dt > 0 ? (hspeed - lastSpeed) / dt : 0; lastSpeed = hspeed;
-      accelF = damp(accelF, clamp(accel, -20, 20), 8, dt);
-      aimPitch = damp(aimPitch, -pitch, 8, dt);
+      PS.wAim = damp(PS.wAim, aimingCam ? 1 : 0, 7, realDt);
+      PS.wBowAim = damp(PS.wBowAim, style() === 'bow' && (aimingCam || charging) ? 1 : 0, 9, dt);
+      PS.wFocus = damp(PS.wFocus, focusing ? 1 : 0, 10, realDt);
+      PS.wFov = damp(PS.wFov, sprinting ? 1 : gliding ? 0.6 : 0, 4, realDt);
+      const accel = dt > 0 ? (hspeed - PS.lastSpeed) / dt : 0; PS.lastSpeed = hspeed;
+      PS.accelF = damp(PS.accelF, clamp(accel, -20, 20), 8, dt);
+      PS.aimPitch = damp(PS.aimPitch, -PS.pitch, 8, dt);
 
       // local velocity for robe billow
-      const cf = Math.cos(facing), sf = Math.sin(facing);
+      const cf = Math.cos(PS.facing), sf = Math.sin(PS.facing);
       const lvx = hv.x * cf - hv.z * sf, lvz = hv.x * sf + hv.z * cf;
 
       const A = animState;
-      A.t = t; A.dt = Math.min(dt, 1 / 30); A.phase = phase;
-      A.amp = clamp(gSpeed / WALK, 0, 1) * 0.55 + wSprint * 0.22;
-      A.speedFrac = speedFrac; A.wSprint = wSprint; A.wAir = wAir; A.wGlide = wGlide; A.wAction = wAction;
-      A.castKind = castKind; A.castT01 = castKind ? castT / CAST_DUR[castKind] : 0;
-      if (!castKind && wAction > 0.01 && !charging) A.castKind = A._lastKind || null, A.castT01 = 1;
+      A.t = t; A.dt = Math.min(dt, 1 / 30); A.phase = PS.phase;
+      A.amp = clamp(gSpeed / WALK, 0, 1) * 0.55 + PS.wSprint * 0.22;
+      A.speedFrac = PS.speedFrac; A.wSprint = PS.wSprint; A.wAir = PS.wAir; A.wGlide = PS.wGlide; A.wAction = PS.wAction;
+      A.castKind = castKind; A.castT01 = castKind ? PS.castT / CAST_DUR[castKind] : 0;
+      if (!castKind && PS.wAction > 0.01 && !charging) A.castKind = A._lastKind || null, A.castT01 = 1;
       if (castKind) A._lastKind = castKind;
       if (charging || casterBlockPose) A.castKind = null;
-      A.chargeFrac = chargeFrac; A.hurt = hurt; A.squash = squash;
-      A.dead = deadW < 1 ? deadW * deadW * (3 - 2 * deadW) : 1;
-      A.bank = bank; A.vy = grounded ? 0 : vy; A.localVx = lvx; A.localVz = lvz;
-      A.aimPitch = aimPitch;
-      A.flare = clamp(wGlide * 0.9 + (grounded ? 0 : clamp(-vy / 14, 0, 0.7)), 0, 1);
-      A.flutter = clamp(wGlide + wSprint * 0.4 + clamp(-vy / 20, 0, 0.5), 0, 1.5);
-      A.accel = accelF * 0.05;
+      A.chargeFrac = PS.chargeFrac; A.hurt = PS.hurt; A.squash = PS.squash;
+      A.dead = PS.deadW < 1 ? PS.deadW * PS.deadW * (3 - 2 * PS.deadW) : 1;
+      A.bank = PS.bank; A.vy = grounded ? 0 : PS.vy; A.localVx = lvx; A.localVz = lvz;
+      A.aimPitch = PS.aimPitch;
+      A.flare = clamp(PS.wGlide * 0.9 + (grounded ? 0 : clamp(-PS.vy / 14, 0, 0.7)), 0, 1);
+      A.flutter = clamp(PS.wGlide + PS.wSprint * 0.4 + clamp(-PS.vy / 20, 0, 0.5), 0, 1.5);
+      A.accel = PS.accelF * 0.05;
       A.stance = kit.stance;
-      A.dodgePose = dodgeT > 0 && !blinking ? (DODGE_POSES[DG.type] || 'none') : 'none';
-      A.dodgeT01 = dodgeT > 0 && dodgeDur > 0 ? 1 - dodgeT / dodgeDur : 0;
-      A.landW = wLand > 0 ? Math.min(1, wLand * 1.6) : 0;
-      A.fidget = fidgetKind; A.fidgetT01 = fidgetKind ? fidgetT / FIDGETS[fidgetKind].dur : 0;
+      A.dodgePose = PS.dodgeT > 0 && !blinking ? (DODGE_POSES[DG.type] || 'none') : 'none';
+      A.dodgeT01 = PS.dodgeT > 0 && PS.dodgeDur > 0 ? 1 - PS.dodgeT / PS.dodgeDur : 0;
+      A.landW = PS.wLand > 0 ? Math.min(1, PS.wLand * 1.6) : 0;
+      A.fidget = fidgetKind; A.fidgetT01 = fidgetKind ? PS.fidgetT / FIDGETS[fidgetKind].dur : 0;
       // head look-at toward the camera aim (only when the aim is in front; fades while acting)
-      const la = angleDiff(facing, yaw + Math.PI);
-      A.lookYaw = Math.abs(la) < 1.9 ? la : 0; A.lookPitch = -pitch * 0.8; A.lookW = (1 - wSprint * 0.6) * (dying ? 0 : 1) * (actOn ? 0.3 : 1);
-      A.bowAim = wBowAim; A.focusW = style() === 'bow' ? wFocus : 0;
+      const la = angleDiff(PS.facing, PS.yaw + Math.PI);
+      A.lookYaw = Math.abs(la) < 1.9 ? la : 0; A.lookPitch = -PS.pitch * 0.8; A.lookW = (1 - PS.wSprint * 0.6) * (dying ? 0 : 1) * (actOn ? 0.3 : 1);
+      A.bowAim = PS.wBowAim; A.focusW = style() === 'bow' ? PS.wFocus : 0;
       // ---------- melee stance / action pose ----------
-      if (melee && (actOn || blocking || counterT > 0)) { if (!swordDrawn) { swordDrawn = true; } }
-      drawnW = damp(drawnW, melee && swordDrawn && !dying ? 1 : 0, 18, dt || realDt);
+      if (melee && (actOn || blocking || PS.counterT > 0)) { if (!swordDrawn) { swordDrawn = true; } }
+      PS.drawnW = damp(PS.drawnW, melee && swordDrawn && !dying ? 1 : 0, 18, dt || realDt);
       weaponVisibility();
       if (melee) {
         const ST = meleeStance(kit.stance);
-        if (blocking || counterT > 0) lerpPose(stancePose, ST.idle, ST.guard, 1);
+        if (blocking || PS.counterT > 0) lerpPose(stancePose, ST.idle, ST.guard, 1);
         else {
-          lerpPose(stancePose, ST.idle, ST.run, clamp(speedFrac / 1.4, 0, 1) * (1 - wAir) * (1 - wGlide));
-          if (wAir > 0.01) lerpPose(stancePose, stancePose, ST.air, wAir);
-          if (wGlide > 0.01) lerpPose(stancePose, stancePose, ST.glide, wGlide);
+          lerpPose(stancePose, ST.idle, ST.run, clamp(PS.speedFrac / 1.4, 0, 1) * (1 - PS.wAir) * (1 - PS.wGlide));
+          if (PS.wAir > 0.01) lerpPose(stancePose, stancePose, ST.air, PS.wAir);
+          if (PS.wGlide > 0.01) lerpPose(stancePose, stancePose, ST.glide, PS.wGlide);
         }
         lerpPose(finalPose, stancePose, action.pose, actOn ? action.poseW : 0);
-        const w = drawnW;
+        const w = PS.drawnW;
         A.swTw = finalPose[6] * w; A.swTl = finalPose[7] * w; A.swCr = finalPose[8] * w; A.swHy = finalPose[9] * w;
         A.swHd = finalPose[14] * w; A.swBk = finalPose[15] * w;
-        if (actOn || blocking || counterT > 0) { A.wAction = 0; A.castKind = null; }
+        if (actOn || blocking || PS.counterT > 0) { A.wAction = 0; A.castKind = null; }
       } else { A.swTw = A.swTl = A.swCr = A.swHy = A.swHd = A.swBk = 0; }
       anim.update(A);
-      if (melee && drawnW > 0.001) {
-        applySwordArms(rig, gear, finalPose, drawnW);
+      if (melee && PS.drawnW > 0.001) {
+        applySwordArms(rig, gear, finalPose, PS.drawnW);
         // hammer / right dagger follow the pose's blade orientation (the sword group carries it)
         const S = cg.sockets;
         if (S.hammerHand?.visible) S.hammerHand.quaternion.copy(gear.sword.quaternion);
@@ -1803,38 +1824,38 @@ export function createPlayer(game) {
       }
       root.updateMatrixWorld(true);
       // ---------- foot IK (stance-weighted, grounded only) ----------
-      const ikW = grounded && !blinking && !dying && dodgeT <= 0 && !gliding ? clamp(1 - speedFrac * 0.35, 0.3, 1) : 0;
+      const ikW = grounded && !blinking && !dying && PS.dodgeT <= 0 && !gliding ? clamp(1 - PS.speedFrac * 0.35, 0.3, 1) : 0;
       if (ikW > 0 || footIK.weight > 0.01) { footIK.update(groundAt, ikW, dt); root.updateMatrixWorld(true); }
       // ---------- bow string (follows the draw hand) + arrow ----------
       if (cg.sockets.bow && rig.bow?.visible) updateBowString(dt);
       // ---------- spring chains ----------
       springCtx.legF = Math.max(0, -anim.legL, -anim.legR); springCtx.legB = Math.max(0, anim.legL, anim.legR);
-      springCtx.wind = clamp(wGlide + wSprint * 0.6 + speedFrac * 0.3, 0, 1.5);
+      springCtx.wind = clamp(PS.wGlide + PS.wSprint * 0.6 + PS.speedFrac * 0.3, 0, 1.5);
       gust.set(Math.sin(t * 0.7) * 1.2, 0, Math.cos(t * 0.53) * 1.2);
       springs.update(dt, springCtx);
       if (melee) {
         gear.edgeMat.uniforms.uTime.value = t;
-        const ei = 0.55 + (actOn ? 0.45 : 0) + perfectFx * 0.8 + (counterReady > 0 ? 0.6 : 0);
+        const ei = 0.55 + (actOn ? 0.45 : 0) + PS.perfectFx * 0.8 + (PS.counterReady > 0 ? 0.6 : 0);
         gear.edgeMat.uniforms.uIntensity.value = damp(gear.edgeMat.uniforms.uIntensity.value, ei, 10, realDt);
       }
       barrier.update(realDt, blocking && (D.type === 'barrier' || D.type === 'ward'), pos, t);
 
       // ---------- staff gem ----------
-      const glow = 1 + chargeFrac * 1.6 + gemFlare * 1.5;
+      const glow = 1 + PS.chargeFrac * 1.6 + PS.gemFlare * 1.5;
       // element ramp toward its light step, multiplier ≤ 1.2 (rule 5: no white, no emissive multiplier > 1.2)
-      gemColor.copy(elemColor).lerp(gemLight, clamp(chargeFrac * 0.6 + gemFlare * 0.5, 0, 0.8)).multiplyScalar(Math.min(1.2, 1 + chargeFrac * 0.2));
+      gemColor.copy(elemColor).lerp(gemLight, clamp(PS.chargeFrac * 0.6 + PS.gemFlare * 0.5, 0, 0.8)).multiplyScalar(Math.min(1.2, 1 + PS.chargeFrac * 0.2));
       rig.gemMat.color.copy(gemColor);
       const pulse = 1 + Math.sin(t * 5) * 0.06;
-      rig.gem.scale.set(pulse * (1 + chargeFrac * 0.6 + gemFlare * 0.2), 1.55 * pulse * (1 + chargeFrac * 0.6 + gemFlare * 0.2), pulse * (1 + chargeFrac * 0.6));
-      rig.gem.rotation.y += dt * (1.2 + chargeFrac * 8);
-      rig.gemCore.scale.setScalar(1 + chargeFrac * 1.2 + gemFlare * 0.6);
-      rig.halo.scale.setScalar((0.5 + chargeFrac * 0.9 + gemFlare * 0.6) * pulse);
-      rig.haloMat.opacity = 0.7 + chargeFrac * 0.3;
+      rig.gem.scale.set(pulse * (1 + PS.chargeFrac * 0.6 + PS.gemFlare * 0.2), 1.55 * pulse * (1 + PS.chargeFrac * 0.6 + PS.gemFlare * 0.2), pulse * (1 + PS.chargeFrac * 0.6));
+      rig.gem.rotation.y += dt * (1.2 + PS.chargeFrac * 8);
+      rig.gemCore.scale.setScalar(1 + PS.chargeFrac * 1.2 + PS.gemFlare * 0.6);
+      rig.halo.scale.setScalar((0.5 + PS.chargeFrac * 0.9 + PS.gemFlare * 0.6) * pulse);
+      rig.haloMat.opacity = 0.7 + PS.chargeFrac * 0.3;
       rig.light.intensity = melee ? 0 : (0.18 + Math.sin(t * 6.3) * 0.03) * glow * glow;
-      rig.light.distance = 5 + chargeFrac * 4;
+      rig.light.distance = 5 + PS.chargeFrac * 4;
       for (let i = 0; i < rig.motes.length; i++) {
         const a = t * (2.2 + i * 0.37) + i * 1.9;
-        const rr = (0.15 + 0.03 * Math.sin(t * 3 + i)) * (1 - chargeFrac * 0.45);
+        const rr = (0.15 + 0.03 * Math.sin(t * 3 + i)) * (1 - PS.chargeFrac * 0.45);
         rig.motes[i].position.set(Math.cos(a) * rr, Math.sin(a * 1.3 + i) * 0.1, Math.sin(a) * rr);
         rig.motes[i].rotation.y = a * 2;
       }
@@ -1846,10 +1867,10 @@ export function createPlayer(game) {
         v1.copy(tipV).addScaledVector(v3, 0.22);
         chargeCircle.group.position.copy(v1);
         chargeCircle.group.lookAt(v4.copy(v1).add(v3));
-        convergeT -= dt;
-        if (convergeT <= 0) {
-          convergeT = 0.035 - chargeFrac * 0.015;
-          const n = 1 + Math.round(chargeFrac * 2);
+        PS.convergeT -= dt;
+        if (PS.convergeT <= 0) {
+          PS.convergeT = 0.035 - PS.chargeFrac * 0.015;
+          const n = 1 + Math.round(PS.chargeFrac * 2);
           CONVERGE.color = pair(chargeEl || element); CONVERGE.dir = v2;
           for (let i = 0; i < n; i++) {
             v2.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(0.8 + Math.random() * 0.4);
@@ -1859,15 +1880,15 @@ export function createPlayer(game) {
           }
         }
       }
-      chargeCircle.update(dt, charging, 0.75 + chargeFrac * 0.6, 1.2 + chargeFrac * 4, 0.6 + chargeFrac * 0.4);
+      chargeCircle.update(dt, charging, 0.75 + PS.chargeFrac * 0.6, 1.2 + PS.chargeFrac * 4, 0.6 + PS.chargeFrac * 0.4);
 
       // ---------- glide sigil ----------
-      if (wGlide > 0.02 || gliding) {
+      if (PS.wGlide > 0.02 || gliding) {
         sigil.group.position.set(pos.x, pos.y - 0.12, pos.z);
         sigil.group.rotation.set(-Math.PI / 2, 0, 0);
-        sparkleT -= dt;
-        if (gliding && sparkleT <= 0) {
-          sparkleT = 0.07;
+        PS.sparkleT -= dt;
+        if (gliding && PS.sparkleT <= 0) {
+          PS.sparkleT = 0.07;
           const a = Math.random() * Math.PI * 2, rr = Math.random() * 0.85;
           v1.set(pos.x + Math.cos(a) * rr, pos.y - 0.12, pos.z + Math.sin(a) * rr);
           SPARKLE.color = pair(element);
@@ -1881,7 +1902,7 @@ export function createPlayer(game) {
       // ---------- cape ----------
       wind.set(0.7 - hv.x * 0.05, 0, 0.35 - hv.z * 0.05);
       if (gliding) wind.y = 3;
-      cape.update(dt, groundAtFeet, wind, clamp(wGlide + wSprint * 0.5 + (grounded ? 0 : 0.3), 0, 1.5));
+      cape.update(dt, groundAtFeet, wind, clamp(PS.wGlide + PS.wSprint * 0.5 + (grounded ? 0 : 0.3), 0, 1.5));
       rig.skin?.update?.();
 
       // ---------- camera ----------
@@ -1907,24 +1928,24 @@ export function createPlayer(game) {
   function updateBowString(dt) {
     const B = cg.sockets.bow;
     let target = 0;
-    if (charging) target = 0.35 + 0.65 * chargeFrac;
-    else if (castKind === 'bowDraw') target = clamp(castT / Math.max(0.05, CAST_DUR.bowDraw * 0.4), 0, 1);
-    else if (castKind === 'bowRelease') target = castT < CAST_DUR.bowRelease * 0.4 ? clamp(castT / (CAST_DUR.bowRelease * 0.3), 0, 1) : 0;
-    else if (focusing || wBowAim > 0.6) target = 0.25;
-    const prev = bowDraw;
-    bowDraw = target > bowDraw ? damp(bowDraw, target, 14, dt) : 0;
-    if (prev > 0.3 && bowDraw === 0) stringVel = -prev * 9;
+    if (charging) target = 0.35 + 0.65 * PS.chargeFrac;
+    else if (castKind === 'bowDraw') target = clamp(PS.castT / Math.max(0.05, CAST_DUR.bowDraw * 0.4), 0, 1);
+    else if (castKind === 'bowRelease') target = PS.castT < CAST_DUR.bowRelease * 0.4 ? clamp(PS.castT / (CAST_DUR.bowRelease * 0.3), 0, 1) : 0;
+    else if (focusing || PS.wBowAim > 0.6) target = 0.25;
+    const prev = PS.bowDraw;
+    PS.bowDraw = target > PS.bowDraw ? damp(PS.bowDraw, target, 14, dt) : 0;
+    if (prev > 0.3 && PS.bowDraw === 0) PS.stringVel = -prev * 9;
     // string vibration after the release (damped spring on the rest offset)
-    stringVel += (-stringOff * 900 - stringVel * 22) * Math.min(dt, 1 / 30);
-    stringOff += stringVel * Math.min(dt, 1 / 30);
+    PS.stringVel += (-PS.stringOff * 900 - PS.stringVel * 22) * Math.min(dt, 1 / 30);
+    PS.stringOff += PS.stringVel * Math.min(dt, 1 / 30);
     // nock in bow space: rest → toward the draw hand
     B.nock.position.copy(B.rest);
-    if (bowDraw > 0.001) {
+    if (PS.bowDraw > 0.001) {
       rig.handR.getWorldPosition(v1);
       rig.bow.worldToLocal(v1);
-      B.nock.position.lerp(v1, bowDraw * 0.92);
-    } else B.nock.position.z += stringOff * 0.04;
-    B.arrow.visible = bowDraw > 0.15;
+      B.nock.position.lerp(v1, PS.bowDraw * 0.92);
+    } else B.nock.position.z += PS.stringOff * 0.04;
+    B.arrow.visible = PS.bowDraw > 0.15;
     // the two string halves span tip → nock
     for (const [seg, tip] of [[B.strTop, B.tipTop], [B.strBot, B.tipBot]]) {
       _sv.subVectors(B.nock.position, tip);
@@ -1953,7 +1974,7 @@ export function createPlayer(game) {
     return c._camH;
   };
   const boomCols = [];
-  let camHoldT = 0;
+  
   function propBoomLimit(dist, shoulder) {
     const w = W();
     const all = w?.colliders;
@@ -2009,32 +2030,34 @@ export function createPlayer(game) {
     return ctxOut;
   }
   const ctxOut = { near: false, boss: null, bossTell: false };
+  const EXPLORE_CTX = { near: false, boss: null, bossTell: false };
   function updateCamera(rdt) {
     // combat framing: eased over 0.6 s (≈ 95 % in CAM_EASE via exp(−5 t / ease))
-    const cx = combatContext();
-    const k = 1 - Math.exp(-5 * Math.max(0, rdt) / CAM_EASE);
+    // test / capture hook (magic, melee detail sheets): api.framing = 'explore' pins the out-of-combat boom (5.5 m, base FOV)
+    const cx = api.framing === 'explore' ? EXPLORE_CTX : combatContext();
+    const k = api.framing === 'explore' ? 1 : 1 - Math.exp(-5 * Math.max(0, rdt) / CAM_EASE);
     if (cx) {
-      wCombat += ((cx.near || cx.boss ? 1 : 0) - wCombat) * k;
-      wBossTell += ((cx.bossTell ? 1 : 0) - wBossTell) * k;
+      PS.wCombat += ((cx.near || cx.boss ? 1 : 0) - PS.wCombat) * k;
+      PS.wBossTell += ((cx.bossTell ? 1 : 0) - PS.wBossTell) * k;
       const h = cx.boss?.cameraHint;
-      wHintD += ((h && h.dist > 0 ? h.dist : 1) - wHintD) * k;
-      wHintH += ((h && h.height > 0 ? h.height : 1) - wHintH) * k;
+      PS.wHintD += ((h && h.dist > 0 ? h.dist : 1) - PS.wHintD) * k;
+      PS.wHintH += ((h && h.height > 0 ? h.height : 1) - PS.wHintH) * k;
       camInfo.hint = h || null;
     }
     const sMul = CAM_DIST_MUL[game.settings?.values?.cameraDist] || 1;
-    const boom = lerp(CAM_DIST, CAM_DIST_COMBAT, wCombat) * (1 + 0.1 * wBossTell) * wHintD;
-    const dist = (lerp(boom, CAM_DIST_AIM * (boom / CAM_DIST), wAim) + wSprint * 0.3 - wFocus * 0.4) * sMul;
-    const shoulder = lerp(lerp(SHOULDER, SHOULDER_COMBAT, wCombat), SHOULDER_AIM, wAim);
-    camInfo.dist = dist; camInfo.combat = wCombat; camInfo.bossTell = wBossTell; camInfo.shoulder = shoulder;
-    v1.set(pos.x, pos.y + PIVOT_H * (1 + (wHintH - 1) * 0.5) - squash * 0.12 - (deadW * 0.8), pos.z);
-    if (camSnap) { pivot.copy(v1); camDist = dist; }
+    const boom = lerp(CAM_DIST, CAM_DIST_COMBAT, PS.wCombat) * (1 + 0.1 * PS.wBossTell) * PS.wHintD;
+    const dist = (lerp(boom, CAM_DIST_AIM * (boom / CAM_DIST), PS.wAim) + PS.wSprint * 0.3 - PS.wFocus * 0.4) * sMul;
+    const shoulder = lerp(lerp(SHOULDER, SHOULDER_COMBAT, PS.wCombat), SHOULDER_AIM, PS.wAim);
+    camInfo.dist = dist; camInfo.combat = PS.wCombat; camInfo.bossTell = PS.wBossTell; camInfo.shoulder = shoulder;
+    v1.set(pos.x, pos.y + PIVOT_H * (1 + (PS.wHintH - 1) * 0.5) - PS.squash * 0.12 - (PS.deadW * 0.8), pos.z);
+    if (camSnap) { pivot.copy(v1); PS.camDist = dist; }
     else {
       const lamXZ = blinking ? 14 : 22;
       pivot.x = damp(pivot.x, v1.x, lamXZ, rdt); pivot.z = damp(pivot.z, v1.z, lamXZ, rdt);
       pivot.y = damp(pivot.y, v1.y, grounded ? 12 : 8, rdt);
     }
-    camFwd.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-    camRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    camFwd.set(-Math.sin(PS.yaw) * Math.cos(PS.pitch), Math.sin(PS.pitch), -Math.cos(PS.yaw) * Math.cos(PS.pitch));
+    camRight.set(Math.cos(PS.yaw), 0, -Math.sin(PS.yaw));
     // terrain collision along the boom
     let allowed = dist;
     const N = 8;
@@ -2047,23 +2070,23 @@ export function createPlayer(game) {
     }
     // solid prop collision (pillars, huts, big rocks...) — 2D ray vs collider circles along the boom
     allowed = Math.min(allowed, propBoomLimit(dist, shoulder));
-    if (camSnap || allowed < camDist - 0.02) { camDist = camSnap ? allowed : damp(camDist, allowed, 30, rdt); camHoldT = 0.3; }
-    else if (camHoldT > 0) camHoldT -= rdt; // hold the shortened boom briefly so thin stakes/trunks don't pop
-    else camDist = damp(camDist, allowed, 4, rdt);
+    if (camSnap || allowed < PS.camDist - 0.02) { PS.camDist = camSnap ? allowed : damp(PS.camDist, allowed, 30, rdt); PS.camHoldT = 0.3; }
+    else if (PS.camHoldT > 0) PS.camHoldT -= rdt; // hold the shortened boom briefly so thin stakes/trunks don't pop
+    else PS.camDist = damp(PS.camDist, allowed, 4, rdt);
     camSnap = false;
-    camPos.copy(pivot).addScaledVector(camRight, shoulder).addScaledVector(camFwd, -camDist);
+    camPos.copy(pivot).addScaledVector(camRight, shoulder).addScaledVector(camFwd, -PS.camDist);
     const minY = groundAt(camPos.x, camPos.z) + 0.3;
     if (camPos.y < minY) camPos.y = minY;
     camera.position.copy(camPos);
-    camEuler.set(pitch, yaw, 0, 'YXZ');
+    camEuler.set(PS.pitch, PS.yaw, 0, 'YXZ');
     camera.quaternion.setFromEuler(camEuler);
     const dc = api.debugCam; // test hook: {dist, height, angle (rad around player, 0 = in front), lookH}
     if (dc) {
-      const a = facing + (dc.angle || 0);
+      const a = PS.facing + (dc.angle || 0);
       camera.position.set(pos.x + Math.sin(a) * dc.dist, pos.y + dc.height, pos.z + Math.cos(a) * dc.dist);
       camera.lookAt(pos.x, pos.y + (dc.lookH ?? 1.1), pos.z);
     }
-    const fov = BASE_FOV + wFov * 7 - wFocus * 4 + FOV_COMBAT * wCombat;
+    const fov = BASE_FOV + PS.wFov * 7 - PS.wFocus * 4 + FOV_COMBAT * PS.wCombat;
     camInfo.fov = fov;
     if (Math.abs(camera.fov - fov) > 1e-3) { camera.fov = fov; }
     camera.updateProjectionMatrix();

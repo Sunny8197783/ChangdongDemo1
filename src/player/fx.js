@@ -128,6 +128,23 @@ const ghostVS = /* glsl */`
     vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
     gl_Position = projectionMatrix * mv;
   }`;
+// v4 fix round 1: GPU ghost = the merged rig's decimated proxy (shared buffers, no vertex upload) skinned by a bone-matrix
+// snapshot taken at spawn; the mesh sits at identity, so skinned positions are world space; the fade-out swell scales about uOrigin.
+const ghostSkinVS = /* glsl */`
+  #include <skinning_pars_vertex>
+  uniform vec3 uOrigin; uniform float uScale;
+  varying vec3 vN; varying vec3 vV;
+  void main() {
+    #include <skinbase_vertex>
+    #include <beginnormal_vertex>
+    #include <skinnormal_vertex>
+    #include <begin_vertex>
+    #include <skinning_vertex>
+    vec3 p = uOrigin + (transformed - uOrigin) * uScale;
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    vN = normalize(normalMatrix * objectNormal); vV = normalize(-mv.xyz);
+    gl_Position = projectionMatrix * mv;
+  }`;
 const ghostFS = /* glsl */`
   uniform vec3 color; uniform float opacity;
   varying vec3 vN; varying vec3 vV;
@@ -142,11 +159,14 @@ const ghostFS = /* glsl */`
  * space) is baked into that ghost's preallocated buffer, so a ghost costs 1 draw call instead of ~80.
  * Ghosts don't animate after spawning, so a bake (~0.2 ms) only happens per spawn.
  */
+const noop = () => {};
 const _gm = new THREE.Matrix4(), _gn = new THREE.Matrix3(), _gInv = new THREE.Matrix4(), _gv = new THREE.Vector3();
 export class Afterimages {
-  constructor(scene, liveRoot, count = 5, fx = null) {
+  constructor(scene, liveRoot, count = 5, fx = null, skin = null) {
     this.items = [];
     this.liveRoot = liveRoot;
+    this.skin = skin?.proxy && skin.skeleton ? skin : null;
+    if (this.skin) { this._initSkinned(scene, count, fx); return; }
     this.parts = [];          // {mesh, start, count}
     let nv = 0, ni = 0;
     const walk = (o) => {
@@ -190,6 +210,45 @@ export class Afterimages {
       scene.add(root);
       this.items.push({ root, mat, life: 0, max: 0.4 });
     }
+  }
+  /** GPU path: each ghost is a SkinnedMesh on the proxy's own attributes + index (nothing uploaded per spawn but its bone texture). */
+  _initSkinned(scene, count, fx) {
+    const sk = this.skin.skeleton, pg = this.skin.proxy.geometry, ident = new THREE.Matrix4();
+    this.capeBone = sk.bones.findIndex((b) => b.name === 'capeBone');   // world-space verlet cape: left out (v3 ghosts had no cape)
+    for (let k = 0; k < count; k++) {
+      const geo = new THREE.BufferGeometry();
+      for (const n of ['position', 'normal', 'skinIndex', 'skinWeight']) geo.setAttribute(n, pg.attributes[n]);
+      geo.setIndex(pg.index);
+      geo.boundingSphere = pg.boundingSphere;
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { color: { value: new THREE.Color(1, 1, 1) }, opacity: { value: 0 }, uOrigin: { value: new THREE.Vector3() }, uScale: { value: 1 } },
+        vertexShader: ghostSkinVS, fragmentShader: ghostFS, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.FrontSide,
+      });
+      if (fx) fx(mat, { additive: true, role: 'fill' });
+      const skel = new THREE.Skeleton(sk.bones, sk.boneInverses);
+      skel.update = noop;            // frozen: the snapshot is written once per spawn
+      skel.computeBoneTexture();
+      const root = new THREE.SkinnedMesh(geo, mat);
+      root.bindMode = THREE.AttachedBindMode;
+      root.bind(skel, ident);
+      root.frustumCulled = false; root.visible = false; root.renderOrder = 3; root.userData.owner = 'player'; root.userData.noGhost = true;
+      root.raycast = noop;
+      scene.add(root);
+      this.items.push({ root, mat, skel, life: 0, max: 0.4 });
+    }
+  }
+  _snapshot(it) {
+    const sk = this.skin.skeleton;
+    this.liveRoot.updateMatrixWorld(true);
+    sk.update();                                       // fresh pose (hidden parts → zero matrices); the rig re-uploads its own texture anyway
+    const bm = it.skel.boneMatrices;
+    bm.set(sk.boneMatrices);
+    if (this.capeBone >= 0) bm.fill(0, this.capeBone * 16, this.capeBone * 16 + 16);
+    it.skel.boneTexture.needsUpdate = true;            // one bone-texture upload per spawn
+    const pg = this.skin.proxy.geometry;
+    it.root.geometry.setDrawRange(pg.drawRange.start, pg.drawRange.count);
+    this.liveRoot.getWorldPosition(it.mat.uniforms.uOrigin.value);
   }
   _visible(o) {
     for (let p = o; p && p !== this.liveRoot; p = p.parent) if (!p.visible) return false;
@@ -236,9 +295,12 @@ export class Afterimages {
     const items = this.items;
     let it = items[0];
     for (let k = 0; k < items.length; k++) { const x = items[k]; if (x.life <= 0) { it = x; break; } else if (x.life < it.life) it = x; }
-    this._bake(it.root.geometry);
-    it.root.position.copy(position); it.root.rotation.set(0, rotationY, 0);
-    it.root.scale.setScalar(1);
+    if (this.skin) { this._snapshot(it); it.mat.uniforms.uScale.value = 1; }   // the posed rig itself (position / rotationY are implied)
+    else {
+      this._bake(it.root.geometry);
+      it.root.position.copy(position); it.root.rotation.set(0, rotationY, 0);
+      it.root.scale.setScalar(1);
+    }
     it.mat.uniforms.color.value.copy(color);
     it.life = it.max = life; it.op = opacity;
     it.root.visible = true;
@@ -251,7 +313,7 @@ export class Afterimages {
       it.life -= dt;
       const f = Math.max(0, it.life / it.max);
       it.mat.uniforms.opacity.value = f * f * it.op;
-      it.root.scale.setScalar(1 + (1 - f) * 0.06);
+      if (this.skin) it.mat.uniforms.uScale.value = 1 + (1 - f) * 0.06; else it.root.scale.setScalar(1 + (1 - f) * 0.06);
       if (it.life <= 0 || f * f * it.op < 0.09) { it.root.visible = false; it.life = 0; }   // the faint tail is invisible anyway
     }
   }
