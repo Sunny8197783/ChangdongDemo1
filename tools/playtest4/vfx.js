@@ -304,6 +304,22 @@ async function functional(PT, root) {
     const S = g.settings, PR = S.PRESETS || {};
     const presetOk = PR.low?.particleCap === 500 && PR.low?.additiveCap === 150 && PR.medium?.particleCap === 1000 && PR.medium?.additiveCap === 300 && PR.high?.particleCap === 2000 && PR.high?.additiveCap === 600;
     const cam = g.camera, f = new T.Vector3(); cam.getWorldDirection(f);
+    // foreign player FX (spell / sword objects patched through applyPlayerFx): over budget → the largest items shrink (fix round 1)
+    {
+      V.clear(); K.clear?.();
+      const fm = new T.MeshBasicMaterial({ color: 0x2f8fd6, transparent: true, side: T.DoubleSide }); V.applyPlayerFx(fm, { role: 'fill' });
+      const big = new T.Mesh(new T.SphereGeometry(5, 16, 12), fm); big.position.copy(cam.position).addScaledVector(f, 6.5); big.userData.owner = 'player'; g.scene.add(big);
+      const one = (o) => o === big;
+      const fr0 = PT.fragments({ owner: one }).scene;
+      for (let i = 0; i < 40; i++) { big.updateMatrixWorld(); PT.step(1 / 60, true); }
+      const parts = V.debug.coverage().parts, fr1 = PT.fragments({ owner: one }).scene;
+      g.scene.remove(big); big.geometry.dispose(); fm.dispose();
+      for (let i = 0; i < 40; i++) PT.step(1 / 60);
+      const relax = V.debug.coverage().parts.foreign;
+      PT.check('foreign player FX over budget shrink toward their origin (counted fragments drop, estimate ≤ soft budget), released when gone',
+        parts.foreignRaw > 1.4 && parts.foreignShrink < 0.9 && fr1 < fr0 * 0.85 && parts.foreign <= 1.5 && relax === 0,
+        { raw: +parts.foreignRaw.toFixed(2), shrink: +parts.foreignShrink.toFixed(2), est: +parts.foreign.toFixed(2), fr0: +fr0.toFixed(2), fr1: +fr1.toFixed(2), relax });
+    }
     const P0 = cam.position.clone().addScaledVector(f, 8);
     const caps = {};
     const v = S.values, keep = { pc: v.particleCap, ac: v.additiveCap };

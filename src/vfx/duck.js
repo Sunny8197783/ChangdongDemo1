@@ -145,6 +145,51 @@ export function createDuck(game) {
     recomputeMul();
   }
 
+  // ---------------- foreign player-FX coverage (fix round 1: F-shadowblade 1.86 screens from spell shells the estimator missed)
+  const FOREIGN_BIG = 0.06;                      // only items above this many screens are ever shrunk
+  const fRecs = new WeakMap(), fList = []; let fFrame = 0, fN = 0, fCover = 0, fShrink = 1, fRaw = 0, fIdle = 0;
+  const _bs = new THREE.Sphere();
+  function seeForeign(object, geometry) {
+    let r = fRecs.get(object);
+    if (!r) { r = { frame: -1, c: 0 }; fRecs.set(object, r); }
+    if (r.frame !== fFrame) {
+      r.frame = fFrame;
+      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+      _bs.copy(geometry.boundingSphere).applyMatrix4(object.matrixWorld);
+      const dx = _bs.center.x - _cam.x, dy = _bs.center.y - _cam.y, dz = _bs.center.z - _cam.z;
+      const z = dx * _fwd.x + dy * _fwd.y + dz * _fwd.z, rad = _bs.radius;
+      let c = 0;
+      if (dx * dx + dy * dy + dz * dz <= rad * rad * 1.1) c = 1.5;                 // camera inside the item
+      else if (z > -rad) { const zz = Math.max(z, rad * 0.5, 0.3); c = Math.min(1.5, Math.PI * rad * rad * pP00 * pP11 / (4 * zz * zz)); }
+      r.c = c;
+      if (fN < 256) fList[fN++] = r;
+    }
+    return r.c > FOREIGN_BIG ? fShrink : 1;
+  }
+  let pP00 = 1, pP11 = 1;
+  /**
+   * Once per frame, after the kit / particles estimated their share: allowed = screens left for foreign player FX.
+   * Returns the foreign coverage estimate after shrinking (items drawn last frame).
+   */
+  function foreignUpdate(allowed, realDt) {
+    const pe = game.camera.projectionMatrix.elements; pP00 = pe[0]; pP11 = pe[5];
+    if (fN === 0) {                              // nothing drawn since the last update: hold the state over sim-only steps,
+      if (++fIdle < 30) return fCover;           // clear it once no foreign item has been drawn for 30 updates
+      fCover = 0; fRaw = 0; fShrink = 1; return 0;
+    }
+    fIdle = 0;
+    let big = 0, small = 0;
+    for (let i = 0; i < fN; i++) { const c = fList[i].c; if (c > FOREIGN_BIG) big += c; else small += c; fList[i] = null; }
+    fN = 0; fFrame++;
+    fRaw = big + small;
+    let target = 1;
+    if (big > 1e-4 && big + small > allowed) target = Math.max(0.3, Math.sqrt(Math.max(0, allowed - small) / big));
+    // fast down, slow up (no pumping)
+    fShrink = target < fShrink ? target : fShrink + (target - fShrink) * Math.min(1, realDt * 2);
+    fCover = small + big * fShrink * fShrink;
+    return fCover;
+  }
+
   const PROTO_KEY = THREE.Material.prototype.customProgramCacheKey;
   /**
    * Patch a private player-FX material (side effect only). Idempotent. Refuses shared caches (userData.shared) and raw shaders.
@@ -159,6 +204,15 @@ export function createDuck(game) {
     const role = opts.role === 'line' ? 'line' : opts.role === 'fill' ? 'fill' : 'particle';
     const roleN = ROLE[role].toFixed(1);
     material.userData.__awFx = role;
+    const awU = material.userData.__awU = { shrink: { value: 1 } };
+    // coverage governor for player FX built outside the kit (spell / sword / class objects): each main-camera draw reports
+    // its projected size; foreignUpdate() shrinks the largest ones toward their origin when the frame is over budget
+    const prevOBR = material.onBeforeRender;
+    const hasOBR = typeof prevOBR === 'function' && prevOBR !== THREE.Material.prototype.onBeforeRender;
+    material.onBeforeRender = function (renderer, scene, camera, geometry, object, group) {
+      if (hasOBR) prevOBR.call(this, renderer, scene, camera, geometry, object, group);
+      if (camera === game.camera) awU.shrink.value = seeForeign(object, geometry);
+    };
     const prev = material.onBeforeCompile;
     const prevKey = material.customProgramCacheKey;
     const hasPrev = typeof prev === 'function' && prev !== THREE.Material.prototype.onBeforeCompile;
@@ -171,9 +225,10 @@ export function createDuck(game) {
       // role and premultiplied/straight output are per-material UNIFORMS (fix round 1: no program-key split per role / blend)
       const b = this.blending;
       const premulRGB = opts.additive === true || (b === THREE.CustomBlending && this.blendSrc === THREE.OneFactor);
-      sh.uniforms.uAwRole = { value: +roleN }; sh.uniforms.uAwPremul = { value: premulRGB ? 1 : 0 };
+      sh.uniforms.uAwRole = { value: +roleN }; sh.uniforms.uAwPremul = { value: premulRGB ? 1 : 0 }; sh.uniforms.uAwShrink = awU.shrink;
       const vs = sh.vertexShader, vi = vs.lastIndexOf('}');
-      sh.vertexShader = 'uniform mat4 uAwProjInv; uniform mat4 uAwCamWorld; uniform float uAwRole; varying float vAwFxM;\n' + DUCK_PARS + vs.slice(0, vi) +
+      sh.vertexShader = 'uniform mat4 uAwProjInv; uniform mat4 uAwCamWorld; uniform float uAwRole; uniform float uAwShrink; varying float vAwFxM;\n' + DUCK_PARS + vs.slice(0, vi) +
+        '\n  if (uAwShrink < 0.999) gl_Position = mix(projectionMatrix * modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0), gl_Position, uAwShrink);' +
         '\n  { vec4 awV = uAwProjInv * gl_Position; awV /= awV.w; vec3 awW = (uAwCamWorld * vec4(awV.xyz, 1.0)).xyz; vAwFxM = awFxMul(awW, -awV.z, uAwRole); }\n}\n';
       const fsv = sh.fragmentShader, fi = fsv.lastIndexOf('}');
       sh.fragmentShader = 'uniform float uAwPremul; varying float vAwFxM;\n' + fsv.slice(0, fi) +
@@ -184,7 +239,7 @@ export function createDuck(game) {
     patched++;
   }
 
-  return { shared, applyPlayerFx, fxMulAt, fxFactor, update, intensity, recomputeMul, get patched() { return patched; }, get footprintCount() { return fn; },
+  return { shared, applyPlayerFx, fxMulAt, fxFactor, update, intensity, recomputeMul, foreignUpdate, get foreignShrink() { return fShrink; }, get foreignRaw() { return fRaw; }, get patched() { return patched; }, get footprintCount() { return fn; },
     /** test helper: footprints currently mirrored on the CPU */
     _foot: F };
 }

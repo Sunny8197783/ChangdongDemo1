@@ -617,9 +617,12 @@ export function createVFX(game) {
       runes.update(fdt, rd);
       applyCamera(rd);
       // budgets: coverage (largest contributor shrinks first) and draw calls (oldest persistent visuals collapse)
-      const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() }, rd);
+      // player FX built outside the kit (spell / sword objects through applyPlayerFx) get what the kit leaves of the budget
+      const fc = duck.foreignUpdate(Math.max(0.2, budget.st.soft * 0.92 - (P.coverage + k.cover + runes.coverage())), rd);
+      const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() + fc }, rd);
       P.material.uniforms.uSoftMul.value = st.softMul; P.material.uniforms.uSizeMul.value = st.sizeMul;
-      covState.player = P.coverage + k.cover + runes.coverage(); covState.enemy = O.coverage + otherCover; covState.frame++;
+      covState.parts.foreign = fc; covState.parts.foreignShrink = duck.foreignShrink; covState.parts.foreignRaw = duck.foreignRaw;
+      covState.player = P.coverage + k.cover + runes.coverage() + fc; covState.enemy = O.coverage + otherCover; covState.frame++;
       covState.parts.soft = P.softCoverage; covState.parts.particles = P.coverage - P.softCoverage; covState.parts.linework = k.lwCover; covState.parts.kit = k.cover; covState.parts.runes = runes.coverage();
       if (covState.player > covState.peak) covState.peak = covState.player;
       let calls = (P.count > 0 ? 1 : 0) + k.calls + runes.calls() + debrisFx.calls();
