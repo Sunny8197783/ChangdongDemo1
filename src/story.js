@@ -87,6 +87,7 @@ export function createStory(game) {
         headYaw: 0, headPitch: 0, phase: Math.random() * 10, talks: {}, dist: 99, camDist: 99,
         tag: ui.makeTag(sp.name, sp.title), mark: '', collider: null, visible: true, outlinesOn: true,
         speaking: false, hop: 0, hidden: SPIRIT_NPCS.includes(id), spirit: !!m.info.spirit,
+        shadowBase: !!m.body.castShadow, shadowOn: !!m.body.castShadow,
       };
       if (n.hidden) { n.root.visible = false; n.visible = false; }
       else addCollider(n);
@@ -867,6 +868,7 @@ export function createStory(game) {
   const _proj = new THREE.Vector3();
   let t = 0, promptNpc = null, proxT = 0, proxCd = 0;
   const proxBarked = {};
+  const NPC_SHADOW_R = 28;
   function updateNpcs(realDt) {
     const cam = game.camera, Pp = game.player?.object?.position;
     const dd = game.settings?.values?.drawDistance ?? 0.8;
@@ -884,6 +886,10 @@ export function createStory(game) {
       const vis = n.camDist < visR;
       if (vis !== n.visible) { n.root.visible = vis; n.visible = vis; }
       if (!vis) { ui.hideTag(n.tag); continue; }
+      // NPCs cast shadows only inside the sun's shadow box around the player (world.js extent ±32 m), with hysteresis:
+      // a far NPC never costs a shadow-pass draw (§2 budgets)
+      const sh = n.shadowBase && n.dist < (n.shadowOn ? NPC_SHADOW_R + 3 : NPC_SHADOW_R);
+      if (sh !== n.shadowOn) { n.model.body.castShadow = sh; n.shadowOn = sh; }
       const ol = n.camDist < 34;
       if (ol !== n.outlinesOn) { for (const o of n.model.outlines) o.visible = ol; n.outlinesOn = ol; }
       const inDlg = D.active && (D.npc === n || D.focus === n || (D.npc && n.dist < 7 && SPEAKERS[D.node?.s] === n.sp));

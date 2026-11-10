@@ -29,6 +29,12 @@ export function createAnimQueue() {
       for (let i = 0; i < aqNode.length; i++) if (aqNode[i] === node && aqCls[i] === cls) { aqF[i] = frameNo; return; }
       aqNode.push(node); aqCls.push(cls); aqF.push(frameNo);
     },
+    /** Drop a pending re-add and remove the class now (a node hidden within 2 frames of restart() stays hidden). */
+    cancel(node, cls) {
+      if (!node) return;
+      node.classList.remove(cls);
+      for (let i = aqNode.length - 1; i >= 0; i--) if (aqNode[i] === node && aqCls[i] === cls) { aqNode.splice(i, 1); aqCls.splice(i, 1); aqF.splice(i, 1); }
+    },
     tick() {
       frameNo++;
       for (let i = aqNode.length - 1; i >= 0; i--) {

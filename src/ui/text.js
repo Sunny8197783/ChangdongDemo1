@@ -153,6 +153,8 @@ export const DEF_KO = { dodge: { caster: '회피', melee: '회피' }, defend: { 
  */
 export function fmtKo(text, ctx) {
   if (typeof text !== 'string' || text.indexOf('{') < 0) return text == null ? '' : String(text);
+  // a duration with no live value never prints as a blank ('… 초 동안'): the phrase is dropped ('세 번째 공격 뒤 반격 기회')
+  if (ctx && ctx.punishSec === '') text = text.replace(/\{punishSec\}\s*초\s*동안\s*/g, '').replace(/\{punishSec\}\s*초\s*/g, '');
   return text.replace(/\{(\w+)\}/g, (m, k) => (ctx && ctx[k] != null ? String(ctx[k]) : m));
 }
 /** Keymap actions behind each key token (§6.11). */

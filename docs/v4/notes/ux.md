@@ -48,3 +48,20 @@ Dialogue backlog, 화력/생존 build paths, breadcrumb trail — not built; fal
   playtest2 exit 0 with one non-ux FAIL "wind combo hitstop on the first hit of each castId" (reaction hit without castId,
   already filed by melee as request 4a; reproduces on other owners' branches).
 - playtest3 ui.js §7.9 change: '+XP number spawned' now checks the merged corner counter (§6.9).
+
+## Fix round 1 (review: combat readability + codex parry copy)
+
+- Hint slot: root cause of the hint that "stays through fights" was the anim queue: a hint shown and dismissed within
+  2 frames left a pending `show` re-add, so the slot stayed lit with no hint behind it. `AnimQueue.cancel()` now runs
+  on dismiss. Menu/progression hints (`unspent`, `equip`, `codex`, `legend`, `move_sprint`) wait out fights (put back
+  in the queue, show not counted). The equip hint only exists while the skill screen is open. Boss fight = enemies.boss
+  or the boss bar up (Kalis is announced only through bossSpawn).
+- Damage numbers: reaction hits show the number only (the name is the one small `aw-num-rxname`); sizes 20/24/22 px,
+  pop peak 1.15 (was 1.4), non-crit scale ≤ 1.05 (was ≤ 1.95 → 43 px).
+- Boss fight top centre: quest cards and area banners wait (`deferBanner`) while the boss bar is up; the bark and the
+  hint slot move below the boss block (CSS `body:has(.aw-boss.show)`).
+- NPCs cast shadows only within 28 m of the player (hysteresis 3 m; sun shadow box is ±32 m).
+- Codex: `parrySec(attack)` gives parry lines their own stun seconds (parryStunSec/punishParry, 'parry'-tell punishDur,
+  else e.parryDur ?? 1.6); a `{punishSec}` with no live value drops the "N초 동안" phrase instead of printing a blank.
+  UX3 asserts no rendered codex string matches /\s초 동안|\{\w+\}/.
+- `node tools/playtest4.js ux`: 98 passed, 0 failed; bootcheck: no console errors.

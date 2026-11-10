@@ -6,7 +6,11 @@ import { HINTS_KO, BOSS_HINTS } from './text.js';
 
 const GAP = 0.6, POLL = 0.25;
 
-export function createHints(game, { parent, fmt, canParry, anim }) {
+// Menu/progression hints never sit on screen during a fight: while any enemy is aggroed they wait in the queue
+// (a visible one is put back, its show not counted) and come back once the fight is over.
+const CALM = ['unspent', 'equip', 'codex', 'legend', 'move_sprint'];
+
+export function createHints(game, { parent, fmt, canParry, anim, unanim, treeOpen = () => false, bossShown = () => false }) {
   const ev = game.events;
   const el = parent.appendChild(h('div', 'aw-hint4', '<i class="aw-hint4-ico">?</i><span></span>'));
   const txt = el.querySelector('span');
@@ -20,8 +24,10 @@ export function createHints(game, { parent, fmt, canParry, anim }) {
 
   const enabled = () => game.settings?.values?.hints !== false;
   const blockedNow = () => !!game.cinematic?.active || game.state === 'dialogue' || game.state === 'cutscene' || game.state === 'title';
-  const bossFight = () => { const b = game.enemies?.boss; return !!(b && b.alive !== false && !b.defeated && !b.dying); };
-  const allowed = (q) => !(bossFight() && !q.opts.boss && !BOSS_HINTS.includes(q.id));
+  // a boss fight = enemies.boss alive, or the boss bar up (bosses announced only through bossSpawn never set enemies.boss)
+  const bossFight = () => { const b = game.enemies?.boss; return !!(b && b.alive !== false && !b.defeated && !b.dying) || !!bossShown(); };
+  const aggroed = () => (game.enemies?.aggroCount?.() || 0) > 0;
+  const allowed = (q) => !(bossFight() && !q.opts.boss && !BOSS_HINTS.includes(q.id)) && !(CALM.includes(q.id) && aggroed());
 
   function listen(name) {
     if (listened.has(name)) return;
@@ -67,7 +73,9 @@ export function createHints(game, { parent, fmt, canParry, anim }) {
   function dismiss() {
     if (!cur) return;
     cur = null; gap = GAP;
-    el.classList.remove('show'); el.dataset.id = '';
+    // cancel a still-pending show (shown and dismissed within 2 frames) or the slot stays lit with no hint behind it
+    if (unanim) unanim(el, 'show'); else el.classList.remove('show');
+    el.dataset.id = '';
   }
   /** Mark an action done (dismisses that hint if visible and drops it from the queue). */
   function done(id) {
@@ -79,7 +87,8 @@ export function createHints(game, { parent, fmt, canParry, anim }) {
     if (gap > 0) gap -= dt;
     if (cur) {
       curT -= dt;
-      if (curT <= 0 || !enabled() || blockedNow() || (!allowed(cur) && !cur.opts.boss)) dismiss();
+      if (CALM.includes(cur.id) && aggroed() && curT > 2) { const q = cur; shows[q.id] = Math.max(0, (shows[q.id] || 1) - 1); dismiss(); q.t = 0; queue.unshift(q); }
+      else if (curT <= 0 || !enabled() || blockedNow() || (!allowed(cur) && !cur.opts.boss)) dismiss();
       else if ((pollT -= dt) <= 0) { pollT = POLL; if (cur.opts.done && safe(cur.opts.done)) dismiss(); }
     }
     if (!cur) pump();
@@ -122,7 +131,12 @@ export function createHints(game, { parent, fmt, canParry, anim }) {
   ev.on('playerHurt', (p) => { if (p?.attackKind === 'hazard' || p?.attackKind === 'surface') lastHazardT = game.realTime || 0; });
   ev.on('levelUp', () => { if ((game.progression?.points || 0) > 0) hint('unspent', H.unspent, { until: 'skillLearned' }); });
   let equipDone = false;
-  ev.on('skillLearned', () => { if (equipDone) return; equipDone = true; hint('equip', H.equip, { until: 'loadoutChanged' }); });
+  // the equip hint is about the skill screen's slot bar: only shown while that screen is open, gone when it closes
+  // (skills learned elsewhere, e.g. 자동 배분, are auto-equipped and need no hint)
+  ev.on('skillLearned', () => {
+    if (equipDone || !treeOpen()) return;
+    equipDone = true; hint('equip', H.equip, { until: 'loadoutChanged', dropOnDone: true, done: () => !treeOpen() });
+  });
   let legendDone = false;
   const legend = () => { if (legendDone) return; legendDone = true; hint('legend', H.legend, { until: 'guideOpened', dur: 10 }); };
   ev.on('playerDeath', legend);

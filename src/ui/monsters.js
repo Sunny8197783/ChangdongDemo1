@@ -11,7 +11,7 @@ import { MCODEX_KO } from './text.js';
 const LS_KEY = 'aw_monster_codex_v4';
 const CARD_SEC = 6, STRIP_SEC = 4, AFTER_COMBAT = 3;
 
-export function createMonsters(game, { hud, fx, fmt, canParry, punishSec, onCardShown, anim }) {
+export function createMonsters(game, { hud, fx, fmt, canParry, punishSec, parryText, onCardShown, anim }) {
   const ev = game.events;
   let st = { seen: {}, defeated: {}, kills: {}, cards: {} };
   const norm = (d) => ({ seen: { ...(d?.seen || {}) }, defeated: { ...(d?.defeated || {}) }, kills: { ...(d?.kills || {}) }, cards: { ...(d?.cards || {}) } });
@@ -46,7 +46,7 @@ export function createMonsters(game, { hud, fx, fmt, canParry, punishSec, onCard
     const a = en?.attacks?.[0];
     if (!a) return '';
     let s = `${MCODEX_KO.counterPre}: ${fmt(a.counterKo || '')}`;
-    if (a.parryKo && canParry()) s += ` · ${MCODEX_KO.parryPre}: ${fmt(a.parryKo)}`;
+    if (a.parryKo && canParry()) s += ` · ${MCODEX_KO.parryPre}: ${parryText(a, null)}`;
     return s;
   }
 
@@ -162,7 +162,7 @@ export function createMonsters(game, { hud, fx, fmt, canParry, punishSec, onCard
       atk = `<div class="aw-ment-atk"><div class="aw-ment-ah">${MCODEX_KO.attackHead}</div>${(en.attacks || []).map((a) => {
         const ps = punishSec(a, null);
         const pun = a.punishKo ? ` · ${MCODEX_KO.punishPre}: ${esc(fmt(a.punishKo, { punishSec: ps }))}` : '';
-        return `<div class="aw-ment-a" data-tell="${esc(a.tell || '')}"><b>${esc(a.nameKo || a.id)}</b> — ${esc(fmt(a.tellKo || ''))} — ${esc(fmt(a.counterKo || ''))}${a.parryKo && cp ? `<span class="aw-ment-parry"> · ${MCODEX_KO.parryPre}: ${esc(fmt(a.parryKo))}</span>` : ''}${pun}</div>`;
+        return `<div class="aw-ment-a" data-tell="${esc(a.tell || '')}"><b>${esc(a.nameKo || a.id)}</b> — ${esc(fmt(a.tellKo || ''))} — ${esc(fmt(a.counterKo || ''))}${a.parryKo && cp ? `<span class="aw-ment-parry"> · ${MCODEX_KO.parryPre}: ${esc(parryText(a, null))}</span>` : ''}${pun}</div>`;
       }).join('')}</div><div class="aw-ment-kills">${MCODEX_KO.kills(st.kills[type] || 0)}</div>`;
     } else atk = `<div class="aw-ment-locked">${MCODEX_KO.locked}</div>`;
     return `<div class="aw-ment${dead ? ' defeated' : ' seen'}" data-type="${esc(type)}">${pic}<div class="aw-ment-body">

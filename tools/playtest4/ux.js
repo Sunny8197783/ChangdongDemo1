@@ -96,7 +96,7 @@ module.exports = async function ux(PT) {
     PT.check('UX1 recap: killer name + attack name', r && r.killer === en.nameKo && r.attack === a.nameKo && r.amount === 18, r && [r.killer, r.attack, r.amount]);
     PT.check('UX1 recap: killer line', /「.+ · .+」에 쓰러졌습니다 \(18 피해\)/.test(document.querySelector('.aw-death-killer')?.textContent || ''), document.querySelector('.aw-death-killer')?.textContent);
     PT.check('UX1 recap: last hits ≤ 5 with seconds, DoT grouped', r && r.hits.length >= 2 && r.hits.length <= 5 && r.hits.some((x) => x.grouped && x.n === 4) && r.hits.every((x) => x.sec >= 0), r?.hits);
-    const wantTip = u.fmtKo(a.counterKo) + (a.parryKo && u.canParry() ? ' · ' + u.fmtKo(a.parryKo) : '');
+    const wantTip = u.fmtKo(a.counterKo) + (a.parryKo && u.canParry() ? ' · ' + u.parryText(a, null) : '');
     PT.check('UX1 recap: class-correct codex tip', r && r.tip === wantTip, [r?.tip, wantTip]);
     const btns = [...document.querySelectorAll('.aw-death.show [data-rc]')].map((b) => b.textContent);
     PT.check('UX1 recap: buttons 다시 일어서기 / 보조 기능 조정 / 몬스터 도감 보기 / 위험 표시 보기', btns.length === 4 && /^다시 일어서기 \(.+\)$/.test(btns[0]) && btns[1] === '보조 기능 조정' && btns[2] === '몬스터 도감 보기' && btns[3] === '위험 표시 보기', btns);
@@ -136,11 +136,24 @@ module.exports = async function ux(PT) {
     PT.check('UX1 card when that enemy dies (out of combat)', M.cardOn && document.querySelector('.aw-mcard').dataset.type === 'wolf');
     PT.check('UX1 kill → defeated + kill count', M.state().defeated.wolf === 1 && M.state().kills.wolf === 1);
     PT.step(7);
-    g.events.emit('bossSpawn', { id: 'golem', name: '고대 바위 골렘', boss: { bossId: 'golem', kind: 'golem', weakness: ['water'], resist: { earth: 0.5 } }, brief: ['원이 차면 {jumpKey}로 넘기', '빛나는 핵이 약점', '붕괴 뒤 몰아치기'] });
+    const fxBoss = { bossId: 'golem', kind: 'golem', weakness: ['water'], resist: { earth: 0.5 } };
+    g.events.emit('bossSpawn', { id: 'golem', name: '고대 바위 골렘', boss: fxBoss, brief: ['원이 차면 {jumpKey}로 넘기', '빛나는 핵이 약점', '붕괴 뒤 몰아치기'] });
     PT.step(0.3);
     const lis = [...document.querySelectorAll('.aw-mbrief li')].map((l) => l.textContent);
     PT.check('UX1 boss brief card from bossSpawn.brief (3 bullets, tokens filled)', M.briefOn && lis.length === 3 && !lis[0].includes('{'), lis);
     PT.check('UX1 boss bar: larger weakness icons', document.querySelectorAll('.aw-boss-weak .aw-wk').length >= 1);
+    // boss fight owns the top centre: quest card waits, bark sits below the boss block, hint slot clears it
+    const qn = () => u._cardLog.filter((c) => c.startsWith('새로운 임무')).length, q0 = qn();
+    const realObj = g.story?.getObjective; if (g.story) g.story.getObjective = () => null;
+    g.events.emit('questStart', { title: '__pt_boss_quest' }); PT.step(0.5);
+    const bossEl = document.querySelector('.aw-boss.show'), bk = document.querySelector('.st-bark'), hn = document.querySelector('.aw-hint4');
+    const bb = bossEl?.getBoundingClientRect(), kb = bk?.getBoundingClientRect(), hb = hn?.getBoundingClientRect();
+    PT.check('UX2 boss fight: quest card deferred, bark + hint slot below the boss block', qn() === q0 && bb && kb && hb && kb.top >= bb.top + 100 && hb.top >= bb.top + 100 && hb.right < Math.max(kb.left, innerWidth / 2 - 240), { q: [q0, qn()], boss: bb && [bb.top, bb.bottom], bark: kb && [kb.top, kb.left], hint: hb && [hb.top, hb.right] });
+    const bq = u.debug.bannersQueued();
+    fxBoss.alive = false;
+    for (let i = 0; i < 30 && qn() === q0; i++) PT.step(0.5);
+    PT.check('UX2 deferred quest card shown after the boss', qn() === q0 + 1, { q: [q0, qn()], queuedDuringBoss: bq, queuedNow: u.debug.bannersQueued(), state: g.state, boss: document.querySelector('.aw-boss')?.className });
+    if (g.story) g.story.getObjective = realObj;
     g.enemies.aggroCount = realAggro;
     PT.step(6.5);
   });
@@ -161,6 +174,12 @@ module.exports = async function ux(PT) {
     PT.check('UX1 codex: rendered model thumbnails for every type with a preview model', imgs.length >= withModel && imgs.length > 0, { imgs: imgs.length, withModel, n });
     PT.check('UX1 defeated entries list attacks (이름 — 예고 — 대처) + kill count', document.querySelectorAll('.aw-codex .aw-ment.defeated .aw-ment-a').length >= n && !!document.querySelector('.aw-ment-kills'));
     PT.check('UX1 mage sees parryKo lines', !!document.querySelector('.aw-ment-parry') === Object.values(all).some((e) => e.attacks.some((a) => a.parryKo)));
+    const ctext = document.querySelector('.aw-codex')?.innerText || '';
+    const blank = ctext.match(/.{0,24}(\s초 동안|\{\w+\}).{0,8}/g) || [];
+    PT.check('UX3 codex text has no blank duration or raw token (/\\s초 동안|\\{\\w+\\}/)', blank.length === 0 && ctext.length > 200, blank.slice(0, 4));
+    const wantP = { 'voidknight.slam': '2.0', 'nox.teleportSlash': '2.0', 'bokoblin.swing': '1.6' };
+    const gotP = {}; for (const t in all) for (const a of all[t].attacks) if (a.parryKo && wantP[a.id]) gotP[a.id] = (u.parryText(a, null).match(/([\d.]+)초/) || [])[1];
+    PT.check('UX3 parry stun seconds from live values (not the miss-punish window)', Object.keys(gotP).every((k) => gotP[k] === wantP[k]) && Object.keys(gotP).length >= 1, gotP);
     PT.note(`codex page: ${ents.length} entries, ${imgs.length} rendered thumbnails (${withModel} preview models)`);
     PT.check('UX2 codex hint dismissed by opening the codex', u.debug.hintVisible() !== 'codex');
     M.reset(); u.closeCodex(); PT.step(0.05); u.openCodex('mon'); PT.step(0.05);
@@ -223,6 +242,25 @@ module.exports = async function ux(PT) {
     PT.check('UX2 no centre banner while aggroed (queued)', u.debug.bannersQueued() > 0 && lv() === n0, [u.debug.bannersQueued(), lv(), n0]);
     aggro = 0; PT.step(3.6);
     PT.check('UX2 queued banner shown 3 s after combat', u.debug.bannersQueued() === 0 && lv() === n0 + 1);
+    // a hint dismissed within 2 frames of showing must not leave the slot lit (pending anim re-add cancelled)
+    H.reset(); PT.step(0.8); u.hint('pt_fast', '빠른', { dur: 5 }); PT.step(1 / 60); H.done('pt_fast'); PT.step(0.3);
+    PT.check('UX2 hint slot dark after an immediate dismiss', !document.querySelector('.aw-hint4.show') && u.debug.hintVisible() === null);
+    // menu hints never sit on screen in a fight; the equip hint only exists on the skill screen
+    H.reset(); PT.step(0.8);
+    g.events.emit('skillLearned', { id: 'pt' }); PT.step(0.2);
+    PT.check('UX2 equip hint not shown outside the skill screen', u.debug.hintVisible() !== 'equip' && H.shows('equip') === 0);
+    u.hint('unspent', undefined, {}); PT.step(0.2);
+    const unspentOn = u.debug.hintVisible() === 'unspent';
+    aggro = 1; PT.step(0.3);
+    PT.check('UX2 calm hint (unspent) leaves the screen when a fight starts, back after', unspentOn && u.debug.hintVisible() === null && H.queued() === 1, [unspentOn, u.debug.hintVisible(), H.queued()]);
+    aggro = 0; PT.step(1.0);
+    PT.check('UX2 calm hint back after the fight', u.debug.hintVisible() === 'unspent');
+    H.reset();
+    // a reaction hit shows only its number (the reaction name is the one small aw-num-rxname label)
+    const fwd = g.player.object.position.clone(); fwd.y += 1.2; fwd.z -= 4;
+    g.events.emit('damage', { amount: 57, reaction: 'pt_rx', element: 'wind', point: fwd, target: { object: { position: fwd } } }); PT.step(0.05);
+    const rxs = [...document.querySelectorAll('.aw-num-rx')].map((e) => e.textContent).filter((t) => /57/.test(t));
+    PT.check('UX2 reaction hit number has no name text and is ≤ 26 px', rxs.length >= 1 && rxs.every((t) => t === '57') && parseFloat(getComputedStyle(document.querySelector('.aw-num-rx')).fontSize) <= 26, rxs);
     g.enemies.aggroCount = realAggro;
     // damage numbers
     const p = g.player.object.position;

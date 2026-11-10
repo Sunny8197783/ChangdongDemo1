@@ -270,16 +270,16 @@
 
 /* ---------------------------------------------------------------- damage numbers */
 .aw-num { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform, opacity; opacity: 0; transform: translate(-9999px, 0);
-  font: 800 22px/1 var(--sans); color: #fff; letter-spacing: .01em; font-variant-numeric: tabular-nums;
+  font: 800 20px/1 var(--sans); color: #fff; letter-spacing: .01em; font-variant-numeric: tabular-nums;
   -webkit-text-stroke: 1px rgba(10, 8, 20, .85); paint-order: stroke fill;
   text-shadow: 0 0 6px var(--nc), 0 0 2px var(--nc), 0 2px 2px rgba(0,0,0,.7); }
 .aw-num { color: color-mix(in srgb, var(--nc) 55%, #fff); }
-.aw-num-crit { font-size: 30px; color: color-mix(in srgb, var(--nc) 75%, #fff); text-shadow: 0 0 10px var(--nc), 0 0 22px var(--nc), 0 2px 2px #000; }
-.aw-num-rx { font-size: 26px; color: #ffe27a; background: linear-gradient(#fff6c8, #ffc23a 60%, #e88a14); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+.aw-num-crit { font-size: 24px; color: color-mix(in srgb, var(--nc) 75%, #fff); text-shadow: 0 0 10px var(--nc), 0 0 22px var(--nc), 0 2px 2px #000; }
+.aw-num-rx { font-size: 22px; color: #ffe27a; background: linear-gradient(#fff6c8, #ffc23a 60%, #e88a14); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   -webkit-text-stroke: 0; text-shadow: none; filter: drop-shadow(0 0 6px rgba(255,190,60,.9)) drop-shadow(0 2px 1px rgba(0,0,0,.8)); }
-.aw-num-big { font-size: 30px; text-shadow: 0 0 10px var(--nc), 0 0 24px var(--nc), 0 2px 2px #000; }
+.aw-num-big { font-size: 24px; text-shadow: 0 0 8px var(--nc), 0 2px 2px #000; }
 .aw-num-dot { font-size: 16px; opacity: .85; font-weight: 700; }
-.aw-num-player { font-size: 26px; color: #ff5d6a; text-shadow: 0 0 8px #ff2040, 0 2px 2px #000; }
+.aw-num-player { font-size: 22px; color: #ff5d6a; text-shadow: 0 0 8px #ff2040, 0 2px 2px #000; }
 .aw-num-pick { font-size: 18px; font-family: inherit; font-weight: 800; color: var(--nc); }
 
 /* ---------------------------------------------------------------- enemy bars */
@@ -1391,3 +1391,14 @@
 .aw-classes-more { pointer-events: auto; margin-top: 6px; }
 .aw-node.rec .aw-node-star { box-shadow: 0 0 0 2px #7dffb0, 0 0 16px 4px rgba(125, 255, 176, .55); animation: aw-recglow 1.6s ease-in-out infinite; }
 @keyframes aw-recglow { 50% { box-shadow: 0 0 0 2px #7dffb0, 0 0 6px 1px rgba(125, 255, 176, .3); } }
+
+/* ---------------------------------------------------------------- boss fight top-centre stack (§6.9): boss block
+   (title, name, bar, meta, parts: 88 → ~196 px) owns the top centre; the bark sits below it, narrowed so the
+   top-left hint slot (moved below the boss block, narrowed) never shares a row with it. Quest/area cards wait
+   (deferBanner) until the boss is gone. */
+body:has(.aw-boss.show) .st-bark { top: 204px; max-width: min(640px, calc(100vw - 500px)); min-width: 0; font-size: 15px; }
+body:has(.aw-boss.show) .aw-hint4 { top: 204px; max-width: 220px; }
+@media (min-width: 1700px) and (min-height: 950px) {
+  body:has(.aw-boss.show) .st-bark { top: 248px; }
+  body:has(.aw-boss.show) .aw-hint4 { top: 248px; max-width: 300px; }
+}
