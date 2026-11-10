@@ -98,3 +98,21 @@ No playtest3 section is owned by bosses; the boss expectations for `tools/playte
 - The golem is still pre-built as the v3 model by the v3 `enemies.js`; golem.js builds the v4 model at spawn (0 new programs measured) until
   mobs' `prewarmGolem` call lands (in `mobs-b`).
 - Enemy-FX coverage is measured branch-side with `vfx-b` + legacy particles; the hard number is the integration I-check.
+
+## Fix round 1 (after integration review)
+- **Boot safety (@noBosses)**: `bossbase.js` and `golem.js` no longer statically import `./bosses/codex.js` / `golem_model.js`; both use
+  top-level `await import(...).catch(() => null)` with empty fallbacks (codex → null/[]/{}; golem model → `createGolem` throws a clear
+  error, `prewarmGolem` returns null). `golem.js` now takes `codexOf` / `registerBossCodex` from `bossbase.js`. bootcheck `@noBosses`:
+  `stubbed: []` (was `["enemies"]`).
+- **Instanced toon warm**: `bossbase.warmInstancedToon(game)` (called from `prewarmGolem`, inside the boot prewarm, before `game.ready`)
+  draws a 1-instance InstancedMesh with instanceColor and a default `toonMat` once, so nidhoggra's `nid-body` (toonRim+dis, layer
+  mask 15) is no new program on the plateau. The material is kept alive (disposing it releases the program). Repro (check-11 path):
+  programs 161 → 162 on boss spawn before; 162 → 162 after.
+- **treant.pods B1**: a pod started by `debugAttack('treant.pods')` is `fused` (hits do not pop it early; cleared on burst / cancel);
+  AI pods stay poppable as designed. B1 rows now report `diedAt` when a handle died before lock. `PT_BOSS_ATTACKS=<ids>` filters B1.
+- **Review gate (models + sheets)**: turntables detach hidden children for the shot and fit the visible box to ~88 % of the 16:9 cell.
+  golem: larger face (eye slits, mouth crack, heavy brow; head without moss), bigger core set forward in the cage. hydra: necks ×1.3,
+  heads ×1.6 (proxy too), large gill frills + head sail, deeper jaw with a lower lip, larger glowing slit-pupil eyes; shield ring moved
+  forward. nidhoggra: coil radius ×1.26 (tail thicker), head ×1.21, oath shards ×1.5 and higher above the spine. treant: chest plate split
+  into two bevelled light slabs with a window where the rot heart (now slimmer, with an inner core) glows through the rib-roots;
+  thicker, brighter vines with two leaves. Same draw calls (all merged into existing skins/instanced meshes).

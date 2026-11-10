@@ -24,7 +24,7 @@ export const TREANT_DATA = {
   stomp: 26, sweep: 24, roots: 20, pod: 22,
 };
 const HIP = 6.6;
-const TC = { bark: 0x6a5440, barkDark: 0x46362a, barkLight: 0x8a7258, moss: 0x6a8a44, rot: 0x7a4a9a, rotDark: 0x4a2c6a, leaf: 0x6a8a3a, dead: 0x5a4a38, plate: 0x9a7a58, crack: 0x2a1e16, cap: 0xb86a3a, capSpot: 0xe8d8b0, stem: 0xd8c8a0, hollow: 0x1e1610 };
+const TC = { bark: 0x6a5440, barkDark: 0x46362a, barkLight: 0x8a7258, moss: 0x7aa04a, rot: 0x7a4a9a, rotDark: 0x4a2c6a, leaf: 0x6a8a3a, dead: 0x5a4a38, plate: 0xb48c60, crack: 0x24180f, cap: 0xb86a3a, capSpot: 0xe8d8b0, stem: 0xd8c8a0, hollow: 0x1e1610 };
 
 function geos() {
   return once('treant', () => {
@@ -66,8 +66,10 @@ function geos() {
         // root feet
         ...Array.from({ length: 5 }, (_, i) => P(K(0.5, 2.6, 5), TC.bark, [Math.sin(i * 1.26 - 2.5) * 1.1, -3.1, Math.cos(i * 1.26 - 2.5) * 1.1 + 0.6], [Math.PI / 2 - 0.3, 0, -Math.sin(i * 1.26 - 2.5) * 0.6])),
       ]),
-      plateChest: mergeParts([P(S(2.3, 10, 8, 0, Math.PI), TC.plate, [0, 3.4, 1.4], [0, 0, 0], [1.1, 1.3, 0.55]), P(B(0.25, 3.6, 0.3), TC.barkDark, [0, 3.4, 2.65]),
-        ...[[-1.0, 4.2, 0.5], [0.9, 2.6, -0.6], [-0.6, 2.2, 0.9], [1.1, 4.4, 0.3]].map(([x, y, rz]) => P(B(0.1, 1.2, 0.12), TC.crack, [x, y, 2.55], [0, 0, rz])),
+      // two bevelled chest slabs with a window between them: the rot heart glows through the rib-roots (review)
+      plateChest: mergeParts([...[-1, 1].map((sx) => P(S(1.3, 10, 8), TC.plate, [sx * 1.4, 3.5, 1.75], [0, sx * 0.35, 0], [0.78, 2.0, 0.5])),
+        ...[-1, 1].map((sx) => P(S(1.3, 8, 6), TC.barkDark, [sx * 1.42, 3.5, 1.6], [0, sx * 0.35, 0], [0.86, 2.08, 0.42])),   // dark bevel rim
+        ...[[-1.25, 4.3, 0.5], [1.2, 2.7, -0.6], [-1.55, 2.6, 0.9], [1.45, 4.4, 0.3]].map(([x, y, rz]) => P(B(0.1, 1.2, 0.12), TC.crack, [x, y, 2.33], [0, 0, rz])),
         P(B(2.6, 0.18, 0.4), TC.barkLight, [0, 4.9, 2.35], [0.3, 0, 0]), P(B(2.4, 0.18, 0.4), TC.barkLight, [0, 1.9, 2.3], [-0.3, 0, 0])]),
       plateBack: mergeParts([P(S(2.3, 10, 8), TC.plate, [0, 3.6, -1.5], [0, 0, 0], [1.1, 1.3, 0.5]), P(B(3.2, 0.25, 0.3), TC.barkDark, [0, 3.8, -2.6]),
         ...[[-0.8, 4.4, 0.4], [0.7, 3.0, -0.5], [0, 2.4, 0.2]].map(([x, y, rz]) => P(B(0.1, 1.1, 0.12), TC.crack, [x, y, -2.65], [0, 0, rz]))]),
@@ -86,9 +88,9 @@ function geos() {
         P(S(0.38, 9, 7), TC.barkDark, [0, 0.35, 1.5], [0, 0, 0], [1.4, 0.6, 0.6]), P(S(0.22, 8, 6), TC.hollow, [0, 0.35, 1.68], [0, 0, 0], [1.6, 0.45, 0.4]),
         P(S(0.25, 7, 5), TC.barkLight, [0.35, 0.2, 1.7]), P(S(0.2, 7, 5), TC.barkLight, [-0.4, 0.45, 1.68])]),
       fingers: mergeParts([-0.6, -0.2, 0.2, 0.6].flatMap((x, i) => [P(K(0.14, 1.2, 5), TC.dead, [x * 1.3, -5.7, 0.6 + (i % 2) * 0.2], [0.6, 0, x * 0.8])])),
-      vine: mergeParts([P(C(0.07, 0.1, 1.6, 5), TC.moss, [0, -0.8, 0]), P(S(0.18, 6, 4), TC.leaf, [0.1, -1.3, 0.05], [0, 0, 0], [1, 0.5, 1.4])]),
+      vine: mergeParts([P(C(0.12, 0.17, 1.6, 5), TC.moss, [0, -0.8, 0]), P(S(0.28, 6, 4), TC.leaf, [0.14, -1.0, 0.08], [0, 0, 0], [1, 0.5, 1.4]), P(S(0.24, 6, 4), TC.leaf, [-0.12, -1.5, 0.06], [0, 0, 0], [1, 0.5, 1.4])]),
       glowHead: glowify(mergeParts([P(S(0.28, 8, 6), 0xd9a0ff, [0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5]), P(S(0.28, 8, 6), 0xd9a0ff, [-0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5])]), 1.15),
-      heart: glowify(mergeParts([P(OCT(1.0), 0x9be86a, [0, 0, 0], [0, 0, 0], [1, 1.35, 0.8]), P(T(1.25, 0.1, 14), 0xb36bff, [0, 0, 0])]), 1.15),
+      heart: glowify(mergeParts([P(OCT(1.0), 0x9be86a, [0, 0, 0], [0, 0, 0], [0.62, 1.3, 0.75]), P(OCT(0.5), 0xd6f5b0, [0, 0, 0.35], [0, 0, 0], [0.6, 1.2, 0.6]), P(T(0.9, 0.08, 14), 0xb36bff, [0, 0, 0.1])]), 1.15),
       pod: (() => { const g = new THREE.IcosahedronGeometry(0.55, 1); return g; })(),
     };
   });
@@ -98,7 +100,7 @@ export function buildTreant() {
   const g = geos();
   const m = humanoid(g, { hipY: HIP, neckY: 6.6, shoulderX: 3.0, shoulderY: 5.4, upperLen: 4.2, foreLen: 4.0, hipX: 1.5, thighLen: 3.4 });
   const plateChest = pivot(m.spine), plateBack = pivot(m.spine), plateArmR = pivot(m.armR), plateArmL = pivot(m.armL);
-  const heartB = pivot(m.spine, 0, 3.6, 1.9);
+  const heartB = pivot(m.spine, 0, 3.5, 2.05);
   m.bones.push(plateChest, plateBack, plateArmR, plateArmL, heartB);
   const n = m.bones.length;
   m.parts.push([n - 5, g.plateChest], [n - 4, g.plateBack], [n - 3, g.plateArm], [n - 2, g.plateArm]);
@@ -201,7 +203,7 @@ export function createTreant(ctx, arena, opts = {}) {
     const obj = new THREE.Object3D(); game.scene.add(obj);
     const pod = { id: 'treantPod' + i, team: 'enemy', isProp: true, alive: false, object: obj, hp: 1, maxHp: 1, radius: 0.7, height: 1.2, mass: 1e6,
       statuses: {}, velocity: new THREE.Vector3(), xpValue: 0, slot: i, t: 0,
-      onHit() { burstPod(pod); }, onDeath() { burstPod(pod); }, getCenter(out = new THREE.Vector3()) { return out.copy(obj.position).setY(obj.position.y + 0.6); } };
+      onHit() { if (!pod.fused) burstPod(pod); }, onDeath() { if (!pod.fused) burstPod(pod); }, getCenter(out = new THREE.Vector3()) { return out.copy(obj.position).setY(obj.position.y + 0.6); } };
     pods.push(pod);
   }
   function dropPods(n) {
@@ -211,14 +213,14 @@ export function createTreant(ctx, arena, opts = {}) {
       const a = rand(0, 6.28), r = rand(5, Math.min(14, A.radius - 3));
       pod.object.position.set(p.x + Math.sin(a) * r, 0, p.z + Math.cos(a) * r);
       pod.object.position.y = ctx.groundH(pod.object.position.x, pod.object.position.z);
-      pod.alive = true; pod.hp = 1e6; pod.maxHp = 1e6; pod.t = 0; pod.h = null;
+      pod.alive = true; pod.hp = 1e6; pod.maxHp = 1e6; pod.t = 0; pod.h = null; pod.fused = false;
       try { game.combat.register(pod); } catch (_) { /* */ }
       ctx.dust(pod.object.position, 0.8);
     }
   }
   function burstPod(pod, hh = null) {
     if (!pod.alive) return;
-    pod.alive = false;
+    pod.alive = false; pod.fused = false;
     if (pod.h && !hh) { pod.h.stop(); pod.h = null; }
     try { game.combat.unregister(pod); } catch (_) { /* */ }
     const c = pod.object.position;
@@ -298,6 +300,8 @@ export function createTreant(ctx, arena, opts = {}) {
     }
     return bossHit(ctx, e, L.h, { attack: 'treant.roots', amount: D.roots, element: 'nature', knockback: 4, launch: 10, heavy: true, status: { rooted: 1.0 }, from: atkPos });
   }
+  // debugAttack('treant.pods') fuses its pod (pod.fused): hits never pop it early, so the debug tell always resolves on its
+  // own (a pet / aura / stray hit popping the glowing pod made the hitbox test non-deterministic). AI pods stay poppable.
   // pods: 9 s after landing a pod glows (tells 'treant.pods', 1.0 s) and bursts on its own
   function podTick(dt) {
     for (const pod of pods) {
@@ -306,7 +310,7 @@ export function createTreant(ctx, arena, opts = {}) {
         pod.h = bossAttack(ctx, e, 'treant.pods', { shape: { pos: pod.object.position }, hold: false });
         if (!pod.h) pod.t = 8;
       }
-      if (pod.h) { if (pod.h.consumeStrike()) { const hh = pod.h; pod.h = null; burstPod(pod, hh); } else if (cancelled(pod.h)) pod.h = null; }
+      if (pod.h) { if (pod.h.consumeStrike()) { const hh = pod.h; pod.h = null; burstPod(pod, hh); } else if (cancelled(pod.h)) { pod.h = null; pod.fused = false; } }
     }
   }
 
@@ -389,7 +393,7 @@ export function createTreant(ctx, arena, opts = {}) {
   finishBoss(ctx, e, { type: 'treant', cameraHint: { dist: 1.7, height: 1.6 }, preview: () => buildTreant().root, noDistanceRate: true,
     debugAttack: (id) => {
       stopAttacks(e); atk = null; tele = null; roots = [];
-      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9.5; podTick(0); return pod.h; }
+      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9.5; podTick(0); pod.fused = !!pod.h; return pod.h; }
       return start(String(id).replace(/^treant\./, ''));
     },
     onBroken: () => { atk = null; tele = null; roots = []; } });

@@ -10,11 +10,19 @@
 //   - defeat path: cfg.canDie() / cfg.onZero() (Nox purify, Kalis revive) → defeat() emits bossDefeated exactly once
 //   - debugPhase(n), debugDefeat(), music hint, bossSpawn payload (spawnPayload())
 import * as THREE from 'three';
-import { clamp } from '../core/utils.js';
+import { clamp, toonMat } from '../core/utils.js';
 import { makeEnemy } from './base.js';
 import { bossScaling, XP_VALUES } from './scaling.js';
 import { hitTest as refHitTest } from '../core/tellgeom.js';
-import { attackSpec, attacksOf, codexOf, BOSS_BRIEF, registerBossCodex } from './bosses/codex.js';
+// optional (v4 boot safety): without src/enemies/bosses/ the enemies module and every mob must still load, so the boss codex
+// is imported dynamically (top-level await) and falls back to empty data.
+const CX = await import('./bosses/codex.js').catch(() => null);
+const attackSpec = CX ? CX.attackSpec : () => null;
+const attacksOf = CX ? CX.attacksOf : () => [];
+const codexOf = CX ? CX.codexOf : () => null;
+const BOSS_BRIEF = CX ? CX.BOSS_BRIEF : {};
+const registerBossCodex = CX ? CX.registerBossCodex : () => false;
+export { codexOf, registerBossCodex };
 
 const _v = new THREE.Vector3(), _q = new THREE.Vector3();
 let partUid = 0;
@@ -475,6 +483,25 @@ export function bossPunish(ctx, e, dur, mul) {
  * Compile the shadow-depth program of a skinned caster ahead of its first shadow draw (renderer.compile skips the shadow pass, so a
  * boss proxy would otherwise compile MeshDepthMaterial+skinning on its first shadowed frame). Once per page.
  */
+/**
+ * Boot warm (called from golem.js prewarmGolem, i.e. inside the boot prewarm, before game.ready): the instanced variant
+ * (instancing + instanceColor) of the default toon program. The toon program is warm from boot only as its plain-mesh
+ * variant; nidhoggra's 24-segment InstancedMesh body (loaded later with the bosses folder) would otherwise compile a new
+ * program on arrival at the plateau. One 1-instance mesh, one real draw, the material kept alive. Once per page.
+ */
+let instToonWarmed = false, instToonMat = null;
+export function warmInstancedToon(game) {
+  const R = game?.render;
+  if (instToonWarmed || !R?.warm) return false;
+  const geo = new THREE.BoxGeometry(0.01, 0.01, 0.01), mat = toonMat(0xf8f8f8, {});
+  const im = new THREE.InstancedMesh(geo, mat, 1); im.name = 'boss-inst-toon-warm';
+  im.setMatrixAt(0, new THREE.Matrix4()); im.setColorAt(0, new THREE.Color(0x4c4666));
+  try { R.warm(im, { now: true }); instToonWarmed = true; } catch (err) { console.warn('[bosses] instanced toon warm', err?.message || err); }
+  if (im.parent) im.parent.remove(im);
+  // the material is kept (never disposed): disposing it would release the program it just compiled
+  instToonMat = mat; geo.dispose();
+  return instToonWarmed;
+}
 let shadowWarmed = false;
 export function warmSkinnedShadow(game, mesh) {
   if (shadowWarmed || !mesh?.isSkinnedMesh || !game?.renderer || !game.camera) return;

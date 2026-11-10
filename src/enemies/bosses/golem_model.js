@@ -19,7 +19,7 @@ function geos() {
   // rune strip: a carved groove (dark stone lip) + the glowing inlay on top, oriented on a rock face
   const runeGeo = mergeParts([P(B(0.08, 0.62, 0.06), 0xc8e4f2, [0, 0, 0]), P(B(0.26, 0.06, 0.06), 0xc8e4f2, [0, 0.18, 0]), P(B(0.2, 0.06, 0.06), 0xc8e4f2, [0, -0.16, 0])]);
   const seamGeo = mergeParts([P(B(0.05, 0.5, 0.05), 0xb8dcee, [0, 0, 0], [0, 0, 0.35]), P(B(0.04, 0.34, 0.05), 0xb8dcee, [0.1, -0.36, 0], [0, 0, -0.4])]);
-  const coreGeo = new THREE.OctahedronGeometry(0.5, 1); coreGeo.scale(0.85, 1.25, 0.6);
+  const coreGeo = new THREE.OctahedronGeometry(0.62, 1); coreGeo.scale(0.85, 1.25, 0.6);
   const coreInner = new THREE.OctahedronGeometry(0.26, 0); coreInner.scale(0.8, 1.3, 0.7);
   const coreMerged = mergeParts([P(coreGeo, 0xbfe6f4, [0, 0, 0]), P(coreInner, 0xe2f2f8, [0, 0, 0.12])]);
   // cage: 4 rock arcs around the core (each its own bone so they can swing open)
@@ -27,9 +27,11 @@ function geos() {
     P(K(0.08, 0.3, 4), STONE_L, [0.55, 0.55, 0.05], [0, 0, -0.8])]);
   const knuckles = mergeParts([0, 1, 2, 3].map((i) => P(K(0.12, 0.42, 5), STONE_L, [-0.36 + i * 0.24, -0.62, 0.45], [1.25, 0, 0])));
   const strand = mergeParts([P(K(0.09, 0.9, 5), MOSS, [0, -0.45, 0], [Math.PI, 0, 0]), P(K(0.06, 0.5, 5), MOSS_D, [0.06, -0.75, 0.02], [Math.PI, 0, 0.2])]);
-  const eyes = mergeParts([P(B(0.26, 0.08, 0.1), 0xd2f0fa, [0.25, 0.48, 0.66], [0, 0, -0.2]), P(B(0.26, 0.08, 0.1), 0xd2f0fa, [-0.25, 0.48, 0.66], [0, 0, 0.2]),
-    P(B(0.07, 0.07, 0.04), 0xe8f6fb, [0.27, 0.49, 0.71]), P(B(0.07, 0.07, 0.04), 0xe8f6fb, [-0.23, 0.49, 0.71])]);
-  const brow = mergeParts([P(B(1.05, 0.16, 0.34), STONE_D, [0, 0.62, 0.62], [0.25, 0, 0])]);
+  // face (review: readable from the front): deep-set glowing eye slits under a heavy brow, a glowing mouth crack
+  const eyes = mergeParts([P(B(0.36, 0.12, 0.12), 0xd2f0fa, [0.3, 0.5, 0.86], [0, 0, -0.22]), P(B(0.36, 0.12, 0.12), 0xd2f0fa, [-0.3, 0.5, 0.86], [0, 0, 0.22]),
+    P(B(0.1, 0.1, 0.05), 0xe8f6fb, [0.32, 0.51, 0.93]), P(B(0.1, 0.1, 0.05), 0xe8f6fb, [-0.28, 0.51, 0.93]),
+    P(B(0.5, 0.06, 0.08), 0xb8dcee, [0, 0.16, 0.9], [0, 0, 0.06]), P(B(0.16, 0.05, 0.08), 0xb8dcee, [0.3, 0.2, 0.86], [0, 0.3, -0.4])]);
+  const brow = mergeParts([P(B(1.3, 0.22, 0.4), STONE_D, [0, 0.68, 0.8], [0.3, 0, 0]), P(B(0.9, 0.2, 0.3), STONE_D, [0, 0.02, 0.84], [-0.2, 0, 0])]);
   shared = { rock, lo, runeGeo, seamGeo, coreMerged, arc, knuckles, strand, eyes, brow };
   return shared;
 }
@@ -64,7 +66,7 @@ export function buildGolemModel() {
   fl(R(spine, 0.6, 11, [1, 0.9, 0.7], true, -0.8, 1.8, -1.0));
   seam(spine, 0, 1.4, -1.35, Math.PI);
   // crystal core inside the cage ring (the weak point)
-  const coreGroup = pivot(spine, 0, 1.1, 1.2);
+  const coreGroup = pivot(spine, 0, 1.1, 1.38);
   const core = pivot(coreGroup);
   glowParts.push([bi(core), G.coreMerged]);
   const cage = [];
@@ -75,7 +77,7 @@ export function buildGolemModel() {
   }
   // ---- head
   const neck = pivot(spine, 0, 2.35, 0.25);
-  const head = fl(R(neck, 0.62, 17, [1.25, 0.8, 1.0], true, 0, 0.45, 0.1), 0.04);
+  const head = fl(R(neck, 0.74, 17, [1.25, 0.85, 1.0], false, 0, 0.42, 0.08), 0.04);
   rocks.push([bi(neck), G.brow]);
   glowParts.push([bi(neck), G.eyes]);
   R(neck, 0.35, 21, [2.2, 0.5, 0.8], true, 0, 0.72, 0.45, 1, false);

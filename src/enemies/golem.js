@@ -10,9 +10,12 @@
 import * as THREE from 'three';
 import { rand, clamp, pick } from '../core/utils.js';
 import { makeEnemy, faceTo, moveForward, angleToPlayer, newPose, dampPose, applyHumanoid } from './base.js';
-import { buildGolemModel, previewGolem } from './bosses/golem_model.js';
-import { bossAttack, bossHit, bossPunish, rhythm, cancelled, finishBoss, stopAttacks } from './bossbase.js';
-import { codexOf, registerBossCodex } from './bosses/codex.js';
+// optional (v4 boot safety): src/enemies/bosses/ may be absent; mobs must keep working, only the golem is unavailable then
+const GM = await import('./bosses/golem_model.js').catch(() => null);
+const previewGolem = GM ? GM.previewGolem : null;
+function buildGolemModel() { if (!GM) throw new Error('[bosses] golem model missing (src/enemies/bosses/ absent)'); return GM.buildGolemModel(); }
+import { warmInstancedToon, bossAttack, bossHit, bossPunish, rhythm, cancelled, finishBoss, stopAttacks } from './bossbase.js';
+import { codexOf, registerBossCodex } from './bossbase.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _d = new THREE.Vector3();
 const HIP = 2.62;
@@ -24,6 +27,8 @@ const ROCK_G = 22;
 let spare = null;
 /** Build (once) and warm the golem model ahead of the fight; returns its root for the caller's compile staging. */
 export function prewarmGolem(game) {
+  try { warmInstancedToon(game); } catch (_) { /* */ }
+  if (!GM) return null;
   try { registerBossCodex(game); game?.enemies?.registerPreview?.('golem', previewGolem); } catch (_) { /* */ }
   if (!spare) spare = buildGolemModel();
   warmOnce(game, spare);
