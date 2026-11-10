@@ -148,19 +148,37 @@ export function createDuck(game) {
   // ---------------- foreign player-FX coverage (fix round 1: F-shadowblade 1.86 screens from spell shells the estimator missed)
   const FOREIGN_BIG = 0.06;                      // only items above this many screens are ever shrunk
   const fRecs = new WeakMap(), fList = []; let fFrame = 0, fN = 0, fCover = 0, fShrink = 1, fRaw = 0, fIdle = 0;
-  const _bs = new THREE.Sphere();
-  function seeForeign(object, geometry) {
+  function seeForeign(object, geometry, material) {
     let r = fRecs.get(object);
     if (!r) { r = { frame: -1, c: 0 }; fRecs.set(object, r); }
     if (r.frame !== fFrame) {
       r.frame = fFrame;
-      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-      _bs.copy(geometry.boundingSphere).applyMatrix4(object.matrixWorld);
-      const dx = _bs.center.x - _cam.x, dy = _bs.center.y - _cam.y, dz = _bs.center.z - _cam.z;
-      const z = dx * _fwd.x + dy * _fwd.y + dz * _fwd.z, rad = _bs.radius;
+      // projected area of the item's local bounding box (× π/4: an inscribed ellipsoid), so thin arcs, rings and flat decals
+      // are not counted as full discs
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      const bb = geometry.boundingBox, m = object.matrixWorld.elements;
+      const hx = (bb.max.x - bb.min.x) * 0.5, hy = (bb.max.y - bb.min.y) * 0.5, hz = (bb.max.z - bb.min.z) * 0.5;
+      const lx = (bb.max.x + bb.min.x) * 0.5, ly = (bb.max.y + bb.min.y) * 0.5, lz = (bb.max.z + bb.min.z) * 0.5;
+      const cx = m[0] * lx + m[4] * ly + m[8] * lz + m[12], cy = m[1] * lx + m[5] * ly + m[9] * lz + m[13], cz = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+      const sx = Math.hypot(m[0], m[1], m[2]), sy = Math.hypot(m[4], m[5], m[6]), sz = Math.hypot(m[8], m[9], m[10]);
+      const ax = hx * sx, ay = hy * sy, az = hz * sz;                 // world half-extents along the item's axes
+      const dx = cx - _cam.x, dy = cy - _cam.y, dz = cz - _cam.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-4;
+      const z = dx * _fwd.x + dy * _fwd.y + dz * _fwd.z, rad = Math.sqrt(ax * ax + ay * ay + az * az);
       let c = 0;
-      if (dx * dx + dy * dy + dz * dz <= rad * rad * 1.1) c = 1.5;                 // camera inside the item
-      else if (z > -rad) { const zz = Math.max(z, rad * 0.5, 0.3); c = Math.min(1.5, Math.PI * rad * rad * pP00 * pP11 / (4 * zz * zz)); }
+      // view direction in the item's axes
+      const ux = sx > 1e-6 ? Math.abs(dx * m[0] + dy * m[1] + dz * m[2]) / (sx * d) : 0;
+      const uy = sy > 1e-6 ? Math.abs(dx * m[4] + dy * m[5] + dz * m[6]) / (sy * d) : 0;
+      const uz = sz > 1e-6 ? Math.abs(dx * m[8] + dy * m[9] + dz * m[10]) / (sz * d) : 0;
+      const inside = d * ux <= ax && d * uy <= ay && d * uz <= az;
+      if (inside) c = 1.5;                                             // camera inside the item
+      else if (z > -rad) {
+        let area = 4 * (ay * az * ux + ax * az * uy + ax * ay * uz) * 0.785;
+        // a double-sided closed shell rasterizes its back half too
+        if (material.side === THREE.DoubleSide && Math.min(ax, ay, az) > 0.3 * Math.max(ax, ay, az)) area *= 2;
+        const zz = Math.max(z, rad * 0.5, 0.3);
+        c = Math.min(1.5, area * pP00 * pP11 / (4 * zz * zz));
+      }
       r.c = c;
       if (fN < 256) fList[fN++] = r;
     }
@@ -211,7 +229,7 @@ export function createDuck(game) {
     const hasOBR = typeof prevOBR === 'function' && prevOBR !== THREE.Material.prototype.onBeforeRender;
     material.onBeforeRender = function (renderer, scene, camera, geometry, object, group) {
       if (hasOBR) prevOBR.call(this, renderer, scene, camera, geometry, object, group);
-      if (camera === game.camera) awU.shrink.value = seeForeign(object, geometry);
+      if (camera === game.camera) awU.shrink.value = seeForeign(object, geometry, this);
     };
     const prev = material.onBeforeCompile;
     const prevKey = material.customProgramCacheKey;
