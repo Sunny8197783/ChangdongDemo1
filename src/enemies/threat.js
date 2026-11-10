@@ -27,7 +27,7 @@ export function createThreat(game, all) {
       if (tp) for (const e of all) {
         if (!e.alive || e.dying || e.isDummy || e.isBoss) continue;
         const p = e.object.position;
-        if (Math.hypot(p.x - tp.x, p.z - tp.z) < taunt.range) { e.aggro = true; e._tauntT = taunt.t; }
+        if (Math.sqrt((p.x - tp.x) * (p.x - tp.x) + (p.z - tp.z) * (p.z - tp.z)) < taunt.range) { e.aggro = true; e._tauntT = taunt.t; }
       }
     },
     clearTauntTarget() { taunt.entity = null; taunt.t = 0; },
@@ -40,7 +40,7 @@ export function createThreat(game, all) {
       const pe = game.player?.entity || null;
       if (tauntAlive() && e && !e.isDummy) {
         const tp = entityPos(taunt.entity), p = e.object?.position;
-        if (p && Math.hypot(p.x - tp.x, p.z - tp.z) < taunt.range * (e.isBoss ? 2 : 1)) return taunt.entity;
+        if (p && Math.sqrt((p.x - tp.x) * (p.x - tp.x) + (p.z - tp.z) * (p.z - tp.z)) < taunt.range * (e.isBoss ? 2 : 1)) return taunt.entity;
       }
       return pe;
     },

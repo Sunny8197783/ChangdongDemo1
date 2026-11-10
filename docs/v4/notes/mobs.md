@@ -68,3 +68,20 @@ Korean player text lives only in `codex.js` (entity names via `typeName`); remai
 ## P1
 - Cut: alpha-wolf hesitation after the alpha dies (codex does not mention it), shroom "hit the cap during the windup pops the sac", wolf crack pulse
   driven from behaviour (mobmodels' `pose('windup')` offers it; the behaviour pose code drives the v3 pivots). Fallbacks: v3 behaviour.
+
+## Fix round 1
+- **JS allocation (C8, F-mage)** — root cause: the 32 regular enemies had **14 hidden classes** (species and modules added fields
+  later in different orders), so every AI read / write of a double field in `updateEnemy`, `integrate`, the pose code went
+  megamorphic and boxed a fresh HeapNumber. `makeEnemy` now declares every field any species / module adds (numeric timers start
+  as numbers) → **1 hidden class** over all regular enemies (playtest4 M3 checks one property layout). Also: `separate()` gathers
+  positions into reused Float64Arrays (pair loop on typed arrays only, one write-back per moved enemy; Jacobi accumulation),
+  `Math.hypot` → inline `Math.sqrt` in every mobs file (the hypot builtin returns a boxed number outside TurboFan),
+  `Object.assign(tgt, BASE)` → `copyPose()` and `dampPose()` with named (not keyed) fields.
+  Measured (PT.alloc 10 s rotation, F-mage, branch): separate 0.63–0.67 → **0**; updateEnemy 0.42–0.52 → **0.22**; hypot from mobs
+  files → 0 (the remaining `hypot` is player/cape, vfx/coverage, vfx/ribbon, world, story); `assign` in e.pose 0.23 → 0;
+  integrate 0.15 → 0.08 MB per game-second. Whole page 8.0 → 6.6 (other owners' sites dominate: vfx/ribbon, player/cape, player).
+- **Training dummies hidden beyond 60 m** of the camera (58/62 m hysteresis, AI/visual update skipped while hidden) — world request.
+- **Codex thumbnails**: `previewModel('chuchu:<variant>')` parses the variant and asks the model registry for it (all 8 variants
+  render their own model). Boss previews are registered by the bosses module when `enemies.bossesReady` resolves; before that
+  (≈ the first seconds after boot) `previewModel(boss)` is null — ux must await `bossesReady` (request filed). M3 checks a non-null
+  preview for all 22 codex keys after `bossesReady`.

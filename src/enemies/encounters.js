@@ -90,7 +90,7 @@ export function createEncounters(ctx, hooks) {
       if (z.exitT >= 0) { z.exitT += step; if (z.exitT > ENC_RULES.exitGrace) { unload(zid); continue; } }
       for (const G of z.groups) {
         if (G.cleared) continue;
-        const d = Math.hypot(pp.x - G.def.pos[0], pp.z - G.def.pos[1]);
+        const d = Math.sqrt((pp.x - G.def.pos[0]) * (pp.x - G.def.pos[0]) + (pp.z - G.def.pos[1]) * (pp.z - G.def.pos[1]));
         if (G.spawned) {
           // cleared when every member died; despawn (to respawn fresh later) when the player is far away
           let alive = 0;

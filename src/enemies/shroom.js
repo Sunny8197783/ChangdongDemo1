@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { rand, clamp } from '../core/utils.js';
 import { buildShroom } from './models2.js';
 import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, walkCycle, reactionPose,
-  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, rhythmDamp } from './base.js';
+  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, rhythmDamp, copyPose } from './base.js';
 import { typeName } from './codex.js';
 
 const _v = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -102,11 +102,11 @@ export function createShroom(ctx, pos, opts = {}) {
         if (moveTo(e, e.home.x, e.home.z, 1.6 * sm, 0.8) < 1) e.setState('idle');
         break;
     }
-    speed = Math.hypot(e.move.x, e.move.z);
+    speed = Math.sqrt(e.move.x * e.move.x + e.move.z * e.move.z);
   };
 
   e.pose = (dt, sm, stunned) => {
-    Object.assign(tgt, BASE);
+    copyPose(tgt, BASE);
     const AH = liveAttack(e), off = AH ? AH.lockAt : 0, ph = st0(AH) ? attackPhase(AH, off) : -1, holding = ph === 1;
     const t = game.time + e.id.length;
     let lambda = 10, rl = 0;

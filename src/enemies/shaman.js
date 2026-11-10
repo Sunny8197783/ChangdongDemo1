@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { rand, clamp, pick, ELEMENT_COLORS } from '../core/utils.js';
 import { buildShaman } from './models.js';
 import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, walkCycle, reactionPose,
-  modelFor, beginAttack, liveAttack, attackPhase, windupK, attackMeta, rhythmDamp } from './base.js';
+  modelFor, beginAttack, liveAttack, attackPhase, windupK, attackMeta, rhythmDamp, copyPose } from './base.js';
 import { typeName } from './codex.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _dir = new THREE.Vector3();
@@ -48,8 +48,8 @@ export function createShaman(ctx, pos, opts = {}) {
       const away = Math.atan2(p.x - pp.x, p.z - pp.z) + rand(-1.3, 1.3);
       const r = rand(10, 14);
       const x = pp.x + Math.sin(away) * r, z = pp.z + Math.cos(away) * r;
-      if (Math.hypot(x - e.home.x, z - e.home.z) > 26) continue;
-      if (ctx.village && Math.hypot(x - ctx.village.center.x, z - ctx.village.center.z) < ctx.village.radius + 3) continue;
+      if (Math.sqrt((x - e.home.x) * (x - e.home.x) + (z - e.home.z) * (z - e.home.z)) > 26) continue;
+      if (ctx.village && Math.sqrt((x - ctx.village.center.x) * (x - ctx.village.center.x) + (z - ctx.village.center.z) * (z - ctx.village.center.z)) < ctx.village.radius + 3) continue;
       if (game.world.waterDepth?.(x, z) > 0.3) continue;
       tpTo.set(x, ctx.groundH(x, z), z);
       const tmp = tpTo.clone(); game.world.resolveCollision?.(tmp, 0.6);
@@ -143,11 +143,11 @@ export function createShaman(ctx, pos, opts = {}) {
         if (moveTo(e, e.home.x, e.home.z, 2.6 * sm, 0.8) < 1) { e.setState('idle'); }
         break;
     }
-    speed = Math.hypot(e.move.x, e.move.z);
+    speed = Math.sqrt(e.move.x * e.move.x + e.move.z * e.move.z);
   };
 
   e.pose = (dt, sm, stunned) => {
-    Object.assign(tgt, BASE);
+    copyPose(tgt, BASE);
     const AH = liveAttack(e), ph = attackPhase(AH), holding = ph === 1;
     const t = game.time * 1 + e.id.length * 0.7;
     let lambda = 10, rl = 0;

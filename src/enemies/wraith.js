@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { rand, clamp } from '../core/utils.js';
 import { buildWraith } from './models2.js';
 import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, reactionPose,
-  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, rhythmDamp } from './base.js';
+  modelFor, beginAttack, liveAttack, attackPhase, windupK, punishAfter, rhythmDamp, copyPose } from './base.js';
 import { typeName } from './codex.js';
 
 const _v = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -62,7 +62,7 @@ export function createWraith(ctx, pos, opts = {}) {
     for (let i = 0; i < 8; i++) {
       const a = Math.atan2(p.x - pp.x, p.z - pp.z) + rand(-1.6, 1.6), r = rand(8, 12);
       const x = pp.x + Math.sin(a) * r, z = pp.z + Math.cos(a) * r;
-      if (Math.hypot(x - e.home.x, z - e.home.z) > 28) continue;
+      if (Math.sqrt((x - e.home.x) * (x - e.home.x) + (z - e.home.z) * (z - e.home.z)) > 28) continue;
       tpTo.set(x, ctx.groundH(x, z), z);
       return;
     }
@@ -127,7 +127,7 @@ export function createWraith(ctx, pos, opts = {}) {
   };
 
   e.pose = (dt, sm, stunned) => {
-    Object.assign(tgt, BASE);
+    copyPose(tgt, BASE);
     const AH = liveAttack(e), ph = attackPhase(AH), holding = ph === 1;
     const t = game.time + e.id.length;
     let lambda = 8, rl = 0;
@@ -144,7 +144,7 @@ export function createWraith(ctx, pos, opts = {}) {
     } else {
       // floaty idle: arms drift, the robe sways with the motion
       tgt.aRx = -0.4 + Math.sin(t * 1.3) * 0.15; tgt.aLx = -0.4 + Math.cos(t * 1.2) * 0.15; tgt.aRz = -0.35; tgt.aLz = 0.35; tgt.fRx = tgt.fLx = -0.5;
-      tgt.pitch = 0.1 + Math.hypot(e.move.x, e.move.z) * 0.05; tgt.headX = 0.15 + Math.sin(t * 0.7) * 0.1;
+      tgt.pitch = 0.1 + Math.sqrt(e.move.x * e.move.x + e.move.z * e.move.z) * 0.05; tgt.headX = 0.15 + Math.sin(t * 0.7) * 0.1;
     }
     tgt.hipY += bob;
     // tatters trail behind (the "legs" are robe strips)
