@@ -147,7 +147,7 @@ export function createDuck(game) {
 
   // ---------------- foreign player-FX coverage (fix round 1: F-shadowblade 1.86 screens from spell shells the estimator missed)
   const FOREIGN_BIG = 0.06;                      // only items above this many screens are ever shrunk
-  const fRecs = new WeakMap(), fList = []; let fDbg = null, fLine = 0; const fHB = [0, 0, 0], fHS = [0, 0, 0]; let fHi = 0; let fFrame = 0, fN = 0, fCover = 0, fShrink = 1, fRaw = 0, fIdle = 0;
+  const fRecs = new WeakMap(), fList = []; let fDbg = null, fLine = 0, fRun = 0, fAllowed = 1; const fHB = [0, 0, 0], fHS = [0, 0, 0], fHT = [-1e9, -1e9, -1e9]; let fHi = 0; let fFrame = 0, fN = 0, fCover = 0, fShrink = 1, fRaw = 0, fIdle = 0;
   // local surface area of a geometry's drawn triangles (cached per geometry and draw range)
   const areaCache = new WeakMap();
   function surfaceArea(geometry) {
@@ -176,7 +176,7 @@ export function createDuck(game) {
    */
   function seeForeign(object, geometry, material, shrinkable) {
     let r = fRecs.get(object);
-    if (!r) { r = { frame: -1, c: 0, s: false }; fRecs.set(object, r); }
+    if (!r) { r = { frame: -1, c: 0, s: false, k: 1 }; fRecs.set(object, r); }
     if (r.frame !== fFrame) {
       r.frame = fFrame; r.s = shrinkable;
       if (!geometry.boundingBox) geometry.computeBoundingBox();
@@ -212,8 +212,16 @@ export function createDuck(game) {
       r.c = c;
       if (fDbg && c > 0.05) { let n = object, nm = ''; while (n && !nm) { nm = n.name; n = n.parent; } fDbg.push([nm || object.type, material.name || material.type, +c.toFixed(2), +d.toFixed(1), shrinkable, +z.toFixed(2), +ax.toFixed(2), +ay.toFixed(2), +az.toFixed(2), geometry.drawRange.count, geometry.attributes.position.count, object.visible, material.uniforms?.opacity?.value]); }
       if (fN < 256) fList[fN++] = r;
+      // same-frame hard cap: the smoothed factor, tightened when this frame's shrinkable items already used the allowance
+      let k = 1;
+      if (r.s && c > FOREIGN_BIG) {
+        k = fShrink;
+        if (fRun + c * k * k > fAllowed) k = Math.max(0.3, Math.min(k, Math.sqrt(Math.max(0, fAllowed - fRun) / c)));
+        fRun += c * k * k;
+      }
+      r.k = k;
     }
-    return r.s && r.c > FOREIGN_BIG ? fShrink : 1;
+    return r.k;
   }
   let pP00 = 1, pP11 = 1;
   /**
@@ -222,19 +230,25 @@ export function createDuck(game) {
    */
   function foreignUpdate(allowed, realDt) {
     const pe = game.camera.projectionMatrix.elements; pP00 = pe[0]; pP11 = pe[5];
+    fAllowed = allowed; fRun = 0; fFrame++;
     if (fN === 0) {                              // nothing drawn since the last update: hold the state over sim-only steps,
       if (++fIdle < 30) return fCover;           // clear it once no foreign item has been drawn for 30 updates
-      fCover = 0; fRaw = 0; fLine = 0; fShrink = 1; fHB.fill(0); fHS.fill(0); return 0;
+      fCover = 0; fRaw = 0; fLine = 0; fShrink = 1; fHB.fill(0); fHS.fill(0); fHT.fill(-1e9); return 0;
     }
     fIdle = 0;
     // linework (role 'line': rune circles, sigils) is reported but never shrunk and never takes the fills' budget
     let big = 0, small = 0, line = 0;
     for (let i = 0; i < fN; i++) { const r = fList[i], c = r.c; if (!r.s) line += c; else if (c > FOREIGN_BIG) big += c; else small += c; fList[i] = null; }
-    fN = 0; fFrame++;
+    fN = 0;
     fRaw = big + small; fLine = line;
+    // large rune circles stay whole but leave less room for fills (their estimate is conservative: weight 0.3)
+    allowed = Math.max(0.3, allowed - 0.3 * line); fAllowed = allowed;
     // persistence: act on the smallest load of the last 3 drawn frames (a one-frame flash or after-image never shrinks the rest)
-    fHB[fHi] = big; fHS[fHi] = small; fHi = (fHi + 1) % 3;
-    const b = Math.min(fHB[0], fHB[1], fHB[2]), sm = Math.min(fHS[0], fHS[1], fHS[2]);
+    // (only observations of the last 0.1 s real time count: with sparse renders the latest one alone decides)
+    const now = game.realTime || 0;
+    fHB[fHi] = big; fHS[fHi] = small; fHT[fHi] = now; fHi = (fHi + 1) % 3;
+    let b = big, sm = small;
+    for (let i = 0; i < 3; i++) if (now - fHT[i] <= 0.1) { if (fHB[i] < b) b = fHB[i]; if (fHS[i] < sm) sm = fHS[i]; }
     let target = 1;
     if (b > 1e-4 && b + sm > allowed) target = Math.max(0.3, Math.sqrt(Math.max(0, allowed - sm) / b));
     // fast down, eased up (no pumping)
