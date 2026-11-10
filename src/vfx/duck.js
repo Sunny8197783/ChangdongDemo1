@@ -168,16 +168,18 @@ export function createDuck(game) {
       sh.uniforms.uPlayerFxMul = shared.uPlayerFxMul; sh.uniforms.uThreat = shared.uThreat; sh.uniforms.uThreatN = shared.uThreatN;
       sh.uniforms.uCamPos = shared.uCamPos; sh.uniforms.uPlayerPos = shared.uPlayerPos;
       sh.uniforms.uAwProjInv = projInv; sh.uniforms.uAwCamWorld = camWorld;
-      const vs = sh.vertexShader, vi = vs.lastIndexOf('}');
-      sh.vertexShader = 'uniform mat4 uAwProjInv; uniform mat4 uAwCamWorld; varying float vAwFxM;\n' + DUCK_PARS + vs.slice(0, vi) +
-        `\n  { vec4 awV = uAwProjInv * gl_Position; awV /= awV.w; vec3 awW = (uAwCamWorld * vec4(awV.xyz, 1.0)).xyz; vAwFxM = awFxMul(awW, -awV.z, ${roleN}); }\n}\n`;
+      // role and premultiplied/straight output are per-material UNIFORMS (fix round 1: no program-key split per role / blend)
       const b = this.blending;
       const premulRGB = opts.additive === true || (b === THREE.CustomBlending && this.blendSrc === THREE.OneFactor);
+      sh.uniforms.uAwRole = { value: +roleN }; sh.uniforms.uAwPremul = { value: premulRGB ? 1 : 0 };
+      const vs = sh.vertexShader, vi = vs.lastIndexOf('}');
+      sh.vertexShader = 'uniform mat4 uAwProjInv; uniform mat4 uAwCamWorld; uniform float uAwRole; varying float vAwFxM;\n' + DUCK_PARS + vs.slice(0, vi) +
+        '\n  { vec4 awV = uAwProjInv * gl_Position; awV /= awV.w; vec3 awW = (uAwCamWorld * vec4(awV.xyz, 1.0)).xyz; vAwFxM = awFxMul(awW, -awV.z, uAwRole); }\n}\n';
       const fsv = sh.fragmentShader, fi = fsv.lastIndexOf('}');
-      sh.fragmentShader = 'varying float vAwFxM;\n' + fsv.slice(0, fi) +
-        (premulRGB ? '\n  gl_FragColor *= vAwFxM;\n}\n' : '\n  gl_FragColor.a *= vAwFxM;\n}\n');
+      sh.fragmentShader = 'uniform float uAwPremul; varying float vAwFxM;\n' + fsv.slice(0, fi) +
+        '\n  gl_FragColor = mix(vec4(gl_FragColor.rgb, gl_FragColor.a * vAwFxM), gl_FragColor * vAwFxM, uAwPremul);\n}\n';
     };
-    material.customProgramCacheKey = function () { return baseKey() + '|awfx:' + role + (opts.additive ? 'a' : 'n'); };
+    material.customProgramCacheKey = function () { return baseKey() + '|awfx'; };
     material.needsUpdate = true;
     patched++;
   }

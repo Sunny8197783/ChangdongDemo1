@@ -7,6 +7,8 @@
 import * as THREE from 'three';
 import { ATLAS_COLS } from './textures.js';
 
+const STRIDE = 14;   // floats per particle in the interleaved instance buffer
+
 const VERT = /* glsl */`
   attribute vec4 iPos;    // xyz, size
   attribute vec4 iVel;    // xyz velocity, stretch factor
@@ -95,12 +97,12 @@ export class ParticleSystem {
     for (let k = 0; k < 8; k++) { const a = (k + 0.5) * Math.PI / 4, r = 0.5 / Math.cos(Math.PI / 8); oct.push(Math.cos(a) * r, Math.sin(a) * r, 0); }
     quad.setAttribute('position', new THREE.Float32BufferAttribute(oct, 3));
     quad.setIndex([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7]);
-    const mk = (n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * n), n); a.setUsage(THREE.DynamicDrawUsage); return a; };
-    this.aPos = mk(4); this.aVel = mk(4); this.aCol = mk(4); this.aMisc = mk(2);
-    quad.setAttribute('iPos', this.aPos); quad.setAttribute('iVel', this.aVel);
-    quad.setAttribute('iCol', this.aCol); quad.setAttribute('iMisc', this.aMisc);
+    // ONE interleaved instance buffer (pos4 | vel4 | col4 | misc2, stride 14): one bufferSubData per frame instead of four
+    this.ib = new THREE.InstancedInterleavedBuffer(new Float32Array(capacity * STRIDE), STRIDE, 1);
+    this.ib.setUsage(THREE.DynamicDrawUsage);
+    quad.setAttribute('iPos', new THREE.InterleavedBufferAttribute(this.ib, 4, 0)); quad.setAttribute('iVel', new THREE.InterleavedBufferAttribute(this.ib, 4, 4));
+    quad.setAttribute('iCol', new THREE.InterleavedBufferAttribute(this.ib, 4, 8)); quad.setAttribute('iMisc', new THREE.InterleavedBufferAttribute(this.ib, 2, 12));
     quad.instanceCount = 0;
-    this._attrs = [this.aPos, this.aVel, this.aCol, this.aMisc];
     quad.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
     this.geometry = quad;
     this.material = new THREE.ShaderMaterial({
@@ -161,7 +163,7 @@ export class ParticleSystem {
   /** proj = {cx, cy, cz, fx, fy, fz, p00, p11} camera position / forward + projection (coverage estimate). */
   update(dt, getHeight, time, proj) {
     const d = this.data;
-    const P = this.aPos.array, V = this.aVel.array, C = this.aCol.array, M = this.aMisc.array;
+    const I = this.ib.array;
     const duck = this.duck, ct = this.castTable;
     const softMul = this.material.uniforms.uSoftMul.value, sizeMul = this.material.uniforms.uSizeMul.value;
     let cov = 0, covSoft = 0;
@@ -206,15 +208,15 @@ export class ParticleSystem {
       if (duck) { _pp.x = d[o + PX]; _pp.y = d[o + PY]; _pp.z = d[o + PZ]; a *= duck(_pp); }
       const st = 1 - (1 - t) * (1 - t);
       const size = d[o + S0] + (d[o + S1] - d[o + S0]) * st;
-      const j4 = i * 4, j2 = i * 2;
-      P[j4] = d[o + PX]; P[j4 + 1] = d[o + PY]; P[j4 + 2] = d[o + PZ]; P[j4 + 3] = size;
-      V[j4] = vx; V[j4 + 1] = vy; V[j4 + 2] = vz; V[j4 + 3] = d[o + STRETCH];
+      const j = i * STRIDE;
+      I[j] = d[o + PX]; I[j + 1] = d[o + PY]; I[j + 2] = d[o + PZ]; I[j + 3] = size;
+      I[j + 4] = vx; I[j + 5] = vy; I[j + 6] = vz; I[j + 7] = d[o + STRETCH];
       const ctt = t < 0.85 ? t / 0.85 : 1;
-      C[j4] = d[o + R0] + (d[o + R1] - d[o + R0]) * ctt;
-      C[j4 + 1] = d[o + G0] + (d[o + G1] - d[o + G0]) * ctt;
-      C[j4 + 2] = d[o + B0] + (d[o + B1] - d[o + B0]) * ctt;
-      C[j4 + 3] = a > 0 ? a : 0;
-      M[j2] = d[o + ROT]; M[j2 + 1] = d[o + FRAME] + ((kind & K_ADD) ? 64 : 0) + ((kind & K_SOFT) ? 128 : 0) + ((kind & K_STYLED) ? 256 : 0);
+      I[j + 8] = d[o + R0] + (d[o + R1] - d[o + R0]) * ctt;
+      I[j + 9] = d[o + G0] + (d[o + G1] - d[o + G0]) * ctt;
+      I[j + 10] = d[o + B0] + (d[o + B1] - d[o + B0]) * ctt;
+      I[j + 11] = a > 0 ? a : 0;
+      I[j + 12] = d[o + ROT]; I[j + 13] = d[o + FRAME] + ((kind & K_ADD) ? 64 : 0) + ((kind & K_SOFT) ? 128 : 0) + ((kind & K_STYLED) ? 256 : 0);
       // coverage estimate (screens): quad area × projected density, after the projected-size clamp
       if (proj && a > 0.004) {
         const z = (d[o + PX] - proj.cx) * proj.fx + (d[o + PY] - proj.cy) * proj.fy + (d[o + PZ] - proj.cz) * proj.fz;
@@ -236,11 +238,8 @@ export class ParticleSystem {
     this.coverage = cov; this.softCoverage = covSoft;
     const n = this.count;
     this.geometry.instanceCount = n;
-    const attrs = this._attrs;
-    for (let k = 0; k < attrs.length; k++) {
-      const attr = attrs[k];
-      attr.clearUpdateRanges(); if (n > 0) { attr.addUpdateRange(0, n * attr.itemSize); attr.needsUpdate = true; }
-    }
+    const ib = this.ib;
+    ib.clearUpdateRanges(); if (n > 0) { ib.addUpdateRange(0, n * STRIDE); ib.needsUpdate = true; }
     this.mesh.visible = n > 0;
   }
 }
