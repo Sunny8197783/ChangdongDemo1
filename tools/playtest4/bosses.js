@@ -320,11 +320,42 @@ module.exports = async function bosses(PT) {
     // ---------------------------------------------------------------- --sheets: turntables (near / far; front, 3/4, side; idle + windup)
     if (PT.flags.sheets) {
       const frames = await pg.eval(async ({ id }) => {
-        const g = game, b = BT.boss(), R = g.render;
+        const g = game, b = BT.boss(), R = g.render, T = g.THREE;
         if (!R?.snapshot) return [];
         const obj = b.modelRoot || b.model?.root || b.object;
         const out = [];
-        const shot = async (label, yaw, k) => out.push({ url: await R.snapshot(obj, { w: 320, h: 180, yaw: yaw + (b.facing || 0), pitch: 0.12, dist: 0 }).then((u) => u, () => null), label, k });
+        // tight framing (review gate): hidden children (pooled props, inactive rings) are detached for the shot so the
+        // snapshot's bounds are the visible model, and the distance fits the visible box to ~88 % of the 16:9 cell
+        const box = new T.Box3(), bb = new T.Box3(), ctr = new T.Vector3(), cr = new T.Vector3(), cu = new T.Vector3(), cf = new T.Vector3(), q = new T.Vector3();
+        const fitDist = (yawW, pitch) => {
+          box.makeEmpty();
+          obj.updateMatrixWorld(true);
+          obj.traverseVisible((o) => {
+            if (!(o.isMesh || o.isSprite) || !o.geometry) return;
+            if (o.isInstancedMesh || o.isSkinnedMesh) { if (o.isInstancedMesh && !o.count) return; o.computeBoundingBox(); bb.copy(o.boundingBox).applyMatrix4(o.matrixWorld); }
+            else { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); bb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); }
+            box.union(bb);
+          });
+          box.getCenter(ctr);
+          cf.set(Math.sin(yawW) * Math.cos(pitch), Math.sin(pitch), Math.cos(yawW) * Math.cos(pitch));
+          cr.set(0, 1, 0).cross(cf).normalize(); cu.copy(cf).cross(cr).normalize();
+          let hx = 0, hy = 0, hz = 0;
+          for (let i = 0; i < 8; i++) {
+            q.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(ctr);
+            hx = Math.max(hx, Math.abs(q.dot(cr))); hy = Math.max(hy, Math.abs(q.dot(cu))); hz = Math.max(hz, Math.abs(q.dot(cf)));
+          }
+          const tv = Math.tan((30 * Math.PI / 180) / 2), th = tv * 320 / 180;
+          return Math.max(hy / tv, hx / th) / 0.88 + hz;
+        };
+        const shot = async (label, yaw, k) => {
+          const hid = [];
+          obj.traverse((o) => { if (o !== obj && !o.visible && o.parent && !hid.some(([x]) => { for (let p = o.parent; p; p = p.parent) if (p === x) return true; return false; })) hid.push([o, o.parent]); });
+          for (const [o, p] of hid) p.remove(o);
+          const yw = yaw + (b.facing || 0);
+          const url = await R.snapshot(obj, { w: 320, h: 180, yaw: yw, pitch: 0.12, dist: fitDist(yw, 0.12) }).then((u) => u, () => null);
+          for (const [o, p] of hid) p.add(o);
+          out.push({ url, label, k });
+        };
         b.vulnerableUntil = -1; BT.run(0.5);
         await shot('idle front', 0, 1); await shot('idle 3/4', 0.8, 1); await shot('idle side', 1.57, 1);
         const a = b.attacks[0]?.id; const h = a ? b.debugAttack(a) : null;

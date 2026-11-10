@@ -621,8 +621,8 @@ export function createNidhoggra(ctx, arena, opts = {}) {
       if (st.shardIdx === s.i) {
         _w.set(C0.x - s.pillar.pos.x, 0, C0.z - s.pillar.pos.z).normalize();
         s.pos.set(s.pillar.pos.x + _w.x * 3.2, s.pillar.top + 1.8, s.pillar.pos.z + _w.z * 3.2);
-      } else s.pos.copy(segPts[4 + s.i * 4]).setY(segPts[4 + s.i * 4].y + 5.5);
-      const sc = s.broken ? 0.001 : 1 + (st.shardIdx === s.i ? Math.sin(t * 6) * 0.12 : 0);
+      } else s.pos.copy(segPts[4 + s.i * 4]).setY(segPts[4 + s.i * 4].y + 7.5);
+      const sc = s.broken ? 0.001 : 1.5 + (st.shardIdx === s.i ? Math.sin(t * 6) * 0.18 : 0);
       _m.compose(s.pos, _q.setFromAxisAngle(_w.set(0, 1, 0), t * 0.8 + s.i), _s.set(sc, sc, sc));
       model.shards.setMatrixAt(s.i, _m);
     }

@@ -50,7 +50,8 @@ function geos() {
       P(S(r0 * 1.02, 12, 6), HC.scaleDark, [0, 0.05, 0], [0, 0, 0], [1, 0.35, 1]),
       P(K(r0 * 0.36, 1.0, 4), HC.fin, [0, SEG_LEN / 2, -r0], [-0.9, 0, 0], [1, 1, 0.3]),
     ]);
-    const segs = [segOf(1.15, 1.05), segOf(1.05, 0.95), segOf(0.95, 0.86), segOf(0.86, 0.78), segOf(0.78, 0.72), segOf(0.72, 0.7)];
+    const NR = 1.3;   // review: thicker necks (three distinct necks at range)
+    const segs = [segOf(1.15 * NR, 1.05 * NR), segOf(1.05 * NR, 0.95 * NR), segOf(0.95 * NR, 0.86 * NR), segOf(0.86 * NR, 0.78 * NR), segOf(0.78 * NR, 0.72 * NR), segOf(0.72 * NR, 0.7 * NR)];
     const head = mergeParts([
       P(S(1, 16, 12), HC.scale, [0, 0.2, 0.4], [0, 0, 0], [1.15, 0.85, 1.45]),
       P(S(1, 14, 10), HC.scale, [0, 0.05, 1.7], [0.1, 0, 0], [0.75, 0.5, 1.15]),
@@ -58,29 +59,33 @@ function geos() {
       // horns + gill fins
       P(K(0.22, 1.6, 6), HC.horn, [0.55, 0.9, -0.3], [-0.9, 0, -0.35]),
       P(K(0.22, 1.6, 6), HC.horn, [-0.55, 0.9, -0.3], [-0.9, 0, 0.35]),
-      P(K(0.45, 1.3, 4), HC.fin, [1.05, 0.1, -0.1], [0, 0.4, -1.4], [1, 1, 0.25]),
-      P(K(0.45, 1.3, 4), HC.fin, [-1.05, 0.1, -0.1], [0, -0.4, 1.4], [1, 1, 0.25]),
-      P(K(0.35, 1.0, 4), HC.finDark, [0, 0.9, 0.6], [-0.4, 0, 0], [1, 1, 0.25]),
+      P(K(0.75, 2.1, 4), HC.fin, [1.1, 0.1, -0.2], [0, 0.4, -1.4], [1, 1, 0.22]),
+      P(K(0.75, 2.1, 4), HC.fin, [-1.1, 0.1, -0.2], [0, -0.4, 1.4], [1, 1, 0.22]),
+      P(K(0.5, 1.5, 4), HC.finDark, [1.0, -0.35, 0.2], [0, 0.5, -1.9], [1, 1, 0.2]),
+      P(K(0.5, 1.5, 4), HC.finDark, [-1.0, -0.35, 0.2], [0, -0.5, 1.9], [1, 1, 0.2]),
+      P(K(0.6, 1.7, 4), HC.finDark, [0, 1.0, 0.3], [-0.6, 0, 0], [1, 1, 0.22]),
+      P(K(0.45, 1.2, 4), HC.fin, [0, 0.85, -0.6], [-0.9, 0, 0], [1, 1, 0.22]),
       // upper teeth
       ...[-0.42, -0.14, 0.14, 0.42].map((x) => P(K(0.07, 0.3, 4), HC.teeth, [x, -0.25, 2.3], [Math.PI, 0, 0])),
     ]);
     const jaw = mergeParts([
-      P(S(1, 12, 9), HC.scaleDark, [0, -0.1, 1.0], [0, 0, 0], [0.65, 0.3, 1.25]),
+      P(S(1, 12, 9), HC.scaleDark, [0, -0.15, 1.0], [0, 0, 0], [0.75, 0.38, 1.35]),
+      P(S(0.5, 8, 6), HC.belly, [0, -0.38, 0.9], [0, 0, 0], [1.2, 0.4, 2.0]),
       ...[-0.36, -0.1, 0.1, 0.36].map((x) => P(K(0.06, 0.26, 4), HC.teeth, [x, 0.18, 1.8], [0, 0, 0])),
     ]);
     const eyes = glowify(mergeParts([
-      P(S(0.16, 8, 6), 0xd8e86a, [0.62, 0.42, 1.25], [0, 0, 0], [1.2, 0.7, 0.8]), P(S(0.16, 8, 6), 0xd8e86a, [-0.62, 0.42, 1.25], [0, 0, 0], [1.2, 0.7, 0.8]),
-      P(B(0.04, 0.17, 0.05), 0x1a2410, [0.66, 0.42, 1.36]), P(B(0.04, 0.17, 0.05), 0x1a2410, [-0.66, 0.42, 1.36]),          // slit pupils
+      P(S(0.24, 8, 6), 0xe4f07a, [0.66, 0.44, 1.25], [0, 0, 0], [1.25, 0.75, 0.8]), P(S(0.24, 8, 6), 0xe4f07a, [-0.66, 0.44, 1.25], [0, 0, 0], [1.25, 0.75, 0.8]),
+      P(B(0.06, 0.26, 0.05), 0x1a2410, [0.72, 0.44, 1.4]), P(B(0.06, 0.26, 0.05), 0x1a2410, [-0.72, 0.44, 1.4]),          // slit pupils
       ...[-0.42, -0.14, 0.14, 0.42].map((x) => P(K(0.03, 0.12, 4), 0xc8eef0, [x, -0.3, 2.28], [Math.PI, 0, 0])),           // faint tooth glints
     ]), 1.15);
     const core = glowify(mergeParts([P(OCT(1.0), 0x7fe8ff, [0, 2.2, 3.4], [0, 0, 0], [1, 1.4, 0.7]), P(T(1.3, 0.12, 16), 0x4fb4ff, [0, 2.2, 3.3])]), 1.15);
     // silhouette proxy (outline + rim source + the only shadow caster): body, neck segments, heads
     const pBody = mergeParts([P(S(1, 10, 7), HC.scale, [0, 0.4, 0], [0, 0, 0], [5.6, 2.6, 6.6]), P(S(1, 8, 6), HC.scale, [0, 0.9, -3.4], [0, 0, 0], [3.8, 1.9, 3.8])]);
-    const pSeg = [1.15, 1.05, 0.95, 0.86, 0.78, 0.72].map((r0, k) => mergeParts([P(C(r0 * 0.93, r0, SEG_LEN + 0.35, 7), HC.scale, [0, SEG_LEN / 2, 0])]));
+    const pSeg = [1.15, 1.05, 0.95, 0.86, 0.78, 0.72].map((r0) => mergeParts([P(C(r0 * NR * 0.93, r0 * NR, SEG_LEN + 0.35, 7), HC.scale, [0, SEG_LEN / 2, 0])]));
     const pHead = mergeParts([P(S(1, 9, 6), HC.scale, [0, 0.2, 0.4], [0, 0, 0], [1.15, 0.85, 1.45]), P(S(1, 8, 6), HC.scale, [0, 0.05, 1.7], [0.1, 0, 0], [0.75, 0.5, 1.15])]);
-    pHead.scale(1.35, 1.35, 1.35);
+    pHead.scale(1.6, 1.6, 1.6);
     const ring = new THREE.TorusGeometry(2.5, 0.08, 6, 32);
-    for (const q of [head, jaw, eyes]) q.scale(1.35, 1.35, 1.35);
+    for (const q of [head, jaw, eyes]) q.scale(1.6, 1.6, 1.6);   // review: heads read at range
     return { body, segs, head, jaw, eyes, core, ring, pBody, pSeg, pHead };
   });
 }
@@ -107,7 +112,7 @@ export function buildHydra() {
     bones.push(jaw); parts.push([bones.length - 1, g.jaw]);
     // element shield glyph (own material per head so it can be recoloured as a uniform)
     const ring = new THREE.Mesh(g.ring, ringMat('hydra' + n, 0x7fd3ff));
-    ring.position.set(0, 0.4, 1.5); ring.rotation.x = 0.2; ring.frustumCulled = false;
+    ring.position.set(0, 0.5, 2.2); ring.rotation.x = 0.2; ring.frustumCulled = false;
     head.add(ring);
     necks.push({ base, segs, head, jaw, ring, baseYaw: yaw });
   }

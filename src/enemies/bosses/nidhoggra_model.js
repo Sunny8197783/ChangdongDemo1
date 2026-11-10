@@ -108,7 +108,7 @@ export function buildNidhoggra() {
   for (let i = 0; i < 4; i++) rods.setColorAt(i, _c.setHex(0x8a7aa8));
   rods.instanceColor.needsUpdate = true; rods.count = 0; rods.visible = false;
 
-  const head = new THREE.Group(); head.scale.setScalar(1.9); root.add(head);
+  const head = new THREE.Group(); head.scale.setScalar(2.3); root.add(head);
   const headMesh = new THREE.Mesh(g.head, vcMat()); headMesh.castShadow = true; addOutline(headMesh, 0.09); head.add(headMesh);
   const jawPivot = new THREE.Group(); jawPivot.position.set(0, -0.6, 0.6); head.add(jawPivot);
   const jawMesh = new THREE.Mesh(g.jaw, vcMat()); addOutline(jawMesh, 0.08); jawPivot.add(jawMesh);
@@ -159,7 +159,7 @@ export function layBody(model, curve, out, t) {
     if (spacing < 1e-4) _n.set(0, 0, -1);
     _look.lookAt(_n.multiplyScalar(-1).add(_p), _p, _up);   // +Z along the spine toward the head
     _q.setFromRotationMatrix(_look);
-    const r = ((1 - u) * 2.6 + 0.6 + (u < 0.15 ? (0.15 - u) * 4 : 0)) * 1.7;
+    const r = ((1 - u) * 2.6 + 0.8 + (u < 0.15 ? (0.15 - u) * 4 : 0)) * 2.15;   // review: thicker coil (reads at range)
     const breathe = 1 + Math.sin(t * 1.6 - i * 0.4) * 0.03;
     // segments stretch along the spine so the body reads as one continuous coil (no gaps between the scales)
     _s.set(r * breathe, r * breathe, Math.max(r * 1.15, spacing / 2.0));
