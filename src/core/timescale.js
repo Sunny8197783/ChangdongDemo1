@@ -12,15 +12,15 @@ export const SLOWMO_PRIORITY = { witch: 1, teach: 2, cinematic: 3 };
 
 export function createTimeScale(game) {
   const entries = new Map();    // id → {scale, left, compensate, priority}
-  let val = 1, compOn = false;
+  let val = 1, compOn = false, compVal = 1;
   function recompute() {
-    let v = 1, c = false;
+    let v = 1, c = false, cv = 1;
     for (const [id, e] of entries) {
       if (!(e.left > 0)) continue;
       if (e.scale < v) v = e.scale;
-      if (e.compensate || id === 'focus') c = true;
+      if (e.compensate || id === 'focus') { c = true; if (e.scale < cv) cv = e.scale; }
     }
-    val = Math.max(0.001, v); compOn = c;
+    val = Math.max(0.001, v); compOn = c; compVal = Math.max(0.001, cv);
   }
   function activeArbitrated(exceptId) {
     for (const [id, e] of entries) if (id !== exceptId && e.left > 0 && e.priority > 0) return [id, e];
@@ -56,12 +56,13 @@ export function createTimeScale(game) {
       if (any) recompute();
     },
     value() { return val; },
-    /** Factor for compensated time: 1 / value() while a compensating entry ('focus', or compensate:true) is active, else 1. */
-    comp() { return compOn ? 1 / val : 1; },
+    /** Factor for compensated time: 1 / (lowest compensating scale) while a compensating entry ('focus', or compensate:true) is active,
+     *  else 1. Non-compensating entries (e.g. bossDeath) still slow the compensated actor (v4 integration: player request 1). */
+    comp() { return compOn ? 1 / compVal : 1; },
     /** The active arbitrated slow-motion source id, or null. */
     slowmoSource() { const a = activeArbitrated(null); return a ? a[0] : null; },
     active() { const out = []; for (const [id, e] of entries) if (e.left > 0) out.push({ id, scale: e.scale, left: e.left, compensate: e.compensate, priority: e.priority }); return out; },
-    reset() { for (const e of entries.values()) e.left = 0; val = 1; compOn = false; },
+    reset() { for (const e of entries.values()) e.left = 0; val = 1; compOn = false; compVal = 1; },
   };
   return api;
 }

@@ -312,6 +312,8 @@ export function createReactions(game, C) {
   // ---- hit helpers ----
   function rxHit(amount, element, source, point, extra) {
     const h = { amount, element, source, point, noReaction: true, tags: ['reaction'], tier: 'light', rxSecondary: true };
+    // v4: a reaction hit dealt while its trigger is being handled carries the trigger's castId (one burst + one hitstop per cast)
+    if (firing && ctx.hit?.castId) h.castId = ctx.hit.castId;
     if (extra) for (const k in extra) h[k] = extra[k];
     return h;
   }
@@ -850,6 +852,7 @@ export function createReactions(game, C) {
   const JUDGMENT = REACTION_DEFS.find((r) => r.id === 'judgment');
 
   // ---------------------------------------------------------------- firing
+  let firing = false;
   const ctx = { t: null, el: '', hit: null, point: null, entry: null, stacks: 0, auraKey: null, source: null, team: 'enemy', amount: 0, power: 1, obj: null, depth: 0, nameOverride: null, colorEl: null };
   function fire(r, t, el, hit, point, auraKey, obj) {
     const s = t?.statuses;
@@ -866,7 +869,7 @@ export function createReactions(game, C) {
     if (t && r.apply) for (const k in r.apply) C.applyStatus(t, k, r.apply[k], { source: ctx.source, power: ctx.power, el });
     let extra = null;
     const h = HANDLERS[r.custom || r.id];
-    if (h) { try { extra = h(ctx); } catch (err) { warnOnce('rx:' + r.id, err); } }
+    if (h) { firing = true; try { extra = h(ctx); } catch (err) { warnOnce('rx:' + r.id, err); } firing = false; }
     if (t) setCd(t, r.id, RX_CD);
     else if (obj) obj._rxT = game.time + 0.25;
     emit(r, point, t, ctx.nameOverride, ctx.colorEl);
