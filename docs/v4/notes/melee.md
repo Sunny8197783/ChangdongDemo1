@@ -110,3 +110,22 @@ repeat" — a reaction hit without `castId` (request 4a; flaky across owners' ru
 
 Cut: bespoke looks for the remaining (non-bespoke-set) rows — they use their archetype look; finisher polish (the finishers run the
 v3 cinematics through the gate: one tinted flash ≤ 0.15 s, budgets F); per-weapon smear textures.
+
+## Fix round 1 (integration review)
+- **Dodge lock in real time**: combo / recover lock spans are accumulated in real (unscaled) seconds and released at 0.25 s. Repro: the
+  same c1 fire swing under the ultimate's 0.35× slow-mo locked 0.267 s before (0.317 s in the integration sequence), 0.233 s after.
+- **Deferred delivery**: an archetype strike that deals no damage itself (zone, rain, projectile, wall …) marks its strike frame as the
+  delivery frame (`action.dmgT`, `action.deferred`); the dodge window opens there. wind.vortex free 0.45 → 0.367 s (delivery 0.35),
+  lightning.ult free = delivery 0.417 s. ML1.g reads the delivery frame when no damage event arrives inside the window.
+- **Caster casts through melee motifs**: earth / nature / light / shadow motifs reached with a caster castId spawn through magic's budget
+  facade (`spells.looks.kit`, with its burst / spark shares), so magic's per-cast cap counts them: MG1.c earth.charged and light.ult
+  handles now within C 8 / U 12 (were 12 / 29). nature.roots MG1 detail 833 is unchanged by this (same on v4-polish; magic's row).
+- **Legibility at the v4 combat camera**: every archetype look authors one upright element sigil (kit glyph, `mid` linework) first,
+  its lowest point ≥ 1.9 m above the strike ground (never over an enemy body), with a per-element scale / height / side offset so two
+  elements never share a footprint. fire.ult / lightning.ult / wind.ult / ice.charged / shadow.hex / lightning.mine signatures stand up
+  (ground-only linework was edge-on). A-tier own particles 64 (vfx's per-target sparks fill the rest of §1.4's 80).
+- **Fire restraint**: ≤ 2 flame solids (fire.flame / fire.petal) per melee motif call at 0.75 scale, ≤ 3 tongues, slim 2.2 m pillars.
+  The remaining tall pale column at a burning target is combat's `burning` status flame (src/combat/fxassets.js, vfx owner).
+- **ML1 harness**: spot moved to (−30, 30) (MG1's ground; the old spot had a tree between camera and hero), `surface2` cleared between
+  casts, IoU sheets use the impact (peak) frame, `MELEE_RAW=<dir>` writes full-res frames for review.
+- Still open (palette, not shape): cool / violet saturation floors (ice / lightning / shadow rows, request 3); light.sanctuary cov.
