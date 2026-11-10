@@ -10,7 +10,7 @@ import { elColor, CLASSIC_ELEMENTS } from '../../core/elements.js';
 export const SEGMENTS = 24;
 /** The 5 stolen oath shards are the classic five (DESIGN §8.1). */
 export const SHARD_ELEMENTS = CLASSIC_ELEMENTS.slice();
-const NC = { scale: 0x1a1622, scaleHi: 0x2e2840, belly: 0x3a3450, horn: 0x5a5070, claw: 0xd8d0e8, void: 0xb14bff, core: 0xf0d8ff, teeth: 0xe8e0f0 };
+const NC = { scale: 0x2a2436, scaleHi: 0x40385a, belly: 0x4c4666, horn: 0x5a5070, claw: 0xd8d0e8, void: 0xb14bff, core: 0xf0d8ff, teeth: 0xe8e0f0 };
 
 function geos() {
   return once('nidhoggra', () => {
@@ -44,9 +44,13 @@ function geos() {
       P(S(1, 12, 9), NC.belly, [0, -0.2, 2.4], [0, 0, 0], [1.6, 0.55, 2.8]),
       ...[-0.9, -0.45, 0, 0.45, 0.9].map((x) => P(K(0.1, 0.6, 4), NC.teeth, [x, 0.35, 4.6], [0, 0, 0])),
     ]);
+    // eye rows: 3 per side (glow), each with a dark slit
     const eyes = glowify(mergeParts([
-      ...Array.from({ length: 8 }, (_, i) => { const a = -1.1 + i * 0.31; return P(S(0.2, 8, 6), NC.core, [Math.sin(a) * 2.45, 0.75 + Math.cos(i * 1.7) * 0.18, 1.6 + Math.cos(a) * 1.2], [0, 0, 0], [1.3, 0.6, 0.8]); }),
-    ]), 2.8);
+      ...[-1, 1].flatMap((sx) => [0, 1, 2].flatMap((i) => {
+        const x = sx * (2.2 + i * 0.12), y = 0.85 - i * 0.22, z = 2.2 - i * 0.55;
+        return [P(S(0.22 - i * 0.03, 8, 6), 0xd8c8f0, [x, y, z], [0, 0, 0], [1.3, 0.6, 0.8]), P(B(0.05, 0.2 - i * 0.03, 0.05), 0x1a1424, [x + sx * 0.12, y, z + 0.1])];
+      })),
+    ]), 1.15);
     const upper = mergeParts([P(C(1.1, 1.4, 6.5, 10), NC.scale, [0, -3.2, 0]), P(K(0.4, 1.8, 5), NC.scaleHi, [0, -0.8, -1.1], [-0.9, 0, 0], [1, 1, 0.4])]);
     const fore = mergeParts([P(C(0.9, 1.1, 6.0, 10), NC.scaleHi, [0, -3.0, 0])]);
     const claw = mergeParts([
@@ -54,8 +58,8 @@ function geos() {
       ...[-0.9, -0.3, 0.3, 0.9].map((x, i) => P(K(0.28, 2.0 + (i % 2) * 0.4, 5), NC.claw, [x, -0.2, 2.0], [Math.PI / 2 + 0.25, 0, x * 0.15])),
     ]);
     const shard = new THREE.OctahedronGeometry(1.0, 0); shard.scale(1.8, 4.2, 1.8);
-    const heart = glowify(mergeParts([P(OCT(1.6), 0xfff1c0, [0, 0, 0], [0, 0, 0], [1, 1.4, 1]), P(T(2.2, 0.12, 20), 0xffd36a, [0, 0, 0], [Math.PI / 2, 0, 0])]), 1.8);
-    const rod = mergeParts([P(C(0.18, 0.35, 5.5, 6), 0xffffff, [0, 2.75, 0]), P(OCT(0.6), 0xffffff, [0, 5.9, 0], [0, 0, 0], [1, 1.6, 1])]);
+    const heart = glowify(mergeParts([P(OCT(1.6), 0xf0e2b8, [0, 0, 0], [0, 0, 0], [1, 1.4, 1]), P(T(2.2, 0.12, 20), 0xe0c070, [0, 0, 0], [Math.PI / 2, 0, 0])]), 1.15);
+    const rod = mergeParts([P(C(0.18, 0.35, 5.5, 6), 0xf0f0f4, [0, 2.75, 0]), P(OCT(0.6), 0xf0f0f4, [0, 5.9, 0], [0, 0, 0], [1, 1.6, 1])]);
     rod.deleteAttribute('color');
     // void-mist wing ribbon (local: root at x=0, spreading to +x)
     const wing = new THREE.PlaneGeometry(26, 10, 12, 3); wing.translate(13, 0, 0);
@@ -70,18 +74,19 @@ function geos() {
 
 function mats() {
   return once('nidhoggraMats', () => ({
-    body: toonMat(0xffffff, {}),
+    body: toonMat(0xf8f8f8, {}),
     outline: new THREE.MeshBasicMaterial({ color: 0x0a0810, side: THREE.BackSide }),
-    crack: new THREE.MeshBasicMaterial({ color: 0xffffff }),
-    shard: new THREE.MeshBasicMaterial({ color: 0xffffff }),
-    rod: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    crack: new THREE.MeshBasicMaterial({ color: 0xf0f0f4 }),
+    shard: new THREE.MeshBasicMaterial({ color: 0xf0f0f4 }),
+    rod: new THREE.MeshBasicMaterial({ color: 0xf0f0f4 }),
     wing: new THREE.MeshBasicMaterial({ color: 0x6a2aa8, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
-    lock: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
+    lock: new THREE.MeshBasicMaterial({ color: 0xf0f0f4, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
   }));
 }
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
+const _c2 = new THREE.Color();
 export function buildNidhoggra() {
   const g = geos(), M = mats();
   const root = new THREE.Group(); root.name = 'nidhoggra';
@@ -92,12 +97,12 @@ export function buildNidhoggra() {
   // per-segment colours: obsidian body darkening to the tail; violet cracks brighter near the chest (set at construction)
   for (let i = 0; i < SEGMENTS; i++) {
     const k = i / (SEGMENTS - 1);
-    body.setColorAt(i, _c.setHex(0x3a3450).lerp(new THREE.Color(0x16121e), k));
-    cracks.setColorAt(i, _c.setHex(0xd08aff).multiplyScalar(2.2 - k * 1.2));
+    body.setColorAt(i, _c.setHex(0x4c4666).lerp(_c2.setHex(0x262034), k));
+    cracks.setColorAt(i, _c.setHex(0xb88ae8).multiplyScalar(1.15 - k * 0.45));
   }
   body.instanceColor.needsUpdate = true; cracks.instanceColor.needsUpdate = true;
   const shards = mkInst(g.shard, M.shard, SHARD_ELEMENTS.length, 'nid-shards');
-  SHARD_ELEMENTS.forEach((el, i) => shards.setColorAt(i, _c.setHex(elColor(el, 'hex')).multiplyScalar(1.8)));
+  SHARD_ELEMENTS.forEach((el, i) => shards.setColorAt(i, _c.setHex(elColor(el, 'hex')).multiplyScalar(1.1)));
   shards.instanceColor.needsUpdate = true;
   const rods = mkInst(g.rod, M.rod, 4, 'nid-rods');
   for (let i = 0; i < 4; i++) rods.setColorAt(i, _c.setHex(0x8a7aa8));
@@ -116,9 +121,9 @@ export function buildNidhoggra() {
     const up = new THREE.Group(); root.add(up);
     const um = new THREE.Mesh(g.upper, vcMat()); um.castShadow = true; addOutline(um, 0.07); up.add(um);
     const fo = new THREE.Group(); root.add(fo);
-    const fm = new THREE.Mesh(g.fore, vcMat()); fm.castShadow = true; addOutline(fm, 0.07); fo.add(fm);
+    const fm = new THREE.Mesh(g.fore, vcMat()); fm.castShadow = false; addOutline(fm, 0.07); fo.add(fm);
     const cl = new THREE.Group(); root.add(cl);
-    const cm = new THREE.Mesh(g.claw, vcMat()); cm.castShadow = true; addOutline(cm, 0.06); cl.add(cm);
+    const cm = new THREE.Mesh(g.claw, vcMat()); cm.castShadow = false; addOutline(cm, 0.06); cl.add(cm);
     return { side, up, fo, cl, upLen: 10.1, foLen: 9.6, shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), wrist: new THREE.Vector3(), target: new THREE.Vector3(), lift: 0 };
   });
   const wings = [1, -1].map((side) => { const w = new THREE.Mesh(g.wing, M.wing); w.scale.x = side; w.frustumCulled = false; w.renderOrder = 3; root.add(w); return w; });
@@ -126,8 +131,15 @@ export function buildNidhoggra() {
   const heartMesh = new THREE.Mesh(g.heart, vcBasicMat()); heart.add(heartMesh);
   const heartHalo = new THREE.Sprite(glowSpriteMat(0xfff1c0, 0.0)); heartHalo.scale.setScalar(9); heart.add(heartHalo);
 
+  // §4.0 contract (P0: the v3 meshes; shadow casters = body segments, head, upper arms ≤ 4 calls)
+  const rim = [headMesh];
   return { root, body, outline, cracks, shards, rods, head, jawPivot, eyes, lock, mouthGlow, limbs, wings, heart, heartHalo,
-    mats: M, outlines: [], skin: null, headTop: 8 };
+    mats: M, outlines: [], skin: null, headTop: 8, isV4: true,
+    meshes: [body, headMesh, jawMesh], proxy: outline, lod: body, flashUniform: { value: 0 }, rimSource: () => rim,
+    tellAnchors: { head, mouth: jawPivot, hand: limbs[0].cl, core: heart },
+    bones: { root, head, jaw: jawPivot, armR: limbs[0].up, armL: limbs[1].up, handR: limbs[0].cl, handL: limbs[1].cl },
+    features: { face: true, hands: true, springs: 0, aoVertexColors: false, lod: false, eyeRows: 6, teeth: true, contractOnly: true },
+    pose() {}, update() {}, dispose() {} };
 }
 
 // ---------------------------------------------------------------- spine sampling

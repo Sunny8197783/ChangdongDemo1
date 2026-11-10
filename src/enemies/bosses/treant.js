@@ -6,7 +6,10 @@
 // - Telegraphed attacks: stomp (circle), arm sweep (cone), root lines (line ×3).
 import { THREE, S, C, K, B, CAP, T, OCT, ICO, P, mergeParts, vcFlatMat, vcBasicMat, pivot, buildSkin, glowify, once, glowSpriteMat } from './kit.js';
 import { humanoid } from '../models.js';
-import { createBoss } from '../bossbase.js';
+import { skinOutlineMat } from '../common.js';
+import { createBoss, finishBoss, bossAttack, bossHit, bossPunish, rhythm, cancelled, stopAttacks, bossTime } from '../bossbase.js';
+import { attackSpec } from './codex.js';
+import { proxyParts, strips, updateStrips, contract } from './rig.js';
 import { newPose, dampPose, applyHumanoid, walkCycle } from '../base.js';
 import { clamp, damp, rand } from '../../core/utils.js';
 
@@ -21,7 +24,7 @@ export const TREANT_DATA = {
   stomp: 26, sweep: 24, roots: 20, pod: 22,
 };
 const HIP = 6.6;
-const TC = { bark: 0x5a4632, barkDark: 0x3a2c20, barkLight: 0x7a6248, moss: 0x5a7a3a, rot: 0x6a3a8a, rotDark: 0x3a1f5a, leaf: 0x6a8a3a, dead: 0x4a3a2a, plate: 0x8a6a4a };
+const TC = { bark: 0x6a5440, barkDark: 0x46362a, barkLight: 0x8a7258, moss: 0x6a8a44, rot: 0x7a4a9a, rotDark: 0x4a2c6a, leaf: 0x6a8a3a, dead: 0x5a4a38, plate: 0x9a7a58, crack: 0x2a1e16, cap: 0xb86a3a, capSpot: 0xe8d8b0, stem: 0xd8c8a0, hollow: 0x1e1610 };
 
 function geos() {
   return once('treant', () => {
@@ -63,11 +66,29 @@ function geos() {
         // root feet
         ...Array.from({ length: 5 }, (_, i) => P(K(0.5, 2.6, 5), TC.bark, [Math.sin(i * 1.26 - 2.5) * 1.1, -3.1, Math.cos(i * 1.26 - 2.5) * 1.1 + 0.6], [Math.PI / 2 - 0.3, 0, -Math.sin(i * 1.26 - 2.5) * 0.6])),
       ]),
-      plateChest: mergeParts([P(S(2.3, 10, 8, 0, Math.PI), TC.plate, [0, 3.4, 1.4], [0, 0, 0], [1.1, 1.3, 0.55]), P(B(0.25, 3.6, 0.3), TC.barkDark, [0, 3.4, 2.65])]),
-      plateBack: mergeParts([P(S(2.3, 10, 8), TC.plate, [0, 3.6, -1.5], [0, 0, 0], [1.1, 1.3, 0.5]), P(B(3.2, 0.25, 0.3), TC.barkDark, [0, 3.8, -2.6])]),
-      plateArm: mergeParts([P(S(1.3, 9, 7), TC.plate, [0, -1.6, 0.3], [0, 0, 0], [1.05, 1.5, 0.9]), P(B(0.22, 2.4, 0.2), TC.barkDark, [0, -1.6, 1.42])]),
-      glowHead: glowify(mergeParts([P(S(0.28, 8, 6), 0xd9a0ff, [0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5]), P(S(0.28, 8, 6), 0xd9a0ff, [-0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5])]), 2.6),
-      heart: glowify(mergeParts([P(OCT(1.0), 0x9be86a, [0, 0, 0], [0, 0, 0], [1, 1.35, 0.8]), P(T(1.25, 0.1, 14), 0xb36bff, [0, 0, 0])]), 2.0),
+      plateChest: mergeParts([P(S(2.3, 10, 8, 0, Math.PI), TC.plate, [0, 3.4, 1.4], [0, 0, 0], [1.1, 1.3, 0.55]), P(B(0.25, 3.6, 0.3), TC.barkDark, [0, 3.4, 2.65]),
+        ...[[-1.0, 4.2, 0.5], [0.9, 2.6, -0.6], [-0.6, 2.2, 0.9], [1.1, 4.4, 0.3]].map(([x, y, rz]) => P(B(0.1, 1.2, 0.12), TC.crack, [x, y, 2.55], [0, 0, rz])),
+        P(B(2.6, 0.18, 0.4), TC.barkLight, [0, 4.9, 2.35], [0.3, 0, 0]), P(B(2.4, 0.18, 0.4), TC.barkLight, [0, 1.9, 2.3], [-0.3, 0, 0])]),
+      plateBack: mergeParts([P(S(2.3, 10, 8), TC.plate, [0, 3.6, -1.5], [0, 0, 0], [1.1, 1.3, 0.5]), P(B(3.2, 0.25, 0.3), TC.barkDark, [0, 3.8, -2.6]),
+        ...[[-0.8, 4.4, 0.4], [0.7, 3.0, -0.5], [0, 2.4, 0.2]].map(([x, y, rz]) => P(B(0.1, 1.1, 0.12), TC.crack, [x, y, -2.65], [0, 0, rz]))]),
+      plateArm: mergeParts([P(S(1.3, 9, 7), TC.plate, [0, -1.6, 0.3], [0, 0, 0], [1.05, 1.5, 0.9]), P(B(0.22, 2.4, 0.2), TC.barkDark, [0, -1.6, 1.42]),
+        P(B(0.08, 0.9, 0.1), TC.crack, [0.5, -1.0, 1.4], [0, 0, 0.5]), P(B(0.08, 0.8, 0.1), TC.crack, [-0.45, -2.2, 1.35], [0, 0, -0.4])]),
+      // ember glow of a burning plate (own bone, scale 0 unless burning)
+      emberChest: glowify(mergeParts([0, 1, 2, 3].map((i) => P(B(0.14, 1.3, 0.1), 0xff8a3a, [-1.0 + i * 0.65, 3.4 + (i % 2) * 0.6, 2.6], [0, 0, (i % 2 ? 0.4 : -0.4)]))), 1.1),
+      emberBack: glowify(mergeParts([0, 1, 2].map((i) => P(B(0.14, 1.2, 0.1), 0xff8a3a, [-0.8 + i * 0.8, 3.5, -2.7], [0, 0, (i % 2 ? 0.4 : -0.4)]))), 1.1),
+      emberArm: glowify(mergeParts([P(B(0.12, 1.0, 0.1), 0xff8a3a, [0.4, -1.2, 1.45], [0, 0, 0.5]), P(B(0.12, 0.9, 0.1), 0xff8a3a, [-0.4, -2.1, 1.4], [0, 0, -0.4])]), 1.1),
+      // rib-roots caging the rot heart, root fingers, mushroom clusters, face (eye hollows + mouth knot), vines
+      ribs: mergeParts([...[-1, 1].flatMap((sx) => [0, 1, 2].map((i) => P(new THREE.TorusGeometry(1.45, 0.16, 5, 10, 2.2), i % 2 ? TC.bark : TC.barkDark, [0, 2.6 + i * 0.95, 1.8], [0, sx > 0 ? 0 : Math.PI, Math.PI / 2 + sx * 0.25], [1, 1, 0.9])))]),
+      mush: mergeParts([...[[0.6, 0, 0.2, 1], [0, 0.35, -0.4, 0.7], [-0.6, -0.1, 0.3, 0.55]].flatMap(([x, y, z, s]) => [
+        P(C(0.14 * s, 0.2 * s, 0.7 * s, 6), TC.stem, [x, y + 0.35 * s, z]), P(new THREE.SphereGeometry(0.55 * s, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), TC.cap, [x, y + 0.7 * s, z], [0, 0, 0], [1, 0.7, 1]),
+        P(S(0.08 * s, 5, 4), TC.capSpot, [x + 0.25 * s, y + 0.95 * s, z]), P(S(0.07 * s, 5, 4), TC.capSpot, [x - 0.2 * s, y + 0.9 * s, z + 0.2 * s])])]),
+      face: mergeParts([P(S(0.42, 9, 7), TC.hollow, [0.62, 1.4, 1.42], [0, 0, 0], [1.3, 0.75, 0.5]), P(S(0.42, 9, 7), TC.hollow, [-0.62, 1.4, 1.42], [0, 0, 0], [1.3, 0.75, 0.5]),
+        P(S(0.38, 9, 7), TC.barkDark, [0, 0.35, 1.5], [0, 0, 0], [1.4, 0.6, 0.6]), P(S(0.22, 8, 6), TC.hollow, [0, 0.35, 1.68], [0, 0, 0], [1.6, 0.45, 0.4]),
+        P(S(0.25, 7, 5), TC.barkLight, [0.35, 0.2, 1.7]), P(S(0.2, 7, 5), TC.barkLight, [-0.4, 0.45, 1.68])]),
+      fingers: mergeParts([-0.6, -0.2, 0.2, 0.6].flatMap((x, i) => [P(K(0.14, 1.2, 5), TC.dead, [x * 1.3, -5.7, 0.6 + (i % 2) * 0.2], [0.6, 0, x * 0.8])])),
+      vine: mergeParts([P(C(0.07, 0.1, 1.6, 5), TC.moss, [0, -0.8, 0]), P(S(0.18, 6, 4), TC.leaf, [0.1, -1.3, 0.05], [0, 0, 0], [1, 0.5, 1.4])]),
+      glowHead: glowify(mergeParts([P(S(0.28, 8, 6), 0xd9a0ff, [0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5]), P(S(0.28, 8, 6), 0xd9a0ff, [-0.62, 1.4, 1.55], [0, 0, 0], [1.4, 0.7, 0.5])]), 1.15),
+      heart: glowify(mergeParts([P(OCT(1.0), 0x9be86a, [0, 0, 0], [0, 0, 0], [1, 1.35, 0.8]), P(T(1.25, 0.1, 14), 0xb36bff, [0, 0, 0])]), 1.15),
       pod: (() => { const g = new THREE.IcosahedronGeometry(0.55, 1); return g; })(),
     };
   });
@@ -81,18 +102,39 @@ export function buildTreant() {
   m.bones.push(plateChest, plateBack, plateArmR, plateArmL, heartB);
   const n = m.bones.length;
   m.parts.push([n - 5, g.plateChest], [n - 4, g.plateBack], [n - 3, g.plateArm], [n - 2, g.plateArm]);
-  const sk = buildSkin('treant', m.root, m.bones, [
-    { name: 'body', mat: vcFlatMat(), parts: m.parts, outline: 0.08 },
-    { name: 'glow', mat: vcBasicMat(), parts: [[2, g.glowHead], [n - 1, g.heart]], shadow: false },
+  // ember glow per plate (own bones: scale 0 until that plate burns)
+  const embers = [pivot(m.spine), pivot(m.spine), pivot(m.armR), pivot(m.armL)];
+  for (const b of embers) b.scale.setScalar(0.001);
+  m.bones.push(...embers);
+  const ne = m.bones.length;
+  const glowParts = [[2, g.glowHead], [n - 1, g.heart], [ne - 4, g.emberChest], [ne - 3, g.emberBack], [ne - 2, g.emberArm], [ne - 1, g.emberArm]];
+  m.parts.push([1, g.ribs], [2, g.face], [5, g.fingers], [6, g.fingers]);
+  const mushR = pivot(m.spine, -2.4, 6.3, 0.2), mushL = pivot(m.spine, 2.2, 6.4, -0.1); mushL.rotation.y = 2;
+  m.bones.push(mushR, mushL); m.parts.push([m.bones.length - 2, g.mush], [m.bones.length - 1, g.mush]);
+  // hanging vines + moss on springs: 3 from each forearm, 4 from the crown
+  const vines = [
+    ...strips(m.foreR, 3, { x0: -0.6, dx: 0.6, y: -1.0, z: 0.9, len: 1.6, rx: 0, bones: m.bones, parts: m.parts, geo: g.vine, k: 40, d: 4 }),
+    ...strips(m.foreL, 3, { x0: -0.6, dx: 0.6, y: -1.0, z: 0.9, len: 1.6, rx: 0, bones: m.bones, parts: m.parts, geo: g.vine, k: 40, d: 4 }),
+    ...strips(m.neck, 4, { x0: -1.5, dx: 1.0, y: 2.6, z: 1.3, len: 1.6, rx: 0, bones: m.bones, parts: m.parts, geo: g.vine, k: 35, d: 4 }),
+  ];
+  const pparts = proxyParts(m, { pelvis: [2.8, 1.8, 2.6], torso: [2.7, 3.6, 2.5], torsoY: 3.4, head: [1.8, 2.0, 1.6], headY: 1.6, arm: [1.1, 0.9], leg: [1.35, 1.2], upperLen: 4.2, foreLen: 4.4, thighLen: 3.4, shinLen: 3.6 });
+  const sk = buildSkin('treant4', m.root, m.bones, [
+    { name: 'body', mat: vcFlatMat(), parts: m.parts, shadow: false },
+    { name: 'glow', mat: vcBasicMat(), parts: glowParts, shadow: false },
+    { name: 'proxy', mat: skinOutlineMat(0.08), parts: pparts },
   ], [10, 13]);
+  m.embers = embers; m.vines = vines;
   const halo = new THREE.Sprite(glowSpriteMat(0x9be86a, 0)); halo.scale.setScalar(6); heartB.add(halo);
   // spore pods: one instanced mesh (pool 6), tinted at construction
-  const pods = new THREE.InstancedMesh(g.pod, new THREE.MeshBasicMaterial({ color: 0xffffff }), TREANT_DATA.podMax);
+  const pods = new THREE.InstancedMesh(g.pod, new THREE.MeshBasicMaterial({ color: 0xf2e6d0 }), TREANT_DATA.podMax);
   const c = new THREE.Color(0xffa84a);
   for (let i = 0; i < TREANT_DATA.podMax; i++) pods.setColorAt(i, c);
   pods.instanceColor.needsUpdate = true; pods.count = 0; pods.frustumCulled = false;
   m.root.add(pods);
-  Object.assign(m, { plates: [plateChest, plateBack, plateArmR, plateArmL], heart: heartB, halo, pods, skin: sk, outlines: sk.outlines, headTop: 20 });
+  Object.assign(m, { plates: [plateChest, plateBack, plateArmR, plateArmL], heart: heartB, halo, pods, skin: sk, headTop: 20 });
+  let time = 0;
+  contract(m, { core: heartB, springs: vines.length, features: { barkPlates: true, crackLines: true, emberPlates: true, vines: true, ribRoots: true, rootFingers: true, mushrooms: true, eyeHollows: true, mouthKnot: true },
+    update(dt) { time += dt; updateStrips(vines, dt, time, 0, (m.armR.rotation.x + m.armL.rotation.x) * 0.25); } });
   return m;
 }
 
@@ -136,7 +178,7 @@ export function createTreant(ctx, arena, opts = {}) {
   const plates = D.plates.map((pd, i) => {
     const bone = model.plates[i];
     const part = e.addPart({ id: pd.id, name: pd.name, hp: plateHp, bone, offset: plateOff[i], radius: 2.2, height: 3.2, fwd: 0.6,
-      mul: (k) => (k === 'fire' ? 1.6 : 0.25), resist: {} });
+      mul: (k) => (k === 'fire' ? 1.6 : 0.25) * (i >= 2 && armStuck > 0 ? 2 : 1), resist: {} });
     return { part, bone, burnT: 0 };
   });
   // the heart: invulnerable until it kneels
@@ -146,9 +188,9 @@ export function createTreant(ctx, arena, opts = {}) {
   function burnPlate(pl) {
     pl.burnT = 0.01;
     pl.bone.getWorldPosition(_v);
-    vfx.preset?.('explosion_fire', _v, { scale: 2.4 });
-    vfx.debris?.(_v, { count: 16, size: 0.8, speed: 9, material: 'wood' });
-    vfx.burst(_v, { count: 40, color: [0xffd04a, 0xff6a1f], speed: 6, spread: 1, size: 0.4, sizeEnd: 0, life: 1.2, shape: 'ember', gravity: -2 });
+    vfx.preset?.('explosion_fire', _v, { owner: 'enemy', scale: 1.44 });
+    vfx.debris?.(_v, { owner: 'enemy', count: 16, size: 0.8, speed: 9, material: 'wood' });
+    vfx.burst(_v, { owner: 'enemy', count: 20, color: [0xffd04a, 0xff6a1f], speed: 6, spread: 1, size: 0.4, sizeEnd: 0, life: 1.2, shape: 'ember', gravity: -2 });
     ctx.audio('explode_fire', { position: _v, volume: 1, pitch: 0.7 });
     e.shakeAt(_v, 0.5);
   }
@@ -169,18 +211,19 @@ export function createTreant(ctx, arena, opts = {}) {
       const a = rand(0, 6.28), r = rand(5, Math.min(14, A.radius - 3));
       pod.object.position.set(p.x + Math.sin(a) * r, 0, p.z + Math.cos(a) * r);
       pod.object.position.y = ctx.groundH(pod.object.position.x, pod.object.position.z);
-      pod.alive = true; pod.hp = 1e6; pod.maxHp = 1e6; pod.t = 0;
+      pod.alive = true; pod.hp = 1e6; pod.maxHp = 1e6; pod.t = 0; pod.h = null;
       try { game.combat.register(pod); } catch (_) { /* */ }
       ctx.dust(pod.object.position, 0.8);
     }
   }
-  function burstPod(pod) {
+  function burstPod(pod, hh = null) {
     if (!pod.alive) return;
     pod.alive = false;
+    if (pod.h && !hh) { pod.h.stop(); pod.h = null; }
     try { game.combat.unregister(pod); } catch (_) { /* */ }
     const c = pod.object.position;
     _v.copy(c).setY(c.y + 0.6);
-    vfx.preset?.('explosion_fire', _v, { scale: 1.6 });
+    vfx.preset?.('explosion_fire', _v, { owner: 'enemy', scale: 0.96 });
     vfx.groundDecal?.('scorch', c, 3, 6);
     ctx.audio('explode_fire', { position: c, volume: 0.9 });
     for (const pl of plates) {
@@ -188,8 +231,7 @@ export function createTreant(ctx, arena, opts = {}) {
       pl.part.getCenter(_w);
       if (Math.hypot(_w.x - c.x, _w.z - c.z) < 6.5) game.combat.dealDamage(pl.part, { amount: Math.round(pl.part.maxHp * 0.3), fixed: true, element: 'fire', source: 'player', noReaction: true, tags: ['pod'], status: { burning: 3 } });
     }
-    const pe = game.player?.entity, pp = ctx.realPlayerPos;
-    if (pe && pe.alive !== false && Math.hypot(pp.x - c.x, pp.z - c.z) < 3) game.combat.dealDamage(pe, { amount: D.pod, element: 'fire', source: e, point: pp.clone().setY(pp.y + 1), knockback: 9, launch: 4 });
+    bossHit(ctx, e, hh || { kind: 'circle', pos: c, r: 3 }, { attack: 'treant.pods', amount: D.pod, element: 'fire', knockback: 9, launch: 4, from: c });
   }
   // the pod batch lives in world space (moved out of the model after the prewarm compile)
   model.pods.removeFromParent(); game.scene.add(model.pods);
@@ -200,96 +242,112 @@ export function createTreant(ctx, arena, opts = {}) {
       if (!pod.alive) continue;
       pod.t += dt;
       _v.copy(pod.object.position).setY(pod.object.position.y + 0.55);
-      const s = 1 + Math.sin(pod.t * 6 + pod.slot) * 0.08;
+      const s = (1 + Math.sin(pod.t * (pod.h ? 18 : 6) + pod.slot) * 0.08) * (pod.h ? 1.15 : 1);
       _m.compose(_v, _q.identity(), _s.set(s, s * 1.1, s));
       im.setMatrixAt(n++, _m);
     }
     im.count = n; im.instanceMatrix.needsUpdate = true;
   }
 
-  // ---------------- attacks
-  function begin(kind) {
-    atk = kind; atkT = 0;
+  // ---------------- attacks (PLAN §4.12; all through game.tells)
+  let roots = [];             // live root handles (fan)
+  let armStuck = 0;           // sweep punish: the arm is stuck, arm plates take ×2
+  function start(kind) {
     const p = e.object.position, pp = ctx.playerPos;
-    atkDir.set(pp.x - p.x, 0, pp.z - p.z).normalize();
-    game.events.emit('enemyAttack', { enemy: e, kind });
+    atkDir.set(pp.x - p.x, 0, pp.z - p.z); if (atkDir.lengthSq() < 1e-6) atkDir.set(Math.sin(e.facing), 0, Math.cos(e.facing)); atkDir.normalize();
+    let h = null;
     if (kind === 'stomp') {
       atkPos.set(p.x + atkDir.x * 4, 0, p.z + atkDir.z * 4); atkPos.y = ctx.groundH(atkPos.x, atkPos.z);
-      tele = ctx.tele({ shape: 'circle', pos: atkPos, r: 6.5, dur: 1.3, color: 'damage' });
+      h = bossAttack(ctx, e, 'treant.stomp', { shape: { pos: atkPos } });
     } else if (kind === 'sweep') {
-      tele = ctx.tele({ shape: 'cone', pos: p, dir: atkDir, r: 12, angle: 120, dur: 1.4, color: 'damage' });
+      h = bossAttack(ctx, e, 'treant.sweep', { shape: { pos: p, dir: atkDir } });
     } else if (kind === 'roots') {
       atkPos.copy(p);
-      const fan = e.phase >= 2 ? 5 : 3;
-      teleB = [];
+      const S = attackSpec('treant.roots'), fan = e.phase >= 2 ? S.fan3 : S.fan;
+      roots = [];
       for (let k = 0; k < fan; k++) {
         const a = Math.atan2(atkDir.x, atkDir.z) + (k - (fan - 1) / 2) * 0.32;
-        _d.set(Math.sin(a), 0, Math.cos(a));
-        teleB.push({ dir: _d.clone(), h: ctx.tele({ shape: 'line', pos: p, dir: _d, len: 18, width: 2.2, dur: 1.2, color: 'damage' }) });
+        const dir = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
+        const hh = bossAttack(ctx, e, 'treant.roots', { shape: { pos: atkPos, dir }, hold: k === 0 });
+        if (hh) { roots.push({ h: hh, dir }); if (!h) h = hh; }
       }
     }
+    if (h) { atk = kind; atkT = 0; tele = h; }
+    return h;
   }
-  function resolve() {
-    const p = e.object.position, pp = ctx.realPlayerPos, pe = game.player?.entity;
+  function resolve(h) {
+    const p = e.object.position;
     if (atk === 'stomp') {
-      ctx.slam(atkPos, 6.5, { amount: D.stomp, knockback: 14, launch: 7 }, e, 2.2);
-      vfx.groundDecal?.('crack', atkPos, 6, 8);
+      bossHit(ctx, e, h, { attack: 'treant.stomp', amount: D.stomp, knockback: 14, launch: 7, from: atkPos });
+      vfx.groundDecal?.('crack', atkPos, 5, 6, { owner: 'enemy' });
+      vfx.burst(atkPos, { owner: 'enemy', count: 10, color: [0x8a7258, 0x46362a], speed: 4, spread: 0.4, dir: _d.set(0, 1, 0), size: 0.8, sizeEnd: 1.6, life: 0.8, shape: 'smoke', additive: false, drag: 2 });
       e.shakeAt(atkPos, 0.9);
     } else if (atk === 'sweep') {
-      vfx.smear?.('wide', _v.copy(p).setY(p.y + 4), e.object.quaternion, 9, 'nature');
-      vfx.debris?.(_v.copy(p).addScaledVector(atkDir, 7), { count: 10, size: 0.5, speed: 8, material: 'wood' });
-      if (ctx.meleeCheck(e, 12, 1.05)) ctx.hitPlayer(e, { amount: D.sweep, knockback: 18, launch: 6 });
-    } else if (atk === 'roots') {
-      for (const L of teleB || []) {
-        for (let k = 1; k <= 6; k++) {
-          _v.copy(atkPos).addScaledVector(L.dir, k * 3); _v.y = ctx.groundH(_v.x, _v.z);
-          vfx.burst(_v, { count: 6, color: [0x7a6248, 0x3a2c20], speed: 6, spread: 0.3, dir: _d.set(0, 1, 0), size: 0.6, sizeEnd: 0.2, life: 0.8, gravity: 14, shape: 'thorn', additive: false });
-        }
-        vfx.groundDecal?.('crack', _w.copy(atkPos).addScaledVector(L.dir, 9), 3, 5);
-        if (pe && pe.alive !== false) {
-          _v.subVectors(pp, atkPos).setY(0);
-          const along = _v.dot(L.dir), across = Math.abs(_v.x * L.dir.z - _v.z * L.dir.x);
-          if (along > 0 && along < 18 && across < 1.3) { game.combat.dealDamage(pe, { amount: D.roots, element: 'nature', source: e, point: pp.clone().setY(pp.y + 1), knockback: 4, launch: 10, heavy: true, status: { rooted: 1.0 } }); break; }
-        }
-      }
-      e.shakeAt(atkPos, 0.5);
+      vfx.debris?.(_v.copy(p).addScaledVector(atkDir, 7), { owner: 'enemy', count: 8, size: 0.5, speed: 8, material: 'wood' });
+      bossHit(ctx, e, h, { attack: 'treant.sweep', amount: D.sweep, knockback: 18, launch: 6 });
+      // the arm is stuck in the ground: punish window, arm plates ×2
+      const S = attackSpec('treant.sweep');
+      armStuck = S.punishDur;
+      bossPunish(ctx, e, S.punishDur, S.punishMul);
     }
-    tele = null; teleB = null;
+  }
+  function rootHit(L) {
+    for (let k = 1; k <= 6; k += 2) {
+      _v.copy(atkPos).addScaledVector(L.dir, k * 3); _v.y = ctx.groundH(_v.x, _v.z);
+      vfx.burst(_v, { owner: 'enemy', count: 4, color: [0x8a7258, 0x46362a], speed: 6, spread: 0.3, dir: _d.set(0, 1, 0), size: 0.6, sizeEnd: 0.2, life: 0.7, gravity: 14, shape: 'thorn', additive: false });
+    }
+    return bossHit(ctx, e, L.h, { attack: 'treant.roots', amount: D.roots, element: 'nature', knockback: 4, launch: 10, heavy: true, status: { rooted: 1.0 }, from: atkPos });
+  }
+  // pods: 9 s after landing a pod glows (tells 'treant.pods', 1.0 s) and bursts on its own
+  function podTick(dt) {
+    for (const pod of pods) {
+      if (!pod.alive) continue;
+      if (!pod.h && pod.t > 9) {
+        pod.h = bossAttack(ctx, e, 'treant.pods', { shape: { pos: pod.object.position }, hold: false });
+        if (!pod.h) pod.t = 8;
+      }
+      if (pod.h) { if (pod.h.consumeStrike()) { const hh = pod.h; pod.h = null; burstPod(pod, hh); } else if (cancelled(pod.h)) pod.h = null; }
+    }
   }
 
   e.think = (dt, sm) => {
     e.baseTick(dt);
     syncPods(dt);
+    podTick(dt);
     const p = e.object.position, pp = ctx.playerPos, d = e.distP;
     attackCd -= dt * sm; podCd -= dt; stormCd -= dt;
+    if (armStuck > 0) armStuck -= dt;
     speed = 0;
-    // heart windows while kneeling (phase 2): 8 s down, 10 s up
+    for (let i = 0; i < 4; i++) { const pl = plates[i]; model.embers[i].scale.setScalar(pl.part.alive && (pl.part.statuses?.burning || pl.burnT > 0) ? 1 : 0.001); }
     if (e.phase >= 1) {
       kneelT -= dt;
       if (kneelT <= 0) { heartOpen = !heartOpen; kneelT = heartOpen ? 8 : 10; vfx.shake?.(0.4); }
     }
     heart.invulnerable = !(e.phase >= 1 && heartOpen);
+    // strike latches
+    for (let i = roots.length - 1; i >= 0; i--) { const L = roots[i]; if (L.h.consumeStrike()) { rootHit(L); roots.splice(i, 1); if (!roots.length) e.shakeAt(atkPos, 0.5); } else if (cancelled(L.h)) roots.splice(i, 1); }
+    if (tele && atk && !atk.endsWith(':rec')) {
+      if (atk === 'roots') { if (!roots.length) { atk = 'roots:rec'; atkT = 0; tele = null; } }
+      else if (tele.consumeStrike()) { const hh = tele; tele = null; resolve(hh); atk = atk + ':rec'; atkT = 0; }
+      else if (cancelled(tele)) { tele = null; atk = atk + ':rec'; atkT = 0; }
+    }
     if (e.transitioning || !e.playerInArena(18)) return;
     if (atk) {
       atkT += dt * sm;
-      const T = atk === 'stomp' ? 1.3 : atk === 'sweep' ? 1.4 : 1.2;
-      if (atk.endsWith(':rec')) { if (atkT > 1.0) { atk = null; attackCd = rand(1.6, 2.8); } }
-      else if (atkT >= T) { resolve(); atk = atk + ':rec'; atkT = 0; }
+      if (atk.endsWith(':rec')) { const rec = atk === 'sweep:rec' ? attackSpec('treant.sweep').punishDur : 1.0; if (atkT > rec) { atk = null; attackCd = rand(1.6, 2.8); } }
+      else if (tele && !tele.locked && atk === 'sweep') { const want = Math.atan2(pp.x - p.x, pp.z - p.z); let df = want - e.facing; df = Math.atan2(Math.sin(df), Math.cos(df)); e.facing += clamp(df, -0.7 * dt, 0.7 * dt); atkDir.set(Math.sin(e.facing), 0, Math.cos(e.facing)); tele.setDir(atkDir); }
       return;
     }
-    // turn + walk (not while kneeling)
     const want = Math.atan2(pp.x - p.x, pp.z - p.z);
     let df = want - e.facing; df = Math.atan2(Math.sin(df), Math.cos(df));
     e.facing += clamp(df, -0.9 * dt, 0.9 * dt);
     if (!(e.phase >= 1 && heartOpen) && d > 11) { speed = 1.6 * sm; p.x += Math.sin(e.facing) * speed * dt; p.z += Math.cos(e.facing) * speed * dt; e.clampToArena(5); p.y = ctx.groundH(p.x, p.z); }
     if (e.phase === 0 && podCd <= 0) { podCd = 12; dropPods(3); }
-    if (e.phase >= 2 && stormCd <= 0) { stormCd = 9; dropPods(4); try { for (let k = 0; k < 3; k++) game.spells?.api?.objects?.spawn?.('pod', _v.set(p.x + rand(-12, 12), p.y, p.z + rand(-12, 12)).clone()); } catch (_) { /* */ } }
+    if (e.phase >= 2 && stormCd <= 0) { stormCd = 9; dropPods(4); }
     if (attackCd <= 0 && !(e.phase === 1 && heartOpen)) {
       const r = Math.random();
-      if (e.phase >= 2 && r < 0.45) begin('roots');
-      else if (d < 9) begin(r < 0.55 ? 'stomp' : 'sweep');
-      else if (d < 13) begin('sweep');
-      else begin('roots');
+      const k = e.phase >= 2 && r < 0.45 ? 'roots' : d < 9 ? (r < 0.55 ? 'stomp' : 'sweep') : d < 13 ? 'sweep' : 'roots';
+      if (!start(k)) attackCd = 0.5;
     }
   };
 
@@ -297,7 +355,7 @@ export function createTreant(ctx, arena, opts = {}) {
     Object.assign(tgt, BASE);
     const t = game.time;
     phaseW += dt * (0.6 + speed * 0.9);
-    const kTarget = e.phase >= 1 && heartOpen ? 1 : e.defeated ? 1 : 0;
+    const kTarget = (e.phase >= 1 && heartOpen) || e.defeated || e.isBroken?.() ? 1 : 0;
     kneel = damp(kneel, kTarget, 2.2, dt);
     let lambda = 4;
     if (speed > 0.05) walkCycle(tgt, phaseW, 0.7, 0);
@@ -305,7 +363,7 @@ export function createTreant(ctx, arena, opts = {}) {
     if (a === 'stomp') { const k = clamp(atkT / 1.1, 0, 1); tgt.lRx = -1.0 * k; tgt.kR = 1.0 * k; tgt.hipY = HIP + 0.4 * k; tgt.pitch = -0.1 * k; tgt.aRx = -0.6 * k; tgt.aLx = -0.6 * k; lambda = 6; }
     else if (a === 'stomp:rec') { tgt.lRx = 0.25; tgt.kR = 0.2; tgt.hipY = HIP - 0.6; tgt.pitch = 0.15; lambda = 14; }
     else if (a === 'sweep') { const k = clamp(atkT / 1.2, 0, 1); tgt.aRx = -1.4 * k; tgt.aRz = -1.3 * k; tgt.spineY = 0.8 * k; tgt.fRx = -0.6; lambda = 5; }
-    else if (a === 'sweep:rec') { tgt.aRx = -1.3; tgt.aRz = 0.7; tgt.spineY = -0.9; tgt.fRx = -0.2; lambda = 12; }
+    else if (a === 'sweep:rec') { tgt.aRx = -0.9; tgt.aRz = 0.9; tgt.spineY = -0.9; tgt.fRx = -0.1; tgt.pitch = 0.3; tgt.hipY = HIP - 0.6; lambda = 12; }   // arm planted in the ground
     else if (a === 'roots') { const k = clamp(atkT / 1.0, 0, 1); tgt.aRx = -2.6 * k; tgt.aLx = -2.6 * k; tgt.pitch = -0.15 * k; tgt.headX = -0.3 * k; lambda = 5; }
     else if (a === 'roots:rec') { tgt.aRx = -0.3; tgt.aLx = -0.3; tgt.fRx = -1.2; tgt.fLx = -1.2; tgt.pitch = 0.45; tgt.spineX = 0.3; tgt.hipY = HIP - 0.8; lambda = 14; }
     else { tgt.aRx = -0.2 + Math.sin(t * 0.7) * 0.05; tgt.aLx = -0.2 + Math.cos(t * 0.6) * 0.05; tgt.aRz = -0.25; tgt.aLz = 0.25; tgt.fRx = tgt.fLx = -0.5; tgt.spineX = Math.sin(t * 0.5) * 0.03; tgt.headY = Math.sin(t * 0.3) * 0.2; }
@@ -318,7 +376,7 @@ export function createTreant(ctx, arena, opts = {}) {
     applyHumanoid(model, cur);
     // burned plates crumble away; heart glow
     for (const pl of plates) {
-      if (pl.burnT > 0) { pl.burnT += dt; pl.bone.scale.setScalar(Math.max(0.001, 1 - pl.burnT * 1.5)); if (pl.burnT < 0.7 && Math.random() < 0.4) { pl.bone.getWorldPosition(_v); vfx.burst(_v, { count: 2, color: [0xffd04a, 0xff6a1f], speed: 2, spread: 1, size: 0.3, sizeEnd: 0, life: 0.8, shape: 'ember', gravity: -2 }); } }
+      if (pl.burnT > 0) { pl.burnT += dt; pl.bone.scale.setScalar(Math.max(0.001, 1 - pl.burnT * 1.5)); if (pl.burnT < 0.7 && Math.random() < 0.4) { pl.bone.getWorldPosition(_v); vfx.burst(_v, { owner: 'enemy', count: 2, color: [0xffd04a, 0xff6a1f], speed: 2, spread: 1, size: 0.3, sizeEnd: 0, life: 0.8, shape: 'ember', gravity: -2 }); } }
     }
     const hg = e.phase >= 1 ? (heartOpen ? 0.9 : 0.35) : 0.12;
     model.halo.material.opacity = damp(model.halo.material.opacity, hg + Math.sin(t * 4) * 0.08, 4, dt);
@@ -327,6 +385,14 @@ export function createTreant(ctx, arena, opts = {}) {
   const baseClean = e.cleanupParts;
   e.cleanupParts = () => { baseClean(); model.pods.removeFromParent(); for (const pod of pods) { if (pod.alive) { pod.alive = false; try { game.combat.unregister(pod); } catch (_) { /* */ } } pod.object.removeFromParent(); } };
   e.plates = plates; e.heart = heart; e.pods = pods; e.dropPods = dropPods;
+  e.isArmStuck = () => armStuck > 0;
+  finishBoss(ctx, e, { type: 'treant', cameraHint: { dist: 1.7, height: 1.6 }, preview: () => buildTreant().root, noDistanceRate: true,
+    debugAttack: (id) => {
+      stopAttacks(e); atk = null; tele = null; roots = [];
+      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9.5; podTick(0); return pod.h; }
+      return start(String(id).replace(/^treant\./, ''));
+    },
+    onBroken: () => { atk = null; tele = null; roots = []; } });
   return e;
 }
 createTreant.prewarm = () => { if (!spare) spare = buildTreant(); return spare.root; };

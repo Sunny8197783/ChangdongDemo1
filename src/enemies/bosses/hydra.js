@@ -6,7 +6,9 @@
 // - Telegraphed attacks: bite (line), element spit volley, tidal sweep (ring: dodge it, or stand on ice / a pillar top).
 // - Phase 2 「심연의 몸통」 when all heads are severed: the body rises, the core is exposed; water spouts + faster tides.
 import { THREE, S, C, K, B, T, OCT, P, mergeParts, vcMat, vcBasicMat, pivot, buildSkin, glowify, once, chain, ringMat, glowSpriteMat } from './kit.js';
-import { createBoss } from '../bossbase.js';
+import { skinOutlineMat } from '../common.js';
+import { createBoss, finishBoss, bossAttack, bossHit, bossPunish, rhythm, cancelled, stopAttacks, bossTime } from '../bossbase.js';
+import { attackSpec } from './codex.js';
 import { elColor } from '../../core/elements.js';
 import { clamp, damp, rand } from '../../core/utils.js';
 
@@ -25,7 +27,7 @@ export const HYDRA_DATA = {
 };
 const SEG = 6, SEG_LEN = 1.8;
 const NECK_BASES = [[-2.4, 2.0, 1.4, -0.5], [0, 2.7, 2.3, 0], [2.4, 2.0, 1.4, 0.5]];
-const HC = { scale: 0x2f6f7a, scaleDark: 0x1c4650, belly: 0x9fd8c8, fin: 0x3fa8b8, finDark: 0x24707e, horn: 0xe8e0c8, barn: 0x8a9a88, teeth: 0xf4f0e0 };
+const HC = { scale: 0x3f8a96, scaleDark: 0x2a5e6a, belly: 0x9fd8c8, fin: 0x3fa8b8, finDark: 0x24707e, horn: 0xe8e0c8, barn: 0x8a9a88, teeth: 0xf4f0e0 };
 
 // ---------------------------------------------------------------- model
 function geos() {
@@ -66,11 +68,20 @@ function geos() {
       P(S(1, 12, 9), HC.scaleDark, [0, -0.1, 1.0], [0, 0, 0], [0.65, 0.3, 1.25]),
       ...[-0.36, -0.1, 0.1, 0.36].map((x) => P(K(0.06, 0.26, 4), HC.teeth, [x, 0.18, 1.8], [0, 0, 0])),
     ]);
-    const eyes = glowify(mergeParts([P(S(0.16, 8, 6), 0xffffff, [0.62, 0.42, 1.25], [0, 0, 0], [1.2, 0.7, 0.8]), P(S(0.16, 8, 6), 0xffffff, [-0.62, 0.42, 1.25], [0, 0, 0], [1.2, 0.7, 0.8])]), 2.2);
-    const core = glowify(mergeParts([P(OCT(1.0), 0x7fe8ff, [0, 2.2, 3.4], [0, 0, 0], [1, 1.4, 0.7]), P(T(1.3, 0.12, 16), 0x4fb4ff, [0, 2.2, 3.3])]), 1.8);
+    const eyes = glowify(mergeParts([
+      P(S(0.16, 8, 6), 0xd8e86a, [0.62, 0.42, 1.25], [0, 0, 0], [1.2, 0.7, 0.8]), P(S(0.16, 8, 6), 0xd8e86a, [-0.62, 0.42, 1.25], [0, 0, 0], [1.2, 0.7, 0.8]),
+      P(B(0.04, 0.17, 0.05), 0x1a2410, [0.66, 0.42, 1.36]), P(B(0.04, 0.17, 0.05), 0x1a2410, [-0.66, 0.42, 1.36]),          // slit pupils
+      ...[-0.42, -0.14, 0.14, 0.42].map((x) => P(K(0.03, 0.12, 4), 0xc8eef0, [x, -0.3, 2.28], [Math.PI, 0, 0])),           // faint tooth glints
+    ]), 1.15);
+    const core = glowify(mergeParts([P(OCT(1.0), 0x7fe8ff, [0, 2.2, 3.4], [0, 0, 0], [1, 1.4, 0.7]), P(T(1.3, 0.12, 16), 0x4fb4ff, [0, 2.2, 3.3])]), 1.15);
+    // silhouette proxy (outline + rim source + the only shadow caster): body, neck segments, heads
+    const pBody = mergeParts([P(S(1, 10, 7), HC.scale, [0, 0.4, 0], [0, 0, 0], [5.6, 2.6, 6.6]), P(S(1, 8, 6), HC.scale, [0, 0.9, -3.4], [0, 0, 0], [3.8, 1.9, 3.8])]);
+    const pSeg = [1.15, 1.05, 0.95, 0.86, 0.78, 0.72].map((r0, k) => mergeParts([P(C(r0 * 0.93, r0, SEG_LEN + 0.35, 7), HC.scale, [0, SEG_LEN / 2, 0])]));
+    const pHead = mergeParts([P(S(1, 9, 6), HC.scale, [0, 0.2, 0.4], [0, 0, 0], [1.15, 0.85, 1.45]), P(S(1, 8, 6), HC.scale, [0, 0.05, 1.7], [0.1, 0, 0], [0.75, 0.5, 1.15])]);
+    pHead.scale(1.35, 1.35, 1.35);
     const ring = new THREE.TorusGeometry(2.5, 0.08, 6, 32);
     for (const q of [head, jaw, eyes]) q.scale(1.35, 1.35, 1.35);
-    return { body, segs, head, jaw, eyes, core, ring };
+    return { body, segs, head, jaw, eyes, core, ring, pBody, pSeg, pHead };
   });
 }
 
@@ -81,16 +92,17 @@ export function buildHydra() {
   const bones = [body];
   const parts = [[0, g.body]];
   const glowParts = [[0, g.core]];
+  const proxyParts = [[0, g.pBody]];
   const necks = [];
   for (let n = 0; n < 3; n++) {
     const [x, y, z, yaw] = NECK_BASES[n];
     const base = pivot(body, x, y, z); base.rotation.y = yaw;
     bones.push(base);
     const segs = chain(base, SEG, SEG_LEN);
-    segs.forEach((s, k) => { bones.push(s); parts.push([bones.length - 1, g.segs[k]]); });
+    segs.forEach((s, k) => { bones.push(s); parts.push([bones.length - 1, g.segs[k]]); proxyParts.push([bones.length - 1, g.pSeg[k]]); });
     const head = pivot(segs[SEG - 1], 0, SEG_LEN, 0);
     bones.push(head); const hi = bones.length - 1;
-    parts.push([hi, g.head]); glowParts.push([hi, g.eyes]);
+    parts.push([hi, g.head]); glowParts.push([hi, g.eyes]); proxyParts.push([hi, g.pHead]);
     const jaw = pivot(head, 0, -0.3, 0.5);
     bones.push(jaw); parts.push([bones.length - 1, g.jaw]);
     // element shield glyph (own material per head so it can be recoloured as a uniform)
@@ -100,11 +112,19 @@ export function buildHydra() {
     necks.push({ base, segs, head, jaw, ring, baseYaw: yaw });
   }
   const sk = buildSkin('hydra', root, bones, [
-    { name: 'body', mat: vcMat(), parts, outline: 0.06 },
+    { name: 'body', mat: vcMat(), parts, shadow: false },
     { name: 'glow', mat: vcBasicMat(), parts: glowParts, shadow: false },
+    { name: 'proxy', mat: skinOutlineMat(0.06), parts: proxyParts },
   ], [6, 16]);
+  const proxy = sk.meshes.proxy; proxy.name = 'outline'; proxy.receiveShadow = false;
   const halo = new THREE.Sprite(glowSpriteMat(0x7fe8ff, 0.0)); halo.scale.setScalar(7); halo.position.set(0, 2.2, 3.4); body.add(halo);
-  return { root, rig: body, body, necks, halo, skin: sk, outlines: sk.outlines, headTop: 14 };
+  const rim = [proxy];
+  const anchors = { head: necks[1].head, mouth: necks[1].jaw, core: body };
+  return { root, rig: body, body, necks, halo, skin: sk, outlines: [proxy], headTop: 14, isV4: true,
+    meshes: [sk.meshes.body, sk.meshes.glow], proxy, lod: proxy, flashUniform: { value: 0 }, rimSource: () => rim, tellAnchors: anchors,
+    bones: { root: body, spine: body, head: necks[1].head, jaw: necks[1].jaw, neck: necks.map((n) => n.segs) },
+    features: { face: true, hands: false, springs: 0, aoVertexColors: false, lod: false, slitPupils: true, teeth: true, contractOnly: true },
+    pose() {}, update() {}, dispose() {} };
 }
 
 let spare = null;
@@ -141,13 +161,13 @@ export function createHydra(ctx, arena, opts = {}) {
     resist: { water: 0.5 }, phases: D.phases, transition: 3.0, weakness: ['lightning', 'fire', 'earth'],
     facing: Math.atan2(ctx.realPlayerPos.x - A.position.x, ctx.realPlayerPos.z - A.position.z),
     gate: (i) => i !== 1 || heads.every((h) => h.dead),
-    onPhase: (i) => { if (i === 1) { rise = 0; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 1), { scale: 3 }); ctx.audio('boss_roar', { position: e.object.position, volume: 1, pitch: 0.7 }); e.shakeAt(e.object.position, 0.7); } },
+    onPhase: (i) => { if (i === 1) { rise = 0; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 1), { owner: 'enemy', scale: 1.8 }); ctx.audio('boss_roar', { position: e.object.position, volume: 1, pitch: 0.7 }); e.shakeAt(e.object.position, 0.7); } },
     onRespawnPhase: () => { if (e.phase === 0) { for (const h of heads) { h.dead = false; h.sever = 0; h.state = 'idle'; } e.reviveParts(); assignElements(); speedMul = 1; } },
     onPartBreak: (part) => severHead(part),
     onBodyHit: (res, hit) => { if (hit?.element === 'ice') freezeRing(); },
     deathPose: (dt, t) => { model.body.position.y = -Math.min(6, t * 2.2); model.body.rotation.z = Math.min(0.5, t * 0.2); },
     dissolveAt: 2.2, dissolveDur: 2.0, dissolveColor: 0x4fb4ff,
-    onDefeat: () => { for (const h of heads) h.N.ring.visible = false; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 2), { scale: 4 }); },
+    onDefeat: () => { for (const h of heads) h.N.ring.visible = false; vfx.preset?.('explosion_water', _v.copy(e.object.position).setY(waterY + 2), { owner: 'enemy', scale: 2.4 }); },
   });
   e.noLod = true;
   e.object.rotation.y = e.facing;
@@ -160,8 +180,9 @@ export function createHydra(ctx, arena, opts = {}) {
       element: hd.element, shield: { element: hd.element, counters: D.counters[hd.element] } });
     return { i, N, part, el: hd.element, state: 'idle', t: 0, cd: 1.5 + i * 1.3, bend: 0.1, bendT: 0.1, yawT: 0, yaw: 0, jaw: 0, dead: false, sever: 0, tele: null, hitDone: false, spits: 0, ph: i * 2.1 };
   });
+  const iceDiscs = Array.from({ length: 8 }, () => new THREE.Vector3());
+  let iceUntil = -1;
   let speedMul = 1, tideCd = 12, spoutCd = 6, freezeCd = 0, rise = 1, coreGlow = 0, rippleT = 0, ice = null;
-  const tideState = { t: -1, tele: null };
 
   function assignElements() {
     // live heads take the elements in order (rotating on each sever)
@@ -174,10 +195,10 @@ export function createHydra(ctx, arena, opts = {}) {
 
   function severHead(part) {
     const h = heads.find((q) => q.part === part); if (!h || h.dead) return;
-    h.dead = true; h.sever = 0; h.tele?.stop?.(); h.tele = null; h.N.ring.visible = false;
+    h.dead = true; h.sever = 0; h.handle?.stop?.(); h.handle = null; h.state = 'idle'; if (biting === h) biting = null; h.N.ring.visible = false;
     h.N.head.getWorldPosition(_v);
-    vfx.preset?.('explosion_' + h.el, _v, { scale: 2.2 });
-    vfx.burst(_v, { count: 50, color: [0xd8f4ff, elColor(h.el, 'mid')], speed: 9, spread: 1, size: 0.35, sizeEnd: 0.05, life: 1.2, gravity: 10, shape: 'droplet' });
+    vfx.preset?.('explosion_' + h.el, _v, { owner: 'enemy', scale: 1.32 });
+    vfx.burst(_v, { owner: 'enemy', count: 25, color: [0xd8f4ff, elColor(h.el, 'mid')], speed: 9, spread: 1, size: 0.35, sizeEnd: 0.05, life: 1.2, gravity: 10, shape: 'droplet' });
     ctx.audio('boss_roar', { position: _v, volume: 1, pitch: 1.3 });
     e.shakeAt(_v, 0.6);
     // the survivors swap elements and speed up (+20 %)
@@ -185,7 +206,7 @@ export function createHydra(ctx, arena, opts = {}) {
     if (live.length > 1) { const first = live[0].el; for (let k = 0; k < live.length - 1; k++) live[k].el = live[k + 1].el; live[live.length - 1].el = first; }
     speedMul *= 1.2;
     assignElements();
-    for (const q of live) { q.N.head.getWorldPosition(_w); vfx.burst(_w, { count: 18, color: [0xffffff, elColor(q.el, 'mid')], speed: 4, spread: 1, size: 0.3, sizeEnd: 0, life: 0.6, shape: 'spark' }); }
+    for (const q of live) { q.N.head.getWorldPosition(_w); vfx.burst(_w, { owner: 'enemy', count: 18, color: [0xc8d0dc, elColor(q.el, 'mid')], speed: 4, spread: 1, size: 0.3, sizeEnd: 0, life: 0.6, shape: 'spark' }); }
   }
 
   /** Ice on the lake: a ring of walkable ice discs around the body for 10 s (melee classes can reach the heads). */
@@ -194,12 +215,14 @@ export function createHydra(ctx, arena, opts = {}) {
     const sf = W.surface; if (!sf?.freezeWater) return;
     freezeCd = 12;
     const c = A.position;
+    iceUntil = bossTime(game) + 10;
     for (let k = 0; k < 8; k++) {
       const a = k / 8 * Math.PI * 2;
       _v.set(c.x + Math.sin(a) * 10.5, waterY, c.z + Math.cos(a) * 10.5);
+      iceDiscs[k].copy(_v);
       try { sf.freezeWater(_v, 4.2, 10); } catch (_) { /* */ }
     }
-    vfx.shockwave?.(_v.set(c.x, waterY + 0.1, c.z), { color: 0xd8f6ff, radius: 14, duration: 0.8, opacity: 0.8 });
+    vfx.shockwave?.(_v.set(c.x, waterY + 0.1, c.z), { owner: 'enemy', color: 0xd8f6ff, radius: 14, duration: 0.8, opacity: 0.8 });
     e.emitCheck?.('freeze', 'start', 10);
   }
   const offFrozen = game.events.on?.('waterFrozen', (p) => {
@@ -208,147 +231,179 @@ export function createHydra(ctx, arena, opts = {}) {
   });
   e.freezeRing = freezeRing;
 
-  // ---------------------------------------------------------------- attacks
-  function headPick(kind) {
-    const live = heads.filter((h) => !h.dead && h.state === 'idle' && h.cd <= 0);
-    if (!live.length) return null;
+  // ---------------------------------------------------------------- attacks (PLAN §4.10; all through game.tells)
+  // concurrency: ≤ 1 bite + ≤ 1 other attack (spit / tide / spouts) at a time
+  const tide = { h: null, safes: [] };
+  const spouts = [];          // {h, p}
+  const pillars = (A.pillars || []).map((q) => q.pos);
+  const marks = [0, 1, 2].map(() => { const o = new THREE.Object3D(); game.scene.add(o); return { obj: o, m: null }; });
+  let biting = null, other = null;
+  function headPick(near) {
+    let best = null, bd = near ? Infinity : -1;
     const pp = ctx.playerPos;
-    live.sort((a, b) => a.N.head.getWorldPosition(_v).distanceToSquared(pp) - b.N.head.getWorldPosition(_w).distanceToSquared(pp));
-    return kind === 'bite' ? live[0] : live[live.length - 1];
+    for (const h of heads) {
+      if (h.dead || h.state !== 'idle' || h.cd > 0) continue;
+      const d = h.N.head.getWorldPosition(_v).distanceToSquared(pp);
+      if (near ? d < bd : d > bd) { bd = d; best = h; }
+    }
+    return best;
   }
   function startBite(h) {
-    h.state = 'biteWind'; h.t = 0; h.hitDone = false;
     const p = e.object.position, pp = ctx.playerPos;
-    h.target = (h.target || new THREE.Vector3()).copy(pp);
     _d.set(pp.x - p.x, 0, pp.z - p.z); const len = _d.length(); _d.normalize();
-    _v.set(p.x + _d.x * 3, ctx.groundH(p.x + _d.x * 3, p.z + _d.z * 3), p.z + _d.z * 3);
-    h.tele = ctx.tele({ shape: 'line', pos: _v, dir: _d, len: Math.min(17, len + 1.5), width: 3.2, dur: 1.1 / speedMul, color: 'damage' });
-    game.events.emit('enemyAttack', { enemy: e, kind: 'bite' });
+    _v.set(p.x + _d.x * 3, 0, p.z + _d.z * 3); _v.y = Math.max(ctx.groundH(_v.x, _v.z), waterY);
+    e.model.tellAnchors.mouth = h.N.jaw; e.model.tellAnchors.head = h.N.head;
+    const hh = bossAttack(ctx, e, 'hydra.bite', { shape: { pos: _v, dir: _d, len: Math.min(17, len + 1.5) } });
+    if (!hh) return null;
+    h.state = 'biteWind'; h.t = 0; h.handle = hh; biting = h;
+    h.target = (h.target || new THREE.Vector3()).copy(pp);
+    return hh;
   }
-  function startSpit(h) { h.state = 'spitWind'; h.t = 0; h.spits = 0; game.events.emit('enemyAttack', { enemy: e, kind: 'spit' }); }
+  function startSpit(h) {
+    e.model.tellAnchors.mouth = h.N.jaw;
+    const hh = bossAttack(ctx, e, 'hydra.spit', { el: h.el });
+    if (!hh) return null;
+    h.state = 'spitWind'; h.t = 0; h.handle = hh; other = hh;
+    return hh;
+  }
+  /** 3 non-homing orbs at predicted positions, each with a landing marker (r 1.2). */
+  function fireSpit(h) {
+    const S = attackSpec('hydra.spit');
+    h.N.head.getWorldPosition(_v); _v.y += 0.2;
+    const pe = ctx.target || game.player?.entity, pv = pe?.velocity, pp = ctx.playerPos;
+    for (let k = 0; k < S.orbs; k++) {
+      const lead = 0.5 + k * 0.45, side = (k - 1) * 1.6;
+      _w.set(pp.x + (pv ? pv.x * lead : 0), 0, pp.z + (pv ? pv.z * lead : 0));
+      _d.set(_w.x - _v.x, 0, _w.z - _v.z).normalize();
+      _w.x += -_d.z * side; _w.z += _d.x * side; _w.y = Math.max(ctx.groundH(_w.x, _w.z), waterY);
+      const o = ctx.projectiles.orb(_v, h.el, e, { amount: D.spit, speed: 10, homing: 0, attackId: 'hydra.spit', attack: { id: 'hydra.spit' } });
+      if (o?.vel) { _d.set(_w.x - _v.x, _w.y + 0.9 - _v.y, _w.z - _v.z).normalize().multiplyScalar(o.speed || 10); o.vel.copy(_d); }
+      const M = marks[k]; M.m?.stop?.(); M.obj.position.copy(_w); M.obj.updateMatrixWorld();
+      M.m = game.tells?.projectile?.(M.obj, { r: S.markerR }) || null; M.orb = o; M.t = 0;
+    }
+    ctx.audio('cast_' + h.el, { position: _v, volume: 0.6, pitch: 0.7 });
+  }
   function startTide() {
-    tideState.t = 0;
     _v.set(A.position.x, waterY, A.position.z);
-    tideState.tele = ctx.tele({ shape: 'ring', pos: _v, r: 19, inner: 5.5, dur: 1.7 / Math.max(1, speedMul * 0.9), color: 'damage' });
+    const hh = bossAttack(ctx, e, 'hydra.tide', { shape: { pos: _v }, hold: false });
+    if (!hh) return null;
+    tide.h = hh; other = hh;
+    // safe tiles: pillar tops (+ the ice discs while the lake is frozen)
+    for (const s of tide.safes) s?.stop?.();
+    tide.safes.length = 0;
+    const T = game.tells;
+    if (T?.safe) {
+      for (const q of pillars) tide.safes.push(T.safe({ pos: q, r: 1.5, dur: hh.dur + 0.3 }));
+      if (iceUntil > bossTime(game)) for (const c of iceDiscs) tide.safes.push(T.safe({ pos: c, r: 3.6, dur: hh.dur + 0.3 }));
+    }
     ctx.audio('charge', { position: e.object.position, volume: 0.9, pitch: 0.4 });
-    game.events.emit('enemyAttack', { enemy: e, kind: 'tide' });
+    return hh;
   }
-  function tideHit() {
+  function tideHit(hh) {
     const c = A.position;
     _v.set(c.x, waterY + 0.2, c.z);
-    vfx.shockwave?.(_v, { color: 0xbfe8ff, radius: 20, duration: 0.9, opacity: 0.9, thickness: 0.8 });
-    vfx.shockwave?.(_v, { color: 0xffffff, radius: 14, duration: 0.7, opacity: 0.6, thickness: 0.4 });
-    for (let k = 0; k < 10; k++) {
-      const a = k / 10 * Math.PI * 2;
-      _w.set(c.x + Math.sin(a) * 12, waterY + 0.3, c.z + Math.cos(a) * 12);
-      vfx.burst(_w, { count: 10, color: [0xffffff, 0x6fc8ff], speed: 7, spread: 0.4, dir: _d.set(Math.sin(a), 1.2, Math.cos(a)).normalize(), size: 0.3, sizeEnd: 0.06, life: 0.9, gravity: 12, shape: 'droplet' });
-    }
+    vfx.shockwave?.(_v, { owner: 'enemy', color: 0x3f8a96, radius: 19, duration: 0.9, opacity: 0.55, thickness: 0.6 });
     e.shakeAt(c, 0.5);
     ctx.audio('splash', { position: c, volume: 1, pitch: 0.6 });
-    // in the water (and not on ice / a pillar top) inside the ring band → hit
-    const pe = game.player?.entity, pp = ctx.realPlayerPos;
-    if (!pe || pe.alive === false) return;
-    const d = Math.hypot(pp.x - c.x, pp.z - c.z);
+    // inside the drawn ring AND in the water (not on ice / a pillar top = the safe tiles)
+    const pp = ctx.playerPos;
     const onIce = !!W.surface?.onIce?.(pp.x, pp.z);
     const wet = (W.waterDepth?.(pp.x, pp.z) || 0) > 0.15 && pp.y < waterY + 0.8;
-    if (d < 19.5 && d > 5 && wet && !onIce) {
-      _d.set(pp.x - c.x, 0, pp.z - c.z).normalize();
-      game.combat.dealDamage(pe, { amount: D.tide, element: 'water', source: e, point: pp.clone().setY(pp.y + 1), direction: _d.clone(), knockback: 14, launch: 5, heavy: true, status: { wet: 6 } });
-    }
+    if (wet && !onIce) bossHit(ctx, e, hh, { attack: 'hydra.tide', amount: D.tide, element: 'water', knockback: 14, launch: 5, heavy: true, status: { wet: 6 }, from: c });
   }
-  const spouts = [];
   function startSpouts() {
-    const pp = ctx.playerPos;
+    const pp = ctx.playerPos, S = attackSpec('hydra.spouts');
+    let first = null;
     for (let k = 0; k < 3; k++) {
       const a = k * 2.1 + rand(0, 1), r = k === 0 ? 0 : rand(3, 6);
       const p = new THREE.Vector3(pp.x + Math.sin(a) * r, 0, pp.z + Math.cos(a) * r); p.y = Math.max(ctx.groundH(p.x, p.z), waterY - 0.1);
-      spouts.push({ p, t: -k * 0.35, tele: ctx.tele({ shape: 'circle', pos: p, r: 2.6, dur: 1.2 + k * 0.35, color: 'damage' }) });
+      const hh = bossAttack(ctx, e, 'hydra.spouts', { windup: S.stagger[k], shape: { pos: p }, hold: false });
+      if (hh) { spouts.push({ h: hh, p }); if (!first) first = hh; }
     }
+    if (first) other = first;
+    return first;
   }
+  function spoutHit(s) {
+    vfx.preset?.('impact_water', _v.copy(s.p).setY(s.p.y + 0.5), { owner: 'enemy', scale: 1.2 });
+    bossHit(ctx, e, s.h, { attack: 'hydra.spouts', amount: D.spout, element: 'water', knockback: 4, launch: 9, heavy: true, status: { wet: 5 }, from: s.p });
+  }
+  const otherBusy = () => {
+    if ((other && other.alive) || spouts.length > 0) return true;
+    for (let i = 0; i < heads.length; i++) { const s = heads[i].state; if (s === 'spitWind' || s === 'spit') return true; }
+    return false;
+  };
 
   e.think = (dt, sm) => {
     e.baseTick(dt);
     const k = sm * speedMul;
     freezeCd -= dt; tideCd -= dt * k; spoutCd -= dt * k;
     const p = e.object.position, pp = ctx.playerPos;
-    // keep the body anchored in the lake centre, facing the player slowly
     p.x = A.position.x; p.z = A.position.z;
     const want = Math.atan2(pp.x - p.x, pp.z - p.z);
     let df = want - e.facing; df = Math.atan2(Math.sin(df), Math.cos(df));
     e.facing += clamp(df, -0.35 * dt, 0.35 * dt);
-    if (e.transitioning || !e.playerInArena(22)) { for (const h of heads) if (h.state !== 'idle' && h.state !== 'recover') { h.state = 'idle'; h.tele?.stop?.(); } return; }
-    // tidal sweep
-    if (tideState.t >= 0) {
-      tideState.t += dt * k;
-      if (tideState.t >= 1.7) { tideState.t = -1; tideHit(); }
-    } else if (tideCd <= 0) { tideCd = (e.phase >= 1 ? 9 : 14) + rand(0, 3); startTide(); }
-    if (e.phase >= 1 && spoutCd <= 0) { spoutCd = rand(5, 7); startSpouts(); }
-    for (let i = spouts.length - 1; i >= 0; i--) {
-      const s = spouts[i]; s.t += dt;
-      if (s.t >= 1.2) {
-        spouts.splice(i, 1);
-        vfx.preset?.('impact_water', _v.copy(s.p).setY(s.p.y + 0.5), { scale: 1.6 });
-        vfx.burst(_v.copy(s.p), { count: 24, color: [0xffffff, 0x6fc8ff], speed: 10, spread: 0.25, dir: _d.set(0, 1, 0), size: 0.4, sizeEnd: 0.1, life: 1.1, gravity: 14, shape: 'droplet' });
-        const pe = game.player?.entity, rp = ctx.realPlayerPos;
-        if (pe && pe.alive !== false && Math.hypot(rp.x - s.p.x, rp.z - s.p.z) < 2.6 + 0.4) game.combat.dealDamage(pe, { amount: D.spout, element: 'water', source: e, point: rp.clone().setY(rp.y + 1), knockback: 4, launch: 9, heavy: true, status: { wet: 5 } });
-      }
+    // landing markers follow their orb's life
+    for (const M of marks) if (M.m) { M.t += dt; if (M.t > 2.5 || (M.orb && M.orb.active === false)) { M.m.stop?.(); M.m = null; } }
+    // strike latches (every sub-step)
+    if (tide.h) { if (tide.h.consumeStrike()) { tideHit(tide.h); tide.h = null; } else if (cancelled(tide.h)) tide.h = null; }
+    for (let i = spouts.length - 1; i >= 0; i--) { const s = spouts[i]; if (s.h.consumeStrike()) { spoutHit(s); spouts.splice(i, 1); } else if (cancelled(s.h)) spouts.splice(i, 1); }
+    if (e.transitioning || !e.playerInArena(22)) {
+      for (const h of heads) if (h.state !== 'idle' && h.state !== 'recover') { h.state = 'idle'; h.handle?.stop?.(); h.handle = null; }
+      return;
     }
-    // heads
     const d = e.distP;
-    let busy = 0;
     for (const h of heads) {
       if (h.dead) continue;
-      h.cd -= dt * k; h.t += dt * k;
-      if (h.state !== 'idle') busy++;
+      h.cd -= dt * k; h.t += dt;
+      const hh = h.handle;
+      if (hh && cancelled(hh)) { h.handle = null; if (h.state !== 'recover') { h.state = 'idle'; h.cd = 1; } if (biting === h) biting = null; continue; }
       switch (h.state) {
         case 'biteWind':
-          if (h.t > 1.1) { h.state = 'bite'; h.t = 0; ctx.audio('boss_roar', { position: p, volume: 0.6, pitch: 1.5 }); }
-          break;
-        case 'bite': {
-          h.N.head.getWorldPosition(_v);
-          if (!h.hitDone && h.t > 0.12 && h.t < 0.45) {
-            const pe = ctx.target;
-            if (pe && pe.alive !== false && _v.distanceTo(ctx.playerCenter) < 3.2) {
-              h.hitDone = true;
-              _d.subVectors(ctx.playerCenter, _v).setY(0).normalize();
-              ctx.hitPlayer(e, { amount: D.bite, element: h.el, knockback: 12, launch: 3 });
-            }
+          if (hh && rhythm(game, hh) === 'strike') { h.state = 'bite'; h.t = 0; ctx.audio('boss_roar', { position: p, volume: 0.6, pitch: 1.5 }); }
+          // falls through to the latch below
+        case 'bite':
+          if (hh && hh.consumeStrike()) {
+            h.state = 'bite'; h.t = 0; h.handle = null;
+            bossHit(ctx, e, hh, { attack: 'hydra.bite', amount: D.bite, element: h.el, knockback: 12, launch: 3 });
+            h.N.head.getWorldPosition(_v); _v.y = Math.max(ctx.groundH(_v.x, _v.z), waterY);
+            vfx.shockwave?.(_v, { owner: 'enemy', color: 0x3f8a96, radius: 3, duration: 0.45, opacity: 0.5 });
+            // the head lies low: the punish window (2.0 s, ×1.5)
+            const S = attackSpec('hydra.bite');
+            h.state = 'recover'; h.t = 0; h.recT = S.punishDur; biting = null;
+            bossPunish(ctx, e, S.punishDur, S.punishMul);
           }
-          if (h.t > 0.5) { h.state = 'recover'; h.t = 0; h.tele?.stop?.(); h.tele = null; ctx.dust(_v.setY(Math.max(ctx.groundH(_v.x, _v.z), waterY)), 2); vfx.shockwave?.(_v, { color: 0xbfe8ff, radius: 3.5, duration: 0.5, opacity: 0.7 }); }
           break;
-        }
         case 'recover':
-          // the head lies low for a moment: the melee window
-          if (h.t > 1.5) { h.state = 'idle'; h.cd = rand(2.5, 4) / speedMul; }
+          if (h.t > (h.recT ?? 1)) { h.state = 'idle'; h.cd = rand(2.5, 4) / speedMul; }
           break;
         case 'spitWind':
-          if (h.t > 0.7) { h.state = 'spit'; h.t = 0; }
+          if (hh && hh.consumeStrike()) { h.handle = null; h.state = 'spit'; h.t = 0; fireSpit(h); }
           break;
         case 'spit':
-          if (h.t > 0.28 * h.spits && h.spits < 3) {
-            h.spits++;
-            h.N.head.getWorldPosition(_v); _v.y += 0.2;
-            const col = elColor(h.el, 'mid');
-            ctx.projectiles.orb(_v, h.el, e, { color: col, amount: D.spit, speed: 11 });
-            vfx.burst(_v, { count: 12, color: [0xffffff, col], speed: 4, spread: 0.6, size: 0.25, sizeEnd: 0, life: 0.4, shape: 'spark' });
-            ctx.audio('cast_' + h.el, { position: _v, volume: 0.6, pitch: 0.7 });
-          }
-          if (h.t > 1.2) { h.state = 'idle'; h.cd = rand(3, 5) / speedMul; }
+          if (h.t > 0.6) { h.state = 'idle'; h.cd = rand(3, 5) / speedMul; if (other && !other.alive) other = null; }
           break;
       }
     }
-    // up to 2 heads attack at once (no allocation unless an attack actually starts)
-    let live = 0, ready = 0;
-    for (const h of heads) { if (!h.dead) { live++; if (h.state === 'idle' && h.cd <= 0) ready++; } }
-    if (live && ready && busy < Math.min(2, live)) {
-      const reach = d < 17;
-      const h = headPick(reach && Math.random() < 0.65 ? 'bite' : 'spit');
-      if (h) { if (reach && h === headPick('bite')) startBite(h); else startSpit(h); }
+    if (other && !other.alive && !otherBusy()) other = null;
+    if (!e.isBroken() && !(e.vulnerableUntil > bossTime(game))) {
+      // tide / spouts (other slot), then the heads
+      if (!otherBusy() && tideCd <= 0) { if (startTide()) tideCd = (e.phase >= 1 ? 9 : 14) + rand(0, 3); else tideCd = 1; }
+      if (!otherBusy() && e.phase >= 1 && spoutCd <= 0) { spoutCd = rand(5, 7); startSpouts(); }
+      if (!biting && d < 17) { const h = headPick(true); if (h && Math.random() < 0.65) startBite(h); }
+      if (!otherBusy()) { const h = headPick(false); if (h && Math.random() < 0.5) startSpit(h); }
     }
-    // ambient: ripples + the core shimmer
     rippleT -= dt;
-    if (rippleT <= 0) { rippleT = 1.4; vfx.shockwave?.(_v.set(p.x, waterY + 0.05, p.z), { color: 0xbfe8ff, radius: 9, duration: 1.4, opacity: 0.35, thickness: 0.2 }); }
+    if (rippleT <= 0) { rippleT = 2.0; vfx.shockwave?.(_v.set(p.x, waterY + 0.05, p.z), { owner: 'enemy', color: 0x3f8a96, radius: 8, duration: 1.4, opacity: 0.22, thickness: 0.15 }); }
     void ice;
+  };
+  const debugAttack = (id) => {
+    for (const h of heads) { if (!h.dead) { h.handle?.stop?.(); h.handle = null; h.state = 'idle'; h.cd = 0; } }
+    stopAttacks(e); biting = null; other = null; spouts.length = 0; tide.h = null;
+    if (id === 'hydra.bite') { const h = headPick(true); return h ? startBite(h) : null; }
+    if (id === 'hydra.spit') { const h = headPick(false); return h ? startSpit(h) : null; }
+    if (id === 'hydra.tide') return startTide();
+    if (id === 'hydra.spouts') return startSpouts();
+    return null;
   };
 
   // ---------------------------------------------------------------- pose (render-rate procedural animation)
@@ -378,7 +433,7 @@ export function createHydra(ctx, arena, opts = {}) {
       h.yawT = Math.atan2(lx, lz) - N.baseYaw;
       let bend = 0.06 + Math.sin(t * 0.8 + h.ph) * 0.03, jaw = 0.05;
       if (h.state === 'biteWind') { bend = -0.06; jaw = 0.5; }
-      else if (h.state === 'bite' || h.state === 'recover') {
+      else if (h.state === 'bite' || h.state === 'recover' || e.isBroken?.()) {
         const tgt = h.target || pp;
         const tlx = tgt.x - p.x, tlz = tgt.z - p.z;
         const dd = Math.min(15, Math.hypot(tlx, tlz) - 1.5);
@@ -402,6 +457,8 @@ export function createHydra(ctx, arena, opts = {}) {
   const baseRemove = e.cleanupParts;
   e.cleanupParts = () => { baseRemove(); try { if (typeof offFrozen === 'function') offFrozen(); } catch (_) { /* */ } };
   e.heads = heads;
+  finishBoss(ctx, e, { type: 'hydra', cameraHint: { dist: 1.6, height: 1.5 }, debugAttack, preview: () => buildHydra().root, noDistanceRate: true,
+    onBroken: () => { for (const h of heads) if (!h.dead) { h.handle = null; h.state = 'recover'; h.t = 0; h.recT = 3.5; } biting = null; other = null; spouts.length = 0; tide.h = null; } });
   return e;
 }
 createHydra.prewarm = () => { if (!spare) spare = buildHydra(); return spare.root; };
