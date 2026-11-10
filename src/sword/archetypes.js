@@ -89,7 +89,13 @@ export function registerMeleeArchetypes(game, E) {
     if (ctx.element) E.setElementLocal(ctx.element);
     const hitT = clamp(o.hitT ?? ctx.def?.melee?.hitT ?? 0.35, 0.05, 0.95);
     const yaw = o.yaw ?? aimYaw(ctx);
-    const evs = [[hitT, (a) => { try { o.strike?.(a); } catch (err) { warnOnce('strike:' + ctx.skillId, err); } E.look?.hook?.('after', a, ctx); }]];
+    const evs = [[hitT, (a) => {
+      try { o.strike?.(a); } catch (err) { warnOnce('strike:' + ctx.skillId, err); }
+      // §5.8: a strike that dealt no damage itself spawned what delivers it (zone, rain, projectile, wall …): the action's own work
+      // is done, so the strike frame is its delivery frame and the dodge window opens there (not 0.10 s later, not at the end)
+      if (a.dmgT == null && !(o.hits && o.hits.length)) { a.dmgT = a.t; a.deferred = true; }
+      E.look?.hook?.('after', a, ctx);
+    }]];
     if (o.events) for (const e of o.events) evs.push(e);
     E.tag.skillId = ctx.skillId; E.tag.slot = ctx.slot;
     const dur = o.dur ?? 0.72;
@@ -768,7 +774,7 @@ export function registerMeleeArchetypes(game, E) {
     // v4: every skill runs inside its cast context (castId from the skills runtime, tier from the def, bespoke row if any)
     const wrapped = (ctx) => {
       const L = E.look;
-      const cc = L ? L.begin({ skillId: ctx.skillId, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx), archetype: name }) : null;
+      const cc = L ? L.begin({ skillId: ctx.skillId, def: ctx.def, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx), archetype: name }) : null;
       const prev = L ? L.cur : null; if (L) L.cur = cc;
       try { fn(ctx); } catch (err) { warnOnce(name, err); throw err; } finally {
         // a skill that started no engine action still gets its look (start + strike at once)
