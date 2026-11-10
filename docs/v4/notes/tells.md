@@ -59,7 +59,10 @@ Soft occlusion: scene point from `post.sceneDepth` (`projInv`, `camWorld`), occl
 ### Body tells
 Rim clones of `e.rimSource()` (≤ 2 meshes; fallback `e.model.skin.meshes`, then the two largest opaque meshes): SkinnedMesh bound to the source skeleton/bindMatrix (or Mesh),
 `matrixAutoUpdate = false`, matrices copied in `preOverlay()`; BackSide hull expanded 2–3 px in clip space (+1 px after the lock, +1 px strong), alpha 0.35 → 1 over the windup,
-flash at lock; fragment hard depth compare `hullDepth ≤ sceneDepth + 0.05 m`. ≤ 4 rim draw calls (nearest by remaining time, one mesh per enemy first, then second meshes).
+flash at lock; fragment hard depth compare `hullDepth ≤ sceneDepth + 0.05 m`; silhouette only (fix round 1): when the scene surface
+at the pixel is nearer than the enemy's slab `uBack` = view distance of its centre (half height) + 0.35 × radius, the fragment is kept only if one of
+8 neighbours `uPx + 3` px away lies beyond the slab, so internal occlusion contours (club / arm over the torso, which the v4 outline proxy also
+draws) stay unpainted. ≤ 4 rim draw calls (nearest by remaining time, one mesh per enemy first, then second meshes).
 `preOverlay` clears the canvas depth when rims are active (the hull self-occludes with depthTest).
 
 ### Other APIs
@@ -86,7 +89,7 @@ hazards, winding-up bodies r + 1 m) · `renderThumb(kind, size)` (`danger, parry
 | T2 grass on ÷ off | 0.997–0.998 | ≥ 0.95 |
 | T2 behind a 2.6 m wall (median per-pixel contribution ratio) | 0.418 (mean 0.437: the wall's lowest metre is not an occluder by rule) | 0.40 ± 0.05 |
 | T2 rim colour bloom on vs off | ΔRGB max 1 | ≤ 8 |
-| T4 rim clone (bokoblin, v3 model): interior changed / perimeter outlined | 8.1–12.6 % / 90–96 % (pose varies between runs) | ≤ 15 % / ≥ 60 % |
+| T4 rim clone (bokoblin, v4 model, outline-proxy source): interior changed / perimeter outlined | before fix 20–22 % / 90–96 % (internal contours painted); after 11–13 % / 64–74 % (pose varies; feet on the ground lose the rim inside the slab) | ≤ 15 % / ≥ 60 % |
 | Progress linearity / strike latch | error 0 / exactly once, on the due sub-step | ≤ 0.02 / ≤ 1 sub-step |
 | hitTest vs core reference | 0 mismatches / 10,000 points (+ 1,000 handle `contains`) | 0 |
 | Flash rate (rim region luminance, 20 Hz sampling) | 0 peaks | ≤ 3 Hz |
