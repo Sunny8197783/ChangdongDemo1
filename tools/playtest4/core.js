@@ -157,6 +157,7 @@ async function mainPage(PT) {
     const h = t.attack(e, { id: 'test.slam', tell: 'danger', cls: 'mobLight', windup: 0.3, shape: { kind: 'circle', pos: e.object.position.clone(), r: 3 } });
     PT.check('attack → handle with floor dur 0.75 (mobLight) on enemyTime', !!h && Math.abs(h.dur - 0.75) < 1e-9 && h.start === game.enemyTime && ev.start === 1, { dur: h?.dur });
     PT.step(0.5);
+    if (t !== T) t.update?.(0.5);   // a stub that is not the installed module is not stepped by the game loop (real tells merged)
     const p1 = h.progress, early = h.consumeStrike(), lockedAt05 = h.locked;
     PT.check('progress linear on enemyTime', Math.abs(p1 - (0.5 / 0.75)) < 0.03 && !early && lockedAt05 === true, { p1, lockedAt05 });
     PT.check('tellCommit at lock', ev.commit === 1, ev.commit);
@@ -215,8 +216,9 @@ async function mainPage(PT) {
     const m = new T.Mesh(new T.PlaneGeometry(40, 40), new T.MeshBasicMaterial({ color: 0xff2a3d, toneMapped: false, fog: false, depthTest: false, depthWrite: false }));
     m.position.copy(g.camera.position).add(g.camera.getWorldDirection(new T.Vector3()).multiplyScalar(6)); m.lookAt(g.camera.position);
     R.warm(m, { target: 'overlay', now: true });
+    const d0 = PT.draws();   // the real tells may already draw (enemies attacking nearby): count only the added mesh
     R.threatScene.add(m);
-    const d = PT.draws();
+    const d1 = PT.draws(); const d = { overlayCalls: d1.overlayCalls - d0.overlayCalls };
     const px = PT.pixels.render(false); const c = (px.h >> 1) * px.w * 4 + (px.w >> 1) * 4;
     const rgb = [px.px[c], px.px[c + 1], px.px[c + 2]];
     g.bloomPass.enabled = false; const px2 = PT.pixels.render(true); g.bloomPass.enabled = true;
