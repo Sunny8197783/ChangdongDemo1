@@ -47,3 +47,8 @@
 - vfx point lights at medium: **done** (core `pointLights:false` at low/medium; 0 point lights). Upload ranges: **done** (`addUpdateRange` in `vfx/particles.js`, `ribbon.js`, `fxmesh.js`, `debris.js`).
 - vfx/combat surface damage mapping (`attackKind:'surface'`): **done** (`combat/pipeline.js` maps `hit.attack ?? hit.source.attack`).
 - tells `heightField` helper: **done**. mobs training dummies hide beyond 60 m: **not done** in `enemies/dummy.js` — open for mobs if C6 S-plains misses its budget (group `other`).
+
+## Fix round 1 → mobmodels / mobs
+- C8 zone transition frame (mirwen 75 ms in core's run; ascent 100–237 ms in world's) is the first spawn of a new mob type:
+  `enemies/mobs/rig.js` defineType/assemble (SphereGeometry, computeVertexNormals, BufferAttribute allocs + GC). Pre-build each
+  type's geometry at boot (or when approaching a zone, spread over frames) so the spawn is a clone.

@@ -92,3 +92,17 @@ World-owned counts use `world.debug.owns()` (NPCs = ux, training dummies = mobs 
 - Cut (fallbacks in place): grass crush inside `tells.footprints()` (footprint encoding not published by a tells tag yet; grass
   still bends around the player); camp entrance banners (would cost draw calls; the beacon/compass point at the entrance);
   see-through prefab variant only within 30 m (the OCC screen-door test is a few ALU ops on every prop; unchanged).
+
+## Fix round 1
+- Burning-grass flames (review R-paladin / R-mage): v3-era cards were 2–4.8 m tall filled orange quads (0.39 screens of
+  transparent fragments with 70 burning cells in F-paladin). Now low linework tongues (crisp ≥ 2 px orange outline + inner
+  lick + 30 % fill, ≤ 0.78 m, typically 0.4–0.5 m), burning grass blades shrink to 45 % so the tongues stand above them,
+  smoke alpha 0.75 → 0.4. Ducking: the flame vertex shader runs the vfx/duck.js footprint test on `game.vfx.shared`
+  (bound lazily by reference in `surface.update`): inside a threat footprint or within 1.5 m of the camera→player segment a
+  flame sinks to 35 % height and 30 % alpha. Same 140 instances: flame fragments 0.394 → 0.013 screens.
+- C8 zone transition hitch (mirwen 75 ms): not world. CPU profile of the 20 frames after each teleport: the spike is the first
+  spawn of a new mob type (`enemies/mobs/rig.js` defineType / assemble, SphereGeometry, computeVertexNormals, GC) and lands on
+  whichever zone first spawns that type (ascent 100–237 ms in my runs, mirwen in core's). world.update ≤ 8 ms there
+  (typ. 1–3 ms). → request to mobmodels/mobs: pre-build mob type geometry at boot/zone approach.
+- noTerrain 0.799: terrain PCF 5 taps (centre ×2) → 4 equal diagonal taps.
+- world.js no longer writes bloom threshold/strength/radius (core's).
