@@ -618,7 +618,8 @@ export function createVFX(game) {
       applyCamera(rd);
       // budgets: coverage (largest contributor shrinks first) and draw calls (oldest persistent visuals collapse)
       // player FX built outside the kit (spell / sword objects through applyPlayerFx) get what the kit leaves of the budget
-      const fc = duck.foreignUpdate(Math.max(0.2, budget.st.soft * 0.92 - (P.coverage + k.cover + runes.coverage())), rd);
+      // (its own share of the soft budget: the kit estimate is conservative and must not starve the spell fills)
+      const fc = duck.foreignUpdate(budget.st.soft * 0.6, rd);
       const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() + fc }, rd);
       P.material.uniforms.uSoftMul.value = st.softMul; P.material.uniforms.uSizeMul.value = st.sizeMul;
       covState.parts.foreign = fc; covState.parts.foreignShrink = duck.foreignShrink; covState.parts.foreignRaw = duck.foreignRaw;
