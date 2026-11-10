@@ -83,7 +83,7 @@ export const ROWS = {
     start(L, cc) { anticip(L, cc, 'ice'); },
     strike(L, cc, a) { frame(L, a, 4); const t0 = chest(L, 1.15), end = L.h.v3(F.px + F.fx * 4.6, F.py + 1.05, F.pz + F.fz * 4.6);
       L.h.ribbon(cc, { points: [t0, end], width: 0.3, taper: 0.95, life: 0.5, el: 'ice', alpha: 0.8 });
-      L.h.line(cc, { shape: 'star', points: 6, r2: 0.3, el: 'ice', pos: end, plane: 'billboard', r: 1.7, width: 0.085, life: 0.4, tIn: 0.05, tOut: 0.2 });
+      L.h.line(cc, { shape: 'star', points: 6, r2: 0.3, el: 'ice', pos: L.h.v3(end.x, end.y + 1.2, end.z), plane: 'billboard', r: 2.0, width: 0.1, life: 0.45, tIn: 0.05, tOut: 0.2 });
       const g = ahead(L, 4.6);
       L.h.line(cc, { shape: 'poly', sides: 6, el: 'ice', pos: g, plane: 'ground', r: 1.9, width: 0.07, life: 0.7, tIn: 0.08, tOut: 0.3, scaleIn: 'backOut', rot: F.ang });
       L.h.spikes(cc, 'iceSpikes', g, 6, 1.1, 0.9);
