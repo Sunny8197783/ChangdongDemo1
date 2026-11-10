@@ -34,3 +34,12 @@
 - **player**: `game.spells.castLock` is > 0 only during the ultimate anticipation (0.14 s, awakened 0.2 s) and while a finisher plays;
   every other cast is instant (0), so the dodge buffer never waits on a caster.
 - **tells / mobs / bosses**: none.
+
+## Resolution (core integration, wave C round 1)
+- melee (register all motif kinds; keep `<el>.arrow`): **done** (`src/sword/motifs/{earth,nature,light,shadow}.js`; the arrow shape stays registered by magic).
+- core (1) forward `castId`/`skillId` in the legacy adapter: **done** — integration fix 131a36a (`skills/runtime.js` passes `ctx.castId`, `adapters.js` forwards it to `castById` / `cast` / `playLegacy`).
+- core (2) finisher bespoke look: **rejected for round 1** (P1 per PLAN; stays `'archetype'`).
+- core (3) `debug.newMaterials()` counts every material: accepted as specified (C6 measures it over the whole rotation, enemies included).
+- core (4) violet/teal saturation in the grade: **rejected** — changing FinalPass desaturation would move every look and the threat colours checked by C1 (ΔRGB ≤ 8); the per-element floor `min(0.40, 0.85 × swatch)` used by MG1/ML1 is accepted as the §1.4 measurement rule.
+- vfx (1)–(7) (coverage accumulation, bolt halo colour, caustic scroll, setVisible, burst order, multi-instance `kit.meshes`, halo narrowing): **open for vfx (P1)**; none blocks a P0 budget — magic's workarounds stay.
+- player (castLock semantics): noted, no action.

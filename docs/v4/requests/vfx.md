@@ -20,3 +20,10 @@
 - **core**: playtest2's "every melee hit had hitstop ≥ 0.03" (lines 171, 377) is superseded by §5.10 (light = 0.025 s, per-entity) and §7.9
   (core rewrites the assertion). The `vfx-*` / `kit-*` meshes carry `userData.owner`
   ('player' | 'enemy') for `PT.fragments({owner})`. P1 ask: a half-resolution soft-smoke target at governor L1+ (not needed for P0).
+
+## Resolution (core integration, wave C round 1)
+- magic / melee on the kit, castIds, `applyPlayerFx`: **done** (both branches build on `kit-p0a`+).
+- mobs / bosses `owner:'enemy'`, `attack` on player hits, `flashUniform`: **done**.
+- tells footprints / forward: **done**.
+- ux `hurtVignette`: ux keeps the vfx vignette (no directional arc replacement shipped) — **no action**.
+- core playtest2 hitstop assertion: **done** in `core-b` (§7.9). Half-res soft-smoke target: **rejected for round 1** (P1, vfx marked it not needed for P0).

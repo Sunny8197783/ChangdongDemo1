@@ -21,3 +21,8 @@
 ## core
 - `enemies.update` uses step dt × `assist.enemySpeed` (the same scale as `game.enemyTime`); a pure `enemyTime`-delta clock changed the legacy playtest2
   sword timings, so it was not used. No action needed.
+
+## Resolution (core integration, wave C round 1)
+- bosses (base.js exports, exact `meleeCheck`, orb caps, `docs/v4/requests/bosses.md`, entity fields): **done** — bosses wrote the requests file and use `game.tells.attack` with their own spec table (`bosses/codex.js`).
+- ux (story training `dummy.practice`, codex keys, `weakKo`/`parryKo`): **done** on `ux-b` (feature-detected).
+- core: none.

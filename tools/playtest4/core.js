@@ -15,7 +15,9 @@ module.exports = async function core(PT) {
   if (want('c3')) await c3(PT);
   if (want('c4')) await c4(PT);
   if (want('c7')) await c7(PT);
-  if (PT.flags.perf) PT.skip('C6/C8', 'integration (wave C)');
+  // C6 (§1.2 aggregate) and C8 (hard gates) need every owner merged: they run with --perf (or PT4_CORE_ONLY=c6 / c8)
+  if ((PT.flags.perf && !ONLY.length) || ONLY.includes('c6')) await c6(PT);
+  if ((PT.flags.perf && !ONLY.length) || ONLY.includes('c8')) await c8(PT);
 };
 
 async function mainPage(PT) {
@@ -669,4 +671,187 @@ async function c7(PT) {
   });
   PT.check('C7 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
+}
+
+
+// =====================================================================================================================
+// C6 — §1.2 aggregate at 640×360 (integration): S-* sweeps, F-* rotations, B-nidhoggra
+// =====================================================================================================================
+const C6_S = { 'S-village': 175, 'S-plains': 140, 'S-mirwen': 160, 'S-elderwood': 160 };
+const C6_RESULTS = {};
+async function c6(PT) {
+  // ---------------- S-* (no enemies, 4-yaw sweep)
+  for (const [id, cap] of Object.entries(C6_S)) {
+    const pg = await PT.bootScene(id);
+    if (!pg.ready) { PT.check(`C6 ${id}: boot`, false); await pg.close(); continue; }
+    const r = await pg.eval(() => {
+      const g = window.game;
+      PT.step(0.5, true);
+      const sw = [];
+      PT.sweep(() => { PT.step(0.2, true); const d = PT.draws(); sw.push(d); return d.total; });
+      const max = (k) => Math.max(...sw.map((d) => d[k]));
+      const med = (k) => PT.median(sw.map((d) => d[k]));
+      const groups = {};
+      for (const d of sw) for (const [k, v] of Object.entries(d.byGroup)) { const G = groups[k] || (groups[k] = { calls: 0, shadowCalls: 0 }); G.calls = Math.max(G.calls, v.calls); G.shadowCalls = Math.max(G.shadowCalls, v.shadowCalls); }
+      return { total: max('total'), scene: max('calls'), shadow: max('shadowCalls'), overlay: max('overlayCalls'), tris: max('totalTris'), shadowTris: max('shadowTris'),
+        uploadKB: +(med('uploadBytes') / 1024).toFixed(1), uploadKBmax: +(max('uploadBytes') / 1024).toFixed(1), uploads: med('uploads'), programs: sw[sw.length - 1].programs, groups,
+        simMs: PT.simMs(60) };
+    });
+    C6_RESULTS[id] = r;
+    PT.check(`C6 ${id}: draw calls max over sweep ${r.total} (scene ${r.scene} + shadow ${r.shadow} + overlay ${r.overlay}) ≤ ${cap}`, r.total <= cap, r.groups);
+    PT.check(`C6 ${id}: triangles max (scene + shadow) ${r.tris} ≤ 600k`, r.tris <= 600000, { shadowTris: r.shadowTris });
+    PT.check(`C6 ${id}: uploads median ${r.uploadKB} KB in ${r.uploads} calls ≤ 60 KB / 30`, r.uploadKB <= 60 && r.uploads <= 30, { max: r.uploadKBmax });
+    if (id === 'S-plains') {
+      const fr = await pg.eval(() => { PT.look(0, -0.15); PT.step(0.1, true); return window.PT.fragments(); });
+      C6_RESULTS[id].fragments = fr;
+      PT.check(`C6 S-plains: shaded fragments ÷ screen scene ${fr.scene} ≤ 2.2, post ${fr.post} ≤ 2.0, world transparents ${fr.transparent} ≤ 0.5`, fr.scene <= 2.2 && fr.post <= 2.0 && fr.transparent <= 0.5, fr);
+    }
+    await pg.close();
+  }
+  // ---------------- F-* rotations (+ B-nidhoggra)
+  const F = PT.flags.full ? PT.CLASSES.map((c) => 'F-' + c) : ['F-mage', 'F-ranger'];
+  for (const id of [...F, 'B-nidhoggra']) {
+    const isB = id.startsWith('B-');
+    const pg = await PT.bootScene(id);
+    if (!pg.ready) { PT.check(`C6 ${id}: boot`, false); await pg.close(); continue; }
+    const r = await pg.eval(() => {
+      const g = window.game, D = g.debug;
+      D.newMaterials?.(); D.firstDraws?.();
+      const prog0 = g.renderer.info.programs?.length ?? 0;
+      const sm = window.PT.rotate(null, 6);
+      const newMats = D.newMaterials?.() ?? null, firstDraws = D.firstDraws?.() ?? null;
+      const prog1 = g.renderer.info.programs?.length ?? 0;
+      const p95 = (f) => PT.pct(sm.map(f), 0.95), mx = (f) => Math.max(...sm.map(f));
+      const groups = {};
+      for (const s of sm) for (const [k, v] of Object.entries(s.draws.byGroup)) { const G = groups[k] || (groups[k] = { c: [], sc: [] }); G.c.push(v.calls); G.sc.push(v.shadowCalls); }
+      const gp95 = {}; for (const [k, v] of Object.entries(groups)) gp95[k] = { calls: PT.pct(v.c, 0.95), shadowCalls: PT.pct(v.sc, 0.95) };
+      const out = {
+        samples: sm.length, total: p95((s) => s.draws.total), scene: p95((s) => s.draws.calls), shadow: p95((s) => s.draws.shadowCalls), overlay: p95((s) => s.draws.overlayCalls),
+        tris: mx((s) => s.draws.totalTris), shadowTris: p95((s) => s.draws.shadowTris), transparent: p95((s) => s.draws.transparent),
+        uploadKB: +(p95((s) => s.draws.uploadBytes) / 1024).toFixed(1), uploads: p95((s) => s.draws.uploads),
+        particles: mx((s) => s.particles ?? 0), coverageP95: p95((s) => s.coverage?.screens ?? 0), coverageMax: mx((s) => s.coverage?.screens ?? 0),
+        enemyCoverageP95: p95((s) => s.coverage?.byOwner?.enemy ?? 0), groups: gp95,
+        newMats, firstDraws: Array.isArray(firstDraws) ? firstDraws.length : firstDraws, programs: prog1, programGrowth: prog1 - prog0,
+      };
+      out.simMs = window.PT.simMs(90);
+      out.cpu = window.PT.cpuFrame(30);
+      out.fragments = window.PT.fragments();
+      return out;
+    });
+    C6_RESULTS[id] = r;
+    const cap = isB ? 250 : 250;
+    PT.check(`C6 ${id}: draw calls p95 ${r.total} (scene ${r.scene} + shadow ${r.shadow} + overlay ${r.overlay}) ≤ ${cap}`, r.total <= cap, r.groups);
+    if (!isB) {
+      PT.check(`C6 ${id}: shadow pass p95 ${r.shadow} calls / ${r.shadowTris} tris ≤ 30 / 50k`, r.shadow <= 30 && r.shadowTris <= 50000);
+      PT.check(`C6 ${id}: triangles max ${r.tris} ≤ 700k`, r.tris <= 700000);
+      PT.check(`C6 ${id}: transparent draws p95 ${r.transparent} ≤ 55`, r.transparent <= 55);
+      PT.check(`C6 ${id}: uploads p95 ${r.uploadKB} KB in ${r.uploads} calls ≤ 150 KB / 30`, r.uploadKB <= 150 && r.uploads <= 30);
+      PT.check(`C6 ${id}: live particles max ${r.particles} ≤ 1000`, r.particles <= 1000);
+      PT.check(`C6 ${id}: player FX coverage p95 ${r.coverageP95} / max ${r.coverageMax} ≤ 1.5 / 2.5`, r.coverageP95 <= 1.5 && r.coverageMax <= 2.5);
+      PT.check(`C6 ${id}: simulation ms median ${r.simMs} ≤ 3.5`, r.simMs <= 3.5);
+      PT.check(`C6 ${id}: new materials during the rotation ${r.newMats} ≤ 4`, r.newMats != null && r.newMats <= 4);
+    } else {
+      PT.check(`C6 ${id}: enemy-owned FX coverage p95 ${r.enemyCoverageP95} ≤ 1.0`, r.enemyCoverageP95 <= 1.0);
+      PT.check(`C6 ${id}: simulation ms median ${r.simMs} ≤ 4.5`, r.simMs <= 4.5);
+    }
+    PT.check(`C6 ${id}: fragments scene + transparent ${r.fragments.scene} ≤ 3.5, post ${r.fragments.post} ≤ 2.0`, r.fragments.scene <= 3.5 && r.fragments.post <= 2.0, r.fragments);
+    PT.check(`C6 ${id}: programs ${r.programs} ≤ 130, growth during the rotation ${r.programGrowth} = 0, first draws ${r.firstDraws} = 0`, r.programs <= 130 && r.programGrowth === 0 && !r.firstDraws);
+    PT.note(`C6 ${id}: render submit median ${r.cpu.submitMs} ms (p95 ${r.cpu.submitP95}), frame p99 ${r.cpu.p99} ms (SwiftShader: submit includes software rasterisation)`);
+    await pg.close();
+  }
+  try { require('fs').writeFileSync(require('path').join(PT.OUT, 'c6.json'), JSON.stringify(C6_RESULTS, null, 1)); } catch (_) { /* */ }
+}
+
+// =====================================================================================================================
+// C8 — hard gates (--perf): GPU ratios vs v3 (ABAB), long frames, allocation, transitions, soak
+// =====================================================================================================================
+async function c8(PT) {
+  const fs = require('fs'), path = require('path');
+  const res = {};
+  const gates = { 'F-mage': 0.45, 'F-ranger': 0.45, 'S-plains': 0.65 };
+  // frozen frame: F-* after 1.2 s of the rotation (FX alive), S-* at yaw 0
+  const prep = (id) => {
+    const g = window.game;
+    if (window.PT.scene && !window.PT.sceneInfo) window.PT.scene(id);
+    if (id.startsWith('F-')) window.PT.rotate(null, 0.2, { warm: 1.0, measure: false });
+    else { window.PT.look(0, -0.15); window.PT.step(0.3, false); }
+    g.renderNow(); g.renderNow();
+    return { calls: g.renderer.info.render.calls, w: g.renderer.domElement.width, h: g.renderer.domElement.height };
+  };
+  for (const [id, gate] of Object.entries(gates)) {
+    const a = await PT.bootScene(id);
+    const b = await PT.baseline(PT.sceneParams(id).replace('&level=30', '&level=30'));
+    if (!a.ready || !b.ready) { PT.check(`C8 ${id}: both builds boot`, false, { v4: a.ready, v3: b.ready }); await a.close(); await b.close(); continue; }
+    // v3 medium = MSAA 4 on the scene targets (v3 used 0 only in test mode)
+    const v3 = await b.eval((sid) => {
+      const g = window.game, C = g.composer;
+      window.PT.scene(sid);
+      if (C.renderTarget1.samples !== 4) { C.renderTarget1.samples = 4; C.renderTarget2.samples = 4; C.renderTarget1.dispose(); C.renderTarget2.dispose(); }
+      return { samples: C.renderTarget1.samples };
+    }, id);
+    const ia = await a.eval(prep, id), ib = await b.eval(prep, id);
+    const r = await PT.gpuRatioPages(a, b, { pairs: 5, reps: 2 });
+    res[id] = { ...r, v4: ia, v3: { ...ib, ...v3 } };
+    PT.check(`C8 ${id}: GPU ratio v4 medium ÷ v3 medium (MSAA 4), ABAB ${r.pairs.length} pairs median ${r.ratio} ≤ ${gate}`, r.ratio <= gate, res[id]);
+    await a.close(); await b.close();
+  }
+  // ---------------- long frames (CPU side: simulation steps; SwiftShader rasterisation is not representative), allocation, soak
+  const pg = await PT.bootScene('F-mage');
+  if (pg.ready) {
+    const lf = await pg.eval(async () => {
+      const g = window.game;
+      window.PT.rotate(null, 0, { warm: 1, measure: false });
+      let over33 = 0, over50 = 0, worst = 0; const n = 30 * 60;
+      const S = g.skills, ids = ['charged', 'q1', 'q2', 'q3', 'q4'].map((s) => S.skillForSlot?.(s)).filter(Boolean);
+      for (let i = 0; i < n; i++) {
+        window.PT.keepAlive();
+        if (i % 30 === 0) { S.resetCooldowns?.(); try { g.debug.cast(ids[(i / 30) % ids.length], { charge: 1 }); } catch (_) { /* */ } }
+        if (i % 420 === 0) { try { g.debug.cast(S.skillForSlot?.('ult')); } catch (_) { /* */ } }
+        const t = performance.now(); g.step(1, 1 / 60, false); const d = performance.now() - t;
+        if (d > 33) over33++; if (d > 50) over50++; if (d > worst) worst = d;
+        if (i % 60 === 59) await new Promise((r) => setTimeout(r, 0));
+      }
+      return { frames: n, over33, over50, worstMs: +worst.toFixed(1) };
+    });
+    res.longFrames = lf;
+    PT.check(`C8 F-mage: long frames over 30 s after warm (simulation): 0 > 50 ms (${lf.over50}), ≤ 2 > 33 ms (${lf.over33})`, lf.over50 === 0 && lf.over33 <= 2, lf);
+    const al = await PT.alloc(pg, 20);
+    res.alloc = al;
+    PT.check(`C8 F-mage: JS allocation ${al.mbPerGameSec} MB per game-second ≤ 1.0`, al.mbPerGameSec <= 1.0, al.top.slice(0, 8));
+    const soak = await pg.eval(async () => {
+      const g = window.game, I = g.renderer.info.memory;
+      g.renderNow();
+      const m0 = { geometries: I.geometries, textures: I.textures, objects: (() => { let n = 0; g.scene.traverse(() => n++); return n; })() };
+      for (let k = 0; k < 30; k++) { window.PT.rotate(null, 0, { warm: 10, measure: false }); g.renderNow(); await new Promise((r) => setTimeout(r, 0)); }
+      const m1 = { geometries: I.geometries, textures: I.textures, objects: (() => { let n = 0; g.scene.traverse(() => n++); return n; })() };
+      return { m0, m1 };
+    });
+    res.soak = soak;
+    const flat = (k) => soak.m1[k] <= Math.ceil(soak.m0[k] * 1.02);
+    PT.check(`C8 F-mage: 5-min soak (sim-fast) geometries ${soak.m0.geometries}→${soak.m1.geometries}, textures ${soak.m0.textures}→${soak.m1.textures}, objects ${soak.m0.objects}→${soak.m1.objects} flat (≤ +2 %)`,
+      flat('geometries') && flat('textures') && flat('objects'), soak);
+    await pg.close();
+  } else PT.check('C8 F-mage boot', false);
+  // ---------------- S-plains allocation + zone transition hitch (CPU)
+  const ps = await PT.bootScene('S-plains');
+  if (ps.ready) {
+    const al = await PT.alloc(ps, 10, { rotate: false });
+    res.allocPlains = al;
+    PT.check(`C8 S-plains: JS allocation ${al.mbPerGameSec} MB per game-second ≤ 0.3`, al.mbPerGameSec <= 0.3, al.top.slice(0, 8));
+    const tr = await ps.eval(() => {
+      const g = window.game, out = {};
+      const zs = g.world?.zones; const list = Array.isArray(zs) ? zs : Object.values(zs || {});
+      for (const z of list.slice(0, 4)) {
+        const c = z.center || z.position || { x: z.x, z: z.z }; if (!c || c.x == null) continue;
+        window.PT.tp(c.x, c.z, 0);
+        let worst = 0; for (let i = 0; i < 20; i++) { const t = performance.now(); g.step(1, 1 / 60, false); worst = Math.max(worst, performance.now() - t); }
+        out[z.id || '?'] = +worst.toFixed(1);
+      }
+      return out;
+    });
+    res.transitions = tr;
+    PT.check(`C8 zone transitions: worst simulation frame after each teleport ≤ 50 ms`, Object.values(tr).every((v) => v <= 50), tr);
+    await ps.close();
+  }
+  try { fs.writeFileSync(path.join(PT.OUT, 'c8.json'), JSON.stringify(res, null, 1)); } catch (_) { /* */ }
 }

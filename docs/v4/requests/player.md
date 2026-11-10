@@ -55,3 +55,13 @@ fallback; nothing blocks the player's own checks (PL1 passes on `v4/player` with
 ## vfx
 none (uses `applyPlayerFx` on the player's private FX materials, `fxFactor('witch', 0.6, 0.6)`, `playerHurt.attack` /
 `appliedStatuses`, `combat.clearStatus`, and `entity.flashUniform` for the merged body).
+
+## Resolution (core integration, wave C round 1)
+- core 1 `timeScale.comp()`: **done** — integration fix: `comp()` = 1 / (lowest *compensating* scale); a non-compensating `bossDeath` still slows the player.
+- core 2 keymap `lockOn`: **rejected for round 1** (P1 lock-on was cut on the player branch; no consumer).
+- core 4 shadow proxy first shadow draw: **rejected for round 1** — boot warm draws every object; no first-shadow hitch measured (first draws 0).
+- ux 1–4 (perfect callouts, `dodgeRejected`, kit names, auto-revive without recap): **done** on `ux-b` (`ui.js` `dodgeRejected` shake + sound, `ui/recap.js` skips `autoRevive`).
+- melee 1–2 (`dodgeCancelable`, `noCameraCollide`): **done** (`sword.js`, `sword/fx.js`).
+- magic 1–2 (`castLock`, `noCameraCollide`): **done** (`spells/looks.js`, `spells/projectiles.js`).
+- mobs/bosses 1–4 (`orbEta`, `attack` on hits, `cameraHint` as multipliers, boss boom): **done** (`enemies/projectiles.js orbEta`; bosses confirm multipliers in `bosses.md`).
+- tells 1 witch-time rims: optional, not done (P1). tells 2: as specified.

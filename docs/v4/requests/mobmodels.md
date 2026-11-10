@@ -42,3 +42,9 @@
 ## bosses
 - `import * as MobRig from '../mobs/rig.js'` gives `defineType`, `instantiate`, `P/S/C/K/B/CAP/T/TUBE/CARD/LATHE/FN`, `eye`, `humanoid2`, `quadruped`, `bone`, `materials`,
   `outlineMat` if you want the same build-once/LOD-range/flash-bone pipeline for boss models (optional).
+
+## Resolution (core integration, wave C round 1)
+- mobs 1–7 (registry, `model.update` on lastStep, v3 LOD loop skipped for v4, forwards, poses, `previewModel`, `MobModels.prewarm`): **done** on `mobs-b` (`enemies.js` imports `./enemies/mobs/index.js`; `base.js` forwards `flashUniform` / `rimSource` / `tellAnchor`).
+- vfx `e.flashUniform`: **done** (`vfx.flashEntity` uses the entity uniform; no material clone).
+- tells rim clones from `rimSource()`: **done** (`tells.js`).
+- core: none. bosses: optional rig reuse — bosses kept their own model files.

@@ -61,3 +61,10 @@
 - Audio names used: `tell_light`, `tell_heavy`, `tell_unblockable`, `tell_jump` (windup start), `tell_commit` / `tell_parry` (lock), `punish`;
   all through `game.audio.play(name, {pos})` — ux limits concurrency (≤ 2 tell sounds).
 - `tellFirst {tell}` fires once per kind per save (save section `tells`), at the tell start — the trigger of the `tell_*` hints.
+
+## Resolution (core integration, wave C round 1)
+- core: canvas depth kept (FinalPass4, `core-b`); per-entity hitstop handled only by tells (core does not extend handles); overlay always drawn (0 calls when empty); uniforms kept by reference through dynamic resolution; `teach` slow-mo arbitration in `timeScale`: **done**.
+- vfx forward `vfx.telegraph` → `tells.telegraph`, player telegraphs skipped (`owner === 'player'`): **done** (`vfx/telegraph.js`, `tells.js:479`).
+- magic / melee `owner:'player'` on own telegraphs: **done** — magic replaces them with kit linework (`spells/looks.js target()`), melee stamps `owner:'player'` in `sword/looks.js`.
+- mobs / bosses `game.tells.attack` + `ctx.telegraphs.show` replaced: **done** (`grep telegraphs.show src/enemies` = 0).
+- mobmodels `rimSource()` / `tellAnchor()`: **done**. ux `tells.active()`, thumbnails, audio names, `tellFirst`: **done** on `ux-b`.

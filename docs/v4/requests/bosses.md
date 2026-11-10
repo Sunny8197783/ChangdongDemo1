@@ -31,3 +31,10 @@ Boss expectations for the boss part of `tools/playtest3/enemies.js` (PLAN §7.9;
 
 ## vfx
 - none (all boss vfx calls pass `owner:'enemy'`).
+
+## Resolution (core integration, wave C round 1)
+- mobs (playtest3 boss loop, golem prewarm, scanSight skip, orb homing/attackId): **done** on `mobs-b` (`enemies.js` `prewarmGolem`, `isBoss` skip in scanSight, orb `{homing, attackId}`); verified by bootcheck + playtest3 enemies at integration.
+- tells (`melee` honoured, `h.shockwaveR()`): **done** (`src/tells.js` `shockwaveR`; golem.slam uses it).
+- core (shadow-depth warm in `render.warm`): **rejected for round 1** — bosses' `warmSkinnedShadow` covers the only skinned late caster and the first-draws sweep reads 0; a generic shadow warm would add a shadow render per warm call. Revisit if another owner shows a first-shadow hitch.
+- core (`WARM_LAYER` = player `HIDDEN_LAYER` 30): **done** — integration fix 131a36a moves the warm layer to 29.
+- ux (`bossBroken` banner, `bossCheck` kinds, boss codex): **done** on `ux-b` (feature-detected; boss codex via `registerCodex`).

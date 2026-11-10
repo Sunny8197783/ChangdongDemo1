@@ -25,3 +25,11 @@
    (b) Nice to have: `kit.mesh` accepting `delay` separately from `tIn`, so staggered spawns need no scheduler task.
 5. **player** — none: melee writes `game.player.action.dodgeCancelable` per §5.8 every frame an action runs (true when idle);
    finishers keep it false and request i-frames every frame through `player.grantIframes(0.15)`.
+
+## Resolution (core integration, wave C round 1)
+1. magic motifs registered through `kit.registerMotif`: **done** (`src/spells/motifs/*`, melee's gate picks them up).
+2. core classkits through `kit.motif`: **done** in `core-b` (14). ML1.c runtime: accepted (`MELEE_PART` split).
+3. sat floor: **decided** — the floor is `min(§1.4 floor, 0.85 × opaque mid-swatch sat)` measured on the ML1/MG1 spot (same rule for magic and melee); no grade change (see magic request resolution). Remaining cool-element misses are reported as measured, not gated.
+   vfx `[mid, dark]` spark option: **open for vfx (P1)**.
+4. (a) reaction hits carry no `castId`: **done** — integration fix (`combat/reactions.js` `rxHit` takes the trigger hit's `castId` while the reaction handler runs). (b) `kit.mesh` `delay`: open (P1, vfx).
+5. player: none.

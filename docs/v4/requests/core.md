@@ -40,3 +40,14 @@
   복사 text (template `SETTINGS_TEXT_KO.benchLine`). Quality offers: implement `game.ui.qualityOffer(offer)` (`offer = {kind:'high'|'medium', textKo, yesKo, noKo, accept(), decline()}`, also emitted
   as the `qualityOffer` event); without it core shows a small fallback card. FPS overlay: `game.fps`, `game.quality.level`, `game.quality.renderSize()` (live `{w, h}`), `SETTINGS_TEXT_KO.autoLevel`.
   The title benchmark result is `game.quality.lastTitleBench` (event `titleBenchmark`).
+
+## Resolution (core integration, wave C round 1)
+- ux damageNumbers `'off'`, settings menu from `SETTING_DEFS`, keymap labels, qualityOffer, 성능 테스트: **done** (`ui.js` `!== 'off'`, `ui/settingsMenu.js`, `ui.qualityOffer`).
+- mobs `ptArmor`, `story` difficulty row: **done** (`enemies/base.js`, `enemies/scaling.js`).
+- bosses `checkAddSec`: **done** (`kalis.js`, `scaling.js`).
+- tells / mobs / bosses no second fallback decal: **done** (real tells present; stub path verified by bootcheck `&stub=tells`).
+- world presets / pointLights / budget keys: **done**; world `src/world.js:46` still writes the v3 bloom fields — harmless (core re-applies the preset after every `init()`), left to world as a cleanup.
+- vfx caps from settings × budget: **done** (`vfx.js` reads `particleCap/additiveCap/coverage*` × `quality.budget`).
+- sub-steps: **done** for player and enemies (`substeps: true`); sword explicitly `false` (legacy once-per-frame path), spells/vfx/story/cinematic run on the fallback.
+- per-entity hitstop in mobs/bosses: **done** (`base.js:384`, `bossbase.js:556`); player animation pause: **done**.
+- mobs `spawnBench`: **done**; ux 성능 테스트 UI: **done**.

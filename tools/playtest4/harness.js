@@ -281,6 +281,9 @@ function installInPage() {
       const nm = o.name || o.parent?.name || '';
       if (/^(vfx|spells|sword|skills|fx|kit)/i.test(nm)) return 'fx';
       if (/^(ui|beacon|hud)/i.test(nm)) return 'ui';
+      // world request (integration): attribute with world.debug.owns() — village NPCs (ux), training dummies (mobs) are not world
+      const owns = g.world?.debug?.owns;
+      if (typeof owns === 'function') { try { if (!owns(o)) return 'other'; } catch (_) { /* */ } }
       return 'world';
     };
   };

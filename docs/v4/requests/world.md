@@ -38,3 +38,12 @@
   the helper in the decal vertex shader. Since `tag world-p0a`.
 - **mobs**: the training dummies near the village (8 draw calls) are visible from the plains spot; distance-hide them
   beyond ~60 m if they are not in combat.
+
+## Resolution (core integration, wave C round 1)
+- core real "shadows off": **done** in `core-b` (one empty shadow pass, then no updates; layer 1 of the view camera untouched).
+- core harness attribution: **done** — integration change in `tools/playtest4/harness.js` `buildGroups`: objects not owned by `world.debug.owns()` are attributed to `other` (NPCs, training dummies) instead of `world`.
+- core warm of hidden zone dressing: **done** in `core-b` (boot warm draws every object, hidden included).
+- ux NPC shadow distance / far hide: **not done** (`story/npcs.js` casts shadows at every distance) — open for ux (see C6 S-village / S-plains `other` share and fix items). Beacon / camps: as delivered.
+- vfx point lights at medium: **done** (core `pointLights:false` at low/medium; 0 point lights). Upload ranges: **done** (`addUpdateRange` in `vfx/particles.js`, `ribbon.js`, `fxmesh.js`, `debris.js`).
+- vfx/combat surface damage mapping (`attackKind:'surface'`): **done** (`combat/pipeline.js` maps `hit.attack ?? hit.source.attack`).
+- tells `heightField` helper: **done**. mobs training dummies hide beyond 60 m: **not done** in `enemies/dummy.js` — open for mobs if C6 S-plains misses its budget (group `other`).
