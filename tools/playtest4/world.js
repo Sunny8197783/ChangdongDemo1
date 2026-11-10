@@ -225,6 +225,7 @@ module.exports = async function world(PT) {
       PT.tp(-20, 45); PT.look(0, -0.1); PT.step(0.2);
       const owns = W.debug.owns;
       const count = () => { let n = 0; const o = g.renderer.renderBufferDirect.bind(g.renderer); g.renderer.renderBufferDirect = function (c, s, geo, m, ob, gr) { if (/^beacon/.test(ob.name)) n++; return o(c, s, geo, m, ob, gr); }; try { g.renderNow(); } finally { g.renderer.renderBufferDirect = o; } return n; };
+      W.setBeacon(null); PT.step(0.6);   // ux sets the objective beacon on every quest step (integration): start from unset
       const c0 = count();
       const progs0 = g.renderer.info.programs.length;
       W.setBeacon(new T.Vector3(-20, 0, 0), { kind: 'quest' }); PT.step(0.6);

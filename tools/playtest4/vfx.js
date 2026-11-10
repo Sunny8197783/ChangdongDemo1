@@ -112,12 +112,18 @@ async function functional(PT, root) {
     const r = K.ramp('fire');
     PT.check('ramp(el) = §3.2 THREE.Colors', r.mid.getHex() === 0xf0661a && r.hi.getHex() === 0xffe08a && K.ramp('light').mid.getHex() === 0xe8d9b0);
     // motif registry: generic fallback marks the cast; registered motif used
+    // integration: magic / melee register motifs for most element × kind pairs; probe the generic path on an unregistered pair
+    const EL9 = ['physical', 'fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow'], KINDS = ['burst', 'spark', 'pillar', 'wave', 'zone', 'cast', 'trail', 'orbit', 'shield'];
+    let gp = null; for (const el of EL9) { for (const k of KINDS) if (!K.hasMotif(el, k)) { gp = [el, k]; break; } if (gp) break; }
+    gp = gp || ['physical', 'orbit'];
+    let fp = null; for (const el of EL9) if (el !== 'physical' && !K.hasMotif(el, 'pillar')) { fp = el; break; }
     const cid = g.nextCastId();
-    K.motif('fire', 'burst', { pos: P0, castId: cid });
+    K.motif(gp[0], gp[1], { pos: P0, castId: cid });
     const gen = V.debug.byCast(cid).generic;
+    const hadPhysPillar = K.hasMotif('physical', 'pillar');
     let called = 0; K.registerMotif('physical', 'pillar', (spec, kit) => { called++; return kit.line({ shape: 'ring', pos: spec.pos, castId: spec.castId }); });
     const h = K.motif('physical', 'pillar', { pos: P0, castId: g.nextCastId() });
-    PT.check('motif(): generic fallback reports generic; registerMotif / hasMotif route', gen === true && called === 1 && !!h?.alive && K.hasMotif('physical', 'pillar') && !K.hasMotif('ice', 'pillar'));
+    PT.check('motif(): generic fallback reports generic; registerMotif / hasMotif route', gen === true && called === 1 && !!h?.alive && K.hasMotif('physical', 'pillar') && (fp == null || !K.hasMotif(fp, 'pillar')), { generic: gp, hadPhysPillar, unregisteredPillar: fp });
     K.clear(); V.clear();
   });
 
