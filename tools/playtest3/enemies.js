@@ -94,6 +94,30 @@ module.exports = async function enemies(PT) {
     PT.step(0.1);
   });
 
+  // ------------------------------------------------------------ v4 (PLAN §7.9): §4 windups measured tellStart → damage
+  await pg.run('v4 windups', () => {
+    const g = game, E = g.enemies, T = g.THREE;
+    g.debug.tp?.('plains'); PT.step(0.5);
+    const pp = g.player.object.position;
+    const hurt = [], starts = [];
+    const o1 = g.events.on('tellStart', (p) => starts.push({ et: g.enemyTime, p })), o2 = g.events.on('playerHurt', (p) => hurt.push({ et: g.enemyTime, p }));
+    const rows = [];
+    for (const [type, id, want, dist] of [['bokoblin', 'bokoblin.swing', 0.80, 2.2], ['lizard', 'lizard.thrust', 0.80, 2.2], ['voidknight', 'voidknight.combo1', 0.80, 2.2]]) {
+      hurt.length = 0; starts.length = 0;
+      const e = E.spawn(type, new T.Vector3(pp.x, 0, pp.z - dist), {});
+      e.ptArmor = true; e.aggro = true; e.summoned = true; e.facing = 0;   // summoned: no village give-up
+      PT.step(0.05);
+      e.debugAttack(id);
+      for (let i = 0; i < 120 && !hurt.some((h) => h.p.attackId === id); i++) { g.step(1, 1 / 60); PT.heal(); }
+      const s0 = starts.find((r) => r.p.id === id), h0 = hurt.find((r) => r.p.attackId === id);
+      rows.push({ id, lead: s0 && h0 ? +(h0.et - s0.et).toFixed(3) : null, want });
+      E.remove(e); PT.step(0.6); PT.heal();
+    }
+    o1(); o2();
+    g.debug.tp?.('village'); PT.step(0.5);
+    PT.check('§4 windups: tellStart → damage at the v4 numbers (normal difficulty)', rows.every((r) => r.lead !== null && Math.abs(r.lead - r.want) < 0.04), rows);
+  });
+
   // ------------------------------------------------------------ threat: taunt, stealth, aggro queries
   await pg.run('threat', () => {
     const g = game, E = g.enemies, T = g.THREE;

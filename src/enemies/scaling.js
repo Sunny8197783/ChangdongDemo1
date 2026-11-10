@@ -27,10 +27,13 @@ export const XP_VALUES = {
 const ZONE_XP_MOBS = { lizard: 1, shroom: 1, wolf: 1, wraith: 1 };
 
 /** DESIGN §16 fallback when core has no game.difficulty. */
+// v4 (§5.7, §6.8): 'story' row; telegraphMul is a legacy alias fixed at 1 (tells applies assist.tellMul to the real windup,
+// nothing multiplies telegraphMul any more); the check key is checkAddSec (checkAdd kept as its alias).
 export const DIFFICULTY_FALLBACK = {
-  easy: { hpMul: 0.7, dmgMul: 0.6, telegraphMul: 1.2, checkAdd: 4 },
-  normal: { hpMul: 1, dmgMul: 1, telegraphMul: 1, checkAdd: 0 },
-  hard: { hpMul: 1.3, dmgMul: 1.25, telegraphMul: 1, checkAdd: 0 },
+  story: { hpMul: 0.6, dmgMul: 0.4, telegraphMul: 1, tellMul: 1.5, enemySpeed: 0.85, checkAddSec: 6, checkAdd: 6 },
+  easy: { hpMul: 0.7, dmgMul: 0.6, telegraphMul: 1, tellMul: 1.3, enemySpeed: 1, checkAddSec: 4, checkAdd: 4 },
+  normal: { hpMul: 1, dmgMul: 1, telegraphMul: 1, tellMul: 1, enemySpeed: 1, checkAddSec: 0, checkAdd: 0 },
+  hard: { hpMul: 1.3, dmgMul: 1.25, telegraphMul: 1, tellMul: 0.9, enemySpeed: 1, checkAddSec: 0, checkAdd: 0 },
 };
 
 export function difficultyOf(game) {

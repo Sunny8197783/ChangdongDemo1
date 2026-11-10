@@ -39,6 +39,7 @@ export class Loot {
 
   /** Drop rewards for a dead enemy. */
   drop(e, n = null, hearts = null) {
+    if (e?.noLoot) return;
     if (e.isDummy || e.summoned && Math.random() < 0.5) return;
     const c = e.getCenter(_v);
     const count = n ?? (e.kind === 'chuchu' ? randInt(2, 3) : randInt(3, 5));
@@ -91,7 +92,7 @@ export class Loot {
       if (this._step(o, dt, world, pc, pAlive, 9)) {
         o.active = false;
         if (player) player.mp = Math.min(player.maxMp ?? 100, (player.mp ?? 0) + 8);
-        game.vfx.burst(pc, { count: 10, color: [MANA_COL, 0xffffff], speed: 2.5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.4, shape: 'spark', drag: 3 });
+        game.vfx.burst(pc, { owner: 'world', count: 10, color: [MANA_COL, 0xf3ecdf], speed: 2.5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.4, shape: 'spark', drag: 3 });
         ctx.audio('ui_select', { position: pc, volume: 0.25, pitch: 1.6 + Math.random() * 0.4 });
         game.events.emit('pickup', { kind: 'mana', amount: 8 });
         continue;
@@ -110,7 +111,7 @@ export class Loot {
       if (this._step(h, dt, world, pc, pAlive, 5)) {
         h.active = false; h.m.visible = false;
         if (player && player.entity?.alive) player.hp = Math.min(player.maxHp ?? 100, (player.hp ?? 0) + 15);
-        game.vfx.burst(pc, { count: 16, color: [0xff7a9a, 0xffffff], speed: 3, spread: 1, size: 0.16, sizeEnd: 0, life: 0.5, shape: 'spark', drag: 3 });
+        game.vfx.burst(pc, { owner: 'world', count: 16, color: [0xff7a9a, 0xf3ecdf], speed: 3, spread: 1, size: 0.16, sizeEnd: 0, life: 0.5, shape: 'spark', drag: 3 });
         ctx.audio('ui_select', { position: pc, volume: 0.35, pitch: 1.2 });
         game.events.emit('pickup', { kind: 'heart', amount: 15 });
         continue;

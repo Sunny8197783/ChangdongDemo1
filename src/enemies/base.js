@@ -2,6 +2,9 @@
 import * as THREE from 'three';
 import { clamp, damp, dampAngle, rand } from '../core/utils.js';
 import { Spring, integrate, textures } from './common.js';
+import * as MobModels from './mobs/index.js';
+import * as Codex from './codex.js';
+import { hitTest as geomHitTest, tellDuration } from '../core/tellgeom.js';
 
 let uid = 0;
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
@@ -43,6 +46,22 @@ export function makeEnemy(ctx, cfg, pos) {
     },
     setState(s) { e.state = s; e.stateT = 0; },
   };
+  // v4 (PLAN §4.0, §7.4.5): model contract forwards, time / punish fields, attack table, weakness data
+  e.type = cfg.kind; e.timeMul = 1; e.hitstopUntil = 0; e.vulnerableUntil = 0; e.vulnerableMul = 1;
+  e._visDt = 0; e._visTick = 0; e.curAttack = null; e.attackStarters = {};
+  const M = cfg.model;
+  e.rimSource = () => (M.rimSource ? M.rimSource() : EMPTY);
+  e.tellAnchor = (k) => M.tellAnchors?.[k] || M.tellAnchors?.core || object;
+  e.flashUniform = M.flashUniform || { value: 0 };
+  e.attacks = Codex.attacksOf(cfg.kind);
+  /** Test hook (§7.4.5): start attack `id` now (ignores cooldowns, range and tokens). Returns true when it started. */
+  e.debugAttack = (id) => {
+    const f = e.attackStarters[id]; if (!f || e.dying) return false;
+    if (!e.aggro && !e.isDummy) { e.aggro = true; }
+    stopAttack(e);
+    try { return !!f(true); } catch (err) { console.warn('[enemies] debugAttack', id, err?.message); return false; }
+  };
+  Codex.applyWeakness(e, cfg.kind, cfg.variant);
   object.rotation.y = e.facing;
   object.traverse((o) => { o.userData.enemy = e; });
   return e;
@@ -133,7 +152,9 @@ export const isReacting = (e) => REACT_STATES[e.state] === 1;
 export function react(ctx, e, state, dur) {
   if (e.dying || e.isBoss) return;
   ctx.releaseToken(e);
+  if (e.ptArmor) return;   // test-only super armour (playtest4 PT.armor): keep attacking
   if (e.state !== state || state === 'flinch' || state === 'recoil') {
+    stopAttack(e);
     e.interrupt?.(state);
     e.leaping = false;
     e.setState(state);
@@ -161,7 +182,7 @@ function onParried(ctx, e, by) {
   if (e.isDummy) { e.onDummyParried?.(by); return; }
   if (e.isBoss) { e.onBossParried?.(by); return; }
   e.velocity.addScaledVector(_v, 4.5 / Math.sqrt(e.mass || 1));
-  react(ctx, e, 'parried', 1.6);
+  react(ctx, e, 'parried', e.parryDur ?? 1.6);
   ctx.audio('shatter', { position: e.object.position, volume: 0.35, pitch: 1.6 });
 }
 
@@ -254,7 +275,7 @@ function onHit(ctx, e, result, hit) {
 function onDeath(ctx, e, result, hit) {
   if (e.dying) return;
   e.dying = true; e.deathT = 0;
-  ctx.releaseToken(e);
+  ctx.releaseToken(e); stopAttack(e);
   if (e.icon) e.icon.visible = false;
   if (e.stars) e.stars.visible = false;
   if (!e.isBoss) {
@@ -359,6 +380,8 @@ export function updateEnemy(ctx, e, dt) {
     if (done) ctx.remove(e);
     return;
   }
+  // per-entity hitstop (§2.5): the frozen enemy skips AI, animation and movement (tells extends its TellHandles)
+  if (e.hitstopUntil > (game.realTime ?? 0)) { e.object.rotation.y = e.facing; return; }
   // AI targeting goes through enemies.getThreatTarget (CONTRACT §14): ctx.playerPos / playerCenter / target become this
   // enemy's target for the rest of its update (the real player is restored by ctx.retarget for the next enemy)
   ctx.retarget?.(e);
@@ -390,7 +413,7 @@ export function updateEnemy(ctx, e, dt) {
   if (!e.isDummy) perceive(ctx, e, dt);
 
   // burning → panic a bit (run around flailing), then fight on
-  if (st.burning && !e.isBoss && !e.isDummy && can && !e.launched && e.panicCd <= 0 && !isReacting(e) && e.state !== 'dead') {
+  if (st.burning && !e.ptArmor && !e.isBoss && !e.isDummy && can && !e.launched && e.panicCd <= 0 && !isReacting(e) && e.state !== 'dead') {
     e.panicCd = rand(4, 6);
     ctx.releaseToken(e); e.interrupt?.('panic');
     e.setState('panic'); e.reactDur = rand(1.3, 1.9); e.panicT = 0;
@@ -429,9 +452,23 @@ export function updateEnemy(ctx, e, dt) {
       ctx.audio('land', { position: e.object.position, volume: 0.5, pitch: 0.8 });
     }
   }
-  visuals(ctx, e, dt, sm, stunned, frozen);
+  // visual-only work once per frame on game.frame.lastStep (§2.5); skinned animation at half rate beyond 30 m, paused beyond 60 m
+  e._visDt += dt;
+  if (ctx.visualStep !== false) {
+    const vd = Math.min(e._visDt, 0.1);
+    const cp = game.camera?.position, op = e.object.position;
+    const d2 = cp ? (cp.x - op.x) * (cp.x - op.x) + (cp.z - op.z) * (cp.z - op.z) : 0;
+    let run = true;
+    if (!e.isBoss && d2 > 3600) run = false;
+    else if (!e.isBoss && d2 > 900) { e._visTick ^= 1; run = e._visTick === 0; }
+    if (run) {
+      visuals(ctx, e, vd, sm, stunned, frozen);
+      e._visDt = 0;
+      if (e.model.v4 && e.model.update) e.model.update(vd);
+      updateIcon(e, vd);
+    } else if (d2 > 3600) e._visDt = 0;
+  }
   e.object.rotation.y = e.facing;
-  updateIcon(e, dt);
 }
 
 function visuals(ctx, e, dt, sm, stunned, frozen = false) {
@@ -604,3 +641,122 @@ export function reactionPose(e, t, HIP, time, lieY = 0.3) {
   return 0;
 }
 function walkCycleInto(t, ph, amt) { walkCycle(t, ph, amt, 1); }
+
+// ================================================================== v4 attack helpers (PLAN §4.0, §5.7; append-only exports)
+/** Rhythm (§4.0): anticipation → hold at the top (HOLD s) → strike (≤ STRIKE s) before the hit. */
+export const RHYTHM = { hold: 0.13, strike: 0.12 };
+/** 0 = anticipation, 1 = hold (pose frozen), 2 = strike, -1 = no live handle. */
+export function attackPhase(h, off = 0) {
+  if (!h || !h.alive) return -1;
+  const r = h.remaining - off;     // off: release point before the hit (lobs: the flight time)
+  if (r < 0) return 3;             // after the release (flight)
+  return r > RHYTHM.hold + RHYTHM.strike ? 0 : r > RHYTHM.strike ? 1 : 2;
+}
+/** Anticipation progress 0..1 (reaches 1 when the hold starts). */
+export function windupK(h, off = 0) {
+  if (!h) return 1;
+  const pre = h.dur - off - RHYTHM.hold - RHYTHM.strike;
+  return pre > 1e-3 ? clamp(1 - (h.remaining - off - RHYTHM.hold - RHYTHM.strike) / pre, 0, 1) : 1;
+}
+
+/** Local handle (only when game.tells is missing entirely; the core stub normally provides the same surface). */
+class LocalHandle {
+  constructor(game, e, spec, dur) {
+    this.game = game; this.id = spec.id; this.enemy = e; this.spec = spec; this.start = game.enemyTime ?? game.time ?? 0; this.dur = dur;
+    this.lockAt = spec.lockAt ?? 0.35; this.alive = true; this.done = false; this.struck = false; this.tell = spec.tell;
+    this.S = spec.shape ? { kind: spec.shape.kind, pos: { x: 0, z: 0 }, dir: { x: 0, z: 1 }, end: { x: 0, z: 0 }, r: 0, inner: 0, angle: 0, len: 0, width: 0 } : null;
+    if (this.S) this._copy(spec.shape);
+  }
+  _copy(sh) {
+    const S = this.S; S.kind = sh.kind; S.r = sh.r; S.inner = sh.inner; S.angle = sh.angle; S.len = sh.len; S.width = sh.width;
+    const p = sh.pos || this.enemy.object.position; S.pos.x = p.x; S.pos.z = p.z;
+    if (sh.dir) { S.dir.x = sh.dir.x; S.dir.z = sh.dir.z; } else { S.dir.x = Math.sin(this.enemy.facing); S.dir.z = Math.cos(this.enemy.facing); }
+    if (sh.end) { S.end.x = sh.end.x; S.end.z = sh.end.z; } else S.end = null;
+  }
+  get now() { return this.game.enemyTime ?? this.game.time ?? 0; }
+  get progress() { return this.dur > 0 ? clamp((this.now - this.start) / this.dur, 0, 1) : 1; }
+  get remaining() { return Math.max(0, this.start + this.dur - this.now); }
+  get locked() { return this.now >= this.start + this.dur - this.lockAt; }
+  consumeStrike() { if (this.struck || !this.alive || this.now < this.start + this.dur - 1e-9) return false; this.struck = true; this.alive = false; this.done = true; return true; }
+  contains(pos, pad = 0.15) { if (this.S && this.spec.shape?.follow && !this.locked) this._copy(this.spec.shape); return !!this.S && geomHitTest(this.S, pos, pad); }
+  setPos(v) { if (this.S && !this.locked) { this.S.pos.x = v.x; this.S.pos.z = v.z; } return this; }
+  setDir(v) { if (this.S && !this.locked) { this.S.dir.x = v.x; this.S.dir.z = v.z; } return this; }
+  setEnd(v) { if (this.S && !this.locked && this.S.end) { this.S.end.x = v.x; this.S.end.z = v.z; } return this; }
+  extend(s) { if (this.alive) this.dur += s; return this; }
+  stop() { this.alive = false; this.done = true; }
+}
+const _warnedTells = { v: false };
+
+/**
+ * Start attack `id` (ATTACK_SPECS in codex.js) through game.tells.attack (§7.4.4). shape: a per-entity reusable shape object
+ * ({kind, pos?, dir?, r, angle, len, width, end?, follow?}). Returns the TellHandle, or null when tells refuses (punish window,
+ * off-screen melee rule) — the AI then repositions. Emits the extended enemyAttack {enemy, kind, id, nameKo, tell, windup}.
+ */
+export function beginAttack(ctx, e, id, shape = null, over = null) {
+  const game = ctx.game, S = Codex.ATTACK_SPECS[id];
+  if (!S) return null;
+  const spec = e._spec || (e._spec = { id: '', tell: 'danger', cls: 'mobLight', windup: 0, lockAt: 0.35, punishDur: 0, nameKo: '', shape: null, anchor: null, melee: undefined, el: null });
+  spec.id = id; spec.tell = S.tell; spec.cls = S.cls; spec.windup = over?.windup ?? S.windup; spec.lockAt = S.lockAt; spec.punishDur = S.punishDur || 0;
+  spec.nameKo = Codex.nameOf(id); spec.shape = shape; spec.anchor = S.anchor || null; spec.melee = S.melee; spec.el = e.element || null;
+  spec.body = over?.body ?? true; spec.sound = over?.sound ?? true; spec.icon = over?.icon;
+  const T = game.tells;
+  let h = null;
+  if (T && typeof T.attack === 'function') h = T.attack(e, spec);
+  else {
+    if (!_warnedTells.v) { _warnedTells.v = true; console.warn('[enemies] game.tells.attack missing: local tell handles'); }
+    if (e.vulnerableUntil > (game.enemyTime ?? 0)) return null;
+    h = new LocalHandle(game, e, spec, tellDuration(spec.windup, spec.cls, game.assist?.tellMul ?? 1, e.timeMul ?? 1));
+  }
+  if (!h) return null;
+  e.curAttack = h;
+  game.events.emit('enemyAttack', { enemy: e, kind: S.v3 || id, id, nameKo: spec.nameKo, tell: S.tell, windup: h.dur });
+  return h;
+}
+/** Cancel the entity's live tell (interrupts). */
+export function stopAttack(e) {
+  const h = e.curAttack;
+  if (h && h.alive) { try { h.stop('cancel'); } catch (_) { /* */ } }
+  e.curAttack = null;
+}
+/** The live handle of `id` on e, or null. */
+export function liveAttack(e, id) { const h = e.curAttack; return h && h.alive && (!id || h.id === id) ? h : null; }
+/** Hit metadata {id, nameKo, kind} for an attack id. */
+export const attackMeta = (id) => Codex.attackMeta(id);
+/** Punish window after a signature attack (§4.0): tells.punish(e, dur, {mul}) from the spec (× e.timeMul). Returns the duration. */
+export function punishAfter(ctx, e, id) {
+  const S = Codex.ATTACK_SPECS[id];
+  if (!S || !(S.punishDur > 0)) return 0;
+  const dur = S.punishDur * (e.timeMul ?? 1);
+  const T = ctx.game.tells;
+  if (T?.punish) T.punish(e, dur, { mul: S.punishMul ?? 1.25 });
+  else { e.vulnerableUntil = (ctx.game.enemyTime ?? 0) + dur; e.vulnerableMul = S.punishMul ?? 1.25; ctx.game.events.emit('punishWindow', { enemy: e, dur, mul: e.vulnerableMul }); }
+  return dur;
+}
+/** true while tells allows e to start an attack ({melee} applies the off-screen rule). */
+export function canAttack(ctx, e, melee = true) {
+  const T = ctx.game.tells;
+  if (T?.canAttack) return T.canAttack(e, _canOpt(melee)) !== false;
+  return !(e.vulnerableUntil > (ctx.game.enemyTime ?? 0));
+}
+const _cm = { melee: true }, _cr = { melee: false };
+const _canOpt = (m) => (m ? _cm : _cr);
+/** Shared shape test (tells.hitTest, fallback core/tellgeom). */
+export function shapeHit(ctx, shape, pos, pad = 0.15) {
+  const T = ctx.game.tells;
+  return T?.hitTest ? !!T.hitTest(shape, pos, pad) : geomHitTest(shape, pos, pad);
+}
+/**
+ * The v4 model (mobmodels registry) or the v3 one behind the same contract (§4.0):
+ * MobModels.createModel?.(type, opts) ?? MobModels.wrapLegacy?.(legacy()) ?? legacy().
+ */
+export function modelFor(ctx, type, opts, legacy) {
+  let m = null;
+  try { m = MobModels.createModel?.(type, { ...opts, game: ctx.game }) ?? null; } catch (err) { console.warn('[enemies] createModel', type, err?.message); m = null; }
+  if (m) return m;
+  const v3 = legacy();
+  try { return MobModels.wrapLegacy?.(v3) ?? v3; } catch (_) { return v3; }
+}
+/** Hold-aware pose damping: in the hold phase the pose is frozen (angular velocity 0); otherwise dampPose. */
+export function rhythmDamp(cur, tgt, lambda, dt, holding) {
+  if (!holding) dampPose(cur, tgt, lambda, dt);
+}

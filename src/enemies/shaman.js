@@ -2,25 +2,42 @@
 import * as THREE from 'three';
 import { rand, clamp, pick, ELEMENT_COLORS } from '../core/utils.js';
 import { buildShaman } from './models.js';
-import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, walkCycle, reactionPose } from './base.js';
+import { makeEnemy, faceTo, moveTo, newPose, dampPose, applyHumanoid, walkCycle, reactionPose,
+  modelFor, beginAttack, liveAttack, attackPhase, windupK, attackMeta, rhythmDamp } from './base.js';
+import { typeName } from './codex.js';
 
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _dir = new THREE.Vector3();
+const M_ORB = attackMeta('shaman.orb');
+const BLINK_CD = 8, SHIMMER = 0.4, DAZE = 1.5;
 const HIP = 0.66;
 const BASE = newPose(HIP);
 
 export function createShaman(ctx, pos, opts = {}) {
   const element = opts.element || pick(['fire', 'ice']);
-  const model = buildShaman(element);
+  const model = modelFor(ctx, 'shaman', { element, variant: element }, () => buildShaman(element));
   model.lieY = 0.22;
   const e = makeEnemy(ctx, {
-    kind: 'shaman', model, name: '도깨비 주술사', hp: 110, radius: 0.45, height: 1.5, mass: 0.8,
+    kind: 'shaman', model, name: typeName('shaman'), hp: 110, radius: 0.45, height: 1.5, mass: 0.8,
     camp: opts.camp, facing: opts.facing, staggerDmg: 26, sight: 24, chaseState: 'kite',
     resist: { [element]: 0.5 },
   }, pos);
   e.element = element;
   const game = ctx.game, col = ELEMENT_COLORS[element];
   const cur = newPose(HIP), tgt = newPose(HIP);
-  let phase = 0, speed = 0, castCd = rand(1, 2.5), tpCd = 2, strafeDir = 1, strafeT = 0, castEmitter = null, fired = false;
+  let phase = 0, speed = 0, castCd = rand(1, 2.5), tpCd = 2, strafeDir = 1, strafeT = 0, castEmitter = null, fired = false, H = null, dazePending = false;
+  const aimShape = { kind: 'line', len: 6, width: 0.35, dir: _dir, follow: true };
+  const faceDir = () => _dir.set(Math.sin(e.facing), 0, Math.cos(e.facing));
+  function startCast(force) {
+    if (!force && !ctx.takeRangedToken(e)) return false;
+    faceDir();
+    H = beginAttack(ctx, e, 'shaman.orb', aimShape);
+    if (!H) { ctx.releaseRangedToken(e); return false; }
+    e.setState('cast'); fired = false;
+    castEmitter = game.vfx.emitter?.({ owner: 'enemy', follow: model.gem, rate: 14, color: [col, 0x3a2a4a], speed: 0.8, spread: 1, size: 0.1, sizeEnd: 0, life: 0.4, shape: 'spark', drag: 2, gravity: -1 });
+    ctx.audio('charge', { position: e.object.position, volume: 0.35, pitch: 1.3 });
+    return true;
+  }
+  e.attackStarters['shaman.orb'] = startCast;
   const tpTo = new THREE.Vector3();
 
   function stopCastFx() { castEmitter?.stop?.(); castEmitter = null; }
@@ -42,16 +59,30 @@ export function createShaman(ctx, pos, opts = {}) {
     tpTo.set(e.home.x + rand(-5, 5), 0, e.home.z + rand(-5, 5)); tpTo.y = ctx.groundH(tpTo.x, tpTo.z);
     return true;
   }
+  /** Arrival shimmer (enemy style, small): the blink destination reads before the caster appears. */
+  function shimmer(at) {
+    _v.copy(at); _v.y += 0.6;
+    game.vfx.burst(_v, { owner: 'enemy', count: 8, color: [0x9a6ad0, 0x2a1440], speed: 0.6, spread: 1, size: 0.5, sizeEnd: 0.9, life: SHIMMER + 0.2, shape: 'smoke', drag: 2, additive: false });
+    game.vfx.burst(_v, { owner: 'enemy', count: 6, color: [col, 0x5a3a7a], speed: 0.8, spread: 1, size: 0.1, sizeEnd: 0, life: SHIMMER, shape: 'spark', drag: 2, gravity: -1.5 });
+  }
   function smoke(at) {
     _v.copy(at); _v.y += 0.8;
-    game.vfx.burst(_v, { count: 26, color: [0x5a2a8a, 0x2a1440], speed: 2.5, spread: 1, size: 0.7, sizeEnd: 1.4, life: 0.7, shape: 'smoke', drag: 2.5, additive: false });
-    game.vfx.burst(_v, { count: 20, color: [0xd9a0ff, col], speed: 5, spread: 1, size: 0.14, sizeEnd: 0, life: 0.5, shape: 'spark', drag: 3 });
+    game.vfx.burst(_v, { owner: 'enemy', count: 26, color: [0x5a2a8a, 0x2a1440], speed: 2.5, spread: 1, size: 0.7, sizeEnd: 1.4, life: 0.7, shape: 'smoke', drag: 2.5, additive: false });
+    game.vfx.burst(_v, { owner: 'enemy', count: 20, color: [0xd9a0ff, col], speed: 5, spread: 1, size: 0.14, sizeEnd: 0, life: 0.5, shape: 'spark', drag: 3 });
   }
 
-  e.react = () => { if (e.state === 'cast') { stopCastFx(); } };
-  e.interrupt = () => { stopCastFx(); fired = true; };
+  // a hit during the cast interrupts it → dazed 1.5 s with a ×1.5 punish window (§4.2)
+  e.react = () => {
+    if (e.state === 'cast') stopCastFx();
+    if (dazePending && !e.dying) {
+      dazePending = false;
+      if (game.tells?.punish) game.tells.punish(e, DAZE * (e.timeMul ?? 1), { mul: 1.5 });
+      e.setState('dazed'); e.dizzyT = DAZE;
+    }
+  };
+  e.interrupt = () => { if (e.state === 'cast' && !fired) dazePending = true; stopCastFx(); fired = true; H = null; ctx.releaseRangedToken(e); };
   e.onResume = () => { castCd = Math.max(castCd, 0.8); };
-  e.die = () => { stopCastFx(); };
+  e.die = () => { stopCastFx(); ctx.releaseRangedToken(e); };
 
   e.think = (dt, sm) => {
     const pp = ctx.playerPos, p = e.object.position, d = e.distP;
@@ -67,42 +98,45 @@ export function createShaman(ctx, pos, opts = {}) {
       case 'kite': {
         if (!e.aggro) { e.setState('return'); break; }
         faceTo(e, pp.x, pp.z, 7, dt);
-        if (d < 5 && tpCd <= 0) { e.setState('vanish'); smoke(p); ctx.audio('blink', { position: p, volume: 0.6, pitch: 0.8 }); break; }
+        if (d < 5 && tpCd <= 0) {
+          // §4.2: the destination shimmers for 0.4 s first, then the blink
+          pickTeleport(); shimmer(tpTo); e.setState('vanish'); ctx.audio('blink', { position: p, volume: 0.6, pitch: 0.8 }); break;
+        }
         _v.set(pp.x - p.x, 0, pp.z - p.z).normalize();
         strafeT -= dt; if (strafeT <= 0) { strafeT = rand(1, 2.5); strafeDir = Math.random() < 0.5 ? -1 : 1; }
         let radial = 0;
         if (d < 10) radial = -2.6; else if (d > 17) radial = 2.4;
         e.move.set(-_v.z * strafeDir * 1.6 + _v.x * radial, 0, _v.x * strafeDir * 1.6 + _v.z * radial).multiplyScalar(sm);
-        if (castCd <= 0 && d < 28) {
-          e.setState('cast'); fired = false;
-          game.events.emit('enemyAttack', { enemy: e, kind: 'cast' });
-          castEmitter = game.vfx.emitter?.({ follow: model.gem, rate: 40, color: [col, 0xffffff], speed: 1.2, spread: 1, size: 0.12, sizeEnd: 0, life: 0.45, shape: 'spark', drag: 2, gravity: -1 });
-          ctx.audio('charge', { position: p, volume: 0.35, pitch: 1.3 });
-        }
+        if (castCd <= 0 && d < 28 && !startCast(false)) castCd = 0.5;
         break;
       }
       case 'cast': {
-        faceTo(e, pp.x, pp.z, 6, dt);
-        if (!fired && e.stateT > 0.95 / Math.max(0.4, sm)) {
-          fired = true; stopCastFx();
+        if (!H && !fired && !startCast(true)) { e.setState('kite'); break; }    // external setState('cast') (tests)
+        if (H && !H.locked) { faceTo(e, pp.x, pp.z, 6, dt); H.setDir(faceDir()); }
+        if (H && H.consumeStrike()) {
+          fired = true; stopCastFx(); H = null;
           model.gem.getWorldPosition(_v2);
-          ctx.projectiles.orb(_v2, element, e);
+          ctx.projectiles.orb(_v2, element, e, { speed: 7.5, attackId: 'shaman.orb' });
+          ctx.releaseRangedToken(e);
           ctx.audio('cast_' + element, { position: p, volume: 0.6, pitch: 0.8 });
-        }
-        if (e.stateT > 1.35) { castCd = rand(2.6, 3.8); e.setState('kite'); }
+        } else if (H && !H.alive && !H.struck) { H = null; fired = true; ctx.releaseRangedToken(e); }
+        if (fired && e.stateT > 0.25 && !H) { castCd = rand(2.6, 3.8); e.setState('kite'); }
         break;
       }
+      case 'dazed':
+        if (e.stateT > DAZE * (e.timeMul ?? 1)) { castCd = Math.max(castCd, 0.8); e.setState('kite'); }
+        break;
       case 'vanish':
-        if (e.stateT > 0.32) {
-          pickTeleport();
+        if (e.stateT > SHIMMER) {
+          smoke(p);
           p.copy(tpTo); e.velocity.set(0, 0, 0);
           smoke(p);
-          e.setState('appear'); tpCd = rand(4.5, 6.5);
+          e.setState('appear'); tpCd = rand(BLINK_CD, BLINK_CD + 2);
         }
         break;
       case 'appear':
         faceTo(e, pp.x, pp.z, 10, dt);
-        if (e.stateT > 0.35) { castCd = Math.min(castCd, 0.6); e.setState('kite'); }
+        if (e.stateT > 0.35) { castCd = Math.max(castCd, 1.0); e.setState('kite'); }    // no cast for 1.0 s after a blink
         break;
       case 'return':
         faceTo(e, e.home.x, e.home.z, 5, dt);
@@ -114,6 +148,7 @@ export function createShaman(ctx, pos, opts = {}) {
 
   e.pose = (dt, sm, stunned) => {
     Object.assign(tgt, BASE);
+    const AH = liveAttack(e), ph = attackPhase(AH), holding = ph === 1;
     const t = game.time * 1 + e.id.length * 0.7;
     let lambda = 10, rl = 0;
     phase += dt * (1 + speed * 2.6);
@@ -126,12 +161,15 @@ export function createShaman(ctx, pos, opts = {}) {
     } else if (stunned) {
       tgt.headY = Math.sin(t * 5) * 0.4; tgt.headZ = Math.cos(t * 5) * 0.3; tgt.roll = Math.sin(t * 2.5) * 0.12; tgt.pitch = 0.2;
       tgt.aRx = -0.3; tgt.aLz = 0.4;
+    } else if (st === 'dazed') {
+      tgt.headY = Math.sin(t * 4) * 0.35; tgt.headX = 0.35; tgt.pitch = 0.3; tgt.spineX = 0.25; tgt.roll = Math.sin(t * 2.2) * 0.1;
+      tgt.aRx = 0.1; tgt.aRz = -0.3; tgt.aLx = 0.1; tgt.aLz = 0.3; tgt.kR = tgt.kL = 0.35; tgt.hipY = HIP - 0.1; lambda = 8;
     } else if (st === 'cast') {
-      const k = clamp(e.stateT / 0.5, 0, 1);
+      const k = AH ? windupK(AH) : 1;
       if (!fired) {
         tgt.aRx = -2.9 * k; tgt.aRz = -0.25; tgt.fRx = -0.2; tgt.aLx = -1.4 * k; tgt.aLz = 0.6; tgt.fLx = -0.9;
         tgt.pitch = -0.2 * k; tgt.headX = -0.25 * k; tgt.spineY = 0.2;
-        gemGlow = 1 + k * 2.5 + Math.sin(t * 30) * 0.4 * k;
+        gemGlow = 1 + k * 1.6;      // the gem ring grows steadily until the shot (no flicker)
         tgt.hipY = HIP + Math.sin(e.stateT * 6) * 0.03;
       } else {
         tgt.aRx = -1.4; tgt.fRx = -0.1; tgt.aLx = -0.3; tgt.pitch = 0.35; tgt.spineX = 0.2; tgt.spineY = -0.3; lambda = 22;
@@ -151,7 +189,7 @@ export function createShaman(ctx, pos, opts = {}) {
       tgt.headY = e.aggro ? 0 : Math.sin(t * 0.4) * 0.5;
       if (e.aggro) tgt.pitch += 0.1;
     }
-    dampPose(cur, tgt, lambda, dt);
+    rhythmDamp(cur, tgt, lambda, dt, holding);
     applyHumanoid(model, cur);
     model.rig.scale.set(1 + (1 - scale) * 0.6, scale, 1 + (1 - scale) * 0.6);
     model.gem.rotation.y += dt * 2.5;
