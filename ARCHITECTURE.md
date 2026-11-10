@@ -1552,6 +1552,7 @@ Branch `v4/core`, worktree `/home/user/wt4/core`.
 | B — P0b (tag `core-b`) | (9) post4 render path, (10) pixel budget, (11) governor, (12) sub-steps + per-entity hitstop, (13) warm-up draws, (14) skills presentation, (15) bench.js, (16) debug hooks, (17) bootcheck config 3 / playtest2 / C1–C4, C7 | **done** (C1–C5, C7 green; legacy tests green) |
 | P1 | uiScale CSS helper (if ux asks), half-res soft-smoke pass (if vfx asks) | **cut** for wave B (ux has not asked; vfx marked its ask "not needed for P0"); fallbacks: `uiScale` is a stored setting ux applies itself, smoke stays in the scene pass |
 | C — integration round 1 | §7.10 | **done** (merged, requests resolved, tests run, review written; fix items handed back — see below) |
+| C — integration round 2 | §7.10 | **done** (11 fix-round-1 branches merged, requests resolved, all suites run, review re-done; fix items handed back — see the round 2 section) |
 
 ###### What exists at `core-p0a` (the contract every owner codes against; wave B changes are listed in the next section)
 
@@ -1846,6 +1847,100 @@ meaningful on a quiet machine.
 - `--sheets`: caster, melee, mobs, bosses sheets regenerated from the merged build and committed; review in `docs/v4/review.md`.
 - `--perf`: C6 / C8 as in the table above (GPU gates pass; uploads, new materials, programs, allocation and the Mirwen transition fail).
 
+###### Fix round 1 (review items)
+- **Fight scenes now fight.** `PT.armor` set `e.aggro = true`, so `base.js alert()` returned early and every F-*/R-* mob stayed `idle`: every
+  earlier C6 F-* row (and the tells R-scene numbers) came from fights without enemy attacks. It now enters `alert` (bosses untouched).
+  F-mage after setup: 12/12 `alert`, then chase/circle/cast. C6 adds a real-fight check (F-*: ≥ 1 `enemyAttack` per 2 s; B-*: boss in range + ≥ 1 attack).
+- **B-* / R-boss scenes in the arena.** `PT.toBoss()` teleports ~10 m from the boss towards the arena centre and faces it (`PT.lookAt`);
+  R-boss mobs stand between the player and the boss. B-golem 271.9 m → 11 m (golem.throw tells), R-boss kalis 9 m and in view (burst, volley).
+  C6 measures B-golem and B-kalis by default (all mid bosses with --full) at ≤ 225 calls and enemy-FX ≤ 1.0.
+- **Frame cap**: `src/core/framegate.js` accumulator (deadline += 1000/cap, 1 ms jitter tolerance, resync after a stall). Simulated with ±0.3 ms
+  jitter: 60/120/144/165/240 Hz all 60 fps at cap 60 (old rule: 144 Hz 48, 165 Hz 55); 144 Hz at cap 30 → 30. C2 checks it.
+- C6 with real attacks (640×360): F-mage 179 calls p95 (157+22+**6 overlay**), 3 attacks / 6.4 s, enemy-FX cov 0.075, player cov 1.16;
+  F-ranger 182 (overlay 7), 10 attacks, enemy-FX 0.46; B-nidhoggra 104; **B-golem 96, enemy-FX 0.057; B-kalis 89, enemy-FX 0**. Draw-call,
+  transparent, coverage, fragment and sim rows still pass. Still failing (owner items, unchanged in kind): uploads p95 F-mage 518 KB / 126 calls,
+  F-ranger 272 KB / 109, bosses 483-512 KB; new materials 29 / 12; programs 161-165.
+- JS allocation re-measured with real fights (sampling, MB per game-second): **F-mage 9.86** (was 4.70 with idle mobs), S-plains 4.04,
+  R-boss 13.7. Top sites: F-mage enemies.js:460 `separate` 0.65, vfx/ribbon.js:133 0.55, player/cape.js:91 0.52, combat/statusfx.js:123 0.49,
+  enemies/base.js:376 0.41, common.js:307 0.24, player/anim.js:97 0.24; R-boss ribbon.js:133 **1.36**, separate 0.77, base.js:376 0.50,
+  cape.js 0.50, common.js 0.33, particles.js:162 0.31, mobs/rig.js:347 0.30. (owners: mobs, vfx, player, mobmodels.)
+
+###### Wave C round 2 — integration (branch `v4-polish`, after every owner's fix round 1)
+
+Merged with `--no-ff`, one by one, no conflicts: core (2 new commits), vfx (6), tells (1), mobmodels (1), mobs (1), bosses (4), magic (3),
+melee (4), player (1), world (2), ux (3). No branch was without new commits.
+
+###### Integration fixes (round 2)
+- `tools/playtest4/harness.js` / `core.js` (player's request): `PT.alloc(..., {warm})` — C8 S-plains samples 10 s after 20 game-seconds of
+  warm (PLAN §1.2 "20 s after warm"); `PT.rotate` renders the frame before each sampled frame so update ranges / uploads no longer pile up
+  across unrendered steps (as in play every frame renders).
+- `src/ui/monsters.js` (mobs → ux request): codex thumbnails await `enemies.bossesReady` before `previewModel`, so boss thumbnails are not
+  cached as null right after boot.
+- Requests: round-2 resolutions appended to `docs/v4/requests/{core,magic,mobs,ux,vfx,world}.md`; ARCHITECTURE.md v4 module notes regenerated
+  from `docs/v4/notes/*.md`. mobmodels' body-luma conflict (PLAN §1 ≥ 0.18 vs the review's dark void identity) resolved for the review: the
+  void / elderwood bodies use the 0.06–0.16 band with the outline check and violet accents.
+
+###### Final §1 numbers (merged build, round 2; SwiftShader, 640×360, prod=1, governor=0, seed=1, medium)
+
+| Row | Value | Gate | State |
+|---|---|---|---|
+| **C8 GPU ratio F-mage** (v4 medium ÷ v3 medium MSAA 4, ABAB 9 pairs median) | **0.258** | ≤ 0.45 | pass |
+| **C8 GPU ratio F-ranger** | **0.327** | ≤ 0.45 | pass |
+| **C8 GPU ratio S-plains** | **0.314** | ≤ 0.65 | pass |
+| Draw calls p95 F-mage / F-ranger (scene + shadow + overlay) | 181 (157+22+4) / 181 (153+22+7) | ≤ 250 | pass |
+| Draw calls B-nidhoggra / B-golem / B-kalis | 105 / 96 / 83 | ≤ 250 / 225 / 225 | pass |
+| Draw calls max over the sweep S-plains / S-village / S-mirwen / S-elderwood | 127 / 159 / 141 / 156 | ≤ 140 / 175 / 160 / 160 | pass |
+| Shadow pass p95 F-mage | 22 calls / 26.7k tris | ≤ 30 / 50k | pass |
+| Triangles max F-mage / F-ranger; S-* max | 501k / 484k; 487k (village) | ≤ 700k; ≤ 600k | pass |
+| Transparent draws p95 F-mage / F-ranger | 42 / 33 | ≤ 55 | pass |
+| Fragments scene+transparent F-mage / F-ranger / B-golem; post | 1.57 / 1.63 / 2.36; 1.41 | ≤ 3.5; ≤ 2.0 | pass |
+| S-* shaded fragments (S-plains) / world transparents | 1.64 / 0.009 | ≤ 2.2 / 0.5 | pass |
+| Player FX coverage p95 / max F-mage; F-ranger | 1.13 / 1.17; 0.50 / 0.51 | ≤ 1.5 / 2.5 | pass |
+| Enemy-owned FX p95 B-nidhoggra / B-golem / B-kalis | 0.006 / 0.04 / 0 | ≤ 1.0 | pass |
+| Live particles max F-mage / F-ranger | 305 / 514 | ≤ 1000 | pass |
+| Simulation ms median F-* / B-* | 1.4 / 0.8–1.0 | ≤ 3.5 / 4.5 | pass |
+| **Uploads p95 F-mage / F-ranger** | **66.2 KB in 33 calls / 142.7 KB in 31 calls** (round 1: 518 KB / 126, 272 KB / 109) | ≤ 150 KB / 30 calls | bytes pass, **calls fail** (world flora / grass, player cape ranges, vfx) |
+| Uploads S-* median | 7.9–14.4 KB in 11–13 calls | ≤ 60 KB / 30 | pass |
+| New materials during the F-mage / F-ranger rotation | **0 / 0** (round 1: 31 / 12) | ≤ 4 | pass |
+| **Programs after boot** | **159–164** (bootcheck 160; growth during rotations 0, first draws 0) | ≤ 130 | **fail** (world ≈ 70, magic numbered shaders ≈ 23 + groundMat 4) |
+| Long frames F-mage, 30 s simulation after warm | 0 > 50 ms, 0 > 33 ms (worst 10.5 ms) | 0 / ≤ 2 | pass |
+| **JS allocation F-mage / S-plains** | **3.26 / 1.33 MB per game-second** (round 1 real fights: 9.86 / 4.04; S-plains now sampled after warm) | ≤ 1.0 / 0.3 | **fail** (player.js:1333, model.js:138, anim.js:97, world.js:178 rebuildGrid, cape.js:91, ribbon.js:143; S-plains: player.js:1333, world/ambience.js:128 writeBird, enemies.js:699) |
+| 5-min soak (sim-fast) geometries / textures / objects | 664→667 / 81→83 / 2237→2416 | flat ≤ +2 % | **fail by population**: the growth is whole mob roots (wolf +72, wraith +69, voidknight +40, wolf:alpha +35 nodes), i.e. respawns of other types after kills, not a leak; geometries +0.5 % |
+| Zone transition, worst simulation frame after a teleport | plateau 1.5, ascent 4.3, mirwen 2.2, elderwood 1.3 ms (round 1: mirwen 75) | ≤ 50 ms | pass |
+| Render size at a 1920×970 window, medium (C1) | 1406 × 710 = 0.998 MP | ≤ 1.0 MP | pass |
+| Post passes (C1) | 1.41 full-res eq, 7 calls, bright ¼, mip 1/16, 3 mips | ≤ 2.0 | pass |
+| Point lights at medium | 0 | 0 | pass |
+| C3 game-time / real-time at 1/15, 1/10 s; CPU 1/15 frame | 1.000 / 1.000; 1.19 × a 1/60 step | ≥ 0.99; ≤ 1.6 × | pass |
+| C4 hitstop 30 light requests / s | 0.075 s granted, no global freeze | ≤ 80 ms | pass |
+| 성능 테스트 3 s (C7) | 10.2 fps avg / 10 1 % low, L0, 640×360, CPU 15.3 ms, exact restore, 복사 line | fields + restore | pass |
+| Title benchmark (C7) | L2 on SwiftShader (misses 0.75, headroom 0), applied | picks a level | pass |
+| C6 real-fight checks | F-ranger 10 attacks / 6.2 s, B-nidhoggra 1, B-kalis 1 pass; **F-mage 2 / 6.05 s** (≥ 3), **B-golem 0 / 6.75 s at 11 m** | ≥ 1 per 2 s / ≥ 1 | **fail** (mobs, bosses) |
+
+###### Integrated-laptop default (step 5, round 2)
+Default quality **medium** (C5: unknown → medium; medium preset 1.0 MP budget, MSAA 0 + FXAA, PCF 1024, 3 bloom mips, 0 point lights, caps 1000/300).
+Pixel budget `renderSize(1920, 970, 1)` = 1406 × 710. Governor (`debug.governor().simulate`, C2): 50 % misses → L1 at 1.017 s; EMA > 1.6 T → L2 in
+one step; probe up after 6 s, revert + backoff 6 → 12 → 24 s; 144 Hz; L2 P-controller scale 0.84 with the canvas unchanged; miss path × 0.92;
+fpsCap 30 / 60 on 60–240 Hz panels; autoQuality / dynamicRes off honoured; L4 bloom off without a new program. 성능 테스트 returns every field
+and restores the game exactly (C7). All C1–C5, C7 checks pass (core section 133 PASS, 0 FAIL in the --sheets run).
+
+###### Test results (round 2, merged build)
+- `node tools/bootcheck.js`: 17 configs, all `playing` (intro: `cutscene`), exit 0; `@noBosses` now boots with `stubbed: []`; programs 160 (default).
+- `node tools/playtest.js --quick`: all PASS, exit 0.
+- `node tools/playtest2.js`: 75 PASS, 3 FAIL in the first run (story: "finisher cinematic ended", "input unlocked after finisher",
+  "bossDefeated golem"); reproduced in 2 of 10 later runs (1 full + 9 story-only), the other 8 all PASS. Cause: when the sword finisher is lethal
+  before phase 2, the golem is sometimes left `alive = false` at exactly 50 % HP and the reveal starts (phase 2 skipped) — fix item bosses.
+- `node tools/playtest3.js` (all sections): **1274 passed, 0 failed, 1 skipped**, exit 0.
+- `node tools/playtest4.js --sheets` (all sections, default scenes + sheets): **1023 passed, 7 failed**: bosses B1 treant.roots inside-hit
+  (flaky: passes in the --perf run), magic MG1.c ×3, melee ML1.c ×3.
+- `node tools/playtest4.js --full` (7000 s cap; melee cut off, player + ux re-run separately): 865 passed, 15 failed before the cut;
+  player + ux --full 157 passed, 0 failed. Failures: mobmodels first-sight 8.6 ms (load-dependent), bosses B1 treant.pods outside,
+  magic MG1.a water.whip first cast 25 ms (load), **MG1.g castLock stuck at 0.05** (a finisher's `fin` is never cleared once `clearFx()` drops
+  the real timers), MG1.c ×3 + ranger / spiritcaller bespoke rows, MG1.f IoU (rain ice/light 0.53, lane ice/water 0.59, bubble nature/light 0.64,
+  beam ice/light 0.60, summon water/shadow 0.51, chain light/shadow 0.52), melee ML1.c ×3.
+- `node tools/playtest4.js --perf` (3000 s cap; melee / player / ux cut off, covered by the runs above): C6 / C8 as in the table; tells
+  allocation 496 B/frame in this run (17.5 in the --sheets run; decals.js:412, icons.js:144) — flaky, fix item tells.
+- Review gate: `docs/v4/review.md` round 2.
+
 #### v4 notes — world (`docs/v4/notes/world.md`)
 
 ##### world — v4 notes
@@ -1943,6 +2038,20 @@ World-owned counts use `world.debug.owns()` (NPCs = ux, training dummies = mobs 
   still bends around the player); camp entrance banners (would cost draw calls; the beacon/compass point at the entrance);
   see-through prefab variant only within 30 m (the OCC screen-door test is a few ALU ops on every prop; unchanged).
 
+###### Fix round 1
+- Burning-grass flames (review R-paladin / R-mage): v3-era cards were 2–4.8 m tall filled orange quads (0.39 screens of
+  transparent fragments with 70 burning cells in F-paladin). Now low linework tongues (crisp ≥ 2 px orange outline + inner
+  lick + 30 % fill, ≤ 0.78 m, typically 0.4–0.5 m), burning grass blades shrink to 45 % so the tongues stand above them,
+  smoke alpha 0.75 → 0.4. Ducking: the flame vertex shader runs the vfx/duck.js footprint test on `game.vfx.shared`
+  (bound lazily by reference in `surface.update`): inside a threat footprint or within 1.5 m of the camera→player segment a
+  flame sinks to 35 % height and 30 % alpha. Same 140 instances: flame fragments 0.394 → 0.013 screens.
+- C8 zone transition hitch (mirwen 75 ms): not world. CPU profile of the 20 frames after each teleport: the spike is the first
+  spawn of a new mob type (`enemies/mobs/rig.js` defineType / assemble, SphereGeometry, computeVertexNormals, GC) and lands on
+  whichever zone first spawns that type (ascent 100–237 ms in my runs, mirwen in core's). world.update ≤ 8 ms there
+  (typ. 1–3 ms). → request to mobmodels/mobs: pre-build mob type geometry at boot/zone approach.
+- noTerrain 0.799: terrain PCF 5 taps (centre ×2) → 4 equal diagonal taps.
+- world.js no longer writes bloom threshold/strength/radius (core's).
+
 #### v4 notes — vfx (`docs/v4/notes/vfx.md`)
 
 ##### vfx — v4 notes
@@ -2009,6 +2118,37 @@ every legacy call accepts `owner:'player'|'enemy'|'world'` and `castId`.
 - Spell objects created by magic / melee that are not named `spells*`/`sword*` nor tagged `userData.owner = 'player'` are invisible to the harness's player group.
 - Legacy callers of `screenFlash` / `fovKick` outside hitFeel are clamped (alpha ≤ 0.25, ≤ 0.15 s, ≤ 4°) but not tier-gated; magic / melee should stop calling them except for U / F tiers.
 
+###### Fix round 1 (integration review items)
+Measured on this branch (SwiftShader, 640×360, prod, governor 0) after merging `v4-polish`.
+
+1. **Hit flash saturation (user point 6)** — fixed at the root in `vfx.flashEntity`: a per-entity governor (key = `flashUniform` or flash set)
+   starts a new pulse at most every 0.18 s and scales it by the recent hit rate (heat, decay 1.7/s, floor 0.35); first hit = full pulse,
+   pulse ≤ 0.1 s. F-spiritcaller 5 s rotation (240 hits), enemy flash value over 720 samples: before p95 0.83 / max 0.97 / 11.3 % of samples
+   > 0.5 → after p95 0.21 / max 0.61 / 0.4 %. New V3 check: 120 hits/s for 2 s → max 0.33, lit 36 % of frames, first hit 0.96.
+2. **Player-FX coverage of fills built outside the kit** — `applyPlayerFx` materials now report each main-camera draw
+   (`material.onBeforeRender`) to a foreign-FX governor in `vfx/duck.js`: drawn-surface-area estimate (mean projection: area/2
+   double-sided, /4 single-sided; flat items by orientation; ≈ 0 when faded out), shrinkable = role `fill`/`particle` (rune circles /
+   sigils, role `line`, never shrink), 3-observation persistence within 0.1 s, a same-frame hard cap, allowance = 0.35 × soft budget −
+   0.3 × the rune-circle estimate. Shrinking is a uniform (`uAwShrink`, vertex scaled toward the item's origin in clip space): no
+   program change, fewer fragments. F-shadowblade counting override max 2.95 → 1.42 screens (ultimate fresnel shells from
+   `spells/assets.js fresnelMat` were ~1.7 screens the estimator never saw); F-mage / paladin / spiritcaller rotations: shrink never
+   engages. `vfx.debug.coverage().parts.{foreign, foreignShrink, foreignRaw}`, `vfx.debug.duck.foreignDebug(on)`.
+3. **Programs** — `applyPlayerFx` role and premultiplied/straight output are per-material uniforms; the key suffix is one `|awfx`
+   (was `|awfx:<role><a|n>`); the telegraph fallback is warmed only without the real tells. bootcheck 161 → 159. Attribution of the
+   161 (F-mage, 4 s rotation): the `awfx` programs are NOT duplicates of unpatched ones (only 3 of 37 shared a base key; stripping the
+   role split saves 2) — they differ by the base material's own flags (map / vertexColors / transparent / side) and replace the
+   programs those materials would compile anyway. vfx-owned programs: kit 6 (kit + tells = 6 + 4 = 10), particles 1, runes 2, glow 2,
+   ghost 1, debris 2, status 6. The rest: world/scene ≈ 70, cinematic stage 8, magic `groundMat(kind)` 4 fragment variants of one
+   shader (`spells/assets.js:266`, element baked into the fragment text → one shader with a `uKind` uniform saves 3), other numbered
+   ShaderMaterials in spells / sword prewarm ≈ 23 (requests).
+4. **Uploads** — attribution (F-mage, sampled frames, bytes per sampled frame, max): `src/player/fx.js` after-image bake
+   ≈ 370 KB (range lo..hi spans every class's gear: 17,705 vertices × position + normal), `src/player/merge.js` playerBody ≈ 450 KB on
+   rebuild frames, playerShadow 35 KB; vfx at most ≈ 55 KB (ribbons 32, particles 17, bolts 3.5, status 3, linework 1.5, FM 1.4).
+   vfx changes: particles 4 → 1 interleaved buffer, linework 7 → 2, ribbons / bolts 4 → 1, FM life/tint 2 → 1, statusfx live ranges
+   (was full capacity every frame). C6-method p95: F-mage 513 KB / 119 calls → 501 KB / 102 calls, F-ranger 216 KB / 96 → 216 KB / 78.
+   The byte budget (150 KB) needs the player-owned fixes (requests); the call budget (30) also needs world (flora 6, grass 4–5 per frame)
+   and player (cape ranges accumulate one bufferSubData per step between renders).
+
 #### v4 notes — tells (`docs/v4/notes/tells.md`)
 
 ##### tells — v4 notes
@@ -2072,7 +2212,10 @@ Soft occlusion: scene point from `post.sceneDepth` (`projInv`, `camWorld`), occl
 ###### Body tells
 Rim clones of `e.rimSource()` (≤ 2 meshes; fallback `e.model.skin.meshes`, then the two largest opaque meshes): SkinnedMesh bound to the source skeleton/bindMatrix (or Mesh),
 `matrixAutoUpdate = false`, matrices copied in `preOverlay()`; BackSide hull expanded 2–3 px in clip space (+1 px after the lock, +1 px strong), alpha 0.35 → 1 over the windup,
-flash at lock; fragment hard depth compare `hullDepth ≤ sceneDepth + 0.05 m`. ≤ 4 rim draw calls (nearest by remaining time, one mesh per enemy first, then second meshes).
+flash at lock; fragment hard depth compare `hullDepth ≤ sceneDepth + 0.05 m`; silhouette only (fix round 1): when the scene surface
+at the pixel is nearer than the enemy's slab `uBack` = view distance of its centre (half height) + 0.35 × radius, the fragment is kept only if one of
+8 neighbours `uPx + 3` px away lies beyond the slab, so internal occlusion contours (club / arm over the torso, which the v4 outline proxy also
+draws) stay unpainted. ≤ 4 rim draw calls (nearest by remaining time, one mesh per enemy first, then second meshes).
 `preOverlay` clears the canvas depth when rims are active (the hull self-occludes with depthTest).
 
 ###### Other APIs
@@ -2099,7 +2242,7 @@ hazards, winding-up bodies r + 1 m) · `renderThumb(kind, size)` (`danger, parry
 | T2 grass on ÷ off | 0.997–0.998 | ≥ 0.95 |
 | T2 behind a 2.6 m wall (median per-pixel contribution ratio) | 0.418 (mean 0.437: the wall's lowest metre is not an occluder by rule) | 0.40 ± 0.05 |
 | T2 rim colour bloom on vs off | ΔRGB max 1 | ≤ 8 |
-| T4 rim clone (bokoblin, v3 model): interior changed / perimeter outlined | 8.1–12.6 % / 90–96 % (pose varies between runs) | ≤ 15 % / ≥ 60 % |
+| T4 rim clone (bokoblin, v4 model, outline-proxy source): interior changed / perimeter outlined | before fix 20–22 % / 90–96 % (internal contours painted); after 11–13 % / 64–74 % (pose varies; feet on the ground lose the rim inside the slab) | ≤ 15 % / ≥ 60 % |
 | Progress linearity / strike latch | error 0 / exactly once, on the due sub-step | ≤ 0.02 / ≤ 1 sub-step |
 | hitTest vs core reference | 0 mismatches / 10,000 points (+ 1,000 handle `contains`) | 0 |
 | Flash rate (rim region luminance, 20 Hz sampling) | 0 peaks | ≤ 3 Hz |
@@ -2203,6 +2346,23 @@ Korean player text lives only in `codex.js` (entity names via `typeName`); remai
 - Cut: alpha-wolf hesitation after the alpha dies (codex does not mention it), shroom "hit the cap during the windup pops the sac", wolf crack pulse
   driven from behaviour (mobmodels' `pose('windup')` offers it; the behaviour pose code drives the v3 pivots). Fallbacks: v3 behaviour.
 
+###### Fix round 1
+- **JS allocation (C8, F-mage)** — root cause: the 32 regular enemies had **14 hidden classes** (species and modules added fields
+  later in different orders), so every AI read / write of a double field in `updateEnemy`, `integrate`, the pose code went
+  megamorphic and boxed a fresh HeapNumber. `makeEnemy` now declares every field any species / module adds (numeric timers start
+  as numbers) → **1 hidden class** over all regular enemies (playtest4 M3 checks one property layout). Also: `separate()` gathers
+  positions into reused Float64Arrays (pair loop on typed arrays only, one write-back per moved enemy; Jacobi accumulation),
+  `Math.hypot` → inline `Math.sqrt` in every mobs file (the hypot builtin returns a boxed number outside TurboFan),
+  `Object.assign(tgt, BASE)` → `copyPose()` and `dampPose()` with named (not keyed) fields.
+  Measured (PT.alloc 10 s rotation, F-mage, branch): separate 0.63–0.67 → **0**; updateEnemy 0.42–0.52 → **0.22**; hypot from mobs
+  files → 0 (the remaining `hypot` is player/cape, vfx/coverage, vfx/ribbon, world, story); `assign` in e.pose 0.23 → 0;
+  integrate 0.15 → 0.08 MB per game-second. Whole page 8.0 → 6.6 (other owners' sites dominate: vfx/ribbon, player/cape, player).
+- **Training dummies hidden beyond 60 m** of the camera (58/62 m hysteresis, AI/visual update skipped while hidden) — world request.
+- **Codex thumbnails**: `previewModel('chuchu:<variant>')` parses the variant and asks the model registry for it (all 8 variants
+  render their own model). Boss previews are registered by the bosses module when `enemies.bossesReady` resolves; before that
+  (≈ the first seconds after boot) `previewModel(boss)` is null — ux must await `bossesReady` (request filed). M3 checks a non-null
+  preview for all 22 codex keys after `bossesReady`.
+
 #### v4 notes — mobmodels (`docs/v4/notes/mobmodels.md`)
 
 ##### mobmodels — v4 notes
@@ -2269,6 +2429,14 @@ Branch `v4/mobmodels` (from `core-p0a`), worktree `/home/user/wt4/mobmodels`. Ta
   framed at the distance that fits, labelled) + `wolf_alpha.png` + `chuchu_variants.png`, each ≤ 150 KB.
 
 ###### Palette deviations (documented)
+- **Fix round 1 (docs/v4/review.md mobs table)**: voidknight, wolf and wraith albedo darkened back to the v3 void identity (wolf fur `#434056`,
+  stripe `#221E2C`, muzzle `#8C86A2`; knight plate `#4A4366`/`#5C547A`, recess `#1C1828`, joints `#2C2840`, cloth `#4C2C74`; wraith robe `#4E4270`/`#3A3056`/`#1E1630`).
+  Violet runes / cracks / eye glow are unchanged and stay the bright accents. Elderwood body luma now 0.063–0.094 (was 0.184–0.209): the PLAN §1
+  "≥ 0.18" readability row is what washed them to light grey/lavender, so the playtest gate for these four is now a 0.06–0.16 band (dark, not black)
+  and readability rests on the 4-side outline check (still passing) and the accents; every other body keeps ≥ 0.12. Integrator: the PLAN §1 row conflicts with the review.
+- LOD / outline distance now reads the root position after `updateWorldMatrix(true, false)` (was the stale matrixWorld before the first render
+  after a move → LOD on the first frame after a spawn/teleport).
+The entries below are superseded for these three species:
 - wolf flank fur `#6A6682` instead of `#5E5A72` (with `#5E5A72` the body measured 0.168–0.177 < 0.18 on the Elderwood floor); muzzle/chest `#B9B3C8` as specified.
 - voidknight: `#3B3550` only in recesses; plate faces `#7A72A0`/`#9890BC`, trim `#8C93B8` (`#3B3550`-dominant plates measured 0.129).
 
@@ -2392,6 +2560,24 @@ No playtest3 section is owned by bosses; the boss expectations for `tools/playte
   mobs' `prewarmGolem` call lands (in `mobs-b`).
 - Enemy-FX coverage is measured branch-side with `vfx-b` + legacy particles; the hard number is the integration I-check.
 
+###### Fix round 1 (after integration review)
+- **Boot safety (@noBosses)**: `bossbase.js` and `golem.js` no longer statically import `./bosses/codex.js` / `golem_model.js`; both use
+  top-level `await import(...).catch(() => null)` with empty fallbacks (codex → null/[]/{}; golem model → `createGolem` throws a clear
+  error, `prewarmGolem` returns null). `golem.js` now takes `codexOf` / `registerBossCodex` from `bossbase.js`. bootcheck `@noBosses`:
+  `stubbed: []` (was `["enemies"]`).
+- **Instanced toon warm**: `bossbase.warmInstancedToon(game)` (called from `prewarmGolem`, inside the boot prewarm, before `game.ready`)
+  draws a 1-instance InstancedMesh with instanceColor and a default `toonMat` once, so nidhoggra's `nid-body` (toonRim+dis, layer
+  mask 15) is no new program on the plateau. The material is kept alive (disposing it releases the program). Repro (check-11 path):
+  programs 161 → 162 on boss spawn before; 162 → 162 after.
+- **treant.pods B1**: a pod started by `debugAttack('treant.pods')` is `fused` (hits do not pop it early; cleared on burst / cancel);
+  AI pods stay poppable as designed. B1 rows now report `diedAt` when a handle died before lock. `PT_BOSS_ATTACKS=<ids>` filters B1.
+- **Review gate (models + sheets)**: turntables detach hidden children for the shot and fit the visible box to ~88 % of the 16:9 cell.
+  golem: larger face (eye slits, mouth crack, heavy brow; head without moss), bigger core set forward in the cage. hydra: necks ×1.3,
+  heads ×1.6 (proxy too), large gill frills + head sail, deeper jaw with a lower lip, larger glowing slit-pupil eyes; shield ring moved
+  forward. nidhoggra: coil radius ×1.26 (tail thicker), head ×1.21, oath shards ×1.5 and higher above the spine. treant: chest plate split
+  into two bevelled light slabs with a window where the rot heart (now slimmer, with an inner core) glows through the rib-roots;
+  thicker, brighter vines with two leaves. Same draw calls (all merged into existing skins/instanced meshes).
+
 #### v4 notes — magic (`docs/v4/notes/magic.md`)
 
 ##### magic — v4 notes
@@ -2490,6 +2676,28 @@ one sword-section line `FAIL wind combo hitstop on the first hit of each castId`
   (more chroma at lower luma), a larger grapple anchor glyph in screen space, and a measurement that averages 2 casts per row.
 
 Final tag: `magic-b`.
+
+###### Fix round 1 (review.md caster items, merged build with the v4 combat camera)
+
+Measured on the merged state (`node tools/playtest4.js magic --sheets`, 640×360, 48 casts, 1,297 s run).
+
+| Item | Before | After | Root cause / change |
+|---|---|---|---|
+| Bespoke detail floors (§1.4) at the v4 camera | 14 of 36 bespoke rows under the floor on the integrated build (fire.basic 425, fire.charged 1,764, nature.roots 983 …) | 2 of 36 (`wind.basic` 365, `lightning.basic` 466; both flap between 365 and 1,362 from run to run); bespoke median 3,017 px | The camera sits 13.3 m from the dummy (fov 66°, about 21 px/m at 360 p), so fixed metre sizes became 3 to 10 px slivers. `looks.px(pos, frac)` sizes each cast's primary shape and its line weight as a fraction of the screen height (B 0.07 to 0.09, C/A 0.10 to 0.13). The impact radius floor is in `looks.impact`, and the line floor goes from 1.8/2.2 to 2.4/2.8 px. Short flares (0.07 s) now hold for 0.3 s. Impact shares put the legible shape first (ice.charged). The nature flower sits above the grass in the `light` step, and the salamander head rides above the grass. MG1.c also takes a diff 4 and 10 frames after a cast spawns new shapes, so a burst between two grid samples is measured. |
+| 0 new materials per cast | F-mage rotation 31, F-ranger 12, MG1.d --full 33 | F-mage 0 from magic (4 from `enemies/base.js:74`), F-ranger 0, MG1.d 0 / 48. All 104 registry casts repeated: 0 outside the cinematic | Pool misses built new materials. Zone ground discs and tornado parts now share one material per kind or role, and their per-object uniforms are copied in `onBeforeRender` with `uniformsNeedUpdate`. Meteor, aura and tornado-core materials are cached, and the per-element ones are built at boot. The 33 under --full are `src/cinematic/assets.js` finisher materials (ux), now reported separately by MG1.d. |
+| Ult circles faint (light, nature, wind) | pale / grass-green circle | ground ink: light, nature and wind circles in the `dark` step, at 0.95 alpha and ≥ 0.009 screen-height weight. Impact sigils added (light hexagram, nature glyph) | |
+| U sheets with only 2 frames | 8 of 8 U sheets | 3 frames | The grid holds floor(N / every) < `samples` samples, so the last grid sample is now the dissipation frame. |
+| earth.charged / ult / wall slabs | near-black opaque instanced rocks | `props.pillars` → `looks.spike`: earth strata as FM `physical.shard` in the earth `light` step with a dark outline, leaning in a zig-zag. Other elements' walls and pillars use the element column (fire tongue, lightning spike, water droplet, wind crescent, leaf, feather, tendril) | Collider props (`keep`) fall back to the instanced prop only when refused. |
+| water.charged dome | 0.85-alpha sheet growing ×1.7 | 0.22-alpha low sheet plus 2 travelling crest arcs (linework) | |
+| fire.phoenix framing | camera inside the mage | the dash dummy sits 1.2 m off the path, so the boom no longer collides with it | The dash leaves the player's black `spawnGhost` silhouette (player). |
+| Archetype sheets too small | 27 cells of ≈ 95 px | `arch_<name>_{1,2,3}.png`, 3 elements each; every sheet is cropped to the action (≥ 208×117 window around the peak mask, player and dummy) | The 150 KB cap still downscales grass-heavy cells to about 0.5. |
+| Ice prison / pillar crystals hide enemies | solid crystals between camera and enemies | every eruption ≥ 1.2 m is an occluder: when it cuts the camera → player or camera → enemy segment (12 nearest enemies within 30 m) it fades to 0.25 alpha (`looks.occlusion`, once per frame). The prison uses 4 prisms instead of 6 | |
+| MG1.f IoU | wall fire/earth 0.86 | wall 0.48 (ice/water); projectile 0.36, nova 0.38, cone 0.18, zone 0.48 | All non-ice walls had raised the same rock row. |
+
+Still open (not in this round's items, cross-owner):
+- **Handles over the cap**: earth.charged 15, earth.ult 19, light.ult 29, earth.basic 11, nature.basic 10, nature.charged 13 and others. The magic facade stays within the cap (traces show 4 to 8). The rest comes from `vfx` hitFeel per-target bursts that use melee's earth, nature, light and shadow motifs under the same castId.
+- **Saturation**: violet saturation stays at the floor (`lightning.basic` 0.33 to 0.38, `shadow.ult` 0.33); see requests core (4).
+- **Archetype representatives under the floor**: ice.prison 1,417, ice.slide 1,154, lightning.mine (its trigger is refused once the placement has spent the Z budget), shadow.chains, nature.grapple and lightning.thunderclap.
 
 #### v4 notes — melee (`docs/v4/notes/melee.md`)
 
@@ -2605,6 +2813,25 @@ repeat" — a reaction hit without `castId` (request 4a; flaky across owners' ru
 
 Cut: bespoke looks for the remaining (non-bespoke-set) rows — they use their archetype look; finisher polish (the finishers run the
 v3 cinematics through the gate: one tinted flash ≤ 0.15 s, budgets F); per-weapon smear textures.
+
+###### Fix round 1 (integration review)
+- **Dodge lock in real time**: combo / recover lock spans are accumulated in real (unscaled) seconds and released at 0.25 s. Repro: the
+  same c1 fire swing under the ultimate's 0.35× slow-mo locked 0.267 s before (0.317 s in the integration sequence), 0.233 s after.
+- **Deferred delivery**: an archetype strike that deals no damage itself (zone, rain, projectile, wall …) marks its strike frame as the
+  delivery frame (`action.dmgT`, `action.deferred`); the dodge window opens there. wind.vortex free 0.45 → 0.367 s (delivery 0.35),
+  lightning.ult free = delivery 0.417 s. ML1.g reads the delivery frame when no damage event arrives inside the window.
+- **Caster casts through melee motifs**: earth / nature / light / shadow motifs reached with a caster castId spawn through magic's budget
+  facade (`spells.looks.kit`, with its burst / spark shares), so magic's per-cast cap counts them: MG1.c earth.charged and light.ult
+  handles now within C 8 / U 12 (were 12 / 29). nature.roots MG1 detail 833 is unchanged by this (same on v4-polish; magic's row).
+- **Legibility at the v4 combat camera**: every archetype look authors one upright element sigil (kit glyph, `mid` linework) first,
+  its lowest point ≥ 1.9 m above the strike ground (never over an enemy body), with a per-element scale / height / side offset so two
+  elements never share a footprint. fire.ult / lightning.ult / wind.ult / ice.charged / shadow.hex / lightning.mine signatures stand up
+  (ground-only linework was edge-on). A-tier own particles 64 (vfx's per-target sparks fill the rest of §1.4's 80).
+- **Fire restraint**: ≤ 2 flame solids (fire.flame / fire.petal) per melee motif call at 0.75 scale, ≤ 3 tongues, slim 2.2 m pillars.
+  The remaining tall pale column at a burning target is combat's `burning` status flame (src/combat/fxassets.js, vfx owner).
+- **ML1 harness**: spot moved to (−30, 30) (MG1's ground; the old spot had a tree between camera and hero), `surface2` cleared between
+  casts, IoU sheets use the impact (peak) frame, `MELEE_RAW=<dir>` writes full-res frames for review.
+- Still open (palette, not shape): cool / violet saturation floors (ice / lightning / shadow rows, request 3); light.sanctuary cov.
 
 #### v4 notes — player (`docs/v4/notes/player.md`)
 
@@ -2740,6 +2967,49 @@ Real v3 sword combo: a dodge pressed 4 frames into **c4 (fire)** is still locked
   (the harness counts them under `fx`).
 - The shadow proxy is a SkinnedMesh with the default depth material; core's warm-up may want to include the shadow pass (requests/core 4).
 
+###### Fix round 1 (review items: player JS allocation, afterimage upload spikes)
+
+**Allocation (C8 S-plains sites cape.js:91 / player.js:1307 / anim.js:97 / model.js:137).** Root causes:
+- `Cape.update` called a non-inlined `groundAt` closure with double arguments for every point every step (40 × 60 = 2.4k boxed
+  calls + ground queries / s), plus `applyMatrix4` / `Math.hypot` / `Math.pow` in the collision loop. Now: one ground probe per
+  update under the hem centre, the inverse / forward matrix products and the length written out with locals. Cape: 0.53 → ≈ 0 MB/game-s.
+- `createPlayer` kept ~84 per-frame numbers (`vy`, `facing`, every timer and blend weight) as closure `let`s. Closure variables live
+  in a heap context, and every double written to a context slot allocates a new heap number, in every V8 tier. They are now
+  fields of one object `PS` (double fields are written in place). This was a scope-aware rename (acorn), with no logic change.
+- `style()` / `isMelee()` did keyed `CLASS_DEFS[cls]` lookups inside `update`. That deoptimised the 16 KB `update` back to
+  baseline code (`unexpected name in keyed access`), where every float result is a heap number. Both are now cached per class in `setClass`.
+- `tooSteep` is now a `createPlayer`-level helper, so there is no per-frame closure inside `update`.
+- What remains for anim.js / model.js deform is V8 warm-up. Each hot function runs in baseline code (≈ 400 calls ≈ 7 s at 60 fps)
+  until it is optimised, and it boxes every float in that time. After a warm-up of 30 s or more, those sites are under 0.01 MB/game-s.
+  core's C8 S-plains measures right after boot, but PLAN §1.2 says "20 s after warm". Measured with `game.step(600)` straight
+  after `bootScene('S-plains')`, 2 s windows, player files: 1.00 / 0.90 / 0.75 / 0.58 / 0.19 MB/game-s.
+
+| S-plains, 10 s after a 30 s warm, all objects (CDP sampling incl. collected) | before | after |
+|---|---|---|
+| whole scene | 2.34 MB/game-s | 1.32 |
+| player files | 0.846 | 0.121 (getAim 0.035, update 0.028, updateCamera 0.017, writeCape 0.010) |
+
+**Afterimages.** The bake CPU-transformed 17.7k vertices of the original part meshes per spawn (≈ 390 KB position + normal
+upload). A dodge spawns a ghost every 0.045 s. Each ghost is now a SkinnedMesh that shares the merged rig's decimated shadow
+proxy (attributes and index are shared, so nothing is re-uploaded). Its frozen `Skeleton` gets a snapshot of the rig's bone matrices at spawn:
+one 32×32 float bone texture, 16 KB. The fade swell is a vertex uniform. The cape bone is zeroed, as before (v3 ghosts had no cape).
+The CPU path stays as a fallback when the rig did not merge.
+`addRangeOnce` (merge.js, used by the cape and the skirt sinks) stops update ranges from piling up across steps that render nothing.
+Before, the next rendered frame flushed them as hundreds of `bufferSubData` calls, 1.7 MB of body position.
+
+| F-sword, 90 frames, awake enemies, GL hook (bufferSubData + bufferData + texImage) | before | after |
+|---|---|---|
+| median / p95 KB per frame | 90 / 541 | 84 / 209 |
+| calls median / p95 | 51 / 70 | 45 / 62 |
+| largest spike | 2.72 MB (body position 1.7 MB, ranges piled up) + 538 KB ghost bakes | 730 KB, no player attribute in it (top: kit-bolt aT 7 KB, body position 7 KB) |
+
+Requests: **core**: measure C8 allocation after warm (PLAN §1.2), and sample uploads on frames that follow a rendered frame.
+**ux**: the HUD reads `player.getAim().target` every frame (0.035 MB/s of fresh vectors). A cheap `player.aimTarget` getter can be
+added on request. **vfx**: kit-bolt per-attribute uploads (aT/aC/aC2/position), as the review says. **magic / melee**: the combat
+boom (6.6 m, FOV +4°) shrinks skills on screen while enemies are aggroed, which is why the detail floors fail. For a capture, set
+`game.player.framing = 'explore'` (a new hook that pins the out-of-combat boom of 5.5 m and the base FOV at once; `null` restores it).
+The camera players see is unchanged.
+
 #### v4 notes — ux (`docs/v4/notes/ux.md`)
 
 ##### ux v4 notes
@@ -2792,3 +3062,20 @@ Dialogue backlog, 화력/생존 build paths, breadcrumb trail — not built; fal
   playtest2 exit 0 with one non-ux FAIL "wind combo hitstop on the first hit of each castId" (reaction hit without castId,
   already filed by melee as request 4a; reproduces on other owners' branches).
 - playtest3 ui.js §7.9 change: '+XP number spawned' now checks the merged corner counter (§6.9).
+
+###### Fix round 1 (review: combat readability + codex parry copy)
+
+- Hint slot: root cause of the hint that "stays through fights" was the anim queue: a hint shown and dismissed within
+  2 frames left a pending `show` re-add, so the slot stayed lit with no hint behind it. `AnimQueue.cancel()` now runs
+  on dismiss. Menu/progression hints (`unspent`, `equip`, `codex`, `legend`, `move_sprint`) wait out fights (put back
+  in the queue, show not counted). The equip hint only exists while the skill screen is open. Boss fight = enemies.boss
+  or the boss bar up (Kalis is announced only through bossSpawn).
+- Damage numbers: reaction hits show the number only (the name is the one small `aw-num-rxname`); sizes 20/24/22 px,
+  pop peak 1.15 (was 1.4), non-crit scale ≤ 1.05 (was ≤ 1.95 → 43 px).
+- Boss fight top centre: quest cards and area banners wait (`deferBanner`) while the boss bar is up; the bark and the
+  hint slot move below the boss block (CSS `body:has(.aw-boss.show)`).
+- NPCs cast shadows only within 28 m of the player (hysteresis 3 m; sun shadow box is ±32 m).
+- Codex: `parrySec(attack)` gives parry lines their own stun seconds (parryStunSec/punishParry, 'parry'-tell punishDur,
+  else e.parryDur ?? 1.6); a `{punishSec}` with no live value drops the "N초 동안" phrase instead of printing a blank.
+  UX3 asserts no rendered codex string matches /\s초 동안|\{\w+\}/.
+- `node tools/playtest4.js ux`: 98 passed, 0 failed; bootcheck: no console errors.

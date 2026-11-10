@@ -37,3 +37,9 @@
   `applyPlayerFx` (a clone keeps `userData.__awFx` but loses the patch, so it is neither ducked nor coverage-governed).
 - **magic / melee** (coverage): large fresnel shells / domes around the player are now shrunk by the vfx governor when over budget;
   prefer `kit.dome()` (rim-only ≤ 2 m) or the kit linework for ultimate shells so the governor rarely has to act.
+
+## Resolution (core integration, wave C round 2)
+- player after-image / playerBody / cape uploads: **partly done on v4/player** (GPU after-images sharing the shadow proxy, `addRangeOnce`); the
+  core C6 harness now samples frames that follow a rendered frame (player request to core). Remaining upload budget: see core notes / fix items.
+- magic `groundMat(kind)` one shader with a kind uniform, no `.clone()` after `applyPlayerFx`: **open → fix item magic** (programs budget).
+- magic / melee ultimate shells via `kit.dome()`: **open → fix item magic, melee** (P1, the governor already shrinks them).

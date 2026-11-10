@@ -1,4 +1,54 @@
-# v4 review gate (PLAN §1.8) — wave C round 1
+# v4 review gate (PLAN §1.8) — wave C round 2
+
+Reviewer: core integration step, after merging every v4/* fix-round-1 branch. Input: all contact sheets regenerated from the merged build
+with `node tools/playtest4.js --sheets` (caster 65, melee 62, mobs 11, bosses 6; committed) and one R-* frame per class at 960×540
+(`R-mage`, `R-sword`, `R-ranger`, `R-paladin`, `R-spiritcaller`, `R-shadowblade`, `R-boss`, captured when an enemy attack aimed at the
+player is 45–85 % through its windup; PNGs untracked). Criteria: user points 3 (refined, not flashy), 4 (detailed models), 6 (enemy attacks readable).
+
+## Round 1 items re-checked
+
+| Item (round 1) | Round 2 | Notes |
+|---|---|---|
+| caster U circles faint (light / nature / wind) | pass | Ground ink and impact sigils present (MG1 floors met for U except shadow.ult saturation). |
+| caster U sheets 2 frames | pass | Every U sheet has anticipation / impact / dissipation. |
+| caster B / C legibility at the v4 camera | **fix** | Most B looks are still a few px at the shipped camera: wind.basic and fire.basic show nothing readable in their sheets; MG1.c detail floors: earth.basic 318, light.basic 340 (≥ 400); --full also nature.roots, nature.charged, wind.charged, lightning.charged. |
+| earth strata / walls | pass | earth.charged now pale tan strata with dark outlines; wall archetype shows element-shaped columns (fire tongues, ice shards, lightning spikes) — refined, not slabs. |
+| water.charged dome | pass | Low 0.22-alpha sheet with crest arcs. |
+| fire.phoenix | **fix** | The dash still leaves the player's black `spawnGhost` silhouette in the impact frame and the dissipation frame has the camera inside the mage (player + magic). |
+| caster archetype sheets | pass | Split in 3 sheets with cropped cells; nova·fire/ice/lightning and wall rows read clearly. |
+| ice crystals hiding enemies (R-mage) | pass | R-mage: the ice look is a small crystal cluster; enemies and their windups stay visible. |
+| melee sheet framing (tree) | pass | The ML1 spot is clear; no trunk or canopy in the frame. |
+| melee visibility at the shipped camera | **fix** | Melee sheets are not cropped (hero ≈ 15 px tall in a 640×360 frame scaled to 175 px); sigils exist (shadow.hex ring, fire.cyclone sigil) but cannot be judged. `arch_*` sheets: 9 cells of ≈ 95 px, nothing readable. Crop to the action like the caster sheets and split the archetype sheets. ML1.c: violet / cyan saturation under 0.40 (ice / lightning / shadow rows), light.sanctuary coverage 0.249. |
+| melee fire restraint | pass | fire.cyclone / fire.ult: one slim flame + linework sigil, no stacked flame cards. |
+| voidknight | pass (minor) | Darker plate with violet rune slots; still mid grey-violet rather than v3's near-black, readable. |
+| wolf | pass | Dark fur, orange eyes, violet crack runes; corrupted identity back. 3 m frames still crop the body (sheet). |
+| wraith | pass | Deep violet robe, glowing orb and hood ring. |
+| other mobs (bokoblin, shaman, lizard, shroom, chuchu ×9, dummy) | pass | Unchanged; detailed. |
+| boss sheet framing | pass (minor) | Bosses now fill ≈ 55–65 % of the cell height (was ≈ 25 %). |
+| golem | pass | Glowing core in a cage ring visible from the front, moss caps, rune cracks. |
+| hydra | pass (minor) | Frills, eye glow and jaws read; the neck surface pattern looks like noise dots at sheet size. |
+| nidhoggra | pass (minor) | Thicker coil, larger element shards on the spine; still slim at long range. |
+| treant | pass | Split chest plates with the rot-heart window, vines with leaves, root claws. |
+| nox, kalis | pass | |
+| enemy hit flash (vfx) | pass | No white-out silhouettes in any R-* frame under sustained hits. |
+| damage / reaction numbers (ux) | **fix** | R-spiritcaller: a ≈ 40 px "붕괴!" label sits in the screen centre over the enemies (break / reaction banner); numbers themselves are small now. |
+| persistent hint (ux) | pass | The skill-slot hint is gone; contextual hints sit at the left edge. |
+| R-boss top-centre stack (ux + core) | **fix** | R-boss: the boss 공략 card (칼리스) opens mid-fight over the screen centre; "임무 완료", the boss title and a ghosted area banner overlap at the top. |
+| burning grass (world) | pass | Low linework tongues; no tall flame cards in R-paladin / R-mage. |
+
+## New items (round 2)
+
+| Item | Verdict | Owner | Notes |
+|---|---|---|---|
+| Level-up card in combat | **fix** | ux | Every R-* frame (the scenes start at level 30) shows "Lv 30 / 스킬 포인트 +24 · {skillsKey} 스킬 트리" in the screen centre over the enemies: the `{skillsKey}` token is not formatted (`ui.js:946` passes `HUD_KO.levelUpSub` without `fmt`) and the card is not deferred during fights. |
+| R-paladin camera in a tree canopy | **fix** | player | The combat boom ends inside a tree crown: the top third of the frame is a flat green canopy. Camera collision / fade must treat foliage as an occluder (or fade it). |
+| R-shadowblade pale spikes | **fix** | melee | Big pale pink-white spiky solids (the loadout's 서리 폭발 / thorn motifs) lie on the ground across the lower half, drawn over the red telegraph decal. They read as flat fills, not linework, and hide the threat footprint. |
+| R-ranger dust wash | **fix** | magic | A pale dust / smoke cloud fills the screen centre over the enemies (ranger wind casts); enemy bodies are barely visible. |
+| Telegraph readability (point 6) | pass | tells | Red cone / rectangle / circle decals and rim outlines read clearly in R-sword, R-paladin, R-shadowblade and R-boss, including through player effects. |
+
+---
+
+# v4 review gate (PLAN §1.8) — wave C round 2 (round 1 kept below)
 
 Reviewer: core integration step. Input: every contact sheet in `tools/playtest4/sheets/{caster,melee,mobs,bosses}` (52 + 62 + 11 + 6 PNGs; caster, mobs
 and bosses regenerated from the merged build with `--sheets`, melee as noted below) and one

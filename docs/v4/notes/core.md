@@ -11,6 +11,7 @@ Branch `v4/core`, worktree `/home/user/wt4/core`.
 | B — P0b (tag `core-b`) | (9) post4 render path, (10) pixel budget, (11) governor, (12) sub-steps + per-entity hitstop, (13) warm-up draws, (14) skills presentation, (15) bench.js, (16) debug hooks, (17) bootcheck config 3 / playtest2 / C1–C4, C7 | **done** (C1–C5, C7 green; legacy tests green) |
 | P1 | uiScale CSS helper (if ux asks), half-res soft-smoke pass (if vfx asks) | **cut** for wave B (ux has not asked; vfx marked its ask "not needed for P0"); fallbacks: `uiScale` is a stored setting ux applies itself, smoke stays in the scene pass |
 | C — integration round 1 | §7.10 | **done** (merged, requests resolved, tests run, review written; fix items handed back — see below) |
+| C — integration round 2 | §7.10 | **done** (11 fix-round-1 branches merged, requests resolved, all suites run, review re-done; fix items handed back — see the round 2 section) |
 
 ## What exists at `core-p0a` (the contract every owner codes against; wave B changes are listed in the next section)
 
@@ -322,3 +323,80 @@ meaningful on a quiet machine.
   R-boss 13.7. Top sites: F-mage enemies.js:460 `separate` 0.65, vfx/ribbon.js:133 0.55, player/cape.js:91 0.52, combat/statusfx.js:123 0.49,
   enemies/base.js:376 0.41, common.js:307 0.24, player/anim.js:97 0.24; R-boss ribbon.js:133 **1.36**, separate 0.77, base.js:376 0.50,
   cape.js 0.50, common.js 0.33, particles.js:162 0.31, mobs/rig.js:347 0.30. (owners: mobs, vfx, player, mobmodels.)
+
+## Wave C round 2 — integration (branch `v4-polish`, after every owner's fix round 1)
+
+Merged with `--no-ff`, one by one, no conflicts: core (2 new commits), vfx (6), tells (1), mobmodels (1), mobs (1), bosses (4), magic (3),
+melee (4), player (1), world (2), ux (3). No branch was without new commits.
+
+### Integration fixes (round 2)
+- `tools/playtest4/harness.js` / `core.js` (player's request): `PT.alloc(..., {warm})` — C8 S-plains samples 10 s after 20 game-seconds of
+  warm (PLAN §1.2 "20 s after warm"); `PT.rotate` renders the frame before each sampled frame so update ranges / uploads no longer pile up
+  across unrendered steps (as in play every frame renders).
+- `src/ui/monsters.js` (mobs → ux request): codex thumbnails await `enemies.bossesReady` before `previewModel`, so boss thumbnails are not
+  cached as null right after boot.
+- Requests: round-2 resolutions appended to `docs/v4/requests/{core,magic,mobs,ux,vfx,world}.md`; ARCHITECTURE.md v4 module notes regenerated
+  from `docs/v4/notes/*.md`. mobmodels' body-luma conflict (PLAN §1 ≥ 0.18 vs the review's dark void identity) resolved for the review: the
+  void / elderwood bodies use the 0.06–0.16 band with the outline check and violet accents.
+
+### Final §1 numbers (merged build, round 2; SwiftShader, 640×360, prod=1, governor=0, seed=1, medium)
+
+| Row | Value | Gate | State |
+|---|---|---|---|
+| **C8 GPU ratio F-mage** (v4 medium ÷ v3 medium MSAA 4, ABAB 9 pairs median) | **0.258** | ≤ 0.45 | pass |
+| **C8 GPU ratio F-ranger** | **0.327** | ≤ 0.45 | pass |
+| **C8 GPU ratio S-plains** | **0.314** | ≤ 0.65 | pass |
+| Draw calls p95 F-mage / F-ranger (scene + shadow + overlay) | 181 (157+22+4) / 181 (153+22+7) | ≤ 250 | pass |
+| Draw calls B-nidhoggra / B-golem / B-kalis | 105 / 96 / 83 | ≤ 250 / 225 / 225 | pass |
+| Draw calls max over the sweep S-plains / S-village / S-mirwen / S-elderwood | 127 / 159 / 141 / 156 | ≤ 140 / 175 / 160 / 160 | pass |
+| Shadow pass p95 F-mage | 22 calls / 26.7k tris | ≤ 30 / 50k | pass |
+| Triangles max F-mage / F-ranger; S-* max | 501k / 484k; 487k (village) | ≤ 700k; ≤ 600k | pass |
+| Transparent draws p95 F-mage / F-ranger | 42 / 33 | ≤ 55 | pass |
+| Fragments scene+transparent F-mage / F-ranger / B-golem; post | 1.57 / 1.63 / 2.36; 1.41 | ≤ 3.5; ≤ 2.0 | pass |
+| S-* shaded fragments (S-plains) / world transparents | 1.64 / 0.009 | ≤ 2.2 / 0.5 | pass |
+| Player FX coverage p95 / max F-mage; F-ranger | 1.13 / 1.17; 0.50 / 0.51 | ≤ 1.5 / 2.5 | pass |
+| Enemy-owned FX p95 B-nidhoggra / B-golem / B-kalis | 0.006 / 0.04 / 0 | ≤ 1.0 | pass |
+| Live particles max F-mage / F-ranger | 305 / 514 | ≤ 1000 | pass |
+| Simulation ms median F-* / B-* | 1.4 / 0.8–1.0 | ≤ 3.5 / 4.5 | pass |
+| **Uploads p95 F-mage / F-ranger** | **66.2 KB in 33 calls / 142.7 KB in 31 calls** (round 1: 518 KB / 126, 272 KB / 109) | ≤ 150 KB / 30 calls | bytes pass, **calls fail** (world flora / grass, player cape ranges, vfx) |
+| Uploads S-* median | 7.9–14.4 KB in 11–13 calls | ≤ 60 KB / 30 | pass |
+| New materials during the F-mage / F-ranger rotation | **0 / 0** (round 1: 31 / 12) | ≤ 4 | pass |
+| **Programs after boot** | **159–164** (bootcheck 160; growth during rotations 0, first draws 0) | ≤ 130 | **fail** (world ≈ 70, magic numbered shaders ≈ 23 + groundMat 4) |
+| Long frames F-mage, 30 s simulation after warm | 0 > 50 ms, 0 > 33 ms (worst 10.5 ms) | 0 / ≤ 2 | pass |
+| **JS allocation F-mage / S-plains** | **3.26 / 1.33 MB per game-second** (round 1 real fights: 9.86 / 4.04; S-plains now sampled after warm) | ≤ 1.0 / 0.3 | **fail** (player.js:1333, model.js:138, anim.js:97, world.js:178 rebuildGrid, cape.js:91, ribbon.js:143; S-plains: player.js:1333, world/ambience.js:128 writeBird, enemies.js:699) |
+| 5-min soak (sim-fast) geometries / textures / objects | 664→667 / 81→83 / 2237→2416 | flat ≤ +2 % | **fail by population**: the growth is whole mob roots (wolf +72, wraith +69, voidknight +40, wolf:alpha +35 nodes), i.e. respawns of other types after kills, not a leak; geometries +0.5 % |
+| Zone transition, worst simulation frame after a teleport | plateau 1.5, ascent 4.3, mirwen 2.2, elderwood 1.3 ms (round 1: mirwen 75) | ≤ 50 ms | pass |
+| Render size at a 1920×970 window, medium (C1) | 1406 × 710 = 0.998 MP | ≤ 1.0 MP | pass |
+| Post passes (C1) | 1.41 full-res eq, 7 calls, bright ¼, mip 1/16, 3 mips | ≤ 2.0 | pass |
+| Point lights at medium | 0 | 0 | pass |
+| C3 game-time / real-time at 1/15, 1/10 s; CPU 1/15 frame | 1.000 / 1.000; 1.19 × a 1/60 step | ≥ 0.99; ≤ 1.6 × | pass |
+| C4 hitstop 30 light requests / s | 0.075 s granted, no global freeze | ≤ 80 ms | pass |
+| 성능 테스트 3 s (C7) | 10.2 fps avg / 10 1 % low, L0, 640×360, CPU 15.3 ms, exact restore, 복사 line | fields + restore | pass |
+| Title benchmark (C7) | L2 on SwiftShader (misses 0.75, headroom 0), applied | picks a level | pass |
+| C6 real-fight checks | F-ranger 10 attacks / 6.2 s, B-nidhoggra 1, B-kalis 1 pass; **F-mage 2 / 6.05 s** (≥ 3), **B-golem 0 / 6.75 s at 11 m** | ≥ 1 per 2 s / ≥ 1 | **fail** (mobs, bosses) |
+
+### Integrated-laptop default (step 5, round 2)
+Default quality **medium** (C5: unknown → medium; medium preset 1.0 MP budget, MSAA 0 + FXAA, PCF 1024, 3 bloom mips, 0 point lights, caps 1000/300).
+Pixel budget `renderSize(1920, 970, 1)` = 1406 × 710. Governor (`debug.governor().simulate`, C2): 50 % misses → L1 at 1.017 s; EMA > 1.6 T → L2 in
+one step; probe up after 6 s, revert + backoff 6 → 12 → 24 s; 144 Hz; L2 P-controller scale 0.84 with the canvas unchanged; miss path × 0.92;
+fpsCap 30 / 60 on 60–240 Hz panels; autoQuality / dynamicRes off honoured; L4 bloom off without a new program. 성능 테스트 returns every field
+and restores the game exactly (C7). All C1–C5, C7 checks pass (core section 133 PASS, 0 FAIL in the --sheets run).
+
+### Test results (round 2, merged build)
+- `node tools/bootcheck.js`: 17 configs, all `playing` (intro: `cutscene`), exit 0; `@noBosses` now boots with `stubbed: []`; programs 160 (default).
+- `node tools/playtest.js --quick`: all PASS, exit 0.
+- `node tools/playtest2.js`: 75 PASS, 3 FAIL in the first run (story: "finisher cinematic ended", "input unlocked after finisher",
+  "bossDefeated golem"); reproduced in 2 of 10 later runs (1 full + 9 story-only), the other 8 all PASS. Cause: when the sword finisher is lethal
+  before phase 2, the golem is sometimes left `alive = false` at exactly 50 % HP and the reveal starts (phase 2 skipped) — fix item bosses.
+- `node tools/playtest3.js` (all sections): **1274 passed, 0 failed, 1 skipped**, exit 0.
+- `node tools/playtest4.js --sheets` (all sections, default scenes + sheets): **1023 passed, 7 failed**: bosses B1 treant.roots inside-hit
+  (flaky: passes in the --perf run), magic MG1.c ×3, melee ML1.c ×3.
+- `node tools/playtest4.js --full` (7000 s cap; melee cut off, player + ux re-run separately): 865 passed, 15 failed before the cut;
+  player + ux --full 157 passed, 0 failed. Failures: mobmodels first-sight 8.6 ms (load-dependent), bosses B1 treant.pods outside,
+  magic MG1.a water.whip first cast 25 ms (load), **MG1.g castLock stuck at 0.05** (a finisher's `fin` is never cleared once `clearFx()` drops
+  the real timers), MG1.c ×3 + ranger / spiritcaller bespoke rows, MG1.f IoU (rain ice/light 0.53, lane ice/water 0.59, bubble nature/light 0.64,
+  beam ice/light 0.60, summon water/shadow 0.51, chain light/shadow 0.52), melee ML1.c ×3.
+- `node tools/playtest4.js --perf` (3000 s cap; melee / player / ux cut off, covered by the runs above): C6 / C8 as in the table; tells
+  allocation 496 B/frame in this run (17.5 in the --sheets run; decals.js:412, icons.js:144) — flaky, fix item tells.
+- Review gate: `docs/v4/review.md` round 2.
+

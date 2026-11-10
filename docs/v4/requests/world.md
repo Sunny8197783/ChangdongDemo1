@@ -52,3 +52,7 @@
 - C8 zone transition frame (mirwen 75 ms in core's run; ascent 100–237 ms in world's) is the first spawn of a new mob type:
   `enemies/mobs/rig.js` defineType/assemble (SphereGeometry, computeVertexNormals, BufferAttribute allocs + GC). Pre-build each
   type's geometry at boot (or when approaching a zone, spread over frames) so the spawn is a clone.
+
+## Resolution (core integration, wave C round 2)
+- Zone transition hitch = first spawn of a new mob type (`enemies/mobs/rig.js` defineType / assemble): **open → fix item mobmodels**
+  (pre-build each type's geometry at boot or spread over frames when approaching a zone; the spawn must be a clone).

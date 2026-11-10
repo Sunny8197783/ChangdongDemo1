@@ -33,3 +33,7 @@
   and stay glyphs for the session. `previewModel('chuchu:<variant>')` now returns the variant model (fixed on `v4/mobs`).
 - **ux** (UX1 thumbnail check): count every codex key in the denominator (`Object.keys(game.enemies.codex())`, 22), not only the
   keys whose `previewModel` is non-null.
+
+## Resolution (core integration, wave C round 2)
+- ux `nextThumb` awaits `bossesReady`: **done** — integration fix in `src/ui/monsters.js` (no null boss thumbnail is cached early).
+- ux UX1 thumbnail denominator (all 22 codex keys): **open → fix item ux** (test change in `tools/playtest4/ux.js`).

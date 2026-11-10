@@ -51,3 +51,9 @@
 - sub-steps: **done** for player and enemies (`substeps: true`); sword explicitly `false` (legacy once-per-frame path), spells/vfx/story/cinematic run on the fallback.
 - per-entity hitstop in mobs/bosses: **done** (`base.js:384`, `bossbase.js:556`); player animation pause: **done**.
 - mobs `spawnBench`: **done**; ux 성능 테스트 UI: **done**.
+
+## Resolution (core integration, wave C round 2)
+- player (notes): C8 allocation "20 s after warm" — **done**: `PT.alloc(..., {warm})`, S-plains samples after 20 game-seconds of steps; uploads
+  sampled on frames that follow a rendered frame — **done**: `PT.rotate` renders the frame before each sampled frame.
+- mobmodels (notes): PLAN §1 body-luma row (≥ 0.18) vs the review's "dark void identity" — **accepted**: voidknight / wolf / wraith (and
+  the elderwood bodies) use the 0.06–0.16 band with the 4-side outline check and the violet accents as the readability rule.

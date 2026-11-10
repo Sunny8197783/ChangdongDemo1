@@ -14,3 +14,7 @@
   `A()` helper overwrites the extra `punishDur: 2` with the spec's 0) and a `punishDur` (combo3's 1.0) on the
   `voidknight.combo1` row whose punishKo says "세 번째 공격 뒤 {punishSec}초". ux keeps a fallback table in src/ui/fmt.js.
 - bosses (src/enemies/bosses/codex.js): `parryStunSec: 2.6` (punishParry) on the `nidhoggra.claw` row.
+
+## Resolution (core integration, wave C round 2)
+- mobs `parryStunSec` / `punishDur` on the voidknight rows, bosses `parryStunSec` on `nidhoggra.claw`: **open (P1)** — ux's fallback table in
+  `src/ui/fmt.js` already prints the right seconds; data cleanup listed as fix items for mobs and bosses.

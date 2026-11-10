@@ -49,3 +49,9 @@
 - **ux**: `src/cinematic/assets.js:111/154/167` builds materials on every finisher (33 over 7 repeated finishers, 14 per `breadth.finisher` from `spirits9.js:79`). Please cache them by key.
 - **player**: `spawnGhost` during fire dashes renders as a black silhouette at the start point (fire.phoenix sheet).
 - **mobs**: `enemies/base.js:74` creates 4 to 5 materials per F-mage rotation (C6 limit 4).
+
+## Resolution (core integration, wave C round 2)
+- vfx hitFeel per-target bursts charged to the cast's castId: **open → fix item vfx** (share the per-tier cap with the look facade or skip the per-target burst after the cast's impact).
+- ux `cinematic/assets.js` materials per finisher: **open → fix item ux** (cache by key).
+- player `spawnGhost` black silhouette during fire dashes: **open → fix item player**.
+- mobs `enemies/base.js:74` alert-icon SpriteMaterial per enemy: **open → fix item mobs** (one shared material).
