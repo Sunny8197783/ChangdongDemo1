@@ -417,8 +417,11 @@ module.exports = async function mobmodels(PT) {
         const s = lu[k].sides;
         PT.check(`outline visible on 4 sides on the Elderwood floor: ${k}`, s.L >= 0.5 && s.R >= 0.5 && s.T >= 0.5 && s.B >= 0.5, s);
       }
-      for (const k of ['wolf', 'wolf:alpha', 'voidknight', 'wraith']) if (lu[k]) PT.check(`${k} body mean luma ${lu[k].luma} ≥ 0.18 linear (Elderwood)`, lu[k].luma >= 0.18, lu[k]);
-      PT.check('every body mean luma ≥ 0.12 linear (Elderwood)', keys.every((k) => lu[k].luma >= 0.12), Object.fromEntries(keys.map((k) => [k, lu[k].luma])));
+      // fix round 1 (docs/v4/review.md): the void species are dark again (v3 identity), so their body luma sits in a 0.06–0.16 band — read by the
+      // 4-side outline above and the violet rune/crack/eye accents, not by a light albedo (the old ≥ 0.18 gate is what washed them out to grey).
+      const VOID = ['wolf', 'wolf:alpha', 'voidknight', 'wraith'];
+      for (const k of VOID) if (lu[k]) PT.check(`${k} body mean luma ${lu[k].luma} in 0.06..0.16 linear (dark void identity, not black; Elderwood)`, lu[k].luma >= 0.06 && lu[k].luma <= 0.16, lu[k]);
+      PT.check('every other body mean luma ≥ 0.12 linear (Elderwood)', keys.filter((k) => !VOID.includes(k)).every((k) => lu[k].luma >= 0.12), Object.fromEntries(keys.map((k) => [k, lu[k].luma])));
     }
     PT.check('no page errors (S-elderwood)', pe.errors().length === 0, pe.errors().slice(0, 5));
   }

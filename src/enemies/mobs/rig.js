@@ -756,6 +756,7 @@ function updateModel(m, st, springs, dt, rnd) {
   // ---- LOD + outline distance (hysteresis 1 m)
   const cam = g?.camera;
   if (cam) {
+    m.root.updateWorldMatrix(true, false);   // a move this frame is not in matrixWorld until render: read the current position
     const e = m.root.matrixWorld.elements, cp = cam.position;
     const dx = e[12] - cp.x, dy = e[13] - cp.y, dz = e[14] - cp.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const D = lodDistances(), lodD = D.lod, olD = D.outline;

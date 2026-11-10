@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { P, S, C, K, CAP, T, TUBE, CARD, OCT, FN, both, humanoid2, bone, curve, mixInto } from './rig.js';
 
-const WR = { robe: 0x8a7eac, robeDark: 0x6a5e8c, robeDeep: 0x4e4470, trim: 0xb49ad8, bone: 0xe2dcec, boneDark: 0xb4aac4, chain: 0x9aa0b4, chainDark: 0x6a6e80,
+const WR = { robe: 0x4e4270, robeDark: 0x3a3056, robeDeep: 0x1e1630, trim: 0x8a6cbc, bone: 0xe2dcec, boneDark: 0xb4aac4, chain: 0x5c6076, chainDark: 0x3a3c4e,
   hollow: 0x1a1226, void: 0xb36bff, core: 0xe6c8ff };
 const HIP = 1.15;
 

@@ -1,11 +1,11 @@
 // 타락 늑대 (wolf, pack of 3) v4 model (PLAN v4 §4.6). Owned by mobmodels.
-// Quadruped rig (v3 names rig, neck, jaw, legs[i].up/low, tail1, tail2 + paws, tail3, ears, mane): lighter palette — slate grey-violet
-// body #5E5A72, pale muzzle + chest blaze #B9B3C8, dark back stripe; fur-tuft clusters on the neck, shoulders and tail; 3-bone tail
+// Quadruped rig (v3 names rig, neck, jaw, legs[i].up/low, tail1, tail2 + paws, tail3, ears, mane): dark void palette — charcoal-violet
+// body #434056, toned muzzle + chest blaze #8C86A2, dark back stripe; fur-tuft clusters on the neck, shoulders and tail; 3-bone tail
 // (tail3 spring); ear springs; visible fangs; larger eyes with glowing amber irises; void cracks on the flanks that swell during the
 // crouch (glow). Variant 'alpha': bigger mane and a white scar.
 import { P, S, C, K, CAP, TUBE, both, eye, quadruped, bone, curve, mixInto } from './rig.js';
 
-const WF = { fur: 0x6a6682, furDark: 0x58546e, stripe: 0x4c4864, pale: 0xb9b3c8, paleDark: 0xa49eb6, mane: 0x5a5572, sheen: 0x7a7692, claw: 0xe0dae8, nose: 0x1e1a26,
+const WF = { fur: 0x434056, furDark: 0x363348, stripe: 0x221e2c, pale: 0x8c86a2, paleDark: 0x6c6684, mane: 0x2c2838, sheen: 0x524e68, claw: 0xe0dae8, nose: 0x1e1a26,
   mouth: 0x3a1a2a, void: 0xb06aff, eye: 0xffb347, scar: 0xece8f4, inner: 0x9a7a96 };
 
 export function wolfDef(opts = {}) {
