@@ -1840,6 +1840,9 @@ meaningful on a quiet machine.
   coverage (counting override 1.86), tells T4 rim interior 20 % (≤ 15 %), bosses B1 treant.pods, magic MG1.c detail floors (36/36 bespoke; the v4 combat camera
   shrinks every look: v4/magic + v4/player alone gives fire.basic detail 417 vs 3,077 on the magic branch), MG1.d 33 new materials (--full), MG1.f IoU,
   melee ML1.c detail floors, ML1.g dodge lock (fire c1 0.317 s) and cancel windows (wind.vortex, lightning.ult), ML1.f IoU.
+- Per section after the integration test fixes (latest run of each): core 130+ / 0 (C1–C5, C7), world all pass except noTerrain 0.799 vs ≥ 0.80
+  (borderline, passed in the --full run), vfx 53 / 0, tells 100 / 1 (T4 rim interior 20 %), mobs 116 / 0, mobmodels 128 / 0, bosses 218 / 1 (B1 treant.pods),
+  magic (default + sheets) 24 / 3 (MG1.c), melee (default + sheets) 30 / 4 (ML1.c, ML1.f), player 59 / 0, ux 89 / 0.
 - `--sheets`: caster, melee, mobs, bosses sheets regenerated from the merged build and committed; review in `docs/v4/review.md`.
 - `--perf`: C6 / C8 as in the table above (GPU gates pass; uploads, new materials, programs, allocation and the Mirwen transition fail).
 
