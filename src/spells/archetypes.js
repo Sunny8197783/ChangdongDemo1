@@ -1170,7 +1170,8 @@ export function createArchetypes(S, api, { summons, structures }) {
     if (p.shatterTakenMul) { t.shatterMul = p.shatterTakenMul; t.shatterMulUntil = (game.time || 0) + 4; }
     const tc = center(t, new THREE.Vector3());
     if (el === 'ice') {
-      for (let i = 0; i < 6; i++) { const a = i * 1.047; S.props.spikes.spawn(t.object.position.x + Math.cos(a) * 0.7, t.object.position.y - 0.2, t.object.position.z + Math.sin(a) * 0.7, { height: (t.height || 1.6) * 1.15, width: 0.7, hold: t.isBoss ? 0.8 : 3, tiltX: -Math.cos(a) * 0.25, tiltZ: -Math.sin(a) * 0.25, delay: i * 0.02 }); }
+      // v4: 4 prisms (the cast budget keeps the beam + mark linework; the crystal facing the camera fades — looks.occlusion)
+      for (let i = 0; i < 4; i++) { const a = i * 1.571 + 0.785; S.props.spikes.spawn(t.object.position.x + Math.cos(a) * 0.7, t.object.position.y - 0.2, t.object.position.z + Math.sin(a) * 0.7, { height: (t.height || 1.6) * 1.15, width: 0.7, hold: t.isBoss ? 0.8 : 3, tiltX: -Math.cos(a) * 0.25, tiltZ: -Math.sin(a) * 0.25, delay: i * 0.02 }); }
     }
     fx('beam', ctx.origin.clone(), tc, { color: colOf(el), width: 0.12, duration: 0.2, jagged: 0.2, segments: 6 });
     api.deal(t, api.makeHit(h, t, ppos(), 0));

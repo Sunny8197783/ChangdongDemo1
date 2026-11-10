@@ -346,10 +346,10 @@ export function createStructures(S, api) {
     const life = o.life ?? 8, h = o.h ?? 4, r = o.r ?? 1.2;
     const H = { kind, pos: new THREE.Vector3(pos.x, gy, pos.z), t: 0, life, h, platform: null, collider: null, relay: null, mesh: null, alive: true };
     if (kind === 'ice') {
-      S.props.spikes.spawn(pos.x, gy - 0.3, pos.z, { height: h, width: r * 1.6, rise: 0.18, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28 });
+      S.props.spikes.spawn(pos.x, gy - 0.3, pos.z, { height: h, width: r * 1.6, rise: 0.18, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28, keep: true });
       for (let i = 0; i < 3; i++) { const a = i * 2.1 + 0.3; S.props.spikes.spawn(pos.x + Math.cos(a) * r * 0.9, gy - 0.2, pos.z + Math.sin(a) * r * 0.9, { height: h * 0.45, width: r * 0.7, rise: 0.2, delay: 0.05 * i, hold: life - 0.2, sink: 0.4, tiltX: Math.cos(a) * 0.35, tiltZ: Math.sin(a) * 0.35 }); }
     } else if (kind === 'rock' || kind === 'step') {
-      S.props.pillars.spawn(pos.x, gy - 0.2, pos.z, { height: h, width: r * 1.3, rise: 0.16, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28 });
+      S.props.pillars.spawn(pos.x, gy - 0.2, pos.z, { height: h, width: r * 1.3, rise: 0.16, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28, keep: true });
     } else if (kind === 'glacier') {
       const m = glaciers.find((x) => !x.visible) || glaciers[0];
       m.visible = true; m.position.set(pos.x, gy + h + 8, pos.z); m.rotation.set(0, Math.random() * 6.28, 0); m.scale.set(r / 1.6, h / 2, r / 1.6);
@@ -381,7 +381,7 @@ export function createStructures(S, api) {
       const x = center.x + px * k, z = center.z + pz * k;
       const y = S.height(x, z);
       const eru = o.kind === 'ice' ? S.props.spikes : S.props.pillars;
-      eru.spawn(x, y - 0.3, z, { height: h * (0.85 + Math.random() * 0.3), width: 1.15, delay: i * 0.03, rise: 0.16, hold: life, sink: 0.5, yaw });
+      eru.spawn(x, y - 0.3, z, { height: h * (0.85 + Math.random() * 0.3), width: 1.15, delay: i * 0.03, rise: 0.16, hold: life, sink: 0.5, yaw, keep: true });
     }
     const H = { kind: 'wall', pos: new THREE.Vector3(center.x, gy, center.z), dir: dir.clone(), t: 0, life, alive: true, collider: null, o };
     try {

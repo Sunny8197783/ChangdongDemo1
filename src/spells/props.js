@@ -25,9 +25,9 @@ class Eruptors {
     this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler();
     this.p = new THREE.Vector3(); this.s = new THREE.Vector3();
   }
-  spawn(x, y, z, { height = 2, width = 1, delay = 0, rise = 0.14, hold = 1.5, sink = 0.45, tiltX = 0, tiltZ = 0, yaw = Math.random() * 6.28 } = {}) {
+  spawn(x, y, z, { height = 2, width = 1, delay = 0, rise = 0.14, hold = 1.5, sink = 0.45, tiltX = 0, tiltZ = 0, yaw = Math.random() * 6.28, keep = false } = {}) {
     // v4: an override (spells looks: ice spikes → FM prisms) may take the eruption instead of the instanced prop
-    if (this.override && this.override(x, y, z, { height, width, delay, rise, hold, sink, tiltX, tiltZ, yaw }) === true) return;
+    if (this.override && this.override(x, y, z, { height, width, delay, rise, hold, sink, tiltX, tiltZ, yaw, keep }) === true) return;
     if (this.items.length >= this.max) this.items.shift();
     this.items.push({ x, y, z, height, width, delay, rise, hold, sink, tiltX, tiltZ, yaw, t: 0 });
   }
