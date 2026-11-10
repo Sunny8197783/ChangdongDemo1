@@ -135,6 +135,8 @@ export function createMonsters(game, { hud, fx, fmt, canParry, punishSec, parryT
     const type = thumbQ.shift(); if (!type) return;
     thumbBusy = true;
     try {
+      // boss previews are registered when the boss import resolves (mobs request): wait for it, never cache a null that is only early
+      try { await game.enemies?.bossesReady; } catch (_) { /* boss module absent: previews stay null */ }
       const obj = game.enemies?.previewModel?.(type);
       const url = obj && game.render?.snapshot ? await game.render.snapshot(obj, { w: 160, h: 160, yaw: 0.6 }) : null;
       thumbs.set(type, url || null);
