@@ -14,7 +14,15 @@ import { clamp } from '../core/utils.js';
 import { makeEnemy } from './base.js';
 import { bossScaling, XP_VALUES } from './scaling.js';
 import { hitTest as refHitTest } from '../core/tellgeom.js';
-import { attackSpec, attacksOf, codexOf, BOSS_BRIEF, registerBossCodex } from './bosses/codex.js';
+// optional (v4 boot safety): without src/enemies/bosses/ the enemies module and every mob must still load, so the boss codex
+// is imported dynamically (top-level await) and falls back to empty data.
+const CX = await import('./bosses/codex.js').catch(() => null);
+const attackSpec = CX ? CX.attackSpec : () => null;
+const attacksOf = CX ? CX.attacksOf : () => [];
+const codexOf = CX ? CX.codexOf : () => null;
+const BOSS_BRIEF = CX ? CX.BOSS_BRIEF : {};
+const registerBossCodex = CX ? CX.registerBossCodex : () => false;
+export { codexOf, registerBossCodex };
 
 const _v = new THREE.Vector3(), _q = new THREE.Vector3();
 let partUid = 0;
