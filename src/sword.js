@@ -75,6 +75,7 @@ export function createSword(game) {
   const bufferTag = { skillId: null, slot: null, castId: 0 };
   let charging = false, chargeT = 0, chargeFrac = 0, chargeLoop = null, chargeFull = false, chargeFxT = 0;
   let v3Charge = false;           // showing the charge pose for game.skills' RMB charge
+  let realStep = 1 / 60;          // this frame's real (unscaled) delta: dodge-lock spans are judged in real seconds
   let lastCastId = 0;             // castId of the last melee cast (tests: vfx.debug.byCast)
   const cooldowns = { heavy: 0, ultimate: 0, support: 0 };
   let idleT = 0, ambT = 0, igniteCd = 0, airAttacks = 0;
@@ -451,6 +452,7 @@ export function createSword(game) {
     if (k === 'heavy') return tNow >= AFTER_DMG * sp;                         // released 0.10 s ago
     const fd = a.dmgT != null ? a.dmgT : (Number.isFinite(w.plan) ? w.plan : null);
     if (k === 'ultimate') return fd != null ? tNow >= fd : tNow >= NO_DMG * sp;
+    if (a.deferred && a.dmgT != null) return tNow >= a.dmgT;                 // delivery spawned at the strike (zone / rain / shot)
     return fd != null ? tNow >= fd + AFTER_DMG * sp : tNow >= NO_DMG * sp;   // actives / supports / counters
   }
   function updateAction2(dt) {
@@ -477,7 +479,13 @@ export function createSword(game) {
     A.move = a.move ?? 0.15;
     A.cancelable = a.kind !== 'finisher' && tNow >= (a.cancel ?? a.dur) * 1;
     // v4 dodge-cancel windows (§5.8; player.js reads action.dodgeCancelable): the complete truth of "may dodge now"
-    const dw = dodgeWindow(a, tNow);
+    let dw = dodgeWindow(a, tNow);
+    // combo lock spans are capped in REAL time (§5.8 ≤ 0.25 s): a slow-motion entry (ult 0.35×) or a stretched step would
+    // otherwise stretch the lock with game time (fire c1 measured 0.317 s after an ultimate's slow-mo)
+    if ((a.kind === 'combo' || a.kind === 'recover') && !A.cancelable) {
+      if (a.lockFree) dw = true;
+      else if (!dw) { a.lockR = (a.lockR || 0) + realStep; if (a.lockR >= COMBO_LOCK - 1e-4) { a.lockFree = true; dw = true; } }
+    }
     A.dodgeCancelable = a.kind !== 'finisher' && (A.cancelable || dw);
     A.noGlide = true; A.superArmor = !!a.superArmor || a.kind === 'finisher';
     if (a.kind === 'finisher') { try { pl.grantIframes?.(0.15); } catch (_) { /* */ } }
@@ -963,6 +971,7 @@ export function createSword(game) {
   }
   function update(dt, realDt) {
     const pl = P();
+    realStep = realDt > 0 ? Math.min(realDt, 0.1) : dt;
     if (!pl?.action) return;
     dt *= pl.timeComp?.() || 1;
     refreshWeapon();

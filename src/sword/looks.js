@@ -23,7 +23,7 @@ export const KINDS = ['cast', 'trail', 'burst', 'spark', 'zone', 'pillar', 'wave
 export const TIER_BUDGET = {
   B: { particles: 16, handles: 4, arcs: 2, accent: 6, rings: 1, decals: 0, glints: 1 },
   C: { particles: 48, handles: 8, arcs: 3, accent: 12, rings: 2, decals: 1, glints: 1 },
-  A: { particles: 80, handles: 8, arcs: 4, accent: 14, rings: 2, decals: 1, glints: 1 },
+  A: { particles: 64, handles: 8, arcs: 4, accent: 14, rings: 2, decals: 1, glints: 1 },   // A: 64 of the §1.4 80 (vfx per-target contact sparks count too)
   Z: { particles: 30, handles: 6, arcs: 2, accent: 8, rings: 2, decals: 1, glints: 1, perSec: 30 },
   U: { particles: 150, handles: 12, arcs: 6, accent: 24, rings: 3, decals: 2, glints: 2 },
   F: { particles: 250, handles: 16, arcs: 8, accent: 32, rings: 4, decals: 2, glints: 3 },
@@ -175,6 +175,16 @@ export function createLooks(game, E) {
     const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles, orig = SPAWNERS.map((k) => K[k]);
     SPAWNERS.forEach((k, i) => { const f = orig[i]; if (typeof f === 'function') K[k] = function (...a) { if (usedH(cc) >= lim) { stats.dropped++; return INERT; } const h = f.apply(this, a); if (k === 'mesh') nearWatch(h); return h; }; });
     try { return fn(); } finally { SPAWNERS.forEach((k, i) => { K[k] = orig[i]; }); }
+  };
+  const MELEE_MOTIF_EL = { earth: 1, nature: 1, light: 1, shadow: 1 };
+  const VIA = [...SPAWNERS, 'spark'];
+  /** Run fn with the real kit's spawners routed through facade F (each call restores the real spawners while F runs: F calls them). */
+  const viaFacade = (K, F, fn) => {
+    const orig = VIA.map((k) => K[k]);
+    const set = (on) => VIA.forEach((k, i) => { if (typeof orig[i] === 'function') K[k] = on ? wrap[i] : orig[i]; });
+    const wrap = VIA.map((k, i) => function (...a) { set(false); try { return typeof F[k] === 'function' ? F[k](...a) : orig[i].apply(K, a); } finally { set(true); } });
+    set(true);
+    try { return fn(); } finally { set(false); }
   };
   const useH = (cc, n = 1) => { const lim = (TIER_BUDGET[cc.tier] || TIER_BUDGET.A).handles; if (lim - usedH(cc) < n) { stats.dropped++; return false; } cc.hLeft = lim - usedH(cc) - n; return true; };
   L.usedH = usedH;
@@ -588,7 +598,15 @@ export function createLooks(game, E) {
     // motifs reached from outside the gate (vfx.hitFeel's once-per-cast burst, presets) for a melee castId run under the same hard handle cap
     if (typeof K.motif === 'function' && !K.motif._meleeCap) {
       const orig = K.motif;
-      const wrapped = function (el, kind, spec) { const cc = spec?.castId ? byCast.get(spec.castId) : null; return cc ? capped(K, cc, () => orig.call(this, el, kind, spec)) : orig.call(this, el, kind, spec); };
+      const wrapped = function (el, kind, spec) {
+        const cc = spec?.castId ? byCast.get(spec.castId) : null;
+        if (cc) return capped(K, cc, () => orig.call(this, el, kind, spec));
+        // a caster cast (magic) reaching a melee motif: spawn through magic's budget facade so the cast's §1.4 handle / particle
+        // caps count these parts too (earth.charged 12 / light.ult 29 handles when they bypassed it)
+        const F = spec?.castId && MELEE_MOTIF_EL[el] ? game.spells?.looks?.kit : null;
+        if (F && F !== K && typeof F.line === 'function') return viaFacade(K, F, () => orig.call(this, el, kind, spec));
+        return orig.call(this, el, kind, spec);
+      };
       wrapped._meleeCap = true; K.motif = wrapped;
     }
     L.motifsInstalled = true;

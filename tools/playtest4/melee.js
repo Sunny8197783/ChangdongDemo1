@@ -32,6 +32,8 @@ const SAT_EXEMPT = new Set(['light', 'physical']);
 let SWATCH = {};   // ML1.c palette swatches (element → {sat, px})
 const WINDOW = { B: 0.6, C: 1.2, A: 1.2, Z: 1.5, U: 2.2, F: 3.0 };
 const EVERY = +(process.env.MELEE_EVERY || 6);
+// MELEE_RAW=<dir>: also write every sheet frame at full resolution (dev review; not committed)
+function raw(name, url) { const d = process.env.MELEE_RAW; if (!d || !url) return; try { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, name.replace(/[^\w.-]+/g, '_') + '.png'), Buffer.from(url.split(',')[1], 'base64')); } catch (_) { /* */ } }
 const ELS = ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow'];
 
 function grepStatic(root) {
@@ -57,7 +59,9 @@ function installML() {
   const g = window.game, T = g.THREE, PT = window.PT;
   if (window.ML) return true;
   const ML = window.ML = {};
-  const SPOT = { x: -20, z: 45 };
+  // (-30, 30): MG1's spot (both families judged on the same ground); the old (-20, 45) had a tree trunk + canopy between the v4 combat
+  // camera and the hero in most sheets
+  const SPOT = ML.SPOT = window.__ML_SPOT || { x: -30, z: 30 };
   // the background must not change between casts (MG1's rule): soak the test meadow (fire cannot ignite it; scorched / frozen grass
   // would shift every later measurement) and regrow anything already burnt
   ML.soak = () => { try { const sf = g.world?.surface, c = new T.Vector3(SPOT.x, 0, SPOT.z); sf?.wet?.(c, 40, 3600); sf?.regrow?.(c, 40); } catch (_) { /* */ } };
@@ -210,12 +214,20 @@ function dodgeWindows(arg) {
   for (const id of arg.actives) {
     ML.clear();
     g.skills.cast(id, { free: true, aim: ML.aim(), charge: 1 });
-    let t = 0, dmgT = null, freeT = null;
+    let t = 0, dmgT = null, freeT = null, delivT = null;
+    const act0 = g.sword.action;
     const off = g.events.on('damage', (p) => { if (dmgT == null && p?.target && p.target.team !== 'player' && !p.dot && p.skillId === id) dmgT = t; });
-    for (let f = 0; f < 150; f++) { g.step(1, 1 / 60, false); t += 1 / 60; if (freeT == null && (A.dodgeCancelable || !g.sword.action)) { freeT = t; } if (freeT != null && dmgT != null) break; }
+    for (let f = 0; f < 150; f++) {
+      g.step(1, 1 / 60, false); t += 1 / 60;
+      // delivery frame: the action's strike spawned what deals the damage (zone / rain / shot) — the action reports it as dmgT
+      if (delivT == null && act0 && act0.deferred && act0.dmgT != null) delivT = t;
+      if (freeT == null && (A.dodgeCancelable || !g.sword.action)) { freeT = t; }
+      if (freeT != null && (dmgT != null || delivT != null)) break;
+    }
     off();
     const slot = g.skills.def(id)?.slot;
-    (slot === 'ultimate' ? res.ult : res.active).push({ id, dmgT: dmgT == null ? null : +dmgT.toFixed(3), freeT: freeT == null ? null : +freeT.toFixed(3) });
+    const first = dmgT != null && delivT != null ? Math.min(dmgT, delivT) : (dmgT ?? delivT);
+    (slot === 'ultimate' ? res.ult : res.active).push({ id, dmgT: first == null ? null : +first.toFixed(3), src: dmgT != null && (delivT == null || dmgT <= delivT) ? 'damage' : delivT != null ? 'delivery' : null, freeT: freeT == null ? null : +freeT.toFixed(3) });
   }
   // finisher: never cancellable, fully invulnerable while it plays
   if (arg.fin) {
@@ -363,6 +375,7 @@ module.exports = async function (PT) {
       r.tier = tier; r.el = reg.el[id] || 'physical'; rows.push(r);
       if (process.env.MELEE_VERBOSE) { const f = []; judge(r, f); console.log('   ', id, tier, JSON.stringify({ pre: r.pre, ck: r.covKit, d: r.detail, c: r.crisp, s: r.sat, w: r.white, cov: r.cov, p: r.particles, h: r.handles, why: r.why })); }
       if (r.frames) {
+        r.frames.forEach((u, i) => raw(`${id}_${i}`, u));
         await PT.sheet(pg, r.frames.map((u, i) => ({ url: u, label: `${id} ${['anticipation', 'impact', 'dissipation'][i] || ''}` })), path.join(root, 'tools/playtest4/sheets/melee', id + '.png'), { cols: 3, cellW: 320, cellH: 180, title: `${id} (melee, ${tier}, ${r.look})` });
         delete r.frames;
       }
@@ -419,7 +432,7 @@ module.exports = async function (PT) {
           if (sheets) out.shot = window.PT.pixels.dataURL(true);
           return out;
         }, { name, rep, el, sheets });
-        masks[el] = r.mask; if (r.shot) frames.push({ url: r.shot, label: `${name} · ${el}` });
+        masks[el] = r.mask; raw(`arch_${name}_${el}`, r.shot); if (r.shot) frames.push({ url: r.shot, label: `${name} · ${el}` });
       }
       let worst = 0, pair = null;
       for (let i = 0; i < ELS.length; i++) for (let j = i + 1; j < ELS.length; j++) {
