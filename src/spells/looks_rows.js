@@ -196,7 +196,7 @@ export function createRows(L) {
     gate: { beam: (a) => { const c = L.cur; if (c?.data.bolt) return null; if (c) c.data.bolt = 1; return K().bolt({ from: a[0], to: a[1], forks: 1, width: 0.12, halo: 0.3, life: 0.08, afterglow: 0.15, el: 'lightning', seed: cid() * 3 }); } },
     impact: (pos) => {
       K().mesh('lightning.orb', { color: R('lightning').mid, tintAmt: 0.85, pos, scale: 0.7, life: 0.18, tIn: 0.02, tOut: 0.12, erode: true, grow: 1.3 });
-      K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: 0.6, width: 0.045, life: 0.1, tIn: 0, tOut: 0.05, color: R('lightning').mid, color2: R('lightning').mid, rot: 0.785 });
+      K().line({ shape: 'star', points: 4, r2: 0.12, el: 'lightning', pos, plane: 'billboard', r: sz(pos, 0.6, 0.075), width: sz(pos, 0.045, 0.008), life: 0.3, tIn: 0, tOut: 0.18, scaleIn: 'backOut', color: R('lightning').mid, color2: R('lightning').mid, rot: 0.785 });
       sparks('lightning', pos, 3, { speed: 6, life: 0.18 }); return true;
     },
   });
@@ -234,9 +234,9 @@ export function createRows(L) {
   // ================================================================================== 바람 wind
   def('wind.basic', {   // B: triple-spiral glyph → thin spinning crescent blade (alpha body, hi leading edge) + streamline → leaf flecks + crescent
     cast: (o) => { glyph('wind', 'wind', o, 0.32, { life: 0.12, tIn: 0.05, tOut: 0.06, spin: 3 }); return true; },
-    body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'wind.arrow' : 'wind.crescent', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.85 : 1.1, life: Infinity, tIn: 0.12, tOut: 0.1, erode: true, alpha: 0.85, spin: o.mesh === 'arrow' ? 0 : 0 }),
+    body: (p, o) => [K().mesh(o.mesh === 'arrow' ? 'wind.arrow' : 'wind.crescent', { follow: p.proxy, pos: p.pos, dir: p.vel, scale: o.mesh === 'arrow' ? 0.85 : 1.45, life: Infinity, tIn: 0.12, tOut: 0.1, erode: true, alpha: 0.85, spin: o.mesh === 'arrow' ? 0 : 0 }),
       K().ribbon({ follow: p.proxy, width: 0.09, taper: 1, life: 0.22, maxLen: 1.8, el: 'wind', alpha: 0.6, tailSat: 0.2 })],
-    impact: (pos) => { K().line({ shape: 'crescent', el: 'wind', pos, plane: 'billboard', r: sz(pos, 0.6, 0.075), width: sz(pos, 0.03, 0.008), life: 0.3, tIn: 0, tOut: 0.2, scaleIn: 'backOut', color: R('wind').mid, color2: R('wind').mid, rot: cid() % TAU }); sparks('wind', pos, 3, { shape: 'leaf', gravity: 1, speed: 4, life: 0.5 }); return true; },
+    impact: (pos) => { K().line({ shape: 'crescent', el: 'wind', pos, plane: 'billboard', r: sz(pos, 0.6, 0.09), width: sz(pos, 0.03, 0.009), life: 0.3, tIn: 0, tOut: 0.2, scaleIn: 'backOut', color: R('wind').mid, color2: R('wind').mid, rot: cid() % TAU }); sparks('wind', pos, 3, { shape: 'leaf', gravity: 1, speed: 4, life: 0.5 }); return true; },
   });
   const gustWave = (o, dir, len, angDeg, n) => {
     const d = flatDir(dir), a = Math.atan2(d.z, d.x), half = Math.min(1.3, (angDeg || 60) * Math.PI / 360), base = gp(o, 0.25);

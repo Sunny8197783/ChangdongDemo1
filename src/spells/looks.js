@@ -363,7 +363,7 @@ export function createLooks(S) {
     // ground ink: elements whose `mid` is pale or grass-coloured (light ivory, nature / wind green) draw the circle in their `dark` step,
     // the others in `mid`; the weight is held at gameplay distance (§1.4 detail floor)
     const gpos = v1.set(pos.x, S.height(pos.x, pos.z) + 0.05, pos.z).clone();
-    return K.line({ shape: 'glyph', glyph: EL9.includes(el) ? el : 'hexagram', el, pos: gpos, plane: 'ground', r, width: Math.max(0.04, px(gpos, 0.006)),
+    return K.line({ shape: 'glyph', glyph: EL9.includes(el) ? el : 'hexagram', el, pos: gpos, plane: 'ground', r, width: Math.max(0.04, px(gpos, INK[el] ? 0.009 : 0.006)),
       life: Math.min(1.2, o.duration ?? 0.8), tIn: 0.28, tOut: 0.3, spin: Math.sign(o.spin ?? 1) * 0.9, alpha: INK[el] ? 0.95 : 0.85, color: INK[el] ? rampOf(el).dark : undefined });
   }
   /** props.spikes / props.pillars eruption: rows decide (ice.ult wave front); default = one FM shape within the cast budget — an ice prism,

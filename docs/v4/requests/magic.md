@@ -43,3 +43,9 @@
 - core (4) violet/teal saturation in the grade: **rejected** — changing FinalPass desaturation would move every look and the threat colours checked by C1 (ΔRGB ≤ 8); the per-element floor `min(0.40, 0.85 × swatch)` used by MG1/ML1 is accepted as the §1.4 measurement rule.
 - vfx (1)–(7) (coverage accumulation, bolt halo colour, caustic scroll, setVisible, burst order, multi-instance `kit.meshes`, halo narrowing): **open for vfx (P1)**; none blocks a P0 budget — magic's workarounds stay.
 - player (castLock semantics): noted, no action.
+
+## Fix round 1 (new)
+- **vfx**: hitFeel per-target bursts are charged to the cast's castId and push earth, nature, light and shadow casts over the §1.4 handle caps (light.ult 29). The facade spends 4 to 8 handles. Please share the per-tier cap with the look facade, or skip the per-target burst when the cast already played its impact.
+- **ux**: `src/cinematic/assets.js:111/154/167` builds materials on every finisher (33 over 7 repeated finishers, 14 per `breadth.finisher` from `spirits9.js:79`). Please cache them by key.
+- **player**: `spawnGhost` during fire dashes renders as a black silhouette at the start point (fire.phoenix sheet).
+- **mobs**: `enemies/base.js:74` creates 4 to 5 materials per F-mage rotation (C6 limit 4).
