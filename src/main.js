@@ -19,6 +19,7 @@ import { createRender } from './core/render.js';
 import { detectGpu, baseScale as gpuBaseScale } from './core/gpu.js';
 import { createQuality } from './core/quality.js';
 import { installBench } from './core/bench.js';
+import { makeFrameGate } from './core/framegate.js';
 
 const params = new URLSearchParams(location.search);
 const isTest = params.has('test');
@@ -652,6 +653,7 @@ game.events.on('bossPhase', () => { warmPending = true; });
 
 // ---------- loop ----------
 let last = performance.now();
+const frameGate = makeFrameGate();
 const fpsWin = [];
 // per-module CPU ms (game.debug.perf(): median over the last 120 frames; sub-steps of one frame are summed)
 const PERF_N = 120, PERF_NAMES = ['world', 'vfx', 'combat', 'tells', 'audio', 'player', 'spells', 'sword', 'skills', 'enemies', 'story', 'cinematic', 'ui', 'stats', 'render'];
@@ -800,9 +802,9 @@ function renderFrame(dt) {
 function loop(now) {
   requestAnimationFrame(loop);
   if (game.frozen) { last = now; return; }
-  // frame cap (fpsCap 60 default / 30 / 0 = 무제한): skip callbacks earlier than 1/fpsCap − 2 ms after the last frame
-  const cap = +game.settings.values.fpsCap || 0;
-  if (cap > 0 && now - last < 1000 / cap - 2) return;
+  // frame cap (fpsCap 60 default / 30 / 0 = 무제한): accumulator deadline (src/core/framegate.js), so 144/165 Hz
+  // panels average the cap instead of rounding up to 3 vsyncs (48 fps)
+  if (!frameGate(now, +game.settings.values.fpsCap || 0)) return;
   let realDt = Math.min((now - last) / 1000, 0.1);
   last = now;
   fpsWin.push(realDt); if (fpsWin.length > 60) fpsWin.shift();
@@ -821,7 +823,7 @@ function loop(now) {
 // ---------- test hooks ----------
 // game.freeze(true) stops the rAF loop; game.step(n, dt) advances n frames deterministically without
 // rendering (last frame rendered when render=true). Used by tools/shot.js and tools/playtest.js.
-game.freeze = (on = true) => { game.frozen = on; if (!on) last = performance.now(); };
+game.freeze = (on = true) => { game.frozen = on; if (!on) { last = performance.now(); frameGate.reset(); } };
 game.step = (n = 1, dt = 1 / 60, render = false) => {
   for (let i = 0; i < n; i++) frame(dt, render && i === n - 1);
 };

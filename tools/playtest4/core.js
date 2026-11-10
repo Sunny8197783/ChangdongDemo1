@@ -523,6 +523,19 @@ async function c2(PT) {
     return n;
   });
   PT.check('C2: fpsCap 30 caps the rAF loop (rendered frames in 1 s ≤ 33)', n30 > 0 && n30 <= 33, n30);
+  // the loop's gate (src/core/framegate.js) on simulated high-refresh panels with ±0.3 ms rAF jitter
+  const hz = await pg.eval(async () => {
+    const { makeFrameGate } = await import('/src/core/framegate.js');
+    const out = {};
+    for (const [rate, cap] of [[60, 60], [120, 60], [144, 60], [165, 60], [240, 60], [144, 30]]) {
+      const gate = makeFrameGate(); let n = 0, s = 7; const vs = 1000 / rate;
+      for (let i = 0; i < rate * 10; i++) { s = (s * 16807) % 2147483647; if (gate(i * vs + (s / 2147483647 - 0.5) * 0.6, cap)) n++; }
+      out[rate + '@' + cap] = n / 10;
+    }
+    return out;
+  });
+  PT.check('C2: fpsCap 60 renders ~60 fps on 60/120/144/165/240 Hz panels (144 Hz @30 → ~30)',
+    Object.entries(hz).every(([k, v]) => Math.abs(v - +k.split('@')[1]) <= 1), hz);
   PT.check('C2 page: no console errors', pg.errors().length === 0, pg.errors().slice(0, 8));
   await pg.close();
 }
@@ -712,13 +725,18 @@ async function c6(PT) {
   }
   // ---------------- F-* rotations (+ B-nidhoggra)
   const F = PT.flags.full ? PT.CLASSES.map((c) => 'F-' + c) : ['F-mage', 'F-ranger'];
-  for (const id of [...F, 'B-nidhoggra']) {
+  // mid bosses (golem … kalis): §1.2 'B-* p95 ≤ 225' and 'enemy-owned FX ≤ 1.0'; the scene teleports into the arena
+  const MID = PT.flags.full ? PT.BOSSES.filter((b) => b !== 'nidhoggra').map((b) => 'B-' + b) : ['B-golem', 'B-kalis'];
+  for (const id of [...F, 'B-nidhoggra', ...MID]) {
     const isB = id.startsWith('B-');
     const pg = await PT.bootScene(id);
     if (!pg.ready) { PT.check(`C6 ${id}: boot`, false); await pg.close(); continue; }
     const r = await pg.eval(() => {
       const g = window.game, D = g.debug;
       D.newMaterials?.(); D.firstDraws?.();
+      const atk = window.PT.events('enemyAttack'), atk0 = atk.length, t0 = g.time;
+      const bp = g.enemies?.boss?.object?.position, pp = g.player.object.position;
+      const bossDist = bp ? +Math.hypot(bp.x - pp.x, bp.z - pp.z).toFixed(1) : null;
       const prog0 = g.renderer.info.programs?.length ?? 0;
       const sm = window.PT.rotate(null, 6);
       const newMats = D.newMaterials?.() ?? null, firstDraws = D.firstDraws?.() ?? null;
@@ -727,7 +745,9 @@ async function c6(PT) {
       const groups = {};
       for (const s of sm) for (const [k, v] of Object.entries(s.draws.byGroup)) { const G = groups[k] || (groups[k] = { c: [], sc: [] }); G.c.push(v.calls); G.sc.push(v.shadowCalls); }
       const gp95 = {}; for (const [k, v] of Object.entries(groups)) gp95[k] = { calls: PT.pct(v.c, 0.95), shadowCalls: PT.pct(v.sc, 0.95) };
+      const attacks = atk.length - atk0, attackKinds = [...new Set(atk.slice(atk0).map((r) => r.p?.kind || r.p?.attack || r.p?.id || r.p?.name || '?'))].slice(0, 12);
       const out = {
+        attacks, attackSec: +(g.time - t0).toFixed(2), attackKinds, bossDist,
         samples: sm.length, total: p95((s) => s.draws.total), scene: p95((s) => s.draws.calls), shadow: p95((s) => s.draws.shadowCalls), overlay: p95((s) => s.draws.overlayCalls),
         tris: mx((s) => s.draws.totalTris), shadowTris: p95((s) => s.draws.shadowTris), transparent: p95((s) => s.draws.transparent),
         uploadKB: +(p95((s) => s.draws.uploadBytes) / 1024).toFixed(1), uploads: p95((s) => s.draws.uploads),
@@ -741,7 +761,11 @@ async function c6(PT) {
       return out;
     });
     C6_RESULTS[id] = r;
-    const cap = isB ? 250 : 250;
+    const cap = isB && id !== 'B-nidhoggra' ? 225 : 250;
+    // F-*: the 12 mobs really engage (≥ 1 enemyAttack per 2 s); B-*: the player stands in the arena and the boss attacks
+    PT.check(isB ? `C6 ${id}: real fight — boss ${r.bossDist} m away (≤ ${id === 'B-nidhoggra' ? 60 : 25}), ${r.attacks} enemyAttack events in ${r.attackSec} s (≥ 1)`
+      : `C6 ${id}: real fight — ${r.attacks} enemyAttack events in ${r.attackSec} s (≥ 1 per 2 s)`,
+    isB ? r.attacks >= 1 && r.bossDist != null && r.bossDist <= (id === 'B-nidhoggra' ? 60 : 25) : r.attacks >= Math.max(1, Math.floor(r.attackSec / 2)), r.attackKinds);
     PT.check(`C6 ${id}: draw calls p95 ${r.total} (scene ${r.scene} + shadow ${r.shadow} + overlay ${r.overlay}) ≤ ${cap}`, r.total <= cap, r.groups);
     if (!isB) {
       PT.check(`C6 ${id}: shadow pass p95 ${r.shadow} calls / ${r.shadowTris} tris ≤ 30 / 50k`, r.shadow <= 30 && r.shadowTris <= 50000);
