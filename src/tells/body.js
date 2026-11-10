@@ -3,7 +3,11 @@
 // shares geometry and skeleton (SkinnedMesh.bind(src.skeleton, src.bindMatrix)), matrixAutoUpdate = false, and its
 // matrices are copied from the source in tells.preOverlay(). The hull is expanded 2–3 px in clip space; the fragment
 // stage does a HARD depth compare against game.post.sceneDepth (draw only where hullDepth ≤ sceneDepth + 0.05 m), so the
-// enemy's own body (and anything solid in front) hides it and only the outline shows. ≤ 4 rim draw calls in total.
+// enemy's own body (and anything solid in front) hides it and only the outline shows. Silhouette only: a scene surface
+// nearer than the enemy's back slab (view distance of its centre + its radius, uBack) is the enemy itself (body or its
+// own dark outline); a rim fragment is kept only when that pixel or one of 8 neighbours (uPx + 3 px away) shows a surface
+// beyond the slab, so internal occlusion contours (weapon / arm over the torso) stay unpainted (v4 fix round 1: T4
+// interior share) while the outer silhouette, drawn over the enemy's outline band, keeps its rim. ≤ 4 rim draw calls.
 // Two programs: skinned and static sources (one material pair per slot, colours are uniforms).
 import * as THREE from 'three';
 
@@ -30,15 +34,29 @@ const VERT = /* glsl */`
     gl_Position = clip;
   }`;
 const FRAG = /* glsl */`
-  uniform vec3 uColor; uniform float uAlpha;
+  uniform vec3 uColor; uniform float uAlpha; uniform float uBack;
   uniform sampler2D uDepth; uniform float uHasDepth; uniform vec2 uCanvasRes; uniform vec2 uUvScale; uniform mat4 uProjInv;
+  uniform float uPx;
   varying float vViewZ;
+  float sceneDist(vec2 suv) {
+    float d = texture2D(uDepth, suv * uUvScale).x;
+    vec4 v = uProjInv * vec4(suv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    return -v.z / v.w;
+  }
   void main() {
     if (uHasDepth > 0.5) {
       vec2 suv = gl_FragCoord.xy / uCanvasRes;
-      float d = texture2D(uDepth, suv * uUvScale).x;
-      vec4 v = uProjInv * vec4(suv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); v /= v.w;
-      if (-vViewZ > -v.z + 0.05) discard;
+      float sd = sceneDist(suv);
+      if (-vViewZ > sd + 0.05) discard;   // hidden behind a solid surface
+      if (sd < uBack) {                    // the enemy itself is behind this fragment: keep it only next to the outer silhouette
+        vec2 o = (uPx + 3.0) / uCanvasRes;
+        float far = max(max(sceneDist(suv + vec2(o.x, 0.0)), sceneDist(suv - vec2(o.x, 0.0))),
+                        max(sceneDist(suv + vec2(0.0, o.y)), sceneDist(suv - vec2(0.0, o.y))));
+        vec2 q = o * 0.7071;
+        far = max(far, max(max(sceneDist(suv + q), sceneDist(suv - q)),
+                           max(sceneDist(suv + vec2(q.x, -q.y)), sceneDist(suv + vec2(-q.x, q.y)))));
+        if (far < uBack) discard;
+      }
     }
     gl_FragColor = vec4(uColor, uAlpha);
     #include <colorspace_fragment>
@@ -58,7 +76,7 @@ export function createRims(game) {
   });
   const slots = [];
   for (let i = 0; i < RIM_SLOTS; i++) {
-    const u = { ...shared, uColor: uni(new THREE.Color(0xff2a3d)), uAlpha: uni(1), uPx: uni(2) };
+    const u = { ...shared, uColor: uni(new THREE.Color(0xff2a3d)), uAlpha: uni(1), uPx: uni(2), uBack: uni(0) };
     slots.push({ i, u, matSkin: mkMat(u), matStatic: mkMat(u), active: false, src: null, clone: null, enemy: null });
   }
   const clones = new WeakMap();     // source mesh → {skin, stat}
@@ -106,8 +124,10 @@ export function createRims(game) {
     s.active = true; s.src = src; s.clone = c; s.enemy = e;
   }
   /** Copy matrices from the sources (tells.preOverlay, after the main render). */
+  const _c = new THREE.Vector3();
   function sync() {
     shared.uHasDepth.value = P.sceneDepth?.value ? 1 : 0;
+    const cam = game.camera;
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i];
       if (!s.active) continue;
@@ -119,6 +139,14 @@ export function createRims(game) {
       c.visible = vis;
       c.matrix.copy(src.matrixWorld); c.matrixWorld.copy(src.matrixWorld);
       if (c.isSkinnedMesh) c.bindMatrixInverse.copy(src.bindMatrixInverse);
+      // back of the enemy's depth slab (view distance): centre at half height + the horizontal body radius
+      const e = s.enemy, eo = e?.object;
+      if (cam && eo?.position) {
+        _c.copy(eo.position); _c.y += (e.height > 0 ? e.height : 1.6) * 0.5;
+        _c.applyMatrix4(cam.matrixWorldInverse);
+        const r = e.radius > 0 ? e.radius : 0.5;
+        s.u.uBack.value = -_c.z + 0.35 * (r < 0.25 ? 0.25 : r);
+      } else s.u.uBack.value = 0;
     }
   }
   function count() { let n = 0; for (let i = 0; i < slots.length; i++) { const s = slots[i]; if (s.active && s.clone && s.clone.visible !== false) n++; } return n; }
