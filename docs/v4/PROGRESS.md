@@ -46,3 +46,10 @@
 - world-b 1849646
 - world-p0a fe8589e
 - 2026-11-10 01:12 UTC: 사용자 요청으로 재개(task w8j6ey1jr), 자동 재개 예약 재활성화.
+
+## 2026-11-10 — v4 빌드 완료
+- 빌드 워크플로 wf_e69257f0-71f 완료 (27 agents). 최종 head d34d2d4 (integrate round 2).
+- 최종 검증: bootcheck 17/17 OK, playtest --quick PASS, playtest3 1274/0 fail, C8 GPU 게이트 통과(F-mage 0.258, F-ranger 0.327, S-plains 0.314).
+- 아티팩트 v6 재배포 (https://claude.ai/artifact/7LwzvnUbMZoR78eALTV69d).
+- 남은 항목(major): 골렘 페이즈2 스킵(가끔), B-golem C6 공격 없음, treant 판정 flaky, magic castLock 0.05 고정(clearFx), 셰이더 프로그램 수 159–164 (예산 130), 일부 마법 가독성/실루엣 수치, 업로드 call 수.
+- push: 06:xx UTC 이후 GitHub 403으로 실패 중 (로컬 커밋 보존).
