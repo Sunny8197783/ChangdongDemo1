@@ -146,6 +146,68 @@ export function createDebug(game) {
       return out;
     }),
     stats: () => game.stats?.dump?.(),
+    // ---- v4 forwarders (PLAN §7.7); each owner implements its part, absent parts return null
+    hitstopLog: () => [],                                      // replaced by main.js
+    /** {level, scale, T, misses, ema, history, …} + .simulate(spec) (C2; PLAN §7.7) */
+    governor: Object.assign(safe('governor', () => {
+      const Q = game.quality; if (!Q) return null;
+      const gv = Q.governor?.() || {};
+      return { ...gv, level: Q.level, scale: Q.scale, T: gv.T ?? null, misses: gv.misses ?? null, ema: gv.ema ?? null, history: Q.history(),
+        simulate: (spec) => Q.simulate?.(spec) ?? null };
+    }), { simulate: (spec) => game.quality?.simulate?.(spec) ?? null }),
+    /** per-module median CPU ms over the last 120 frames (sub-steps summed) + render submit */
+    perf: safe('perf', () => game.quality?.perf?.() || null),
+    overdraw: safe('overdraw', (on) => game.vfx?.debug?.overdraw?.(on) ?? null),
+    coverage: safe('coverage', () => game.vfx?.debug?.coverage?.() ?? null),
+    tells: safe('tells', () => game.tells?.active?.() ?? null),
+    forceAttack: safe('forceAttack', (target, id) => {
+      let e = target && typeof target === 'object' ? target : null;
+      if (!e && typeof target === 'string') {
+        const pp = playerPos(); let bd = Infinity;
+        for (const x of game.entities || []) {
+          if (!x?.alive || (x.type !== target && x.kind !== target) || !x.debugAttack) continue;
+          const d = pp && x.object?.position ? x.object.position.distanceToSquared(pp) : 0;
+          if (d < bd) { bd = d; e = x; }
+        }
+      }
+      if (!e?.debugAttack) { warn('forceAttack:' + target, 'forceAttack: no entity with debugAttack', target); return null; }
+      return e.debugAttack(id);
+    }),
+    lookOf: safe('lookOf', (id, family) => {
+      const fam = family || (game.skills?.family?.() ?? 'caster');
+      const m = fam === 'melee' ? game.sword : game.spells;
+      return m?.lookOf?.(id) ?? null;
+    }),
+    /** New THREE.Material objects created since the last call (global id counter). */
+    newMaterials: (() => { let last = -1; return () => { const m = new THREE.Material(); const id = m.id; m.dispose(); const n = last < 0 ? 0 : Math.max(0, id - last - 1); last = id; return n; }; })(),
+    /**
+     * Programs drawn for the first time since the last call. The first call installs a light renderBufferDirect hook
+     * (every program existing then counts as drawn: the boot warm-up drew them) and returns 0.
+     */
+    firstDraws: (() => {
+      let drawn = null, n = 0, created = 0;
+      return () => {
+        const R = game.renderer; if (!R) return 0;
+        if (!drawn) {
+          drawn = new WeakSet();
+          for (const p of R.info.programs || []) drawn.add(p);
+          const props = R.properties, orig = R.renderBufferDirect.bind(R);
+          R.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+            const r = orig(camera, scene, geometry, material, object, group);
+            const prog = props.get(material).currentProgram;
+            if (prog && !drawn.has(prog)) { drawn.add(prog); n++; }
+            return r;
+          };
+          created = R.info.programs.length;
+          return 0;
+        }
+        const d = n; n = 0; created = R.info.programs.length;
+        return d;
+      };
+    })(),
+    /** programs created since boot (renderer.info.programs) */
+    programs: () => game.renderer?.info?.programs?.length ?? 0,
+    fragments: safe('fragments', () => (window.PT?.fragments ? window.PT.fragments() : null)),
   };
   return D;
 }

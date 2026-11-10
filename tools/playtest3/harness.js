@@ -32,7 +32,7 @@ function startServer(root = ROOT) {
 }
 
 /** Module files main.js imports; a 404 for one that does not exist on disk yet is an expected stub, not an error. */
-const MODULE_FILES = ['world', 'vfx', 'combat', 'audio', 'player', 'spells', 'sword', 'skills', 'enemies', 'story', 'cinematic', 'ui'];
+const MODULE_FILES = ['world', 'vfx', 'combat', 'tells', 'audio', 'player', 'spells', 'sword', 'skills', 'enemies', 'story', 'cinematic', 'ui'];
 function missingModules(root = ROOT) { return MODULE_FILES.filter((m) => !fs.existsSync(path.join(root, 'src', m + '.js'))); }
 
 // ---------------- in-page helpers (serialised into the page) ----------------

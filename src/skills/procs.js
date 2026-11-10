@@ -42,8 +42,9 @@ export function createProcs(game, K) {
     const C = game.combat; if (!C?.dealDamage) return;
     const was = inProc; inProc = true;
     try {
-      const hit = { amount, element: el || 'physical', source: pl()?.entity || 'player', point: center(t, v2).clone(), noReaction: true, tags: ['proc'], skillId: 'proc', tier: 'light' };
+      const hit = { amount, element: el || 'physical', source: pl()?.entity || 'player', point: center(t, v2).clone(), noReaction: true, tags: ['proc'], skillId: 'proc', tier: 'light', castId: 0 };
       if (extra) Object.assign(hit, extra);
+      if (!hit.castId) hit.castId = newCast();   // every proc hit carries a castId (§3.6)
       C.dealDamage(t, hit);
     } catch (err) { log('procDmg', '[skills] proc damage failed', err); }
     finally { inProc = was; }
@@ -73,13 +74,23 @@ export function createProcs(game, K) {
   }
   function playerPos(out) { const p = pl()?.object?.position; return p ? out.copy(p) : out.set(0, 0, 0); }
   function vfx(fn, ...a) { try { game.vfx?.[fn]?.(...a); } catch (_) { /* */ } }
+  // v4 presentation (§3.6): every proc firing is one cast (castId → one burst + one hitstop per proc); bursts play through
+  // the element motif of the vfx kit when it exists (element ramps, no white), else the legacy preset carries the castId
+  const newCast = () => (game.nextCastId ? game.nextCastId() : 0);
+  function fxBurst(kind, el, pos, scale, castId) {
+    const kit = game.vfx?.kit;
+    if (kit?.motif) { try { kit.motif(el, kind === 'spark' ? 'spark' : 'burst', { pos, r: 1.4 * scale, n: kind === 'spark' ? 6 : 10, castId, owner: 'player' }); return; } catch (_) { /* fall back */ } }
+    if (kind === 'spark' || kind === 'impact') vfx('impact', pos, { element: el, scale, castId, owner: 'player' });
+    else vfx('explosion', pos, { element: el, scale, castId, owner: 'player' });
+  }
 
   // ---------------------------------------------------------------- the proc table (id → {event, fn(payload, rank)})
   const PROCS = {
     'fire.rx.overheat': (p) => {                      // burning targets hit by any reaction explode (25, r 3; 1.5 s / target)
       const t = p?.target; if (!t?.alive || !hasSt(t, 'burning') || !readyT(t, 'overheat', 1.5)) return;
       center(t, v1);
-      K.api.after?.(0.1, () => { vfx('explosion', v1, { element: 'fire', scale: 0.7 }); for (const e of enemiesNear(v1, 3)) deal(e, 25, 'fire'); });
+      const cid = newCast(), at = v1.clone();
+      K.api.after?.(0.1, () => { fxBurst('burst', 'fire', at, 0.7, cid); for (const e of enemiesNear(at, 3)) deal(e, 25, 'fire', { castId: cid }); });
     },
     'fire.p2.onKill': (p, r) => {
       const t = p?.target; if (!t || t.team === 'player' || !isPlayerSrc(p.source) || !hasSt(t, 'burning')) return;
@@ -101,14 +112,15 @@ export function createProcs(game, K) {
     },
     'lightning.p2.bolt': (p, r) => {
       if (!playerHit(p) || !p.crit || !hasSt(p.target, 'shocked') || !ready('lightning.p2', 1)) return;
-      center(p.target, v1); vfx('impact', v1, { element: 'lightning' });
-      deal(p.target, 20 + 10 * r, 'lightning');
+      const cid = newCast();
+      center(p.target, v1); fxBurst('spark', 'lightning', v1, 1, cid);
+      deal(p.target, 20 + 10 * r, 'lightning', { castId: cid });
     },
     'lightning.cap.every3': (p) => {
       if (!playerHit(p) || p.dot || p.element !== 'lightning') return;
       if (++hitCount % 3 !== 0) return;
-      center(p.target, v1); let n = 0;
-      for (const e of enemiesNear(v1, 8)) { if (e === p.target) continue; deal(e, Math.max(1, (p.amount || 10) * 0.3), 'lightning', { status: undefined }); if (++n >= 2) break; }
+      center(p.target, v1); let n = 0; const cid = newCast();
+      for (const e of enemiesNear(v1, 8)) { if (e === p.target) continue; deal(e, Math.max(1, (p.amount || 10) * 0.3), 'lightning', { status: undefined, castId: cid }); if (++n >= 2) break; }
     },
     'earth.rx.crystal': (p) => {
       if (!p?.elements?.includes?.('earth') || !ready('earth.rx', 4)) return;
@@ -117,8 +129,9 @@ export function createProcs(game, K) {
     },
     'earth.p2.spikes': (p, r) => {
       if (!(p?.perfect || p?.parried) || p.target !== pl()?.entity) return;
-      playerPos(v1); vfx('explosion', v1, { element: 'earth', scale: 0.6 });
-      for (const e of enemiesNear(v1, 3)) deal(e, 30 * r, 'earth', { launch: 2 });
+      const cid = newCast();
+      playerPos(v1); fxBurst('burst', 'earth', v1, 0.6, cid);
+      for (const e of enemiesNear(v1, 3)) deal(e, 30 * r, 'earth', { launch: 2, castId: cid });
     },
     'earth.cap.heart': () => {
       const p = pl(); const S = game.stats; if (!p || !S) return;
@@ -270,7 +283,7 @@ export function createProcs(game, K) {
       const o = echoes[i]; o.t -= dt;
       if (o.t > 0) continue;
       echoes[i] = echoes[echoes.length - 1]; echoes.pop();
-      if (o.target?.alive) { center(o.target, v1); vfx('impact', v1, { element: 'shadow' }); deal(o.target, o.amount, 'shadow', { isDot: false }); }
+      if (o.target?.alive) { const cid = newCast(); center(o.target, v1); fxBurst('spark', 'shadow', v1, 1, cid); deal(o.target, o.amount, 'shadow', { isDot: false, castId: cid }); }
       o.target = null; echoPool.push(o);
     }
     tickT -= dt;

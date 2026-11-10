@@ -1,2 +1,4 @@
 node_modules/
 *.png
+!tools/playtest4/sheets/**/*.png
+tools/playtest4/out/

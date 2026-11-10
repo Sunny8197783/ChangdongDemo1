@@ -74,7 +74,8 @@ module.exports = async function core(PT) {
     PT.check('stub=all: ready', pg.ready);
     if (pg.ready) {
       const r = await pg.run('stub=all', () => { PT.step(1); return { state: game.state, n: game.stubbed.length }; });
-      PT.check('stub=all: playing with 12 stubs', r?.state === 'playing' && r?.n === 12, r);
+      // v4 (§7.3): 13 modules incl. tells
+      PT.check('stub=all: playing with 13 stubs (v4 ORDER incl. tells)', r?.state === 'playing' && r?.n === 13, r);
       PT.check('stub=all: no console errors', pg.errors().length === 0, pg.errors().slice(0, 6));
     }
     await pg.close();
@@ -120,9 +121,14 @@ module.exports = async function core(PT) {
     PT.check('ALL_ELEMENTS = 9', E.ALL_ELEMENTS.length === 9, E.ALL_ELEMENTS);
     PT.check('legacy ELEMENTS stays the 5 classic', U.ELEMENTS.length === 5 && U.ELEMENTS.join() === E.CLASSIC_ELEMENTS.join());
     PT.check('earth status encrusted', E.ELEMENT_DEFS.earth.status === 'encrusted');
-    PT.check('ELEMENT_COLORS proxy fallback → physical', U.ELEMENT_COLORS.nope === 0xffffff && U.ELEMENT_COLORS.water === E.elColor('water'));
+    // v4 (PLAN §3.2, §7.9): colours come from the element ramps; physical = its ramp mid (no white effect colour)
+    PT.check('ELEMENT_COLORS proxy fallback → physical', U.ELEMENT_COLORS.nope === 0x8A8274 && U.ELEMENT_COLORS.water === E.elColor('water') && U.ELEMENT_COLORS.fire === E.ELEMENT_DEFS.fire.colors.fx.mid);
     PT.check('ELEMENT_NAMES_KO legacy ice 냉기 / elName 빙결', U.ELEMENT_NAMES_KO.ice === '냉기' && E.elName('ice') === '빙결' && U.ELEMENT_NAMES_KO.zzz === '물리');
-    PT.check('elColor/elName fallbacks never undefined', E.elColor('void', 'css') === '#9a6bff' && E.elColor(undefined) === 0xffffff && E.elName('x') === '물리');
+    PT.check('elColor/elName fallbacks never undefined', E.elColor('void', 'css') === '#9a6bff' && E.elColor(undefined) === 0x8A8274 && E.elName('x') === '물리');
+    const D = E.ELEMENT_DEFS;
+    PT.check('v4 ramps: core := hi, edge := dark, mid/hex := mid; shadow core := dark, edge := light', E.ALL_ELEMENTS.every((el) => {
+      const c = D[el].colors, r = c.fx; return c.mid === r.mid && c.hex === r.mid && (el === 'shadow' ? c.core === r.dark && c.edge === r.light : c.core === r.hi && c.edge === r.dark);
+    }) && D.fire.colors.mid === 0xF0661A && D.shadow.colors.core === 0x0C0614 && D.shadow.colors.edge === 0x9A5CFF && D.light.colors.mid === 0xE8D9B0);
     PT.check('game.elements shape', game.elements.list === E.ALL_ELEMENTS && typeof game.elements.color === 'function');
   });
   await pg.run('classes', () => {
@@ -155,7 +161,8 @@ module.exports = async function core(PT) {
       s1.set('volMusic', 0.5);
       const s2 = M.createSettings(fake);
       PT.check('second load reads v3 (no re-copy)', !s2.migrated && s2.values.volMusic === 0.5);
-      PT.check('v3 defaults present', s2.values.difficulty === 'normal' && s2.values.screenShake === 1 && s2.values.damageNumbers === true && s2.values.holdToCast === true);
+      // v4 (§6.8): screenShake default 0.6, damageNumbers enum ('merged' default; v3 booleans migrate)
+      PT.check('v3 defaults present', s2.values.difficulty === 'normal' && s2.values.screenShake === 0.6 && s2.values.damageNumbers === 'merged' && s2.values.holdToCast === true);
       s2.applyPreset('low');
       PT.check('preset sets effectQuality', s2.values.effectQuality === 'low');
       PT.check('game.difficulty applied', game.difficulty?.id === 'normal' && game.difficulty.dmgMul === 1);
