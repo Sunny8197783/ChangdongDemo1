@@ -112,8 +112,10 @@ export function createRims(game) {
       const s = slots[i];
       if (!s.active) continue;
       const src = s.src, c = s.clone;
-      let vis = src.visible;
-      for (let o = src.parent; vis && o; o = o.parent) if (!o.visible) vis = false;
+      // a hidden LOD rim source (mobmodels: `lod` is never drawn itself, the body draws its index range) follows the mesh that draws it
+      const vs = src.userData?.rimVisibleWith || src;
+      let vis = vs.visible;
+      for (let o = vs.parent; vis && o; o = o.parent) if (!o.visible) vis = false;
       c.visible = vis;
       c.matrix.copy(src.matrixWorld); c.matrixWorld.copy(src.matrixWorld);
       if (c.isSkinnedMesh) c.bindMatrixInverse.copy(src.bindMatrixInverse);

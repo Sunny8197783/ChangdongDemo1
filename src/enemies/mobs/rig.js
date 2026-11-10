@@ -631,6 +631,7 @@ export function instantiate(TT, opts = {}) {
   proxy.castShadow = false; proxy.receiveShadow = false;
   const lod = mk(TT.lodView, bodyMat, 'lod');
   lod.visible = false; lod.castShadow = false;
+  lod.userData.rimVisibleWith = body;   // tells rim clones of the (hidden) LOD view follow the body's visibility (integration)
 
   const st = { lod: false, outline: true, blinkT: 0, blinkNext: 0, blinkDur: 0.14, t: 0, first: true, lastPose: null };
   const rnd = mulberry((opts.seed ?? (++_uid * 7919)) + TT.key.length * 131);

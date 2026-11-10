@@ -381,12 +381,15 @@ module.exports = async function tells(PT) {
     if (!e) { grass.forEach((o) => { o.visible = true; }); return; }
     PT.armor(e); PT.step(0.1);
     e.object.position.set(pp.x + 0.5, PT.groundHeight(pp.x + 0.5, pp.z - 5), pp.z - 5); e.object.updateMatrixWorld(true);
+    if (e.model?.v4) e.model.update?.(1 / 60);   // v4 models pick LOD / outline from the world matrix: refresh after the move (integration)
     const h = TL.attack(e, { id: 'rim', tell: 'danger', cls: 'mobHeavy', windup: 3, melee: false, sound: false, icon: false });
     // advance the tell without moving the enemy: enemyTime only
     g.enemyTime += 2.0; TL.update(0, 1 / 60);
     PT.check('rim clone assigned (≤ 4 calls)', TL.debug.rims() >= 1 && TL.debug.rims() <= 4, TL.debug.rims());
     const srcMeshes = TL.debug.rimsApi.slots.filter((s) => s.active).map((s) => s.src);
-    TL.debug.setVisible(false); const body = PT.pixels.mask(srcMeshes).mask; TL.debug.setVisible(true);   // body only (the clone follows its source's visibility)
+    // v4 models give the silhouette proxy as the rim source (mobmodels rimSource); mask the visible body instead (integration)
+    const bodyObjs = (e.model?.v4 && e.model.meshes?.length) ? e.model.meshes.filter((m) => m.visible) : srcMeshes;
+    TL.debug.setVisible(false); const body = PT.pixels.mask(bodyObjs).mask; TL.debug.setVisible(true);   // body only (the clone follows its source's visibility)
     const rim = PT.pixels.diff((on) => TL.debug.setVisible(on), { thr: 30 });
     const W = rim.w, Hh = rim.h;
     let inside = 0, area = 0, per = 0, cov = 0;
