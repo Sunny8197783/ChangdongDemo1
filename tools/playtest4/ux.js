@@ -242,6 +242,9 @@ module.exports = async function ux(PT) {
     PT.check('UX2 no centre banner while aggroed (queued)', u.debug.bannersQueued() > 0 && lv() === n0, [u.debug.bannersQueued(), lv(), n0]);
     aggro = 0; PT.step(3.6);
     PT.check('UX2 queued banner shown 3 s after combat', u.debug.bannersQueued() === 0 && lv() === n0 + 1);
+    // a hint dismissed within 2 frames of showing must not leave the slot lit (pending anim re-add cancelled)
+    H.reset(); PT.step(0.8); u.hint('pt_fast', '빠른', { dur: 5 }); PT.step(1 / 60); H.done('pt_fast'); PT.step(0.3);
+    PT.check('UX2 hint slot dark after an immediate dismiss', !document.querySelector('.aw-hint4.show') && u.debug.hintVisible() === null);
     // menu hints never sit on screen in a fight; the equip hint only exists on the skill screen
     H.reset(); PT.step(0.8);
     g.events.emit('skillLearned', { id: 'pt' }); PT.step(0.2);

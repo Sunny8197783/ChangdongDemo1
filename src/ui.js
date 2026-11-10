@@ -244,7 +244,7 @@ export function createUI(game) {
   const visMarks = [];
   const bossBar = createBossBar(game, { anim: restartAnim, project: (pt, out) => project(pt, out) }, hud);
   const hint = hud.appendChild(h('div', 'aw-hint'));
-  const hints = createHints(game, { parent: hud, fmt, canParry: F.canParry, anim: (n, c) => AQ.restart(n, c), treeOpen: () => { try { return !!tree.isOpen; } catch (_) { return false; } } });
+  const hints = createHints(game, { parent: hud, fmt, canParry: F.canParry, anim: (n, c) => AQ.restart(n, c), unanim: (n, c) => AQ.cancel(n, c), treeOpen: () => { try { return !!tree.isOpen; } catch (_) { return false; } }, bossShown: () => !!bossBar?.shown });
   const bossAtk = hud.appendChild(h('div', 'aw-bossatk'));
 
   // ------------------------------------------------------------------ banners, flashes & combo

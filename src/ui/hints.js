@@ -10,7 +10,7 @@ const GAP = 0.6, POLL = 0.25;
 // (a visible one is put back, its show not counted) and come back once the fight is over.
 const CALM = ['unspent', 'equip', 'codex', 'legend', 'move_sprint'];
 
-export function createHints(game, { parent, fmt, canParry, anim, treeOpen = () => false }) {
+export function createHints(game, { parent, fmt, canParry, anim, unanim, treeOpen = () => false, bossShown = () => false }) {
   const ev = game.events;
   const el = parent.appendChild(h('div', 'aw-hint4', '<i class="aw-hint4-ico">?</i><span></span>'));
   const txt = el.querySelector('span');
@@ -24,7 +24,8 @@ export function createHints(game, { parent, fmt, canParry, anim, treeOpen = () =
 
   const enabled = () => game.settings?.values?.hints !== false;
   const blockedNow = () => !!game.cinematic?.active || game.state === 'dialogue' || game.state === 'cutscene' || game.state === 'title';
-  const bossFight = () => { const b = game.enemies?.boss; return !!(b && b.alive !== false && !b.defeated && !b.dying); };
+  // a boss fight = enemies.boss alive, or the boss bar up (bosses announced only through bossSpawn never set enemies.boss)
+  const bossFight = () => { const b = game.enemies?.boss; return !!(b && b.alive !== false && !b.defeated && !b.dying) || !!bossShown(); };
   const aggroed = () => (game.enemies?.aggroCount?.() || 0) > 0;
   const allowed = (q) => !(bossFight() && !q.opts.boss && !BOSS_HINTS.includes(q.id)) && !(CALM.includes(q.id) && aggroed());
 
@@ -72,7 +73,9 @@ export function createHints(game, { parent, fmt, canParry, anim, treeOpen = () =
   function dismiss() {
     if (!cur) return;
     cur = null; gap = GAP;
-    el.classList.remove('show'); el.dataset.id = '';
+    // cancel a still-pending show (shown and dismissed within 2 frames) or the slot stays lit with no hint behind it
+    if (unanim) unanim(el, 'show'); else el.classList.remove('show');
+    el.dataset.id = '';
   }
   /** Mark an action done (dismisses that hint if visible and drops it from the queue). */
   function done(id) {
