@@ -1,6 +1,7 @@
 // The finale strike 「세계수의 새벽」 (gameplay mode, one input) and the rewritten ending (world mode, ≈ 45 s):
 // void → golden pollen, the crown blooms, a time-lapse over Mirwen / Elderwood / the root plateau, the village festival,
 // credits with all nine spirits and the new NPCs, 끝 (DESIGN §8.6).
+import { safeFlash } from './flash.js';
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/utils.js';
 import { ALL_ELEMENTS, elColor } from '../core/elements.js';
@@ -41,7 +42,7 @@ export function buildFinale(C, onDone) {
   const finishOnce = () => { if (done) return; done = true; try { onDone?.(); } catch (err) { console.error('[cinematic] finale onDone', err); } };
   const impact = () => {
     if (impacted) return; impacted = true;
-    vfx?.screenFlash?.(0xffffff, 0.95, 0.9); vfx?.shake?.(1.0); vfx?.fovKick?.(10, 0.6);
+    safeFlash(vfx, 0xffffff, 0.95, 0.9); vfx?.shake?.(1.0); vfx?.fovKick?.(10, 0.6);
     vfx?.shockwave?.(heart, { color: 0xfff4d0, radius: 30, duration: 1.2 });
     vfx?.burst?.(heart, { count: 160, color: NINE, speed: 18, spread: 1, size: 0.6, sizeEnd: 0, life: 1.6, shape: 'spark', drag: 1 });
     vfx?.burst?.(heart, { count: 80, color: [0xffd8e8, 0xfff2a8, 0x9be86a], speed: 7, spread: 1, size: 0.5, sizeEnd: 0.2, life: 2.6, shape: 'petal', gravity: -0.8, drag: 0.6 });
@@ -190,7 +191,7 @@ export function buildEnding(C, onDone) {
         const f = smoothstep(0.2, 0.5, u) * (1 - smoothstep(0.65, 1, u));
         treeFlash.material.opacity = f * 0.85;
         bloom.userData.u.uOpacity.value = smoothstep(0.3, 0.7, u);
-        if (u > 0.3 && !this._c) { this._c = true; vfx?.screenFlash?.(0xfff0c8, 0.3, 1.2); }
+        if (u > 0.3 && !this._c) { this._c = true; safeFlash(vfx, 0xfff0c8, 0.3, 1.2); }
       },
     },
     { // 2a — time-lapse: Mirwen's lake clears

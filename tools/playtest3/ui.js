@@ -227,7 +227,7 @@ module.exports = async function ui(PT) {
       PT.check('levelUp emitted', PT.countEvents('levelUp') >= 1);
       PT.check('level badge = level', document.querySelector('.aw-lv').textContent === String(P.level), [document.querySelector('.aw-lv').textContent, P.level]);
       PT.check('level-up card "레벨 업! Lv N"', game.ui._cardLog.includes(`레벨 업!|Lv ${P.level}`), game.ui._cardLog.slice(-3));
-      PT.check('+XP number spawned', [...document.querySelectorAll('.aw-num-xp')].length > 0);
+      PT.check('+XP merged into the corner counter (v4 §6.9)', document.querySelector('.aw-xpc')?.classList.contains('on') && /\+\d+ 경험치/.test(document.querySelector('.aw-xpc').textContent));
       PT.check('unspent points pip "[K] 스킬 포인트"', document.querySelector('.aw-ptpip').classList.contains('on') === (P.points > 0) && /스킬 포인트/.test(document.querySelector('.aw-ptpip span').textContent));
       PT.check('HP max from player.maxHp', document.querySelector('.aw-hp .aw-vital-num span').textContent === '/' + Math.round(game.player.maxHp), document.querySelector('.aw-hp .aw-vital-num span').textContent);
       if (game.player.regen && game.debug?.hurt) {

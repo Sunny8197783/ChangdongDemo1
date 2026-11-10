@@ -9,6 +9,7 @@ import { ALL_ELEMENTS, ELEMENT_DEFS, elName } from '../core/elements.js';
 import { CLASS_DEFS, classesForElement } from '../core/classes.js';
 import { h, esc, fmtNum } from './dom.js';
 import { elementSVG, elCss, ARCH_GLYPH, classSVG, CHAIN_SVG, SHARD_SVG, LOCK_SVG } from './icons.js';
+import { recNext } from './build.js';
 import { TYPE_KO, TIER_KO, TIER_GATE, SLOT_KO, ACCESS_KO, MASTERY_KO, REASON_KO, EQUIP_SLOTS, TREE_KO, TIPS } from './text.js';
 
 const ROWS = 5;
@@ -269,12 +270,19 @@ export function createSkillTree(game, ui, parent) {
   function refreshConst(el) {
     const rec = C[el]; if (!rec) return;
     const pr = P();
+    const recId = planner ? null : recNext(game);
     for (const id in rec.nodes) {
       const o = rec.nodes[id];
       const st = nodeState(o.n);
       const planned = planner && (plan.get(id) || 0) > 0;
-      const key = st + (planned ? ' planned' : '');
-      if (key !== o.st) { o.st = key; o.btn.className = `aw-node t-${o.n.type}${o.n.slotRole === 'cap' ? ' cap' : ''} ${key}`; o.btn.draggable = st.startsWith('learned') || st === 'maxed'; }
+      const key = st + (planned ? ' planned' : '') + (id === recId ? ' rec' : '');
+      if (key !== o.st) {
+        o.st = key; o.btn.className = `aw-node t-${o.n.type}${o.n.slotRole === 'cap' ? ' cap' : ''} ${key}`; o.btn.draggable = st.startsWith('learned') || st === 'maxed';
+        // §6.6: every locked node shows its reason inline (tooltip)
+        let why = '';
+        if (/locked|nopts|excl|tierlock|story/.test(st)) { const c = canLearn(id); why = c && !c.ok ? (REASON_KO[c.reason] || '') : ''; }
+        o.btn.title = why;
+      }
       const r = rankOf(id), max = o.n.maxRank || 1;
       const t = max > 1 || r > 0 ? `${r}/${max}` : '';
       if (t !== o.rkTxt) { o.rkTxt = t; o.rk.textContent = t; }

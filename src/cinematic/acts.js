@@ -1,5 +1,6 @@
 // Act cinematics (CONTRACT §16): one parametric spirit-freed template keyed by element, one parametric boss intro with
 // per-boss camera data, and the gameplay-mode phase transition. Everything is skippable and restores state.
+import { safeFlash } from './flash.js';
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/utils.js';
 import { elColor } from '../core/elements.js';
@@ -185,7 +186,7 @@ export function buildSpiritFreed(C, element, onDone) {
         rune.material.opacity = 0.95 * (1 - u);
         if (k >= 1 && !this._f) {
           this._f = true;
-          vfx?.screenFlash?.(col, 0.45, 0.6); vfx?.shockwave?.(hero, { color: col, radius: 8, duration: 0.8 });
+          safeFlash(vfx, col, 0.45, 0.6); vfx?.shockwave?.(hero, { color: col, radius: 8, duration: 0.8 });
           vfx?.burst?.(chest, { count: 60, color: [col, 0xffffff], speed: 8, spread: 1, size: 0.3, sizeEnd: 0, life: 1, shape: 'spark', drag: 1.5 });
           sfx('blessing', { volume: 0.7, pitch: 1.25 });
         }

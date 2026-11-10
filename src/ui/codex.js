@@ -6,12 +6,12 @@ import { ALL_ELEMENTS, elName } from '../core/elements.js';
 import { CLASS_DEFS } from '../core/classes.js';
 import { h, esc, fmtNum } from './dom.js';
 import { elementSVG, spellSVG, elCss, ARCH_GLYPH } from './icons.js';
-import { FAMILIES_FALLBACK, FAMILY_ORDER, FAMILY_BLURB, CODEX_KO, SLOT_KO, RES_KO } from './text.js';
+import { FAMILIES_FALLBACK, FAMILY_ORDER, FAMILY_BLURB, CODEX_KO, SLOT_KO, RES_KO, RX_DESC_KO } from './text.js';
 
 export function createCodex(game, ui, parent) {
   const root = parent.appendChild(h('div', 'aw-screen aw-grimoire aw-codex', `
     <div class="aw-book">
-      <div class="aw-book-tabs"><button class="on" data-cpage="rx">${CODEX_KO.rxPage}</button><button data-cpage="sk">${CODEX_KO.skillPage}</button></div>
+      <div class="aw-book-tabs"><button class="on" data-cpage="rx">${CODEX_KO.rxPage}</button><button data-cpage="sk">${CODEX_KO.skillPage}</button><button data-cpage="mon">${CODEX_KO.monPage}</button></div>
       <div class="aw-book-page aw-book-left">
         <div class="aw-book-title">${CODEX_KO.title}</div>
         <div class="aw-book-count"></div>
@@ -24,7 +24,8 @@ export function createCodex(game, ui, parent) {
         <div class="aw-book-count aw-sp-count"></div>
         <div class="aw-cx-scroll aw-spell-list"></div>
       </div>
-      <div class="aw-book-foot"><kbd>Tab</kbd> ${CODEX_KO.close}</div>
+      <div class="aw-book-page aw-book-mon"><div class="aw-book-title">${CODEX_KO.monPage}</div><div class="aw-book-count aw-mon-count"></div><div class="aw-cx-scroll aw-mon-list"></div></div>
+      <div class="aw-book-foot"><kbd class="aw-codex-key">Tab</kbd> ${CODEX_KO.close}</div>
     </div>`));
   const book = root.querySelector('.aw-book');
   const countEl = root.querySelector('.aw-book-left .aw-book-count'), famBar = root.querySelector('.aw-cx-fams');
@@ -66,7 +67,7 @@ export function createCodex(game, ui, parent) {
         const els = (r.elements || []).filter((e) => e && e !== 'physical');
         const chips = els.length ? els.map(chip).join('<b class="aw-plus">+</b>') : `<span class="aw-cx-chip neutral">${elementSVG('physical', 14)}</span>`;
         const hint = els.length ? els.map((e) => elName(e)).join(' + ') + ' ' + CODEX_KO.hintSuffix : CODEX_KO.unknown;
-        html += `<div class="aw-rx ${k2 ? 'known' : 'unknown'}" style="--fc:${fams[k].color};--g1:${elCss(els[0])};--g2:${elCss(els[1] || els[0])}">
+        html += `<div class="aw-rx ${k2 ? 'known' : 'unknown'}" title="${esc(RX_DESC_KO[k] || '')}" style="--fc:${fams[k].color};--g1:${elCss(els[0])};--g2:${elCss(els[1] || els[0])}">
           <div class="aw-cx-mini fam-${k}"><i></i><i></i><i></i></div>
           <div class="aw-rx-body"><div class="aw-rx-name">${k2 ? esc(r.name) : CODEX_KO.unknown}</div>
             <div class="aw-rx-icons">${chips}</div>
@@ -116,10 +117,14 @@ export function createCodex(game, ui, parent) {
     spList.innerHTML = html || `<div class="aw-cnone">${CODEX_KO.noSkills}</div>`;
   }
 
+  let monsters = null;
+  const monList = root.querySelector('.aw-mon-list'), monCount = root.querySelector('.aw-mon-count');
   function setPage(p) {
-    page = p === 'sk' ? 'sk' : 'rx';
+    page = p === 'sk' || p === 'mon' ? p : 'rx';
     book.dataset.page = page;
     for (const b of root.querySelectorAll('[data-cpage]')) b.classList.toggle('on', b.dataset.cpage === page);
+    if (page === 'mon' && api.isOpen) monsters?.renderPage(monList, monCount);
+    else monsters?.pageClosed?.();
   }
   root.addEventListener('click', (e) => {
     const t = e.target.closest('[data-cpage],[data-fam]'); if (!t) return;
@@ -134,8 +139,12 @@ export function createCodex(game, ui, parent) {
   const api = {
     el: root,
     isOpen: false,
-    open(p) { buildRx(); buildSkills(); setPage(p || page); api.isOpen = true; root.classList.add('show'); },
-    close() { if (!api.isOpen) return; api.isOpen = false; root.classList.remove('show'); ui.modalClosed?.('codex'); },
+    open(p) {
+      buildRx(); buildSkills(); api.isOpen = true; setPage(p || page); root.classList.add('show');
+      try { root.querySelector('.aw-codex-key').textContent = game.input?.keymap?.label?.('codex') || 'Tab'; } catch (_) { /* */ }
+    },
+    close() { if (!api.isOpen) return; api.isOpen = false; monsters?.pageClosed?.(); root.classList.remove('show'); ui.modalClosed?.('codex'); },
+    setMonsters(m) { monsters = m; },
     refresh() { if (api.isOpen) { buildRx(); buildSkills(); } },
     setPage,
     get page() { return page; },

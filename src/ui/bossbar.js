@@ -11,7 +11,7 @@ const PART_POOL = 6;
 export function createBossBar(game, ui, parent) {
   const root = parent.appendChild(h('div', 'aw-boss', `
     <div class="aw-boss-title"></div>
-    <div class="aw-boss-name"><span class="aw-boss-orn">❖</span><b></b><span class="aw-boss-orn">❖</span></div>
+    <div class="aw-boss-name"><span class="aw-boss-orn">❖</span><b></b><span class="aw-boss-orn">❖</span><span class="aw-boss-weak"></span></div>
     <div class="aw-boss-bar"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-boss-void"></div><div class="aw-bar-gloss"></div><div class="aw-boss-pips"></div></div>
     <div class="aw-boss-meta"><span class="aw-boss-phase"></span><span class="aw-boss-sub"></span><span class="aw-boss-state"></span></div>
     <div class="aw-boss-break"><i></i></div>
@@ -48,6 +48,11 @@ export function createBossBar(game, ui, parent) {
     titleEl.textContent = p?.title || b?.title || '';
     nameEl.textContent = p?.name || b?.name || BOSS_KO.fallbackName;
     subEl.textContent = p?.sub || '';
+    // larger weakness / resist icons on the boss bar (§6.5)
+    let wk = '';
+    for (const w of [].concat(b?.weakness || [])) wk += `<i class="aw-wk weak">${elementSVG(w, 20)}</i>`;
+    for (const k in (b?.resist || {})) if (b.resist[k] < 1) wk += `<i class="aw-wk res">${elementSVG(k, 20)}</i>`;
+    root.querySelector('.aw-boss-weak').innerHTML = wk;
     const ph = p?.phases || [];
     pipBox.innerHTML = ph.map((x) => `<i style="left:${(clamp(x.at ?? 0.5, 0, 1) * 100).toFixed(1)}%" title="${esc(x.name || '')}"></i>`).join('');
     phaseIdx = -1; setPhase(0, '');

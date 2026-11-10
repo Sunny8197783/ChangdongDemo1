@@ -25,8 +25,17 @@ import { createGateMenu, createConfirm } from './ui/gateMenu.js';
 import { createClassPanel } from './ui/classPanel.js';
 import { createCharacter } from './ui/character.js';
 import { createCodex } from './ui/codex.js';
+import { createFmt } from './ui/fmt.js';
+import { createHints } from './ui/hints.js';
+import { createThreatUI } from './ui/threatui.js';
+import { createMonsters } from './ui/monsters.js';
+import { createRecap } from './ui/recap.js';
+import { createGuide } from './ui/guide.js';
+import { createNewGame } from './ui/newgame.js';
+import { autoAllocate } from './ui/build.js';
 import {
-  HUD_KO, BOSS_KO, VICTORY_KO, CONTROLS, TUT, DEF_KO, TIPS, RES_KO, FAMILIES_FALLBACK, MASTERY_KO,
+  HUD_KO, BOSS_KO, VICTORY_KO, CONTROLS, DEF_KO, TIPS, RES_KO, FAMILIES_FALLBACK, MASTERY_KO,
+  CALLOUT_KO, HINTS_KO, SETTINGS_UI_KO, HUD4_KO, ONBOARD_KO, fmtKo,
 } from './ui/text.js';
 
 const STATUS_FALLBACK = ['burning', 'frozen', 'wet', 'shocked', 'chilled', 'airborne', 'stunned'];
@@ -82,9 +91,12 @@ export function createUI(game) {
     }
   }
   const restartAnim = (node, cls) => AQ.restart(node, cls);
+  /** settings.uiScale → the --ui-scale CSS variable (0.9–1.3; base sizes keep a 12 px floor at 1.0). */
+  function applyUiScale() { const v = clamp(+(game.settings?.values?.uiScale ?? 1) || 1, 0.9, 1.3); root.style.setProperty('--ui-scale', v.toFixed(2)); }
 
   // ------------------------------------------------------------------ layers
-  const hurtVig = root.appendChild(h('div', 'aw-vig aw-vig-hurt'));
+  const F = createFmt(game);
+  const fmt = F.fmt;
   const lowVig = root.appendChild(h('div', 'aw-vig aw-vig-low'));
   const worldLayer = root.appendChild(h('div', 'aw-world'));     // enemy bars + damage numbers
   const hud = root.appendChild(h('div', 'aw-hud'));
@@ -92,6 +104,10 @@ export function createUI(game) {
   const toastBox = root.appendChild(h('div', 'aw-toasts'));
   const screens = root.appendChild(h('div', 'aw-screens'));
   const fpsEl = root.appendChild(h('div', 'aw-fps'));
+  const threatUI = createThreatUI(game, { parent: root, onFirstArrow: () => hints.hint('offscreen', HINTS_KO.offscreen, { until: 'tellEnd', boss: true }) });
+  const xpCorner = root.appendChild(h('div', 'aw-xpc'));
+  const relock = root.appendChild(h('div', 'aw-relock', ''));
+  relock.textContent = ONBOARD_KO.clickToContinue;
 
   // ------------------------------------------------------------------ HUD: vitals + level / XP / regen + defense
   const barHTML = '<div class="aw-bar"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-bar-gloss"></div><div class="aw-bar-ticks"></div></div>';
@@ -126,6 +142,7 @@ export function createUI(game) {
   const ptPip = vitals.querySelector('.aw-ptpip'), ptPipTxt = ptPip.querySelector('span');
   const defDash = vitals.querySelector('.aw-def-dash'), defBlock = vitals.querySelector('.aw-def-block');
   const defDashLbl = defDash.querySelector('.aw-def-lbl'), defBlockLbl = defBlock.querySelector('.aw-def-lbl');
+  const defKbdD = defDash.querySelector('kbd'), defKbdE = defBlock.querySelector('kbd');
   const defPipBox = defDash.querySelector('.aw-def-pips'), defBlockState = defBlock.querySelector('.aw-def-state');
   const pips = [];
   for (let i = 0; i < PIP_POOL; i++) {
@@ -198,6 +215,7 @@ export function createUI(game) {
     <div class="aw-obj-prog"><div class="aw-obj-bar"><i></i></div><span></span></div>
     <div class="aw-obj-dist"></div>`));
   const objTitle = objective.querySelector('.aw-obj-title'), objText = objective.querySelector('.aw-obj-text');
+  const objHow = objText.insertAdjacentElement('afterend', h('div', 'aw-obj-how'));
   const objDist = objective.querySelector('.aw-obj-dist');
   let objDistTxt = '';
   const objProg = objective.querySelector('.aw-obj-prog'), objProgBar = objProg.querySelector('i'), objProgTxt = objProg.querySelector('span');
@@ -226,6 +244,8 @@ export function createUI(game) {
   const visMarks = [];
   const bossBar = createBossBar(game, { anim: restartAnim, project: (pt, out) => project(pt, out) }, hud);
   const hint = hud.appendChild(h('div', 'aw-hint'));
+  const hints = createHints(game, { parent: hud, fmt, canParry: F.canParry, anim: (n, c) => AQ.restart(n, c) });
+  const bossAtk = hud.appendChild(h('div', 'aw-bossatk'));
 
   // ------------------------------------------------------------------ banners, flashes & combo
   const banner = fxLayer.appendChild(h('div', 'aw-banner', '<div class="aw-banner-glow"></div><div class="aw-banner-text"></div><div class="aw-banner-sub"></div>'));
@@ -250,11 +270,30 @@ export function createUI(game) {
   const nums = [];
   for (let i = 0; i < DMG_POOL; i++) {
     const e = worldLayer.appendChild(h('div', 'aw-num'));
-    nums.push({ el: e, alive: false, pos: new THREE.Vector3(), age: 0, life: 1, ox: 0, sx: 0, oy: 0, spx: -1e4, spy: -1e4, vy: 0, scale: 1, hidden: true, lx: null, ly: 0, w: 40, hh: 24, big: false });
+    nums.push({ el: e, alive: false, pos: new THREE.Vector3(), age: 0, life: 1, ox: 0, sx: 0, oy: 0, spx: -1e4, spy: -1e4, vy: 0, scale: 1, hidden: true, lx: null, ly: 0, w: 40, hh: 24, big: false, tgt: null, sum: 0, cls: '' });
   }
   let numCursor = 0;
   const numScr = { x: 0, y: 0 };
+  const NUM_VISIBLE = 6, MERGE_SEC = 0.4;
+  function liveNumbers() { let c = 0; for (let i = 0; i < DMG_POOL; i++) if (nums[i].alive) c++; return c; }
+  function retireOldest() {
+    let o = null;
+    for (let i = 0; i < DMG_POOL; i++) { const c = nums[i]; if (c.alive && (!o || c.age / c.life > o.age / o.life)) o = c; }
+    if (o) { o.alive = false; o.hidden = true; o.el.style.opacity = '0'; o.el.style.transform = 'translate(-9999px,0)'; }
+  }
+  /** 'merged' mode: a hit on the same target within 0.4 s adds into its live number (fixed pool, no allocation). */
+  function mergeNumber(target, amt, cls) {
+    if (!target) return false;
+    for (let i = 0; i < DMG_POOL; i++) {
+      const n = nums[i];
+      if (!n.alive || n.tgt !== target || n.age > MERGE_SEC || n.cls !== cls) continue;
+      n.sum += amt; n.age = 0; n.el.textContent = cls === 'aw-num-crit' ? n.sum + '!' : String(n.sum);
+      return true;
+    }
+    return false;
+  }
   function spawnNumber(text, point, cls, color, opts = {}) {
+    if (liveNumbers() >= NUM_VISIBLE) retireOldest();
     let n = null;
     for (let i = 0; i < DMG_POOL; i++) {
       const c = nums[(numCursor + i) % DMG_POOL];
@@ -297,8 +336,11 @@ export function createUI(game) {
     n.el.className = 'aw-num ' + (cls || '');
     n.el.style.setProperty('--nc', color || '#fff');
     n.el.textContent = text;
+    n.tgt = opts.target || null; n.sum = opts.sum || 0; n.cls = cls || '';
+    return n;
   }
-  const numbersOn = () => game.settings?.values?.damageNumbers !== false;
+  const numMode = () => { const v = game.settings?.values?.damageNumbers; return v === false || v === 'off' ? 'off' : v === 'all' || v === true ? 'all' : 'merged'; };
+  const numbersOn = () => numMode() !== 'off';
 
   // ------------------------------------------------------------------ enemy bar pool (v3 statuses from combat.STATUS_DEFS)
   const SD = game.combat?.STATUS_DEFS || null;
@@ -311,17 +353,29 @@ export function createUI(game) {
   const pipHTML = STATUS_KEYS.map((k) => `<i class="aw-pip${stStacks(k) ? ' stk' : ''}${k === 'voidShield' ? ' void' : ''}" style="--pc:${stColor(k)}" title="${esc(stName(k))}"><b></b></i>`).join('');
   const bars = [];
   for (let i = 0; i < BAR_POOL; i++) {
-    const e = worldLayer.appendChild(h('div', 'aw-ebar', `<div class="aw-ebar-next"></div><div class="aw-ebar-name"><span class="aw-ebar-weak"></span><span class="aw-ebar-nm"></span></div><div class="aw-ebar-track"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-ebar-void"></div></div><div class="aw-ebar-break"><i></i></div><div class="aw-ebar-pips">${pipHTML}</div>`));
+    const e = worldLayer.appendChild(h('div', 'aw-ebar', `<div class="aw-ebar-next"></div><div class="aw-ebar-name"><span class="aw-ebar-weak"></span><span class="aw-ebar-nm"></span></div><div class="aw-ebar-track"><div class="aw-bar-lag"></div><div class="aw-bar-fill"></div><div class="aw-ebar-void"></div></div><div class="aw-ebar-break"><i></i></div><div class="aw-ebar-pips">${pipHTML}<em class="aw-pip-more"></em></div>`));
     e.style.display = 'none';
     const pp = [...e.querySelectorAll('.aw-pip')];
     bars.push({
       el: e, name: e.querySelector('.aw-ebar-nm'), weak: e.querySelector('.aw-ebar-weak'), fill: e.querySelector('.aw-bar-fill'), lag: e.querySelector('.aw-bar-lag'),
       voidEl: e.querySelector('.aw-ebar-void'), brk: e.querySelector('.aw-ebar-break'), brkFill: e.querySelector('.aw-ebar-break i'), next: e.querySelector('.aw-ebar-next'),
-      pips: pp, digits: pp.map((p) => p.firstChild), stk: new Array(pp.length).fill(-1),
+      pips: pp, digits: pp.map((p) => p.firstChild), stk: new Array(pp.length).fill(-1), more: e.querySelector('.aw-pip-more'), moreN: 0, weakOn: false, fq: -1, lq: -1, op: '',
       ent: null, shown: false, lagV: 1, pipState: 0, brkV: -1, voidV: -1, hasBrk: null, broken: null, nextTxt: '', rxPip: -1,
     });
   }
   const lastHit = new WeakMap(); // entity -> realTime of last damage
+  /** weak (e.weakness), resist (e.resist mul < 1) and immune icons for enemy / boss bars. */
+  function weakIcons(e, size) {
+    let s = '';
+    const wk = e.weakness ? [].concat(e.weakness) : [];
+    for (let i = 0; i < wk.length && i < 3; i++) s += `<i class="aw-wk weak">${elementSVG(wk[i], size)}</i>`;
+    const rs = e.resist || {};
+    let n = 0;
+    for (const k in rs) if (rs[k] < 1 && n < 2) { n++; s += `<i class="aw-wk res">${elementSVG(k, size)}</i>`; }
+    const im = e.immune || [];
+    for (let i = 0; i < im.length && i < 2; i++) s += `<i class="aw-wk imm">${elementSVG(im[i], size)}</i>`;
+    return s;
+  }
   const barLag = new WeakMap();
   // "다음 타격" preview (10 Hz): the locked target + attuned element → combat.previewReaction
   const nextHit = { target: null, id: '', name: '', color: '', pip: -1 };
@@ -352,18 +406,22 @@ export function createUI(game) {
   // anchored just above the real vitals panel (3-bar resolve classes, the XP row and the large-screen scale make it
   // taller than the fixed CSS offset assumed), re-measured when a toast appears and twice a second
   let toastPlaceT = 0;
+  let toastPlaced = false;
+  addEventListener('resize', () => { toastPlaced = false; });
   function placeToasts() {
+    if (toastPlaced) return;
     try {
       const rr = root.getBoundingClientRect(), vr = vitals.getBoundingClientRect();
       if (!(vr.height > 0) || !(rr.height > 0)) return;
       toastBox.style.bottom = Math.round(rr.bottom - vr.top + 14) + 'px';
       toastBox.style.left = Math.max(12, Math.round(vr.left - rr.left - 4)) + 'px';
+      toastPlaced = true;
     } catch (_) { /* */ }
   }
   function toast(text, opts = {}) {
     const dur = opts.duration ?? 4.5;
     const t = h('div', 'aw-toast ' + (opts.kind ? 'aw-toast-' + opts.kind : ''), `<span class="aw-toast-orn"></span><span class="aw-toast-text"></span>`);
-    t.querySelector('.aw-toast-text').innerHTML = formatKeys(text);
+    t.querySelector('.aw-toast-text').innerHTML = formatKeys(fmt(text));
     toastBox.appendChild(t);
     if (opts.kind === 'discover') {   // at most 2 reaction-discovery toasts at once
       const ds = toastBox.querySelectorAll('.aw-toast-discover');
@@ -375,11 +433,16 @@ export function createUI(game) {
     setTimeout(() => t.remove(), dur * 1000 + 600);
     return t;
   }
-  const tutQ = []; let tutGap = 0;
-  const tutSeen = new Set();
-  function queueTut(text, delay = 0) {
-    if (tutSeen.has(text)) return;
-    tutSeen.add(text); tutQ.push({ text, delay });
+  /** v3 queueTutorial callers → one-slot hints (no timed toast queue, §6.2). */
+  function queueTut(text) { if (text) hints.hint('tut:' + text.slice(0, 24), text, { dur: 8, maxShows: 1 }); }
+  // ---- §6.9 centre banners / cards queued while any enemy is aggroed (shown 3 s after combat; boss banners excepted)
+  const deferQ = [];
+  let calmT = 9;
+  const aggroed = () => (game.enemies?.aggroCount?.() || 0) > 0;
+  function deferBanner(fn) { if (aggroed() || calmT < 3) { if (deferQ.length < 8) deferQ.push(fn); return false; } fn(); return true; }
+  function updateDefer(dt) {
+    calmT = aggroed() ? 0 : calmT + dt;
+    if (deferQ.length && calmT >= 3 && cardT <= 0.35 && game.state === 'playing' && !game.cinematic?.active) { const f = deferQ.shift(); try { f(); } catch (err) { console.warn('[ui] deferred', err); } }
   }
 
   let hintT = 0, hintCd = 0;
@@ -441,6 +504,7 @@ export function createUI(game) {
   const reactions = () => game.combat?.REACTIONS || [];
   const rxById = (id) => reactions().find((r) => r.id === id);
   const seenReactions = new Set();
+  let rxNum = null;
   function onReaction(p, isCombo) {
     if (p.isPlayer || p.target?.team === 'player') return;
     const def = rxById(p.id);
@@ -452,11 +516,17 @@ export function createUI(game) {
     if (p.id === lastBannerId && now - lastBannerTime < 2.0) return;
     lastBannerId = p.id; lastBannerTime = now;
     const famName = game.combat?.FAMILIES?.[fm]?.nameKo || FAMILIES_FALLBACK[fm]?.nameKo;
-    showBanner(name + '!', isCombo ? '원소 융합' : famName ? `원소 반응 · ${famName}` : '원소 반응', els, famColor);
+    if (aggroed()) {
+      // one reaction name at a time, small, at the hit point, ≤ 0.6 s (§6.9)
+      const pt = p.point || p.target?.object?.position;
+      if (pt && numbersOn()) { if (rxNum && rxNum.alive) rxNum.age = rxNum.life; rxNum = spawnNumber(name, v2.copy(pt).setY(pt.y + 1.2), 'aw-num-rxname', famColor || '#ffd65a', { life: 0.6, scale: 0.8, vy: 0.6, spread: 0 }); }
+    } else showBanner(name + '!', isCombo ? '원소 융합' : famName ? `원소 반응 · ${famName}` : '원소 반응', els, famColor);
     if (p.id && !seenReactions.has(p.id)) {
       seenReactions.add(p.id);
-      const t = toast(`새로운 원소 반응 발견! — ${name}`, { duration: 4.2, kind: 'discover' });
-      if (els) t.querySelector('.aw-toast-orn').innerHTML = els.filter((e) => e !== 'physical').map((e) => elementSVG(e, 16)).join('');
+      deferBanner(() => {
+        const t = toast(`새로운 원소 반응 발견! — ${name}`, { duration: 4.2, kind: 'discover' });
+        if (els) t.querySelector('.aw-toast-orn').innerHTML = els.filter((e) => e !== 'physical').map((e) => elementSVG(e, 16)).join('');
+      });
     }
   }
 
@@ -542,23 +612,15 @@ export function createUI(game) {
         <button class="aw-btn aw-btn-primary" data-act="resume">계속하기</button>
         <button class="aw-btn" data-act="tree">스킬 트리 <kbd>K</kbd></button>
         <button class="aw-btn" data-act="character">캐릭터 <kbd>C</kbd></button>
-        <button class="aw-btn" data-act="grimoire">원소 도감 <kbd>Tab</kbd></button>
+        <button class="aw-btn" data-act="guide">가이드</button>
+        <button class="aw-btn" data-act="grimoire">도감 <kbd>Tab</kbd></button>
         <button class="aw-btn" data-act="settings">설정</button>
         <button class="aw-btn" data-act="controls">조작법</button>
         <button class="aw-btn aw-btn-danger" data-act="restart">처음부터 다시</button>
       </div>
     </div>`));
 
-  const settingsMenu = createSettingsMenu(game, screens, { onClose: () => syncModalLock() });
-
-  const death = screens.appendChild(h('div', 'aw-screen aw-death', `
-    <div class="aw-death-inner">
-      <div class="aw-death-title">쓰러졌다...</div>
-      <div class="aw-death-sub">원소의 빛이 당신을 다시 일으켜 세웁니다</div>
-      <div class="aw-death-count"></div>
-      <div class="aw-menu aw-menu-row"><button class="aw-btn" data-act="respawn">다시 일어서기 <kbd>Space</kbd></button></div>
-    </div>`));
-  const deathCount = death.querySelector('.aw-death-count');
+  const settingsMenu = createSettingsMenu(game, screens, { onClose: () => syncModalLock(), confirm: (t, y, n) => openConfirm(t, y, n), toast });
 
   const victory = screens.appendChild(h('div', 'aw-screen aw-victory', `
     <div class="aw-victory-rays"></div>
@@ -574,7 +636,7 @@ export function createUI(game) {
 
   // ------------------------------------------------------------------ v3 menus (modules)
   const sub = {
-    anim: restartAnim, toast,
+    anim: restartAnim, toast, fmt: (t, c) => fmt(t, c),
     tip: (id, text, o) => tour.tip(id, text, o),
     confirm: (text, onYes, onNo) => openConfirm(text, onYes, onNo),
     openSkillTree: (el) => api.openSkillTree(el),
@@ -592,6 +654,23 @@ export function createUI(game) {
   const gateMenu = createGateMenu(game, sub, screens);
   const confirmBox = createConfirm(game, sub, screens);
   const prompt = createPrompt(game, sub, hud);
+  // ------------------------------------------------------------------ v4 friendliness modules (§6)
+  const monsters = createMonsters(game, { hud, fx: fxLayer, fmt, canParry: F.canParry, punishSec: F.punishSec, anim: restartAnim,
+    onCardShown: () => hints.hint('codex', HINTS_KO.codex, { until: 'codexOpened', dur: 10 }) });
+  codex.setMonsters?.(monsters);
+  const guide = createGuide(game, { screens, fmt, canParry: F.canParry, objective: () => currentObjective(), openCodex: () => api.openCodex('mon'), onClose: () => onModalClosed('guide') });
+  const recap = createRecap(game, { screens, hud, fmt, canParry: F.canParry, entryOf: (t) => monsters.entryOf(t), confirm: (t, y, n) => openConfirm(t, y, n), anim: restartAnim,
+    actions: {
+      respawn: () => doRespawn(),
+      assist: () => { settingsMenu.open('assist'); syncModalLock(); },
+      codex: () => { codex.open('mon'); syncModalLock(); },
+      legend: () => { guide.open('legend'); syncModalLock(); },
+    } });
+  const newGame = createNewGame(game, { screens, fmt, onStart: (o) => startGame({ clearSave: true, ...o }), onClose: () => syncModalLock() });
+  function currentObjective() {
+    let o = null; try { o = game.story?.getObjective?.() || null; } catch (_) { o = null; }
+    return o ? { title: o.title || o.desc || '', how: o.how || o.howKo || '' } : null;
+  }
 
   // ------------------------------------------------------------------ modal registry: lock, pause, Escape cascade
   // order = Escape priority (topmost first)
@@ -599,6 +678,8 @@ export function createUI(game) {
     { id: 'confirm', isOpen: () => confirmBox.isOpen, close: () => confirmBox.close() },
     { id: 'tour', isOpen: () => tour.isOpen, close: () => tour.close() },
     { id: 'settings', isOpen: () => settingsMenu.isOpen, close: () => settingsMenu.close() },
+    { id: 'newgame', isOpen: () => newGame.isOpen, close: () => newGame.close() },
+    { id: 'guide', isOpen: () => guide.isOpen, close: () => guide.close(), pauses: true, menu: true },
     { id: 'controls', isOpen: () => controls.classList.contains('show'), close: () => closeControls() },
     { id: 'gate', isOpen: () => gateMenu.isOpen, close: () => gateMenu.close(), pauses: true },
     { id: 'class', isOpen: () => classPanel.isOpen, close: () => classPanel.close(), pauses: true, keep: true },
@@ -648,7 +729,8 @@ export function createUI(game) {
     if (!b) return;
     game.audio?.play?.('ui_click');
     const act = b.dataset.act;
-    if (act === 'start') startGame({ clearSave: true });
+    if (act === 'start') { newGame.open(); syncModalLock(); }
+    else if (act === 'guide') { guide.open(); syncModalLock(); }
     else if (act === 'continue') continueGame();
     else if (act === 'controls') openControls();
     else if (act === 'closeControls') closeControls();
@@ -666,9 +748,14 @@ export function createUI(game) {
     if (b && b !== screens._hov) { screens._hov = b; game.audio?.play?.('ui_select', { volume: 0.4 }); }
   });
 
-  function startGame(opts) {
+  function startGame(opts = {}) {
     if (game.state !== 'title') return;
-    closeControls(); settingsMenu.close();
+    closeControls(); settingsMenu.close(); newGame.close();
+    try {
+      if (opts.difficulty) game.settings?.set?.('difficulty', opts.difficulty);
+      if (opts.introShort != null) game.settings?.set?.('introShort', !!opts.introShort);
+      if (opts.difficulty === 'story') game.settings?.set?.('autoAllocate', true);
+    } catch (_) { /* */ }
     title.classList.add('leaving');
     try { if (game.newGame) game.newGame(opts); else game.start(); } catch (err) { console.error('[ui] newGame', err); }
   }
@@ -701,15 +788,12 @@ export function createUI(game) {
       if (s !== 'dialogue' && s !== 'cutscene' && confirmBox.isOpen) confirmBox.close();
     }
     syncModalLock();
-    if (s === 'dead') { death.classList.add('show', 'final'); deadT = 2.0; }
-    if (s === 'playing') { death.classList.remove('show', 'final'); victory.classList.remove('show'); }
+    if (s === 'dead') recap.show();
+    if (s === 'playing') { recap.hide(); victory.classList.remove('show'); relock.classList.remove('on'); }
     if (s === 'victory') showVictory();
-    if (s === 'playing' && !tutStarted) {
-      tutStarted = true;
-      if (!prog()?.chosen) TUT.start.forEach((t, i) => queueTut(t, i ? 6 : 1.5));
-    }
+    // the 가이드 opens automatically at the first pause of a save (§6.4)
+    if (s === 'paused' && !hints.flag('guideAuto') && !anyModalOpen() && (!game.isTest || /[?&]guideAuto=1/.test(location.search))) { hints.flag('guideAuto', 1); later(0.05, () => { if (game.state === 'paused' && !anyModalOpen()) { guide.open('legend'); syncModalLock(); } }); }
   }
-  let deadT = 0;
   let victoryStats = null, finalName = '';
   function showVictory() {
     const st = victoryStats || {};
@@ -760,12 +844,14 @@ export function createUI(game) {
     if (!o) { objective.classList.add('off'); return; }
     objective.classList.remove('off');
     const pr = o.progress && o.progress.max > 0 ? o.progress : null;
-    const key = (o.title || '') + '|' + (o.desc || '') + '|' + (pr ? pr.cur + '/' + pr.max : '');
+    const key = (o.title || '') + '|' + (o.desc || '') + '|' + (pr ? pr.cur + '/' + pr.max : '') + '|' + (o.how || '');
     if (key !== objKey) {
       const changed = objKey !== '' && objKey.split('|')[1] !== (o.desc || '');
       objKey = key;
       objTitle.textContent = o.title || '목표';
-      objText.textContent = o.desc || '';
+      objText.textContent = fmt(o.desc || '');
+      const hw = o.how ? fmt(o.how) : '';
+      objHow.textContent = hw; objHow.style.display = hw ? '' : 'none';
       objProg.style.display = pr ? '' : 'none';
       if (pr) { objProgBar.style.transform = `scaleX(${clamp(pr.cur / pr.max, 0, 1).toFixed(3)})`; objProgTxt.textContent = `${pr.cur} / ${pr.max}`; }
       if (changed) restartAnim(objective, 'flash');
@@ -826,31 +912,36 @@ export function createUI(game) {
     if (p.killed) { killV.copy(point); killPos = killV; }
     if (numbersOn()) {
       const color = ELEMENT_CSS[p.element] || '#ffffff';
-      if (p.reaction) {
+      const merged = numMode() === 'merged';
+      const isDot = !!(p.dot || p.isDot);
+      if (merged && !p.reaction && mergeNumber(p.target, amt, p.crit ? 'aw-num-crit' : isDot ? 'aw-num-dot' : amt >= 80 ? 'aw-num-big' : '')) { /* merged */ }
+      else if (p.reaction) {
         const rn = rxById(p.reaction)?.name || '';
         spawnNumber(`${amt}${rn ? ' ' + rn : ''}`, point, 'aw-num-rx', '#ffd65a', { life: 1.4, scale: 1.25, vy: 1.6 });
       } else if (p.crit) {
-        spawnNumber(amt + '!', point, 'aw-num-crit', color, { life: 1.2, scale: 1.45, vy: 1.5 });
-      } else if (p.dot || p.isDot) {
-        spawnNumber(String(amt), point, 'aw-num-dot', color, { life: 0.8, scale: 0.75, vy: 1.0, spread: 60 });
+        spawnNumber(amt + '!', point, 'aw-num-crit', color, { life: 1.2, scale: 1.45, vy: 1.5, target: p.target, sum: amt });
+      } else if (isDot) {
+        spawnNumber(String(amt), point, 'aw-num-dot', '#b8bcc8', { life: 0.8, scale: 0.7, vy: 1.0, spread: 60, target: p.target, sum: amt });
       } else {
-        spawnNumber(String(amt), point, amt >= 80 ? 'aw-num-big' : '', color, { life: 0.9 + Math.min(0.6, amt / 150), scale: 0.85 + Math.min(1.1, amt / 90) });
+        spawnNumber(String(amt), point, amt >= 80 ? 'aw-num-big' : '', color, { life: 0.9 + Math.min(0.6, amt / 150), scale: 0.85 + Math.min(1.1, amt / 90), target: p.target, sum: amt });
       }
     }
     if (!p.dot && !p.isDot) { bumpCombo(); hitMarker(p.killed); }
   });
   ev.on('kill', (p) => { const pt = p?.target?.object?.position || p?.point; if (pt) { killV.copy(pt); killPos = killV; } });
+  let xpSum = 0, xpT = 0;
   ev.on('xpGained', (p) => {
     const n = Math.round(p?.amount || 0); if (n <= 0) return;
-    const pp = game.player?.object?.position;
-    const at = p?.source?.kind === 'kill' && killPos ? v2.copy(killPos).setY(killPos.y + 1.8) : pp ? v2.copy(pp).setY(pp.y + 2.4) : null;
-    if (at) spawnNumber(HUD_KO.xp(n), at, 'aw-num-xp', '#ffe38a', { life: 1.5, scale: 0.9, vy: 1.1, spread: 20 });
+    xpSum = (xpT > 0 ? xpSum : 0) + n; xpT = 2.2;
+    xpCorner.textContent = HUD4_KO.xpTotal(xpSum); xpCorner.classList.add('on');
     killPos = null;
     xpDirty = true;
   });
   ev.on('levelUp', (p) => {
     const L = p?.level ?? prog()?.level ?? 1;
-    showCard(HUD_KO.levelUpPre, HUD_KO.levelUpTitle(L), HUD_KO.levelUpSub(p?.pointsGained ?? 1), 'aw-card-level', 3.0);
+    // 자동 배분 (§6.6): settings.autoAllocate (on by default for 이야기)
+    if (game.settings?.values?.autoAllocate || game.settings?.values?.difficulty === 'story') later(0.2, () => { try { autoAllocate(game, toast); } catch (err) { console.warn('[ui] autoAllocate', err); } });
+    deferBanner(() => showCard(HUD_KO.levelUpPre, HUD_KO.levelUpTitle(L), HUD_KO.levelUpSub(p?.pointsGained ?? 1), 'aw-card-level', 3.0));
     game.audio?.play?.('level_up');
     edge('awaken');
     const pp = game.player?.object?.position;
@@ -863,25 +954,26 @@ export function createUI(game) {
   for (const n of ['pointsChanged', 'skillLearned', 'skillUnlearned', 'respec', 'classChosen']) ev.on(n, () => { xpDirty = true; });
   ev.on('reaction', (p) => onReaction(p || {}, false));
   ev.on('zoneCombo', (p) => onReaction(p || {}, true));
-  ev.on('playerHurt', (p) => { hurtA = Math.min(1, hurtA + 0.45 + Math.min(0.4, (p?.amount || 0) / 40)); });
-  ev.on('playerDeath', () => {
-    death.classList.remove('final');
-    restartAnim(death, 'show');
-    comboCount = 0; combo.classList.remove('on');
-  });
-  ev.on('playerRespawn', () => { death.classList.remove('show', 'final'); hurtA = 0; });
+  ev.on('playerDeath', () => { comboCount = 0; combo.classList.remove('on'); });
+  ev.on('playerRespawn', () => { recap.hide(); });
   const FAIL = { mana: ['마력이 부족합니다', vMp], resource: [null, vMp], gauge: ['각성 게이지가 부족합니다', null], stamina: ['스태미나가 부족합니다', vSt] };
+  const failAt = {};
   function onFail(p) {
     const f = FAIL[p?.reason]; if (!f) return;
     const txt = f[0] || (fam() === 'melee' ? '투지가 부족합니다' : '마력이 부족합니다');
-    showHint(txt); if (f[1]) restartAnim(f[1].el, 'shake');
+    if (f[1]) restartAnim(f[1].el, 'shake');
+    // the text at most once per 10 s; the bar pulse every time (§6.9)
+    const now = game.realTime || 0;
+    if (now - (failAt[p.reason] ?? -99) < 10) return;
+    failAt[p.reason] = now;
+    showHint(txt);
   }
   ev.on('spellFail', onFail);
   ev.on('skillFail', onFail);
   ev.on('campCleared', (p) => {
     const total = p?.total ?? 3, idx = (p?.index ?? 0) + 1;
     const cleared = game.enemies?.getObjective?.()?.campsCleared ?? idx;
-    showCard('마물 거점', '거점 소탕!', `${cleared} / ${total}`, 'aw-card-camp', 3.0);
+    deferBanner(() => showCard('마물 거점', '거점 소탕!', `${cleared} / ${total}`, 'aw-card-camp', 3.0));
   });
   ev.on('bossSpawn', (p) => {
     const nm = p?.name || p?.boss?.name || BOSS_KO.fallbackName;
@@ -901,6 +993,15 @@ export function createUI(game) {
   });
   ev.on('lockStripped', (p) => showHint(HUD_KO.lockStripped + (p?.lock?.element || p?.lock ? ` — ${elName(p.lock?.element || p.lock)}` : '')));
   ev.on('break', (p) => { if (p?.target?.team !== 'player') { showFlash(HUD_KO.broken, HUD_KO.breakSub, 'break', 1.0, 2); } });
+  ev.on('bossBroken', () => { showFlash(CALLOUT_KO.broken, CALLOUT_KO.brokenSub, 'break', 1.4, 3); edge('awaken'); try { game.audio?.play?.('break_boss'); } catch (_) { /* */ } });
+  // boss attack name under the boss bar for tells ≥ 1 s (§5.5 UI channel)
+  let bossAtkFor = null;
+  ev.on('tellStart', (p) => {
+    const e = p?.enemy;
+    if (!e || !(e.isBoss || e === game.enemies?.boss) || !p.nameKo || !((+p.windup || 0) >= 1)) return;
+    bossAtkFor = e; bossAtk.textContent = p.nameKo; bossAtk.dataset.tell = p.tell || 'danger'; restartAnim(bossAtk, 'show');
+  });
+  ev.on('tellEnd', (p) => { if (p?.enemy && p.enemy === bossAtkFor) { bossAtkFor = null; bossAtk.classList.remove('show'); } });
   ev.on('resonance', () => { showFlash(HUD_KO.resonance, HUD_KO.resonanceSub, 'awaken', 1.3, 3); edge('awaken'); });
   // the hotbar's gift gem is the persistent prompt; the toast only introduces the key once (no duplicate prompt)
   let giftToasted = false;
@@ -923,28 +1024,19 @@ export function createUI(game) {
       let cur = null; try { cur = game.story?.getObjective?.()?.title; } catch (_) { /* */ }
       if (cur == null || cur === p.title) showCard('새로운 임무', p.title, '', 'aw-card-quest', 3.4);
     });
-    if (p.id === 'updraft') queueTut(TUT.updraft, 4);
-    if (p.id === 'training') queueTut(TUT.training, 3);
   });
   ev.on('questComplete', (p) => { if (p?.title) showCard('임무 완료', p.title, '', 'aw-card-done', 3.0); });
-  function classTutorial(cls) {
-    skillSig = '';
-    const f = familyOf(cls);
-    (TUT[f] || TUT.caster).forEach((t, i) => queueTut(t, i === 0 ? 2.5 : 1));
-    TUT.all.forEach((t) => queueTut(t, 1));
-    if (!game.isTest) later(9, () => tour.tip('firstPoint', TIPS.firstPoint));
-  }
-  ev.on('classChosen', (p) => classTutorial(p?.cls));
-  ev.on('skillLearned', () => { try { if (prog()?.awakeningEnabled?.()) TUT.awaken.forEach((t) => queueTut(t, 1)); } catch (_) { /* */ } });
+  ev.on('classChosen', () => { skillSig = ''; defSig = ''; });
   // defense & feel (no class literals: family / player kit names)
   ev.on('parry', (p) => {
     const f = p?.cls ? familyOf(p.cls) : fam();
-    const [a, b] = DEF_KO.parry[f] || DEF_KO.parry.caster;
+    const [a, b] = p?.kit === 'barrier' ? [CALLOUT_KO.barrier, ''] : (DEF_KO.parry[f] || DEF_KO.parry.caster);
     showFlash(a, b, 'parry', 0.95, 3);
     edge('parry');
     restartAnim(defBlock, 'pulse');
   });
-  ev.on('perfectDodge', () => { showFlash('완벽 회피!', '반격의 기회', 'dodge', 1.1, 3); edge('dodge'); });
+  ev.on('perfectDodge', () => { showFlash(CALLOUT_KO.dodge, CALLOUT_KO.dodgeSub, 'dodge', 1.1, 3); edge('dodge'); });
+  ev.on('dodgeRejected', () => { try { game.audio?.play?.('dodge_rejected', { volume: 0.7 }); } catch (_) { /* */ } restartAnim(defDash, 'shake'); });
   ev.on('blocked', (p) => {
     if (p?.target?.team !== 'player' || p.parried || p.perfect || p.dodged) return;
     showHint(DEF_KO.block[fam()] || DEF_KO.block.caster, 'block');
@@ -955,10 +1047,10 @@ export function createUI(game) {
   ev.on('updraftEnter', () => {
     if (game.realTime - updraftHintAt < 5) return;
     updraftHintAt = game.realTime;
-    showFlash('상승 기류!', 'Space를 꾹 눌러 활공', 'updraft', 1.2, 1);
+    showFlash('상승 기류!', fmt('{jumpKey}를 꾹 눌러 활공'), 'updraft', 1.2, 1);
   });
   ev.on('awakeningReady', () => {
-    showCard('각성', '원소의 힘이 깨어났다', 'R 필살기 발동 가능', 'aw-card-awaken', 2.6);
+    deferBanner(() => showCard('각성', '원소의 힘이 깨어났다', 'R 필살기 발동 가능', 'aw-card-awaken', 2.6));
     edge('awaken');
     game.audio?.play?.('awakening_ready');
   });
@@ -977,6 +1069,7 @@ export function createUI(game) {
   });
   const appEl = document.getElementById('app');
   appEl?.addEventListener('mousedown', (e) => {
+    relock.classList.remove('on');
     if (game.state === 'playing' && !game.input.locked && !game.isTest && !anyModalOpen()) {
       game.input.requestLock();
       e.stopPropagation();
@@ -984,7 +1077,7 @@ export function createUI(game) {
   });
   ev.on('stateChange', (p) => {
     if (game.isTest || p?.state !== 'playing' || (p.prev !== 'dialogue' && p.prev !== 'cutscene')) return;
-    setTimeout(() => { if (game.state === 'playing' && !game.input.locked && !game.cinematic?.active && !anyModalOpen()) game.pause(); }, 450);
+    setTimeout(() => { if (game.state === 'playing' && !game.input.locked && !game.cinematic?.active && !anyModalOpen()) relock.classList.add('on'); }, 450);
   });
 
   // ------------------------------------------------------------------ title camera (cinematic drift)
@@ -1106,9 +1199,12 @@ export function createUI(game) {
     if (show !== defShown) { defShown = show; vitals.classList.toggle('def-on', show); }
     if (!show) return;
     const f = fam();
-    const sig = (d.dodgeName || '') + '|' + (d.defendName || '') + '|' + f;
+    const km = game.input?.keymap;
+    const kd = km?.label?.('dodge') || 'Q', ke = km?.label?.('defend') || 'E';
+    const sig = (d.dodgeName || '') + '|' + (d.defendName || '') + '|' + f + '|' + kd + '|' + ke;
     if (sig !== defSig) {
       defSig = sig;
+      defKbdD.textContent = kd; defKbdE.textContent = ke;
       defDashLbl.textContent = d.dodgeName || DEF_KO.dodge[f] || '회피';
       defBlockLbl.textContent = d.defendName || DEF_KO.defend[f] || '방어';
     }
@@ -1385,15 +1481,17 @@ export function createUI(game) {
           b.lagV = barLag.get(e) ?? clamp(e.hp / e.maxHp, 0, 1);
           b.el.classList.toggle('dummy', !!e.isDummy);
           b.el.classList.toggle('elite', !!(e.isElite || e.breakMax));
-          const wk = e.weakness ? [].concat(e.weakness) : null;
-          b.weak.innerHTML = wk ? wk.slice(0, 3).map((w) => elementSVG(w, 12)).join('') : '';
+          b.weak.innerHTML = ''; b.weakOn = false;
           b.brkV = b.voidV = -1; b.hasBrk = null; b.broken = null; b.pipState = -1;
         }
+        // weakness / resist icons after the first hit (§6.5)
+        if (!b.weakOn && lh !== undefined) { b.weakOn = true; b.weak.innerHTML = weakIcons(e, 12); }
         const f = clamp(e.hp / e.maxHp, 0, 1);
         if (b.lagV > f) b.lagV = Math.max(f, b.lagV - dt * 0.7); else b.lagV = f;
         barLag.set(e, b.lagV);
-        b.fill.style.transform = `scaleX(${f.toFixed(3)})`;
-        b.lag.style.transform = `scaleX(${b.lagV.toFixed(3)})`;
+        const fq = Math.round(f * 400), lq = Math.round(b.lagV * 400);
+        if (fq !== b.fq) { b.fq = fq; b.fill.style.transform = `scaleX(${(fq / 400).toFixed(4)})`; }
+        if (lq !== b.lq) { b.lq = lq; b.lag.style.transform = `scaleX(${(lq / 400).toFixed(4)})`; }
         if (full || b.pipState < 0) {
           let mask = 0;
           const st = e.statuses;
@@ -1401,7 +1499,15 @@ export function createUI(game) {
           if ((e.voidShield || 0) > 0) mask |= 1 << VOID_BIT;
           if (mask !== b.pipState) {
             b.pipState = mask;
-            for (let k = 0; k < STATUS_KEYS.length; k++) b.pips[k].classList.toggle('on', !!(mask & (1 << k)));
+            // top 4 pips + "+N" (§6.9)
+            let shownN = 0, extra = 0;
+            for (let k = 0; k < STATUS_KEYS.length; k++) {
+              const on = !!(mask & (1 << k));
+              const vis = on && shownN < 4;
+              if (on) { if (vis) shownN++; else extra++; }
+              b.pips[k].classList.toggle('on', vis);
+            }
+            if (extra !== b.moreN) { b.moreN = extra; b.more.textContent = extra ? HUD4_KO.more(extra) : ''; }
           }
           // stack digits (seeded, radiant, corroded, chilled, marked …)
           if (st) for (let k = 0; k < VOID_BIT; k++) {
@@ -1430,7 +1536,8 @@ export function createUI(game) {
         const dist = Math.sqrt(d2);
         const sc = clamp(1.25 - dist / 45, 0.62, 1.1);
         const fade = recent ? 1 : 0.85;
-        b.el.style.opacity = (fade * clamp((35 - dist) / 5, 0, 1)).toFixed(2);
+        const op = (fade * clamp((35 - dist) / 5, 0, 1)).toFixed(2);
+        if (op !== b.op) { b.op = op; b.el.style.opacity = op; }
         b.px = scr.x; b.py = scr.y; b.sc = sc; b.dist = dist;
         b.focus = e === nextHit.target || (lh !== undefined && now - lh < 1.5);
         if (!b.shown) { b.shown = true; b.el.style.display = ''; }
@@ -1450,29 +1557,13 @@ export function createUI(game) {
     return false;
   }
   function updateTutorial(dt) {
-    if (tutGap > 0) tutGap -= dt;
-    if (tutQ.length && tutGap <= 0) {
-      const t = tutQ[0];
-      t.delay -= dt;
-      if (t.delay <= 0) { tutQ.shift(); toast(t.text, { duration: 5.6, kind: 'tut' }); tutGap = 5.2; }
-    }
     if (!prog()?.chosen) return;
     dummyT -= dt;
     if (dummyT > 0) return;
     dummyT = 0.5;
-    const pp = game.player?.object?.position;
-    if (!dummyHintDone && pp) {
-      for (const e of game.entities) {
-        if (e.isDummy && e.alive && e.object && e.object.position.distanceToSquared(pp) < 13 * 13) {
-          dummyHintDone = true;
-          queueTut(TUT.dummy[fam()] || TUT.dummy.caster, 0);
-          break;
-        }
-      }
-    }
-    // unspent points near an altar or gate (DESIGN §5.6 contextual tip)
+    // unspent points: the action-gated hint (§6.2) — 'unspent' also fires on levelUp
     unspentT -= 0.5;
-    if (unspentT <= 0) { unspentT = 2; if ((prog()?.points || 0) > 0 && !tour.hasSeen('unspent') && nearRespec(30)) tour.tip('unspent', TIPS.unspent); }
+    if (unspentT <= 0) { unspentT = 2; if ((prog()?.points || 0) > 0 && !game.ui?.skillTreeOpen && nearRespec(30)) hints.hint('unspent', HINTS_KO.unspent, { until: 'skillLearned' }); }
   }
 
   // ------------------------------------------------------------------ api
@@ -1480,8 +1571,35 @@ export function createUI(game) {
     toast,
     showBanner, showCard,
     flash: (text, sub, kind, dur) => showFlash(text, sub, kind, dur, 2),
-    hint: (text) => showHint(text),
-    queueTutorial: (text, delay) => queueTut(text, delay),
+    /** v4 §6.2: hint(id, textKo, opts) → the one-slot action-gated hint; v3 hint(text) → the short centre hint line. */
+    hint(id, textKo, opts) { if (textKo === undefined && opts === undefined) { showHint(id); return true; } return hints.hint(id, textKo, opts); },
+    queueTutorial: (text) => queueTut(text),
+    fmtKo: (text, ctx) => fmt(text, ctx),
+    canParry: () => F.canParry(),
+    encounterStrip: (type) => monsters.encounterStrip(type),
+    encounterCard: (type) => monsters.encounterCard(type),
+    bossBrief: (p) => monsters.bossBrief(p),
+    deferBanner: (fn) => deferBanner(fn),
+    openGuide(sec) { guide.open(sec); syncModalLock(); return true; },
+    closeGuide() { guide.close(); },
+    get guideOpen() { return guide.isOpen; },
+    /** core gpu.js offers (§2.2): the high-quality offer and the drop-back offer, as a toast with two buttons. */
+    qualityOffer(o) {
+      const t = toast(o.textKo, { duration: 14, kind: 'offer' });
+      const box = t.appendChild(h('span', 'aw-toast-btns', `<button class="aw-btn aw-btn-small" data-o="y">${esc(o.yesKo)}</button><button class="aw-btn aw-btn-small" data-o="n">${esc(o.noKo)}</button>`));
+      box.addEventListener('click', (e) => { const b = e.target.closest('[data-o]'); if (!b) return; t.remove(); try { (b.dataset.o === 'y' ? o.accept : o.decline)(); } catch (_) { /* */ } });
+      return true;
+    },
+    runBenchmark: (sec) => settingsMenu.runBenchmark(sec),
+    debug: {
+      arrows: () => threatUI.debugArrows(),
+      hintVisible: () => hints.visible(),
+      recap: () => recap.recap(),
+      damageNumbers: () => liveNumbers(),
+      bannersQueued: () => deferQ.length,
+      legendThumbs: () => guide.legendThumbs(),
+      hints, monsters, threatUI, settingsMenu, newGame, guide,
+    },
     openSettings() { settingsMenu.open(); syncModalLock(); },
     closeSettings() { settingsMenu.close(); },
     get settingsOpen() { return settingsMenu.isOpen; },
@@ -1503,7 +1621,7 @@ export function createUI(game) {
     openCharacter() { if (!canOpenMenus()) return false; openMenu('character', () => charSheet.open()); return true; },
     closeCharacter() { charSheet.close(); },
     get characterOpen() { return charSheet.isOpen; },
-    openCodex(page) { if (!canOpenMenus()) return false; openMenu('codex', () => codex.open(page)); return true; },
+    openCodex(page) { if (!canOpenMenus()) return false; openMenu('codex', () => codex.open(page)); hints.done('codex'); try { ev.emit('codexOpened', { page }); } catch (_) { /* */ } return true; },
     closeCodex() { codex.close(); },
     get codexOpen() { return codex.isOpen; },
     openClassPanel(opts = {}) {
@@ -1526,8 +1644,10 @@ export function createUI(game) {
     get anyModalOpen() { return anyModalOpen(); },
     // test/introspection helpers (read-only)
     _cardLog: cardLog,
-    _parts: { tree, tour, charSheet, codex, classPanel, gateMenu, confirmBox, prompt, hb3, bossBar },
+    _parts: { tree, tour, charSheet, codex, classPanel, gateMenu, confirmBox, prompt, hb3, bossBar, hints, monsters, recap, guide, threatUI, newGame },
     init() {
+      applyUiScale();
+      ev.on('settingsChanged', (p) => { if (!p || p.key === 'uiScale' || p.key === '*') applyUiScale(); });
       applyState(game.state);
     },
     update(dt, realDt) {
@@ -1555,8 +1675,8 @@ export function createUI(game) {
           else if (s === 'playing' && !cine) game.pause();
           else if (s === 'paused' && performance.now() - lockLostAt > 400) game.resume();
         }
-        if (s === 'dead' && (R.pressed('Space') || R.pressed('Enter'))) doRespawn();
-        if (s === 'title' && R.pressed('Enter') && !settingsMenu.isOpen && !controls.classList.contains('show')) startGame();
+        if (s === 'dead' && !anyModalOpen() && (R.pressed('Space') || R.pressed(game.input?.keymap?.get?.('confirm') || 'Enter'))) doRespawn();
+        if (s === 'title' && R.pressed('Enter') && !settingsMenu.isOpen && !newGame.isOpen && !controls.classList.contains('show')) { newGame.open(); syncModalLock(); }
       }
 
       if (s === 'title') titleCamera(dt);
@@ -1585,8 +1705,12 @@ export function createUI(game) {
       tree.update(dt);
       charSheet.update();
 
-      if (hurtA > 0) { hurtA = Math.max(0, hurtA - dt * 1.8); hurtVig.style.opacity = hurtA.toFixed(3); }
-      else if (hurtVig.style.opacity !== '0') hurtVig.style.opacity = '0';
+      threatUI.update(dt);
+      hints.update(dt);
+      monsters.update(dt);
+      recap.update(dt);
+      updateDefer(dt);
+      if (xpT > 0 && (xpT -= dt) <= 0) xpCorner.classList.remove('on');
 
       if (hintCd > 0) hintCd -= dt;
       if (hintT > 0) { hintT -= dt; if (hintT <= 0) hint.classList.remove('show'); }
@@ -1595,10 +1719,6 @@ export function createUI(game) {
       if (cardT > 0) { cardT -= dt; if (cardT <= 0) bigCard.classList.remove('show'); }
       if (cardT <= 0.35 && cardQ.length && !cine && s !== 'cutscene') { const c = cardQ.shift(); cardT = 0; playCard(...c); }
 
-      if (s === 'dead' && deadT > 0) {
-        deadT -= dt;
-        deathCount.textContent = deadT > 0 ? `${Math.ceil(deadT)}초 후 부활` : '부활 중...';
-      }
 
       const showFps = !!game.settings?.values?.showFps;
       if (showFps !== fpsShown) { fpsShown = showFps; fpsEl.classList.toggle('on', showFps); fpsTimer = 0; }
@@ -1607,7 +1727,8 @@ export function createUI(game) {
         if (fpsTimer <= 0) {
           fpsTimer = 0.25;
           const f = game.fps || 0;
-          fpsEl.textContent = `${Math.round(f)} FPS · ${f > 0 ? (1000 / f).toFixed(1) : '-'} ms`;
+          let rs = null; try { rs = game.quality?.renderSize?.(); } catch (_) { rs = null; }
+          fpsEl.textContent = SETTINGS_UI_KO.fps(Math.round(f), game.quality?.level ?? 0, rs?.w || 0, rs?.h || 0);
           fpsEl.dataset.q = f >= 50 ? 'good' : f >= 30 ? 'ok' : 'bad';
         }
       }

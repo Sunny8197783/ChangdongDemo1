@@ -11,6 +11,7 @@ import { createOverlay } from './cinematic/overlay.js';
 import { createGrade } from './cinematic/grade.js';
 import { Stage, makeRune, makePillar, makeMist, makeMotes, makeColossus, makeWyrm, glowTex, starTex, SPIRITS, LOST_SPIRITS, SPIRITS_ALL } from './cinematic/assets.js';
 import { buildIntro } from './cinematic/intro.js';
+import { setFlashGame } from './cinematic/flash.js';
 import { buildFinisher } from './cinematic/finisher.js';
 import { buildClassRite } from './cinematic/ceremony.js';
 import { buildReveal } from './cinematic/reveal.js';
@@ -30,6 +31,7 @@ const EASE = {
 };
 
 export function createCinematic(game) {
+  setFlashGame(game);
   const { camera } = game;
   const ov = createOverlay(game);
   const grade = createGrade(game);
@@ -252,13 +254,16 @@ export function createCinematic(game) {
   const _burst = new THREE.Vector3();
 
   const api = {
+    /** v4 test/introspection: total seconds of the playing sequence (shot durations + end fade). */
+    get seqDuration() { return seq ? seq.shots.reduce((a, s) => a + (+s.duration || 0), 0) + (+seq.opts.endFade || 0) : 0; },
     active: false, timeScale: 1, overlay: ov, grade, EASE,
     play, orbit, dolly, skip, stop: () => finish(true),
     get shotIndex() { return seq?.i ?? -1; },
     get elapsed() { return seq?.total ?? 0; },
     /** The lore intro (~75 s, world mode). onDone runs after it ends or is skipped. */
-    playIntro(onDone) {
-      try { return buildIntro(ctx, onDone); } catch (err) { console.error('[cinematic] intro', err); finish(true); onDone?.(); return null; }
+    playIntro(onDone, opts = {}) {
+      const short = opts.short ?? (game.settings?.values?.introShort !== false);
+      try { return buildIntro(ctx, onDone, { short }); } catch (err) { console.error('[cinematic] intro', err); finish(true); onDone?.(); return null; }
     },
     /** Sword & magic 필살기 cinematic template (gameplay mode, ≈4 s). */
     finisher(o = {}) {

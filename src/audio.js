@@ -8,11 +8,12 @@ import { SOUNDS as BASE_SOUNDS } from './audio/sounds.js';
 import { SFX2 } from './audio/sfx2.js';
 import { SFX3, RX_CUES, RX_FAMILY } from './audio/sfx3.js';
 import { THEMES3 } from './audio/themes3.js';
+import { SFX4, tellCue } from './audio/tells.js';
 import { Music, Ambience } from './audio/music.js';
 import { ELEMENT_DEFS, ALL_ELEMENTS } from './core/elements.js';
 import { CLASS_DEFS, familyOf, styleOf } from './core/classes.js';
 
-const SOUNDS = Object.assign(BASE_SOUNDS, SFX2, SFX3);
+const SOUNDS = Object.assign(BASE_SOUNDS, SFX2, SFX3, SFX4);
 const CHARGE_K = 0.5;           // charge loop base = ELEMENT_DEFS[el].sfxBase × CHARGE_K (rises ×2 while charging)
 const WEAPON_SFX = { bow: 'bow_release', hammer: 'hammer_swing', daggers: 'dagger_swish', totem: 'totem_rattle' };
 const CUE_LOG_N = 64;
@@ -116,6 +117,9 @@ export function createAudio(game) {
   // ---------- play ----------
   // every requested cue is logged (even when silent / headless) so tests can assert which cues fired
   const cueLog = []; const cueCount = Object.create(null);
+  const tellSlots = [{ key: null, id: '', end: 0, tell: '' }, { key: null, id: '', end: 0, tell: '' }];
+  const targeting = new Map(); let tellMaxConc = 0;
+  let pruneNow = 0; const pruneTarget = (t, k) => { if (t < pruneNow) targeting.delete(k); };
   function logCue(name) { cueCount[name] = (cueCount[name] || 0) + 1; if (cueLog.length >= CUE_LOG_N) cueLog.shift(); cueLog.push(name); }
   function play(name, opts) {
     try {
@@ -466,6 +470,8 @@ export function createAudio(game) {
     unsilence() { silenceUntil = 0; musicDuck = -1; },
     /** Test hooks: how often a cue was requested (logged even when silent), the last cues, the fanfare count. */
     cueCount(name) { return cueCount[name] || 0; },
+    /** v4 debug: tell channels in use now, the max seen, and how many tells target the player. */
+    tellDebug() { const t = game.realTime || 0; let n = 0; for (const x of tellSlots) if (x.key && x.end >= t) n++; return { active: n, max: tellMaxConc, targeting: targeting.size, reset() { tellMaxConc = 0; } }; },
     get lastCues() { return cueLog.slice(); },
     fanfareCount: 0,
     get musicLayer() { return music?.bossPhase || 1; },
@@ -612,6 +618,37 @@ export function createAudio(game) {
         play(styleOf(p.cls || game.progression?.cls) === 'hammer' ? 'shield_block' : 'parry', { position: p.point, volume: caster ? 0.75 : 1, pitch: caster ? 1.25 : 1 });
         duck(0.45, 0.7);
       });
+      // ---- v4 tell cues (§5.5): spatialised, ≤ 2 concurrent tell channels (nearest impact wins), music −3 dB while a
+      // tell targets the player; commit tick / parry "ting" at lock; punish chime.
+      ev.on('tellStart', (p) => {
+        if (!p || p.sound === false) return;
+        const e = p.enemy, wind = +p.windup || 0;
+        const tnow = game.realTime || 0, end = tnow + Math.max(0.3, wind);
+        if (p.targetsPlayer !== false) targeting.set(p.enemy || p.id, end + 0.3);
+        let slot = -1, latest = -1;
+        for (let i = 0; i < 2; i++) {
+          const s = tellSlots[i];
+          if (!s.key || s.end < tnow) { slot = i; break; }
+          if (latest < 0 || s.end > tellSlots[latest].end) latest = i;
+        }
+        if (slot < 0) { if (end < tellSlots[latest].end) slot = latest; else return; }
+        const S = tellSlots[slot]; S.key = e || p.id; S.id = p.id; S.end = end; S.tell = p.tell;
+        const heavy = e && (e.isBoss || e.isElite || e.breakMax > 0) || wind >= 1;
+        play(tellCue(p.tell, heavy ? 'boss' : 'mobLight'), { position: p.pos || e?.object?.position, volume: 0.9, force: true });
+        let n = 0; for (const x of tellSlots) if (x.key && x.end >= tnow) n++;
+        if (n > tellMaxConc) tellMaxConc = n;
+      });
+      ev.on('tellCommit', (p) => {
+        const S = tellSlots.find((x) => x.key && (x.key === p?.enemy || x.key === p?.id) && x.id === p?.id);
+        if (!S) return;
+        const e = p.enemy;
+        play(S.tell === 'parry' ? 'tell_parry' : 'tell_commit', { position: e?.object?.position, volume: 0.8, force: true });
+      });
+      ev.on('tellEnd', (p) => {
+        targeting.delete(p?.enemy || p?.id);
+        for (const S of tellSlots) if (S.key && (S.key === p?.enemy || S.key === p?.id) && S.id === p?.id) S.key = null;
+      });
+      ev.on('punishWindow', (p) => play('punish', { position: p?.enemy?.object?.position, volume: 0.9 }));
       ev.on('perfectDodge', (p) => {
         play('perfect_dodge', { position: p.position });
         duck(0.5, 1.2); musicFilterDip(600, 1.2);
@@ -664,6 +701,8 @@ export function createAudio(game) {
           if (mode !== music.mode) music.setMode(mode);
         }
         if (now >= tempDuckUntil) tempDuck = 1;
+        if (targeting.size) { pruneNow = game.realTime || 0; targeting.forEach(pruneTarget); }
+        if (targeting.size) { tempDuck = Math.min(tempDuck, 0.708); if (tempDuckUntil < now + 0.1) tempDuckUntil = now + 0.1; }  // −3 dB while a tell targets the player
         const d = now < silenceUntil ? 0.0001 : duckTarget * tempDuck * (inDialogue ? 0.7 : 1);
         if (Math.abs(d - musicDuck) > 0.001) {
           const fast = d < musicDuck;

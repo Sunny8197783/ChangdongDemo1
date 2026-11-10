@@ -33,7 +33,7 @@ const CSS = `
 .st-prompt-sep { width:4px; height:4px; border-radius:50%; background: var(--st-gold-dim); }
 
 /* bark (non-blocking speech line) */
-.st-bark { position:absolute; left:50%; bottom:15%; transform: translate(-50%, 10px); opacity:0; transition: opacity .35s, transform .35s;
+.st-bark { position:absolute; left:50%; top:150px; transform: translate(-50%, -10px); opacity:0; transition: opacity .35s, transform .35s;
   max-width: min(760px, 88vw); padding: 10px 20px; border-radius: 14px; text-align:center; font-size:17px; line-height:1.5;
   background: linear-gradient(180deg, rgba(14,16,24,.72), rgba(14,16,24,.55)); border:1px solid rgba(233,196,106,.3); text-shadow:0 1px 2px #000; }
 .st-bark.on { opacity:1; transform: translate(-50%, 0); }
