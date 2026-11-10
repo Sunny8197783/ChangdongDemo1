@@ -41,6 +41,8 @@ export class Cape {
     this.cur = new Float32Array(n * 3); this.prev = new Float32Array(n * 3);
     this.restW = [];
     for (let c = 0; c < this.cols - 1; c++) this.restW.push(anchorsLocal[c].distanceTo(anchorsLocal[c + 1]));
+    this.restH = new Float32Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < this.cols - 1; c++) this.restH[r * this.cols + c] = this.restW[c] * (1 + 0.08 * r / rows);
     const geo = new THREE.BufferGeometry();
     this.posAttr = new THREE.BufferAttribute(new Float32Array(n * 3), 3); this.posAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('position', this.posAttr);
@@ -57,8 +59,12 @@ export class Cape {
     this.mesh.frustumCulled = false; this.mesh.castShadow = true;
     scene.add(this.mesh);
     this._a = new THREE.Vector3(); this._inv = new THREE.Matrix4(); this._v = new THREE.Vector3();
-    this.acc = 0; this.ready = false; this.t = 0;
+    this._a0 = new THREE.Vector3(); this._lastA = new THREE.Vector3();
+    this.nrm = geo.attributes.normal.array;   // grid normals (also read by the v4 rig merge)
+    this.acc = 0; this.ready = false; this.t = 0; this.detached = false;
   }
+  /** v4 merge: the rig draws the cape (merged body + shadow proxy); this mesh leaves the scene and stops uploading. */
+  detach() { this.detached = true; this.mesh.parent?.remove(this.mesh); this.mesh.visible = false; }
   _anchor(c, out) { return out.copy(this.anchorsLocal[c]).applyMatrix4(this.anchorObj.matrixWorld); }
   reset() {
     this.anchorObj.updateWorldMatrix(true, false);
@@ -73,7 +79,7 @@ export class Cape {
     }
     this.ready = true;
     this.settle = 3; // re-seed from the live pose for the first frames (pose/facing snaps right after spawn)
-    this._anchor(0, this._lastA || (this._lastA = new THREE.Vector3()));
+    this._anchor(0, this._lastA);
   }
   /** Rigidly translate all points (for teleports). */
   shift(dx, dy, dz) {
@@ -86,7 +92,7 @@ export class Cape {
     if (!this.ready) this.reset();
     this.anchorObj.updateWorldMatrix(true, false); // fresh pose (parents included) even when no render happened
     // snap detection: re-seed hanging straight down instead of whipping after teleports / pose snaps
-    const a0 = this._anchor(0, this._a0 || (this._a0 = new THREE.Vector3()));
+    const a0 = this._anchor(0, this._a0);
     const jumped = a0.distanceTo(this._lastA) > 0.3;
     if (this.settle > 0 || jumped) { const s = this.settle; this.reset(); this.settle = Math.max(0, s - 1); }
     this._lastA.copy(a0);
@@ -116,8 +122,8 @@ export class Cape {
       }
       for (let it = 0; it < 8; it++) {
         for (let r = 1; r < rows; r++) for (let c = 0; c < cols; c++) {
-          this._link((r - 1) * cols + c, r * cols + c, this.segLen, r === 1);
-          if (c < cols - 1) this._link(r * cols + c, r * cols + c + 1, this.restW[c] * (1 + 0.08 * r / rows), false);
+          this._link((r - 1) * cols + c, r * cols + c, -1, r === 1);
+          if (c < cols - 1) this._link(r * cols + c, r * cols + c + 1, r * cols + c, false);
         }
         // long-range tether: each point stays within r*segLen of its column anchor (cape can never float/stiffen)
         for (let c = 0; c < cols; c++) {
@@ -160,8 +166,7 @@ export class Cape {
         if (cur[i + 1] < gy) cur[i + 1] = gy;
       }
     }
-    this.posAttr.array.set(cur);
-    this.posAttr.needsUpdate = true;
+    if (!this.detached) { this.posAttr.array.set(cur); this.posAttr.needsUpdate = true; }
     this._gridNormals();
   }
   /** Analytic grid normals (central differences) into the preallocated normal array — no allocation. */
@@ -180,10 +185,12 @@ export class Cape {
         N[i] = nx / l; N[i + 1] = ny / l; N[i + 2] = nz / l;
       }
     }
-    this.geo.attributes.normal.needsUpdate = true;
+    if (!this.detached) this.geo.attributes.normal.needsUpdate = true;
   }
-  _link(a, b, rest, pinA) {
-    const { cur } = this; a *= 3; b *= 3;
+  /** k < 0: vertical link (segLen); else the precomputed horizontal rest length restH[k] (typed array: no boxed doubles per call). */
+  _link(a, b, k, pinA) {
+    const cur = this.cur; a *= 3; b *= 3;
+    const rest = k < 0 ? this.segLen : this.restH[k];
     const dx = cur[b] - cur[a], dy = cur[b + 1] - cur[a + 1], dz = cur[b + 2] - cur[a + 2];
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
     const diff = (d - rest) / d;

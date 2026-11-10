@@ -1,4 +1,6 @@
 // Player-owned visual effects: rune circle textures, charge magic circle, glide sigil, blink afterimages.
+// v4: every material here is private player FX, patched once at construction through game.vfx.applyPlayerFx (threat
+// ducking, PLAN §5.4) via the `fx` callback; tints are element ramp steps (never white, multiplier ≤ 1.2).
 import * as THREE from 'three';
 
 function mulberry(seed) {
@@ -78,27 +80,32 @@ export function getInnerRuneTexture() {
 
 function circleMat(map) {
   return new THREE.MeshBasicMaterial({
-    map, color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    map, color: 0x8a7a6a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
     depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
   });
 }
 
 /** Two counter-rotating rune discs. Plane normal = group +Z. */
 export class RuneCircle {
-  constructor(scene, size = 1.2) {
+  /** fx(material, opts): the player-FX patch (game.vfx.applyPlayerFx), called once per private material. */
+  constructor(scene, size = 1.2, fx = null) {
     this.group = new THREE.Group();
+    this.group.userData.owner = 'player';
     const geo = new THREE.PlaneGeometry(size, size);
     this.outerMat = circleMat(getRuneTexture());
     this.innerMat = circleMat(getInnerRuneTexture());
+    if (fx) { fx(this.outerMat, { additive: true, role: 'line' }); fx(this.innerMat, { additive: true, role: 'line' }); }
     this.outer = new THREE.Mesh(geo, this.outerMat);
     this.inner = new THREE.Mesh(geo, this.innerMat); this.inner.scale.setScalar(0.62); this.inner.position.z = 0.02;
     this.group.add(this.outer, this.inner);
     this.group.visible = false; this.group.renderOrder = 5;
     this.outer.frustumCulled = this.inner.frustumCulled = false;
+    this.outer.userData.owner = this.inner.userData.owner = 'player';
     scene.add(this.group);
     this.w = 0; this.spin = 0;
   }
-  setColor(c) { this.outerMat.color.copy(c); this.innerMat.color.copy(c).lerp(new THREE.Color(1, 1, 1), 0.35); }
+  /** c: the element's mid step; c2 (optional): its light step for the inner disc (v3 lerped toward white). */
+  setColor(c, c2) { this.outerMat.color.copy(c); if (c2) this.innerMat.color.copy(c2); else this.innerMat.color.copy(c).multiplyScalar(1.15); }
   update(dt, target, scale, spinSpeed = 1.5, opacity = 1) {
     this.w += ((target ? 1 : 0) - this.w) * (1 - Math.exp(-(target ? 10 : 6) * dt));
     const vis = this.w > 0.01;
@@ -127,7 +134,7 @@ const ghostFS = /* glsl */`
   void main() {
     float r = 1.0 - abs(dot(normalize(vN), normalize(vV)));
     float a = opacity * (0.16 + 0.95 * pow(r, 1.7));
-    gl_FragColor = vec4(color * (0.55 + 1.6 * r), a);
+    gl_FragColor = vec4(color * (0.5 + 0.7 * r), a);
   }`;
 
 /**
@@ -137,7 +144,7 @@ const ghostFS = /* glsl */`
  */
 const _gm = new THREE.Matrix4(), _gn = new THREE.Matrix3(), _gInv = new THREE.Matrix4(), _gv = new THREE.Vector3();
 export class Afterimages {
-  constructor(scene, liveRoot, count = 5) {
+  constructor(scene, liveRoot, count = 5, fx = null) {
     this.items = [];
     this.liveRoot = liveRoot;
     this.parts = [];          // {mesh, start, count}
@@ -173,12 +180,13 @@ export class Afterimages {
         vertexShader: ghostVS, fragmentShader: ghostFS, transparent: true, depthWrite: false,
         blending: THREE.AdditiveBlending, side: THREE.FrontSide,
       });
+      if (fx) fx(mat, { additive: true, role: 'fill' });
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nv * 3), 3).setUsage(THREE.DynamicDrawUsage));
       geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nv * 3), 3).setUsage(THREE.DynamicDrawUsage));
       geo.setIndex(index);
       const root = new THREE.Mesh(geo, mat);
-      root.frustumCulled = false; root.visible = false; root.renderOrder = 3;
+      root.frustumCulled = false; root.visible = false; root.renderOrder = 3; root.userData.owner = 'player';
       scene.add(root);
       this.items.push({ root, mat, life: 0, max: 0.4 });
     }
@@ -192,12 +200,15 @@ export class Afterimages {
     const lr = this.liveRoot;
     lr.updateMatrixWorld(true);
     _gInv.copy(lr.matrixWorld).invert();
-    const ix = geo.index.array, mi = this.masterIdx;
-    let ni = 0;
-    for (const p of this.parts) {
+    const ix = geo.index.array, mi = this.masterIdx, parts = this.parts;
+    let ni = 0, lo = Infinity, hi = 0;
+    for (let k = 0; k < parts.length; k++) {
+      const p = parts[k];
       const o = p.mesh, o3 = p.start * 3, n3 = p.count * 3;
       if (!this._visible(o)) continue;   // left out of this ghost's index buffer
-      ix.set(mi.subarray(p.istart, p.istart + p.icount), ni); ni += p.icount;
+      for (let i = 0, s0 = p.istart; i < p.icount; i++) ix[ni + i] = mi[s0 + i];   // (no subarray views per part)
+      ni += p.icount;
+      if (o3 < lo) lo = o3; if (o3 + n3 > hi) hi = o3 + n3;
       _gm.multiplyMatrices(_gInv, o.matrixWorld);
       _gn.getNormalMatrix(_gm);
       const sp = o.geometry.attributes.position.array, sn = o.geometry.attributes.normal.array;
@@ -213,14 +224,18 @@ export class Afterimages {
         na[o3 + i + 2] = m[2] * a + m[5] * b + m[8] * c;
       }
     }
-    geo.attributes.position.needsUpdate = true;
-    geo.attributes.normal.needsUpdate = true;
-    geo.index.needsUpdate = true;
+    // live ranges only (the buffers hold every class's gear; a bake fills the visible parts)
+    const pA = geo.attributes.position, nA = geo.attributes.normal;
+    pA.clearUpdateRanges(); nA.clearUpdateRanges(); geo.index.clearUpdateRanges();
+    if (hi > lo) { pA.addUpdateRange(lo, hi - lo); nA.addUpdateRange(lo, hi - lo); } else { pA.addUpdateRange(0, 3); nA.addUpdateRange(0, 3); }
+    geo.index.addUpdateRange(0, Math.max(1, ni));
+    pA.needsUpdate = true; nA.needsUpdate = true; geo.index.needsUpdate = true;
     geo.setDrawRange(0, ni);
   }
   spawn(position, rotationY, color, life = 0.42, opacity = 0.9) {
-    let it = this.items[0];
-    for (const x of this.items) if (x.life <= 0) { it = x; break; } else if (x.life < it.life) it = x;
+    const items = this.items;
+    let it = items[0];
+    for (let k = 0; k < items.length; k++) { const x = items[k]; if (x.life <= 0) { it = x; break; } else if (x.life < it.life) it = x; }
     this._bake(it.root.geometry);
     it.root.position.copy(position); it.root.rotation.set(0, rotationY, 0);
     it.root.scale.setScalar(1);
@@ -229,7 +244,9 @@ export class Afterimages {
     it.root.visible = true;
   }
   update(dt) {
-    for (const it of this.items) {
+    const items = this.items;
+    for (let k = 0; k < items.length; k++) {
+      const it = items[k];
       if (it.life <= 0) continue;
       it.life -= dt;
       const f = Math.max(0, it.life / it.max);
