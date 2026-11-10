@@ -244,7 +244,7 @@ export function createUI(game) {
   const visMarks = [];
   const bossBar = createBossBar(game, { anim: restartAnim, project: (pt, out) => project(pt, out) }, hud);
   const hint = hud.appendChild(h('div', 'aw-hint'));
-  const hints = createHints(game, { parent: hud, fmt, canParry: F.canParry, anim: (n, c) => AQ.restart(n, c) });
+  const hints = createHints(game, { parent: hud, fmt, canParry: F.canParry, anim: (n, c) => AQ.restart(n, c), treeOpen: () => { try { return !!tree.isOpen; } catch (_) { return false; } } });
   const bossAtk = hud.appendChild(h('div', 'aw-bossatk'));
 
   // ------------------------------------------------------------------ banners, flashes & combo
@@ -312,7 +312,7 @@ export function createUI(game) {
     }
     n.big = !!(cls && /aw-num-(big|crit|rx)/.test(cls));
     // estimated box (no reflow): ~0.6 em per glyph
-    const fpx = !cls ? 22 : /aw-num-(big|crit)/.test(cls) ? 30 : /aw-num-(rx|player)/.test(cls) ? 26 : /aw-num-dot/.test(cls) ? 16 : 22;
+    const fpx = !cls ? 20 : /aw-num-(big|crit)/.test(cls) ? 24 : /aw-num-(rx|player)/.test(cls) ? 22 : /aw-num-dot/.test(cls) ? 16 : 22;
     n.w = Math.max(fpx, String(text).length * fpx * 0.6) * n.scale + 6; n.hh = fpx * n.scale + 4;
     if (point && project(point, numScr)) {
       n.spx = numScr.x; n.spy = numScr.y;
@@ -439,9 +439,10 @@ export function createUI(game) {
   const deferQ = [];
   let calmT = 9;
   const aggroed = () => (game.enemies?.aggroCount?.() || 0) > 0;
-  function deferBanner(fn) { if (aggroed() || calmT < 3) { if (deferQ.length < 8) deferQ.push(fn); return false; } fn(); return true; }
+  const bossShown = () => !!bossBar?.shown;   // the boss block owns the top centre while it is on screen
+  function deferBanner(fn) { if (aggroed() || calmT < 3 || bossShown()) { if (deferQ.length < 8) deferQ.push(fn); return false; } fn(); return true; }
   function updateDefer(dt) {
-    calmT = aggroed() ? 0 : calmT + dt;
+    calmT = aggroed() || bossShown() ? 0 : calmT + dt;
     if (deferQ.length && calmT >= 3 && cardT <= 0.35 && game.state === 'playing' && !game.cinematic?.active) { const f = deferQ.shift(); try { f(); } catch (err) { console.warn('[ui] deferred', err); } }
   }
 
@@ -916,14 +917,15 @@ export function createUI(game) {
       const isDot = !!(p.dot || p.isDot);
       if (merged && !p.reaction && mergeNumber(p.target, amt, p.crit ? 'aw-num-crit' : isDot ? 'aw-num-dot' : amt >= 80 ? 'aw-num-big' : '')) { /* merged */ }
       else if (p.reaction) {
-        const rn = rxById(p.reaction)?.name || '';
-        spawnNumber(`${amt}${rn ? ' ' + rn : ''}`, point, 'aw-num-rx', '#ffd65a', { life: 1.4, scale: 1.25, vy: 1.6 });
+        // the reaction NAME is the one small aw-num-rxname label (reaction handler, §6.9); the hit only shows its number,
+        // never a 40 px "57 확산·오로라" banner across the enemies at screen centre
+        spawnNumber(String(amt), point, 'aw-num-rx', '#ffd65a', { life: 0.8, scale: 0.85, vy: 1.2, target: p.target, sum: amt });
       } else if (p.crit) {
-        spawnNumber(amt + '!', point, 'aw-num-crit', color, { life: 1.2, scale: 1.45, vy: 1.5, target: p.target, sum: amt });
+        spawnNumber(amt + '!', point, 'aw-num-crit', color, { life: 0.9, scale: 0.9, vy: 1.3, target: p.target, sum: amt });
       } else if (isDot) {
         spawnNumber(String(amt), point, 'aw-num-dot', '#b8bcc8', { life: 0.8, scale: 0.7, vy: 1.0, spread: 60, target: p.target, sum: amt });
       } else {
-        spawnNumber(String(amt), point, amt >= 80 ? 'aw-num-big' : '', color, { life: 0.9 + Math.min(0.6, amt / 150), scale: 0.85 + Math.min(1.1, amt / 90), target: p.target, sum: amt });
+        spawnNumber(String(amt), point, amt >= 80 ? 'aw-num-big' : '', color, { life: 0.8 + Math.min(0.3, amt / 300), scale: 0.8 + Math.min(0.25, amt / 400), target: p.target, sum: amt });
       }
     }
     if (!p.dot && !p.isDot) { bumpCombo(); hitMarker(p.killed); }
@@ -1022,7 +1024,8 @@ export function createUI(game) {
     if (!p?.title) return;
     later(0.3, () => {
       let cur = null; try { cur = game.story?.getObjective?.()?.title; } catch (_) { /* */ }
-      if (cur == null || cur === p.title) showCard('새로운 임무', p.title, '', 'aw-card-quest', 3.4);
+      // never on top of the boss bar / boss intro: a quest card raised during a boss fight waits for the end (§6.9)
+      if (cur == null || cur === p.title) { const f = () => showCard('새로운 임무', p.title, '', 'aw-card-quest', 3.4); if (bossShown()) deferBanner(f); else f(); }
     });
   });
   ev.on('questComplete', (p) => { if (p?.title) showCard('임무 완료', p.title, '', 'aw-card-done', 3.0); });
@@ -1414,7 +1417,7 @@ export function createUI(game) {
       n.pos.y += n.vy * dt * (1 - k * 0.6);
       if (!project(n.pos, scr)) { if (!n.hidden) { n.hidden = true; n.el.style.opacity = '0'; } continue; }
       n.hidden = false;
-      const pop = k < 0.12 ? 0.4 + (k / 0.12) * 1.0 : k < 0.24 ? 1.4 - ((k - 0.12) / 0.12) * 0.4 : 1;
+      const pop = k < 0.1 ? 0.6 + (k / 0.1) * 0.55 : k < 0.2 ? 1.15 - ((k - 0.1) / 0.1) * 0.15 : 1;
       const s = n.scale * pop;
       const a = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
       n.el.style.opacity = a.toFixed(2);

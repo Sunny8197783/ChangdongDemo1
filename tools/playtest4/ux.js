@@ -136,11 +136,24 @@ module.exports = async function ux(PT) {
     PT.check('UX1 card when that enemy dies (out of combat)', M.cardOn && document.querySelector('.aw-mcard').dataset.type === 'wolf');
     PT.check('UX1 kill → defeated + kill count', M.state().defeated.wolf === 1 && M.state().kills.wolf === 1);
     PT.step(7);
-    g.events.emit('bossSpawn', { id: 'golem', name: '고대 바위 골렘', boss: { bossId: 'golem', kind: 'golem', weakness: ['water'], resist: { earth: 0.5 } }, brief: ['원이 차면 {jumpKey}로 넘기', '빛나는 핵이 약점', '붕괴 뒤 몰아치기'] });
+    const fxBoss = { bossId: 'golem', kind: 'golem', weakness: ['water'], resist: { earth: 0.5 } };
+    g.events.emit('bossSpawn', { id: 'golem', name: '고대 바위 골렘', boss: fxBoss, brief: ['원이 차면 {jumpKey}로 넘기', '빛나는 핵이 약점', '붕괴 뒤 몰아치기'] });
     PT.step(0.3);
     const lis = [...document.querySelectorAll('.aw-mbrief li')].map((l) => l.textContent);
     PT.check('UX1 boss brief card from bossSpawn.brief (3 bullets, tokens filled)', M.briefOn && lis.length === 3 && !lis[0].includes('{'), lis);
     PT.check('UX1 boss bar: larger weakness icons', document.querySelectorAll('.aw-boss-weak .aw-wk').length >= 1);
+    // boss fight owns the top centre: quest card waits, bark sits below the boss block, hint slot clears it
+    const qn = () => u._cardLog.filter((c) => c.startsWith('새로운 임무')).length, q0 = qn();
+    const realObj = g.story?.getObjective; if (g.story) g.story.getObjective = () => null;
+    g.events.emit('questStart', { title: '__pt_boss_quest' }); PT.step(0.5);
+    const bossEl = document.querySelector('.aw-boss.show'), bk = document.querySelector('.st-bark'), hn = document.querySelector('.aw-hint4');
+    const bb = bossEl?.getBoundingClientRect(), kb = bk?.getBoundingClientRect(), hb = hn?.getBoundingClientRect();
+    PT.check('UX2 boss fight: quest card deferred, bark + hint slot below the boss block', qn() === q0 && bb && kb && hb && kb.top >= bb.top + 100 && hb.top >= bb.top + 100 && hb.right < Math.max(kb.left, innerWidth / 2 - 240), { q: [q0, qn()], boss: bb && [bb.top, bb.bottom], bark: kb && [kb.top, kb.left], hint: hb && [hb.top, hb.right] });
+    const bq = u.debug.bannersQueued();
+    fxBoss.alive = false;
+    for (let i = 0; i < 30 && qn() === q0; i++) PT.step(0.5);
+    PT.check('UX2 deferred quest card shown after the boss', qn() === q0 + 1, { q: [q0, qn()], queuedDuringBoss: bq, queuedNow: u.debug.bannersQueued(), state: g.state, boss: document.querySelector('.aw-boss')?.className });
+    if (g.story) g.story.getObjective = realObj;
     g.enemies.aggroCount = realAggro;
     PT.step(6.5);
   });
@@ -229,6 +242,22 @@ module.exports = async function ux(PT) {
     PT.check('UX2 no centre banner while aggroed (queued)', u.debug.bannersQueued() > 0 && lv() === n0, [u.debug.bannersQueued(), lv(), n0]);
     aggro = 0; PT.step(3.6);
     PT.check('UX2 queued banner shown 3 s after combat', u.debug.bannersQueued() === 0 && lv() === n0 + 1);
+    // menu hints never sit on screen in a fight; the equip hint only exists on the skill screen
+    H.reset(); PT.step(0.8);
+    g.events.emit('skillLearned', { id: 'pt' }); PT.step(0.2);
+    PT.check('UX2 equip hint not shown outside the skill screen', u.debug.hintVisible() !== 'equip' && H.shows('equip') === 0);
+    u.hint('unspent', undefined, {}); PT.step(0.2);
+    const unspentOn = u.debug.hintVisible() === 'unspent';
+    aggro = 1; PT.step(0.3);
+    PT.check('UX2 calm hint (unspent) leaves the screen when a fight starts, back after', unspentOn && u.debug.hintVisible() === null && H.queued() === 1, [unspentOn, u.debug.hintVisible(), H.queued()]);
+    aggro = 0; PT.step(1.0);
+    PT.check('UX2 calm hint back after the fight', u.debug.hintVisible() === 'unspent');
+    H.reset();
+    // a reaction hit shows only its number (the reaction name is the one small aw-num-rxname label)
+    const fwd = g.player.object.position.clone(); fwd.y += 1.2; fwd.z -= 4;
+    g.events.emit('damage', { amount: 57, reaction: 'pt_rx', element: 'wind', point: fwd, target: { object: { position: fwd } } }); PT.step(0.05);
+    const rxs = [...document.querySelectorAll('.aw-num-rx')].map((e) => e.textContent).filter((t) => /57/.test(t));
+    PT.check('UX2 reaction hit number has no name text and is ≤ 26 px', rxs.length >= 1 && rxs.every((t) => t === '57') && parseFloat(getComputedStyle(document.querySelector('.aw-num-rx')).fontSize) <= 26, rxs);
     g.enemies.aggroCount = realAggro;
     // damage numbers
     const p = g.player.object.position;

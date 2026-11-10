@@ -1,11 +1,12 @@
 // §6.11 templated, class-aware copy: ui.fmtKo(text, ctx). Tokens come from game.input.keymap.label (rebinding-safe),
 // the current kit names (player.getDefenseHud) and live values ({punishSec}). The can-parry rule lives here.
 import { fmtKo, KEY_TOKENS, PARRY_TYPES } from './text.js';
-import { attackSpec as bossSpec } from '../enemies/bosses/codex.js';
 
-// Live parry-stun seconds the codex rows do not carry (mob codex rows drop extra punishDur): voidknight.js sets
-// e.parryDur = 2.0 during slamWind. Replace with codex parryStunSec when mobs ships it.
-const PARRY_STUN = { 'voidknight.slam': 2.0 };
+// Live seconds the codex rows do not carry yet (no cross-owner import, PLAN §7.2 rule 1; requests/ux.md asks mobs and
+// bosses for codex parryStunSec / punishSec): voidknight.js sets e.parryDur = 2.0 in slamWind; nidhoggra.claw parried
+// punish = BOSS_ATTACKS punishParry 2.6; the void knight combo row's punish is combo3's punishDur 1.0.
+const PARRY_STUN = { 'voidknight.slam': 2.0, 'nidhoggra.claw': 2.6 };
+const PUNISH_DUR = { 'voidknight.combo1': 1.0 };
 
 export function createFmt(game) {
   const ctx = {};
@@ -28,7 +29,7 @@ export function createFmt(game) {
   const FALLBACK = { dodgeKey: 'Q', defendKey: 'E', jumpKey: '스페이스바', sprintKey: 'Shift', interactKey: 'F', skillsKey: 'K', codexKey: 'Tab', confirmKey: 'Enter' };
   /** punish seconds from live values: attack.punishDur × e.timeMul ÷ assist.enemySpeed (§6.11). */
   function punishSec(attack, e) {
-    const d = +attack?.punishDur || 0; if (!(d > 0)) return '';
+    const d = +attack?.punishDur || +PUNISH_DUR[attack?.id] || 0; if (!(d > 0)) return '';
     const sp = +game.assist?.enemySpeed || 1;
     return (d * (+e?.timeMul || 1) / sp).toFixed(1);
   }
@@ -36,9 +37,8 @@ export function createFmt(game) {
    *  a 'parry'-tell attack staggers for its punishDur (void knight slam, Nox slash); any other parried mob reacts for
    *  e.parryDur ?? 1.6 s (enemies/base.js parry()). Scaled like punishSec. */
   function parrySec(attack, e) {
-    const bs = attack?.id ? bossSpec(attack.id) : null;
-    let d = +attack?.parryStunSec || +attack?.punishParry || +bs?.punishParry || +PARRY_STUN[attack?.id] || 0;
-    if (!(d > 0) && attack?.tell === 'parry') d = +attack?.punishDur || +bs?.punishDur || 0;
+    let d = +attack?.parryStunSec || +attack?.punishParry || +PARRY_STUN[attack?.id] || 0;
+    if (!(d > 0) && attack?.tell === 'parry') d = +attack?.punishDur || 0;
     if (!(d > 0)) d = +e?.parryDur || 1.6;
     const sp = +game.assist?.enemySpeed || 1;
     return (d * (+e?.timeMul || 1) / sp).toFixed(1);
