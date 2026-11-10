@@ -17,6 +17,13 @@ import * as THREE from 'three';
 import { toonMat } from '../core/utils.js';
 
 export const HIDDEN_LAYER = 30;
+/** addUpdateRange without duplicates: steps that render nothing (sub-steps, harness rotations) used to pile up one range per
+ *  frame, flushed as hundreds of bufferSubData calls (≈ 1.7 MB) on the next rendered frame. Exported for the skirt sink. */
+export function addRangeOnce(attr, start, count) {
+  const R = attr.updateRanges;
+  for (let i = 0; i < R.length; i++) if (R[i].start === start && R[i].count === count) { attr.needsUpdate = true; return; }
+  attr.addUpdateRange(start, count); attr.needsUpdate = true;
+}
 const GUT = 8;                 // atlas gutter (texels), filled with wrapped / clamped edges
 const PROXY_CELL = 0.045;      // shadow proxy clustering cell (metres, world scale)
 const OUTLINE_COLOR = 0x1a1410;
@@ -412,9 +419,9 @@ export function mergeRig(root, opts = {}) {
     const o = capeRec.v0 * 3, f = capeRec.f0 * 3;
     for (let i = 0; i < n3; i++) { const v = cur[i]; P[o + i] = v; P[f + i] = v; }      // (no subarray views per frame)
     if (nrm) for (let i = 0; i < n3; i++) { N[o + i] = nrm[i]; N[f + i] = -nrm[i]; }
-    aP.addUpdateRange(o, n3 * 2); aP.needsUpdate = true;     // the two copies are adjacent
-    aN.addUpdateRange(o, n3 * 2); aN.needsUpdate = true;
-    if (capeRec.pn) { const pa = ppA.array, po = capeRec.pv0 * 3; for (let i = 0; i < n3; i++) pa[po + i] = cur[i]; ppA.addUpdateRange(po, n3); ppA.needsUpdate = true; }
+    addRangeOnce(aP, o, n3 * 2);     // the two copies are adjacent
+    addRangeOnce(aN, o, n3 * 2);
+    if (capeRec.pn) { const pa = ppA.array, po = capeRec.pv0 * 3; for (let i = 0; i < n3; i++) pa[po + i] = cur[i]; addRangeOnce(ppA, po, n3); }
   }
 
   bakeColors();

@@ -129,3 +129,46 @@ Real v3 sword combo: a dodge pressed 4 frames into **c4 (fire)** is still locked
 - C6: the player group is now `byGroup.player` 3–4 + 1 calls; the rune circles, barrier and ghosts live in the main scene with `userData.owner = 'player'`
   (the harness counts them under `fx`).
 - The shadow proxy is a SkinnedMesh with the default depth material; core's warm-up may want to include the shadow pass (requests/core 4).
+
+## Fix round 1 (review items: player JS allocation, afterimage upload spikes)
+
+**Allocation (C8 S-plains sites cape.js:91 / player.js:1307 / anim.js:97 / model.js:137).** Root causes:
+- `Cape.update` called a non-inlined `groundAt` closure with double arguments for every point every step (40 × 60 = 2.4k boxed
+  calls + ground queries / s), plus `applyMatrix4` / `Math.hypot` / `Math.pow` in the collision loop. Now: one ground probe per
+  update under the hem centre, the inverse / forward matrix products and the length written out with locals. Cape: 0.53 → ≈ 0 MB/game-s.
+- `createPlayer` kept ~84 per-frame numbers (`vy`, `facing`, every timer and blend weight) as closure `let`s. Closure variables live
+  in a heap context, and every double written to a context slot allocates a new heap number, in every V8 tier. They are now
+  fields of one object `PS` (double fields are written in place). This was a scope-aware rename (acorn), with no logic change.
+- `style()` / `isMelee()` did keyed `CLASS_DEFS[cls]` lookups inside `update`. That deoptimised the 16 KB `update` back to
+  baseline code (`unexpected name in keyed access`), where every float result is a heap number. Both are now cached per class in `setClass`.
+- `tooSteep` is now a `createPlayer`-level helper, so there is no per-frame closure inside `update`.
+- What remains for anim.js / model.js deform is V8 warm-up. Each hot function runs in baseline code (≈ 400 calls ≈ 7 s at 60 fps)
+  until it is optimised, and it boxes every float in that time. After a warm-up of 30 s or more, those sites are under 0.01 MB/game-s.
+  core's C8 S-plains measures right after boot, but PLAN §1.2 says "20 s after warm". Measured with `game.step(600)` straight
+  after `bootScene('S-plains')`, 2 s windows, player files: 1.00 / 0.90 / 0.75 / 0.58 / 0.19 MB/game-s.
+
+| S-plains, 10 s after a 30 s warm, all objects (CDP sampling incl. collected) | before | after |
+|---|---|---|
+| whole scene | 2.34 MB/game-s | 1.32 |
+| player files | 0.846 | 0.121 (getAim 0.035, update 0.028, updateCamera 0.017, writeCape 0.010) |
+
+**Afterimages.** The bake CPU-transformed 17.7k vertices of the original part meshes per spawn (≈ 390 KB position + normal
+upload). A dodge spawns a ghost every 0.045 s. Each ghost is now a SkinnedMesh that shares the merged rig's decimated shadow
+proxy (attributes and index are shared, so nothing is re-uploaded). Its frozen `Skeleton` gets a snapshot of the rig's bone matrices at spawn:
+one 32×32 float bone texture, 16 KB. The fade swell is a vertex uniform. The cape bone is zeroed, as before (v3 ghosts had no cape).
+The CPU path stays as a fallback when the rig did not merge.
+`addRangeOnce` (merge.js, used by the cape and the skirt sinks) stops update ranges from piling up across steps that render nothing.
+Before, the next rendered frame flushed them as hundreds of `bufferSubData` calls, 1.7 MB of body position.
+
+| F-sword, 90 frames, awake enemies, GL hook (bufferSubData + bufferData + texImage) | before | after |
+|---|---|---|
+| median / p95 KB per frame | 90 / 541 | 84 / 209 |
+| calls median / p95 | 51 / 70 | 45 / 62 |
+| largest spike | 2.72 MB (body position 1.7 MB, ranges piled up) + 538 KB ghost bakes | 730 KB, no player attribute in it (top: kit-bolt aT 7 KB, body position 7 KB) |
+
+Requests: **core**: measure C8 allocation after warm (PLAN §1.2), and sample uploads on frames that follow a rendered frame.
+**ux**: the HUD reads `player.getAim().target` every frame (0.035 MB/s of fresh vectors). A cheap `player.aimTarget` getter can be
+added on request. **vfx**: kit-bolt per-attribute uploads (aT/aC/aC2/position), as the review says. **magic / melee**: the combat
+boom (6.6 m, FOV +4°) shrinks skills on screen while enemies are aggroed, which is why the detail floors fail. For a capture, set
+`game.player.framing = 'explore'` (a new hook that pins the out-of-combat boom of 5.5 m and the base FOV at once; `null` restores it).
+The camera players see is unchanged.

@@ -98,21 +98,26 @@ export class Cape {
     this._lastA.copy(a0);
     this.acc = Math.min(this.acc + dt, STEP * 3);
     const inv = this._inv.copy(this.anchorObj.matrixWorld).invert();
-    const m = this.anchorObj.matrixWorld;
+    const ie = inv.elements, me = this.anchorObj.matrixWorld.elements;
     const { cur, prev, cols, rows } = this;
+    const hem = ((rows - 1) * cols + (cols >> 1)) * 3;
+    const gy = groundAt(cur[hem], cur[hem + 2]) + 0.03;
     while (this.acc >= STEP) {
       this.acc -= STEP; this.t += STEP;
       const gx = wind.x + Math.sin(this.t * 2.3) * 0.6 * (1 + flutter);
       const gz = wind.z + Math.cos(this.t * 1.7) * 0.5 * (1 + flutter);
       const s2 = STEP * STEP;
-      for (let r = 1; r < rows; r++) for (let c = 0; c < cols; c++) {
-        const i = (r * cols + c) * 3;
-        const fl = flutter * Math.sin(this.t * 17 + r * 1.3 + c * 0.7) * 3;
-        for (let k = 0; k < 3; k++) {
-          const x = cur[i + k], v = (x - prev[i + k]) * 0.975;
-          prev[i + k] = x;
-          const a = k === 0 ? gx : k === 1 ? -9.8 + fl : gz;
-          cur[i + k] = x + v + a * s2 * (k === 1 ? 1 : (0.5 + r / rows));
+      const t17 = this.t * 17;
+      for (let r = 1; r < rows; r++) {
+        const side = s2 * (0.5 + r / rows), ax = gx * side, az = gz * side;
+        for (let c = 0; c < cols; c++) {
+          const i = (r * cols + c) * 3;
+          const ay = (-9.8 + (flutter > 0 ? flutter * Math.sin(t17 + r * 1.3 + c * 0.7) * 3 : 0)) * s2;
+          const x0 = cur[i], x1 = cur[i + 1], x2 = cur[i + 2];
+          cur[i] = x0 + (x0 - prev[i]) * 0.975 + ax;
+          cur[i + 1] = x1 + (x1 - prev[i + 1]) * 0.975 + ay;
+          cur[i + 2] = x2 + (x2 - prev[i + 2]) * 0.975 + az;
+          prev[i] = x0; prev[i + 1] = x1; prev[i + 2] = x2;
         }
       }
       // pin top row
@@ -135,34 +140,39 @@ export class Cape {
             if (d > mx) { const k = mx / d; cur[i] = ax + dx * k; cur[i + 1] = ay + dy * k; cur[i + 2] = az + dz * k; }
           }
         }
-        // body collision in torso-local space: keep cape outside the robe silhouette
+        // body collision in torso-local space: keep cape outside the robe silhouette.
+        // v4: the matrix multiply, hypot and pow are written out (no calls with double arguments in the hot loop: no boxing / allocation).
         for (let r = 1; r < rows; r++) for (let c = 0; c < cols; c++) {
           const i = (r * cols + c) * 3;
-          const v = this._v.set(cur[i], cur[i + 1], cur[i + 2]).applyMatrix4(inv);
-          const y = v.y;
+          const px = cur[i], py = cur[i + 1], pz = cur[i + 2];
+          const y = ie[1] * px + ie[5] * py + ie[9] * pz + ie[13];
           if (y > 0.6 || y < -0.95) continue;
+          let x = ie[0] * px + ie[4] * py + ie[8] * pz + ie[12];
+          let z = ie[2] * px + ie[6] * py + ie[10] * pz + ie[14];
           const depth = y > 0 ? 0 : Math.min(1, -y / 0.72);
-          const rad = (y > 0 ? 0.24 : 0.25 + 0.24 * Math.pow(depth, 1.25)) ;
-          const rx = v.x / 1.1, rz = v.z;
-          const d = Math.hypot(rx, rz);
+          const rad = y > 0 ? 0.24 : 0.25 + 0.24 * depth * Math.sqrt(Math.sqrt(depth));   // depth^1.25
+          const rx = x / 1.1;
+          const d = Math.sqrt(rx * rx + z * z);
           let moved = false;
           if (d < rad) {
             const k = rad / Math.max(d, 1e-4);
-            if (d < 1e-4) { v.z = -rad; } else { v.x *= k; v.z *= k; }
+            if (d < 1e-4) z = -rad; else { x *= k; z *= k; }
             moved = true;
           }
-          if (v.z > -0.12) { v.z = -0.12; moved = true; }
+          if (z > -0.12) { z = -0.12; moved = true; }
           if (moved) {
             // position-only correction: shift prev too so collision pushes don't inject velocity (no whip / float)
-            v.applyMatrix4(m);
-            prev[i] += v.x - cur[i]; prev[i + 1] += v.y - cur[i + 1]; prev[i + 2] += v.z - cur[i + 2];
-            cur[i] = v.x; cur[i + 1] = v.y; cur[i + 2] = v.z;
+            const wx = me[0] * x + me[4] * y + me[8] * z + me[12];
+            const wy = me[1] * x + me[5] * y + me[9] * z + me[13];
+            const wz = me[2] * x + me[6] * y + me[10] * z + me[14];
+            prev[i] += wx - px; prev[i + 1] += wy - py; prev[i + 2] += wz - pz;
+            cur[i] = wx; cur[i + 1] = wy; cur[i + 2] = wz;
           }
         }
       }
+      // ground: one probe per update under the hem centre (v3 probed every point every step: 2.4k ground queries / s)
       for (let r = 1; r < rows; r++) for (let c = 0; c < cols; c++) {
         const i = (r * cols + c) * 3;
-        const gy = groundAt(cur[i], cur[i + 2]) + 0.03;
         if (cur[i + 1] < gy) cur[i + 1] = gy;
       }
     }

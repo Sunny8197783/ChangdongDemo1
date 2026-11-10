@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { toonMat, addOutline } from '../core/utils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { addRangeOnce } from './merge.js';
 
 export const COLORS = {
   robe: 0x2f5fb0, robeDark: 0x22447f, teal: 0x2bb0a2, tealDark: 0x1f8077, gold: 0xf4c75c,
@@ -165,7 +166,7 @@ class Skirt {
       p[i3 + 2] = r * c + legPush + bz * h2;
       p[i3 + 1] = B[i * 3 + 1] + lift * h2 * (0.6 + 0.4 * (s2[i] * cC + c2[i] * sC) * flutter);
     }
-    if (sk) { sk.attr.addUpdateRange(o3, n * 3); sk.attr.needsUpdate = true; }
+    if (sk) addRangeOnce(sk.attr, o3, n * 3);
     else this.geo.attributes.position.needsUpdate = true;
   }
 }
