@@ -10,7 +10,7 @@ Branch `v4/core`, worktree `/home/user/wt4/core`.
 | A — P0a (tag `core-p0a`) | (1)–(8) of the core task | **done** (C5 + boot green) |
 | B — P0b (tag `core-b`) | (9) post4 render path, (10) pixel budget, (11) governor, (12) sub-steps + per-entity hitstop, (13) warm-up draws, (14) skills presentation, (15) bench.js, (16) debug hooks, (17) bootcheck config 3 / playtest2 / C1–C4, C7 | **done** (C1–C5, C7 green; legacy tests green) |
 | P1 | uiScale CSS helper (if ux asks), half-res soft-smoke pass (if vfx asks) | **cut** for wave B (ux has not asked; vfx marked its ask "not needed for P0"); fallbacks: `uiScale` is a stored setting ux applies itself, smoke stays in the scene pass |
-| C — integration | §7.10 | next invocation |
+| C — integration round 1 | §7.10 | **done** (merged, requests resolved, tests run, review written; fix items handed back — see below) |
 
 ## What exists at `core-p0a` (the contract every owner codes against; wave B changes are listed in the next section)
 
@@ -223,3 +223,81 @@ Integration-only rows (C6, C8: GPU ratios, long frames, allocation, soak) are me
 - `tools/playtest3/harness.js`: `tells` added to the module list (its 404 is an expected stub).
 - `tools/playtest3/core.js`: `stub=all` boots 13 stubs (ORDER gains tells).
 - `tools/playtest.js`: a 404 of a module file missing on disk is not a page error.
+
+## Wave C round 1 — integration (branch `v4-polish`)
+
+Merged with `--no-ff`, one by one, no conflicts: `v4/core, world, mobmodels, tells, vfx, player, magic, melee, mobs, bosses, ux`
+(every branch had new commits). Requests: every `docs/v4/requests/*.md` carries a "Resolution" section.
+
+### Integration fixes (seams, committed as "integration fix: …")
+- legacy skill adapter forwards `castId` / `skillId` (`skills/runtime.js`, `skills/adapters.js`); render warm layer 29 (30 = player `HIDDEN_LAYER`).
+- `timeScale.comp()` = 1 / lowest *compensating* scale (witch + bossDeath no longer runs the player at 4×).
+- reaction hits carry the trigger's `castId` (`combat/reactions.js`): one hitstop / burst per cast (playtest2 sword hitstop line passes).
+- ux damage arc switches the vfx radial hurt vignette off (`ui/threatui.js`).
+- `progression.mastery()` allocation-free (per-hit path).
+- tells rim clones of a mob's hidden LOD view follow the body's visibility (`tells/body.js` + `mobs/rig.js lod.userData.rimVisibleWith`): rims were never drawn beyond the LOD distance.
+- tests: C5 stub probe / overlay-call probe with the real tells; world beacon starts unset (ux sets objective beacons); vfx motif probe picks an unregistered pair;
+  MG1.g waits for an earlier finisher; PL1 shadows magic's read-only `castLock` getter; T4 refreshes the v4 LOD state; harness attributes non-world objects
+  (`world.debug.owns`) to `other`; C6 / C8 implemented in `tools/playtest4/core.js` (`--perf`, or `PT4_CORE_ONLY=c6,c8`; 9 ABAB pairs, `PT4_PAIRS`).
+
+### Final §1 numbers (merged build, SwiftShader, 640×360, prod=1, governor=0, seed=1, medium)
+
+GPU ratios were measured with the machine otherwise idle; an earlier run with playtest3 in parallel gave F-mage 0.553 (pairs 0.14–2.2): the ratio is only
+meaningful on a quiet machine.
+
+| Metric | Measured | Budget | Result |
+|---|---|---|---|
+| **GPU ratio v4 ÷ v3 (MSAA 4), ABAB 9 pairs median — F-mage** | **0.251** (pairs 0.21–0.57) | ≤ 0.45 | pass |
+| **GPU ratio — F-ranger** | **0.335** (0.28–0.37) | ≤ 0.45 | pass |
+| **GPU ratio — S-plains** | **0.338** (0.32–0.46) | ≤ 0.65 | pass |
+| Draw calls max over sweep S-village / plains / mirwen / elderwood | 164 / 127 / 141 / 156 | ≤ 175 / 140 / 160 / 160 | pass |
+| Draw calls p95 F-mage / F-ranger / B-nidhoggra (scene + shadow + overlay) | 176 (154+22+0) / 169 (147+22+0) / 104 (94+11+4) | ≤ 250 | pass |
+| F-mage group shares p95 (scene / shadow) | world 112/7, enemies 23/12, fx 18/2, player 4/1, other 12/0 | §1.2 rows | pass |
+| Shadow pass F-mage / F-ranger p95 | 22 calls / 26.5k tris; 22 / 26.1k | ≤ 30 / 50k | pass |
+| Triangles max S-* / F-mage / F-ranger | ≤ 503k / 476k / 460k | ≤ 600k / 700k | pass |
+| Transparent draws p95 F-mage / F-ranger | 40 / 30 | ≤ 55 | pass |
+| Fragments ÷ screen S-plains scene / post / world transparents | 1.64 / 1.41 / 0.009 | ≤ 2.2 / 2.0 / 0.5 | pass |
+| Fragments F-mage / F-ranger / B-nidhoggra scene+transparent | 1.54 / 1.62 / 1.23 | ≤ 3.5 | pass |
+| Player-FX coverage p95 / max F-mage, F-ranger | 1.13 / 1.15; 0.39 / 0.46 | ≤ 1.5 / 2.5 | pass |
+| Enemy-FX coverage p95 B-nidhoggra | 0 | ≤ 1.0 | pass |
+| Live particles max F-mage / F-ranger | 257 / 452 | ≤ 1000 | pass |
+| Uploads S-* median | 7.8–14.1 KB in 14–16 calls | ≤ 60 KB / 30 | pass |
+| **Uploads p95 F-mage / F-ranger** | **513 KB in 119 calls / 216 KB in 96 calls** | ≤ 150 KB / 30 | **fail** (fix item) |
+| Simulation ms median F-mage / F-ranger / B-nidhoggra | 1.4 / 1.3 / 1.2 | ≤ 3.5 / 4.5 | pass |
+| Render submit F-mage median / p95 | 3.2 / 4.2 ms | ≤ 4 / 6 ms | pass (SwiftShader, includes rasterisation) |
+| **New materials during the F-mage / F-ranger rotation** | **31 / 12** | ≤ 4 | **fail** (fix item) |
+| **Programs after boot** | **161** (growth during rotations 0, first draws 0) | ≤ 130 | **fail** (fix item) |
+| Long frames F-mage, 30 s simulation after warm | 0 > 50 ms, 0 > 33 ms (worst 15.9 ms) | 0 / ≤ 2 | pass (one earlier run under load: one 91 ms frame) |
+| **JS allocation F-mage / S-plains** | **4.70 / 4.00 MB per game-second** (v3: 9.0–11.5) | ≤ 1.0 / 0.3 | **fail** (fix items: mobs, player, world) |
+| 5-min soak (sim-fast) geometries / textures / objects | 664→664 / 76→76 / 2432→2228 | flat ≤ +2 % | pass |
+| **Zone transition, worst simulation frame after a teleport** | plateau 2.8, ascent 5.1, **mirwen 75**, elderwood 3.2 ms | ≤ 50 ms | **fail** (world) |
+| Render size at a 1920×970 window, medium (C1) | 1406 × 710 = 0.998 MP | ≤ 1.0 MP | pass |
+| Post passes (C1) | 1.41 full-res equivalents, 7 calls, bright ¼, mip 1/16, 3 mips | ≤ 2.0 | pass |
+| Point lights at medium | 0 | 0 | pass |
+| Game-time / real-time at 1/15, 1/10 s (C3) | 1.000 / 1.000; CPU 1/15 frame 1.44 × a 1/60 step | ≥ 0.99; ≤ 1.6 × | pass |
+| Hitstop 30 light requests / s (C4) | 0.075 s granted, no global freeze | ≤ 80 ms | pass |
+| 성능 테스트 3 s (C7, driven mode) | 10 fps avg / 10 1 % low, L0, 640×360, CPU 14.6 ms, exact restore | fields + restore | pass |
+| Title benchmark (C7) | L2 on SwiftShader (misses 0.5, headroom 0), applied | picks a level | pass |
+
+### Integrated-laptop default (step 5)
+- Default quality **medium** (`DEFAULTS.quality = 'medium'`, unknown → medium, C5); medium preset = 1.0 MP pixel budget, MSAA 0 + FXAA, PCF 1024, 3 bloom mips, 0 point lights,
+  grass 0.4, particle caps 1000 / 300 (C5, C1).
+- Pixel budget: `renderSize(1920, 970, 1)` = 1406 × 710 (0.998 MP), `budgetPx=0.5` at 1280×720 → 942 × 530 (C1).
+- Governor (`debug.governor().simulate`, C2): 50 % misses at 60 Hz → L1 within 1.02 s; EMA > 1.6 T → L2 in one step; probe back up after 6 s with < 2 % misses
+  (revert + backoff 6 → 12 → 24 s); works at 144 Hz; L2 resolution controller (GPU-timer P-control and the miss-driven ×0.92 path, floor 0.8); fpsCap 30 respected;
+  `autoQuality` off and `dynamicRes` off honoured; L4 drops bloom without a new program.
+- 성능 테스트 (`game.quality.benchmark`) returns every field, restores the game exactly and formats the 복사 line; the ux settings menu calls it (ux section green).
+
+### Test results (merged build)
+- `node tools/bootcheck.js`: all 17 configs `playing`, exit 0. Note: `@noBosses` boots with `stubbed:["enemies"]` (bossbase.js / golem.js import `./bosses/*` statically) — fix item bosses.
+- `node tools/playtest.js --quick`: all PASS, exit 0.
+- `node tools/playtest2.js`: 79 PASS, 0 FAIL, exit 0 (the "wind combo hitstop" line passes with the reaction castId fix).
+- `node tools/playtest3.js` (all): 1273 passed, **1 failed** (core check 11: programs 161 → 162 after reaching nidhoggra: the boss's instanced `nid-body` with
+  `instanceColor` compiles a toon variant that was not warmed — fix item bosses), 1 skipped.
+- `node tools/playtest4.js --full` (7000 s cap; melee cut off near its end, player and ux re-run separately): 849 + 145 passed, 28 + 3 failed before the
+  integration test fixes; after them the remaining failures are owner items (see the integration result / fix items): vfx V1 clamp + F-shadowblade
+  coverage (counting override 1.86), tells T4 rim interior 20 % (≤ 15 %), bosses B1 treant.pods, magic MG1.c detail floors (36/36 bespoke; the v4 combat camera
+  shrinks every look: v4/magic + v4/player alone gives fire.basic detail 417 vs 3,077 on the magic branch), MG1.d 33 new materials (--full), MG1.f IoU,
+  melee ML1.c detail floors, ML1.g dodge lock (fire c1 0.317 s) and cancel windows (wind.vortex, lightning.ult), ML1.f IoU.
+- `--sheets`: caster, melee, mobs, bosses sheets regenerated from the merged build and committed; review in `docs/v4/review.md`.
+- `--perf`: C6 / C8 as in the table above (GPU gates pass; uploads, new materials, programs, allocation and the Mirwen transition fail).

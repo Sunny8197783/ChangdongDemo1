@@ -1529,3 +1529,1263 @@ bootcheck (640×360, medium):
   Nidhoggra's heart opens on `onPhaseStart`, and emits `bossParts {id, phase, parts}` per phase (the boss bar listens).
 - Story: post-game 정령 시련 (`src/story/trials.js`, `game.story.trials`): F at a freed spirit's arena rim in stage
   'done' re-fights that mid-boss at +30 % HP (`game.bossTrialHpMul`) for quest XP (first clear full, repeats 35 %).
+
+## v4 polish contract (binding)
+
+The binding v4 contract is `docs/v4/PLAN.md` (revision v4.1); it wins over docs/v3/* and the sections above where they differ.
+Integration (wave C) results: `docs/v4/notes/core.md` (final §1 numbers), review gate `docs/v4/review.md`, requests and their resolutions `docs/v4/requests/*.md`.
+
+### v4 module notes
+
+#### v4 notes — core (`docs/v4/notes/core.md`)
+
+##### core — v4 notes
+
+Owner: core (`index.html`, `src/main.js`, `src/core/*`, `src/skills*` (frozen except the §9 P0b items), the test tools, docs listed in PLAN §7.1).
+Branch `v4/core`, worktree `/home/user/wt4/core`.
+
+###### Status
+
+| Wave | Items | State |
+|---|---|---|
+| A — P0a (tag `core-p0a`) | (1)–(8) of the core task | **done** (C5 + boot green) |
+| B — P0b (tag `core-b`) | (9) post4 render path, (10) pixel budget, (11) governor, (12) sub-steps + per-entity hitstop, (13) warm-up draws, (14) skills presentation, (15) bench.js, (16) debug hooks, (17) bootcheck config 3 / playtest2 / C1–C4, C7 | **done** (C1–C5, C7 green; legacy tests green) |
+| P1 | uiScale CSS helper (if ux asks), half-res soft-smoke pass (if vfx asks) | **cut** for wave B (ux has not asked; vfx marked its ask "not needed for P0"); fallbacks: `uiScale` is a stored setting ux applies itself, smoke stays in the scene pass |
+| C — integration round 1 | §7.10 | **done** (merged, requests resolved, tests run, review written; fix items handed back — see below) |
+
+###### What exists at `core-p0a` (the contract every owner codes against; wave B changes are listed in the next section)
+
+###### Settings, difficulty, assist (`src/core/settings.js`)
+- Every PLAN §6.8 key with its default in `DEFAULTS` (and persisted in `aw_settings_v3`): `fxIntensity 1.0`, `threatEmphasis 'normal'|'strong'`, `tellMul 1|1.25|1.5`,
+  `enemySpeed 1.0|0.9|0.8|0.7`, `iframeMul`, `perfectMul`, `witchSlowmo true`, `offscreenArrows true`, `teachSlowmo true`, `hints true`, `aimAssist 'off'|'weak'|'strong'` (P1),
+  `colorblind 'off'|'protan'|'tritan'` (`'deutan'` is stored as `'protan'`: same palette), `flashReduce false`, `screenShake 0.6`, `uiScale 1.0`,
+  `damageNumbers 'all'|'merged'|'off'` (default `'merged'`; v3 `true → 'merged'`, `false → 'off'`, also on `set()`), `cameraDist 'near'|'normal'|'far'`, `autoAllocate false`,
+  `introShort true`, `keybinds {dodge:'KeyQ', dodgeAlt:'Mouse3', defend:'KeyE', jump:'Space', sprint:'ShiftLeft', interact:'KeyF', skills:'KeyK', codex:'Tab', confirm:'Enter'}`,
+  `quality 'low'|'medium'|'high'|'custom'` (unknown → medium), `autoQuality true`, `dynamicRes true`, `fpsCap 60|30|0`, `showFps false`, plus `gpuTier`.
+- `SETTING_DEFS` = menu metadata for ux (key, tab, Korean label, values with Korean labels / slider range). `SETTINGS_TEXT_KO` = tab names, `재시작 후 적용`, 성능 테스트 texts, the two quality offers.
+- `PRESETS` v4 (§2.2): v3 keys kept + `budgetPx, dynResMin, msaa, fxaa, shadowType, shadowSize, shadowEvery, shadowCalls, shadowTris, bloomMips, bloomStrength, pointLights,
+  grassNearFade, grassReceiveShadow, treeDist, floraOutlineDist, enemyOutlineDist, enemyLodDist, particleCap, additiveCap, coverageSoft, coverageHard, fxCalls, fxDetail`.
+  Medium: 1.0 MP, MSAA 0, PCF 1024, bloom 3 mips 0.40, 0 point lights, grass 0.4, caps 1000/300, coverage 1.5/2.5, 40 FX calls. A stored non-custom quality re-applies the v4 preset on load.
+  `msaa`, `shadowType`, `pointLights` apply at boot only (`RELOAD_KEYS`).
+- `DIFFICULTY` = story/easy/normal/hard with `hpMul, dmgMul, tellMul, perfectMul, iframeMul, enemySpeed, autoRevive, checkAddSec, regenCombatMul, autoAllocate, nameKo, descKo`;
+  `telegraphMul` alias fixed at 1, `checkAdd` alias = `checkAddSec`. `DIFFICULTY_ORDER = ['story','easy','normal','hard']`.
+- `game.assist` (getter, one reused object, recomputed on every `settingsChanged`): `{difficulty, tellMul, enemySpeed, iframeMul, perfectMul, fxIntensity, threatStrong, colorblind (null|'protan'|'tritan'),
+  flashReduce, teachSlowmo, witchSlowmo, offscreenArrows, autoRevive}`; multipliers = difficulty × slider. `enemySpeed` clamped to [0.5, 1].
+
+###### Palettes
+- `src/core/elements.js`: `FX_RAMPS` (§3.2, incl. physical and a `void` ramp), `ELEMENT_DEFS[el].colors.fx`, legacy fields derived (`mid = hex = fx.mid`, `core = fx.hi`, `edge = fx.dark`; shadow `core = fx.dark`, `edge = fx.light`);
+  `css` unchanged (UI). `game.elements.fx(el)` → `{hi, light, mid, dark}` numbers (unknown → physical). Physical pseudo-element `hex` = `0x8A8274` (no white). `utils.ELEMENT_COLORS` follows the ramps.
+  Note: §3.2's "saturation ≤ 0.35 below hi" holds for light's body steps (light 0.15, mid 0.24); its binding dark edge `#5A4A2A` is 0.53 (HSV) — kept as written.
+- `src/core/threat.js`: `THREAT` (8 rows, exact legend texts, rim/edge/fill, shape/body/sound notes), `THREAT_KINDS`, `RESERVED_SHAPES`, `RESERVED_HUES`, `THREAT_FRONT`, `THREAT_LAYERS` (§5.2 numbers),
+  `COLORBLIND`, `threatColor(kind, colorblind)` → frozen cached `{kind, rim, edge, fill, fillAlpha, rimAlpha, outline, stripes}`, `threatCss(n)`.
+
+###### Tells stub + reference geometry
+- `src/core/tellgeom.js`: `hitTest(shape, p, pad = 0.15)`, `shapeDistance(shape, p)` (exact distance to circle / ring / cone / line / capsule / conecap; rad half-angles; XZ),
+  `TELL_MIN`, `TELL_LOCK` (§5.7), `tellDuration(base, cls, tellMul, timeMul)`. The real tells may import it (T3 compares against it).
+- `stubs.tells` (`isStub: true`): `attack(e, spec)` → handle `{id, enemy, start, dur, progress, remaining, locked, done, alive, consumeStrike(), contains(pos, pad), setPos, setDir, setEnd, extend, stop}`
+  timed on `game.enemyTime` with floors × `assist.tellMul` × `e.timeMul`; emits `tellStart`, `tellCommit` (at lock, from `update()`), `tellEnd {reason}`; handles never consumed are cancelled 2 s after their hit.
+  When `vfx.telegraph` exists the stub **also draws the fixed v3 decal** for the attack's shape (pass `spec.legacyDecal:false` to opt out), so callers that use `tells.attack` need no fallback decal.
+  `canAttack` (punish window only), `nextImpact(pos)`, `windup(e, base, cls)`, `punish(e, dur, {mul})` (sets `e.vulnerableUntil` in enemyTime seconds + `vulnerableMul`, emits `punishWindow`),
+  `projectile/hazard/safe → {stop}`, `active()` (reused empty array), `footprints()` (`{data: Float32Array(64), n: 0}` reused), `telegraph: null`, `renderThumb: null`, `MIN`, `LOCK`, `debug.pool()`.
+- `NOT_FX` gains `kit, shared, applyPlayerFx, fxMulAt, fxFactor, debug` (read as `undefined` on the vfx stub).
+
+###### Render (`src/core/render.js`, `src/main.js`)
+- `game.render = {tier, rendererName, msaa, pointLights, shadowType, threatScene, overlayCamera, warm(obj, {target:'scene'|'overlay', now}), snapshot(obj, {w, h, yaw, pitch, dist, scene}), flushWarm, drawOverlay}`.
+  `threatScene` has no background/fog and is drawn after `composer.render()` (`tells.preOverlay()` → `setRenderTarget(null)` → `autoClear=false` → `overlayCamera.copy(camera)` incl. projection → render → `autoClear=true`); skipped when empty.
+  `warm` (P0a) compiles against the right target and light set (scene: composer HalfFloat target + main-scene lights; overlay: canvas variant), idempotent per material, queued and flushed before the next render
+  (`now:true` compiles immediately). The real first draw (64×64 / 1×1 scissor) is P0b item 13. `snapshot` renders the object alone (private hemi + sun) into an sRGB RGBA8 target → PNG data URL.
+- Composer targets: both carry their own `DepthTexture`. `game.post` adds `sceneDepth {value: DepthTexture of the target the RenderPass wrote}`, `uvScale {value: Vector2(1,1)}` (dynamic resolution in P0b),
+  `sceneRes`, `canvasRes` (drawing-buffer px), `cameraNear`, `cameraFar`, `projInv {value: camera.projectionMatrixInverse}`, `camWorld {value: camera.matrixWorld}` (live references), `bloomTex {value:null}` (P0b),
+  `bloomStrength(v)`, `setGrade(id, strength, {priority, durReal, fade})` (layers by priority; the legacy `post.grade(...)` always wins = cinematic priority 10; `GRADES.witch` priority 1).
+- Boot render state per preset: MSAA (`prod=1` or production: preset; plain test: 0), shadow type (PCF at medium), `pointLights` (false below high) — applies on reload only.
+  `renderer.debug.checkShaderErrors = (test && !prod) || &shaderCheck` (off in production and with `prod=1`).
+
+###### Frame, time, plumbing (`src/main.js`, `src/core/timescale.js`, `save.js`, `keymap.js`, `input.js`)
+- `ORDER = ['world','vfx','combat','tells','audio','player','spells','sword','skills','enemies','story','cinematic','ui']`, `FILES.tells = ['./tells.js','createTells']` (missing → core stub).
+- Frame: per step `game.enemyTime += dt × assist.enemySpeed` (not during the global freeze), `game.frame = {step, n, lastStep, frameDt}` (reused object; **P0a: n = 1**, sub-steps in P0b),
+  step group `player → stats → spells → sword → skills → enemies → combat → story → cinematic`, once per frame `world → tells → vfx → ui → audio`, render `composer → preOverlay → threat scene`.
+- `game.timeScale.set(id, scale, durReal, {compensate, priority}) → granted`; arbitrated sources `witch 1 < teach 2 < cinematic 3` (or any `priority`): one at a time, a lower/equal request while one is active returns false;
+  `comp()` = 1/value while any compensating entry (`focus` or `compensate:true`) is active; `slowmoSource()`.
+- `game.hitstop(seconds, {tier, target})`: **P0a keeps the v3 global freeze** (playtest2 still expects it) but stamps `target.hitstopUntil` (`game.realTime` seconds) and logs every request;
+  `game.debug.hitstopLog()` → last 64 `{t, sec, tier, granted, target}`. Per-entity semantics + budget = P0b item 12.
+- `game.save.section(name, {serialize, load})`: stored under the new snapshot key `sections` (v3 keys unchanged); `load(data)` on save load, `load(null)` on `clear()`, immediate `load` for late registrations;
+  `RESERVED = {tells, hints, monsterCodex, encounters}`; test helpers `snapshot()`, `sectionsSnapshot()`, `loadSections(obj)`.
+- `game.nextCastId()`; the skills runtime stamps `ctx.castId` (or `opts.castId`) before `perform` and adds `castId` to `skillCast` (`skills.lastCastId`).
+- `game.input.keymap = {get, rebind, label, actionOf, reset, pressed, down, released, actions, NAMES_KO}`; persisted in `settings.keybinds`; rebinding dodge/defend/interact/codex/skills also updates the legacy `KEYS`.
+  Korean labels: `Q`, `마우스 4번 버튼` (Mouse3), `마우스 왼쪽/오른쪽/휠 버튼`, `스페이스바`, `Shift`, `Tab`, `Enter` … `KEY_NAMES_KO.codex = '도감'`. Mouse buttons 3/4 no longer navigate back/forward.
+- `game.quality` (P0a shell, `src/core/quality.js`): `{level, preset, scale, baseScale, budget, renderSize(), set(level, reason), lock(on), history(), headroom(sec), benchmark({seconds})}`;
+  `budgetFor(level, preset)` implements the cumulative L0–L5 rows of §2.3 (`particleMul, coverageMul, flareMul, fxDetail, enemyOutlineDist, enemyLodMul, floraMul, grassMul, floraOutlineDist,
+  shadowEvery, shadowFrozen, bloom, particleCap, dynRes, dynResFloor`); `qualityLevel {level, scale, reason}` event; budget-only L1 headroom for 4 s on `bossSpawn` and ultimate/finisher `skillCast`;
+  `game.perfScale` = `budget.particleMul` (legacy view). The governor controller, pixel budget and title benchmark are P0b (the v3 EMA governor still runs outside tests / with `governor=1`).
+- Frame cap: rAF callbacks earlier than `1/fpsCap − 2 ms` are skipped (`fpsCap` 0 = unlimited).
+- `gpu.js`: `detectGpu` (WEBGL_debug_renderer_info → tier regexes of §2.2), `baseScale(w, h, pr, budgetPx, renderScale)`, `renderSizeFor` (P0b wires them).
+- Debug (§7.7): `hitstopLog`, `governor`, `perf` (null until P0b), `overdraw`, `coverage`, `tells`, `forceAttack(type|entity, id)`, `lookOf(id, family)`, `newMaterials()`, `firstDraws()`, `fragments()`.
+
+###### Test params (§7.6)
+`prod=1`, `governor=0|1` (test default off), `budgetPx`, `refresh`, `seed=N` (mulberry32 replaces `Math.random`), `gpu=`, `quality=` (transient preset), `fx`, `difficulty` (incl. story), `witch=0`,
+`colorblind=`, `threat=strong`, `hints=0`, `stub=<module>[,…]` (incl. `tells`). Setting params are applied with `persist:false`. `game.testParams` holds the parsed values.
+
+###### playtest4 (`tools/playtest4.js`, `tools/playtest4/harness.js`)
+Runner: `node tools/playtest4.js [owner…] [--perf] [--full] [--sheets] [--list]`, ORDER of §7.8, exit 1 on failure, `PT.flags`.
+Harness: `PT.boot(params, {w, h})` (adds `prod=1&governor=0&seed=1` unless given), `PT.bootScene(id)` + in-page `PT.scene(id)` for S-*/F-*/B-*/R-*/P-bench, `PT.sweep`, `PT.draws()`
+(scene/shadow/overlay/post calls + tris, transparent, additive, upload bytes/calls, programs, `byGroup` world/player/enemies/fx/enemyFx/tells/ui), `PT.measure(fn)`, `PT.fragments({owner})` (counting override,
+first call recompiles patched variants: ~18 s on SwiftShader, cached after), `PT.rotate`, `PT.simMs`, `PT.cpuFrame`, `PT.longFrames`, `PT.alloc` (CDP), `PT.pixels.{render, diff, luma, mask, sobel, iou, dataURL}`,
+`PT.armor` (sets `e.ptArmor`), `PT.keepAlive`, `PT.clearEnemies`, `PT.waitEvent`, `PT.events`, `PT.gpuSync`, `PT.gpuMs`, `PT.gpuRatio` (same page), `PT.gpuRatioPages` (two pages),
+`PT.baseline()` (v3 build `de5d823` via `git archive` into `tools/playtest4/out/v3base`), `PT.sheet` (contact sheet ≤ 150 KB).
+Fixtures (`tools/playtest4/fixtures/`): the evidence scripts `fight.js, lib.js, common.js, percast.js, measure.js, inject.js, synctest.js` with repo-relative paths, output in `tools/playtest4/out/<name>/` (git-ignored).
+`.gitignore` keeps `*.png` ignored except `tools/playtest4/sheets/**`.
+
+###### Wave B (P0b) — what was built, APIs
+
+###### (9) Render path v4 — `src/core/post4.js` + `src/main.js`
+- `createComposer4(renderer, scene, camera, {msaa, bloomMips})` replaces EffectComposer + RenderPass + sanitize ShaderPass + UnrealBloomPass + OutputPass. EffectComposer-shaped:
+  `passes = [RenderPass, BloomPass4, FinalPass4]`, `readBuffer`/`renderTarget1`/`renderTarget2` (= the single scene target), `render(dt)`, `setSize(cw, ch, maxScale)`, `setScale(s)`, `viewport {w, h}`,
+  `uvScale`, `state {allocW, allocH, vw, vh, reallocs}`, `bloomActive`, `bloomMul`, `setBloomMips(n)`, `materials()`. `game.composer` / `game.bloomPass` point at it (`bloomPass.enabled/strength/threshold/radius/mips`).
+- Scene target: HalfFloat, samples = boot MSAA (0 at low/medium, 4 at high), own `DepthTexture`; allocated once at **drawing buffer × renderScale**; re-allocated only on a canvas resize or a
+  renderScale change. Dynamic resolution = `rt.viewport/scissor` = floor(alloc × scale) (no dispose, no program change). One scene target instead of two ping-pong targets (nothing ping-pongs any more).
+- BloomPass4: bright pass (4 Karis-weighted taps, NaN/Inf scrub, clamp 16, threshold 1.0, hue-preserving knee) into a ¼-area target; down chain of 3 mips (5 at high) from 1/16 area;
+  additive 3×3-tent up chain back to the first mip; output = `bloomPass.texture` = `game.post.bloomTex` (never blended into the scene target). Every tap is clamped to the live viewport.
+- FinalPass4 (to the canvas): scene × uvScale; FXAA 3.11-lite whose every tap is graded + ACES-tone-mapped (exposure 1.05) before the luma/edge tests; bloom added as
+  `TM(c + bloom·strength) − TM(c)` (HDR before the curve, identical to v3 off edges); grade (`uGrade*`), pulse (`uChroma`/`uRadial`, HDR radial + chroma path), CAS-lite sharpen while the render
+  is smaller than the canvas (`uSharpen`), ±0.5 LSB dither, NaN guard, linear → sRGB. All switches are uniforms (`uBloomOn`, `uFxaa`, `uSharpen`); `game.post.uniforms` = FinalPass uniforms (v3 names kept).
+- Bloom strength = preset (`0.40` medium, `0.45` high) × 0.75 while `enemies.aggroCount?.() ≥ 3` (checked every 0.25 s) → 0.30; L4 → `uBloomOn = 0` and the bloom pass is skipped.
+  Presets are re-applied after module `init()` (world v3 overwrote the bloom pass fields).
+- `game.post.sceneRes` = live scene viewport (px), `uvScale` = viewport ÷ allocation, `canvasRes` = drawing buffer, `sceneDepth` = the scene target's DepthTexture.
+- Shadows: `autoUpdate` off; the map is rendered every frame at medium, every 2nd at low / L3 (`budget.shadowEvery`), frozen at L5; **shadows off** = one shadow pass with no casters (view camera
+  on layer 31 for that single render) and then no updates. Texel snapping stays in world.
+- `renderer.setPixelRatio(min(dpr, 1.0 medium / 1.5 high))`; renderScale is no longer multiplied into the pixel ratio.
+###### (10) Pixel budget — `src/core/gpu.js`
+- `budgetSize(w, h, pr, budgetPx, renderScale, dyn)` (floor → never above the budget), `baseScale` (P0a), tier regexes (P0a; medium for every tier on first run — the settings default).
+- main: `base = baseScale(drawingBuffer, budgetPx (test param or preset), renderScale)`, total = base × `game.quality.scale` → `composer.setScale(total / renderScale)`; `game.quality.baseScale` holds base.
+- `game.quality.renderSize()` → live `{w, h}`; `renderSize(w, h, pr)` → what the current preset picks (C1 unit test: 1920×970 → 1406×710 = 0.998 MP).
+- Offers: `showOffer(game, 'high'|'medium')`, `maybeOfferHigh(game, titleBench)` (discrete tier, headroom ≥ 1.6, `settings.highOffered` once); `game.ui.qualityOffer(offer)` or event
+  `qualityOffer`, fallback DOM card outside tests (texts from `SETTINGS_TEXT_KO`). Drop-back offer: high + governor ≥ L2 for 30 s, once per session.
+###### (11) Governor — `src/core/quality.js`
+- `game.quality.frame(dtMs, cpuMs, gpuMs)` is called by the rAF loop once per rendered frame (production; tests only with `governor=1`). T = p10 rAF delta of the last 2 s, snapped to common
+  refresh rates, minimum of the last 30 s of estimates, `max(T, 1/fpsCap − 0.5 ms)`; `refresh=` quantises deltas and fixes T.
+- Overload (> 20 % misses / GPU > 0.9 T / CPU EMA > 0.8 T, 1 s) → +1 level (+2 when EMA > 1.6 T); at L2+ a GPU/miss overload is first absorbed by the resolution controller until it reaches its floor.
+  Probe up after `delays[level]` (6 s) with < 2 % misses; > 5 % misses within 2 s → revert, `delays[level] ×= 2` (6 → 12 → 24 → 48). Dynamic resolution at L2+ (`dynamicRes`): GPU timer →
+  `scale ×= sqrt(0.85 T / gpu)` every 0.25 s; otherwise ×0.92 / 0.25 s while misses > 20 %, ×1.03 / 2 s while < 2 %; floor = preset `dynResMin` (L5: 0.6); changes ≥ 0.02.
+- `gpuTimer` (EXT_disjoint_timer_query_webgl2, pool of 4, disjoint-safe), `governor()` state, `simulate({frameMs, gpuMs, cpuMs, refresh, seconds, log})` (fast synthetic frames, C2), `endSimulation()`,
+  `titleBenchmark({seconds:2})` (production boot, state `title`: real rAF frames + a few 1-px-synchronised renders → start level 0/1/2, headroom → high offer; `lastTitleBench`, event `titleBenchmark`).
+  `autoQuality` off → L0 and scale 1; `dynamicRes` off → scale 1. The v3 EMA governor in main.js is gone (`game.perfScale` = `budget.particleMul`).
+###### (12) Timing — `src/main.js`
+- Sub-steps: realDt ≤ 0.1, `n = min(2, ceil(realDt·30))`, step dt = realDt·scale / n (≤ 1/20), `n = 1` when the previous frame's simulation took > 8 ms. `game.frame = {step, n, lastStep, frameDt}`.
+  **Opt-in:** a playing module with `substeps: true` runs every sub-step; others run once on the last step with the whole frame dt (v3-compatible; see requests). stats runs every step.
+  `game.step(n, dt)` unchanged (1/60 → one step per frame). Game-time/real-time = 1.00 at 1/15 and 1/10 s.
+- Hitstop: per-entity (`target.hitstopUntil`, `game.playerHitstopUntil`, `game.isHitstopped(e)`), global only for `ult`/`kill` and option-less legacy calls; caps 0.10 (0.12 break/parry,
+  0.16 legacy); 3–4 frame floor only when the frame delta is below 50 fps; per-target 80 ms rolling budget (exempt: ult/break/parry/kill/legacy); log records `{t, sec, tier, granted, target, seq, reason}`.
+- Per-module CPU ring (`game.debug.perf()`): median ms per module over 120 frames + `render`.
+###### (13) Warm-up — `src/core/render.js` + main `prewarm()`
+- Boot: module `prewarm()` objects → `compileAsync` (production) / `compile` (tests) for the scene (composer-target variant) and the threat scene (canvas variant) → `render.bootWarm()`:
+  one real draw of every object (hidden included, culling off, all layers) into a 64×64 HalfFloat target, and the threat scene as a 1×1 scissored canvas draw. `game.bootWarm = {compileMs, ms, draws}`.
+- `render.warm(obj, {target, now})`: compile + one real draw of obj alone (warm layer 30, the host scene's lights enabled on that layer for the call), idempotent per material; `warmStats()`, `isWarm(obj)`.
+###### (14) Skills presentation — `src/skills/*`
+- familiars: instance colours from the element ramp (core light→mid, halo dark, bolt light, glow mid; base material colour default), spawn/impact via `kit.motif(el,'burst'|'spark')` when the kit exists
+  (else a pooled burst in ramp colours), one `castId` per bolt in the hit and the FX. procs: every proc firing = one `castId` shared by its hits + its burst (`kit.motif` burst/spark or legacy
+  preset with `castId`/`owner`). classkits: enchant wave (`kit.motif` wave + burst, else smear/shockwave/explosion with castId, ramp `mid` instead of `hex`) and shadow-mark detonation (`kit.motif('shadow','burst')`
+  else `impact_shadow`) with the cast's castId. `grep 0xffffff src/skills*` = 0.
+###### (15) 성능 테스트 — `src/core/bench.js`
+- `game.quality.benchmark({seconds = 20, rotate, mobs = 8})` → `{avgFps, low1Fps, level, renderW, renderH, gpu, tier, cpuMs, gpuMs, seconds, frames, cast, mobs, mode}`; live mode measures real rAF frames
+  (CPU = `game.lastFrameCpuMs`), driven mode (game frozen, tests) steps the game itself. Input locked (`bench`), governor locked, player invulnerable + refilled, plains spot, `enemies.spawnBench?(8)`,
+  rotation (loadout skill / 0.5 s, ult / 7 s), slow orbit. Restores state, position, look, HP/MP/stamina/resolve, invulnerability, velocity, cooldowns + charges (`skills.cooldownSnapshot/Restore`),
+  governor lock, input, bench mobs. `game.quality.formatBench(r)` = 복사 text (template `SETTINGS_TEXT_KO.benchLine`).
+###### (16) Debug hooks (§7.7)
+- `debug.governor()` (full governor state + `simulate`; also `debug.governor.simulate`), `perf()`, `firstDraws()` (programs drawn for the first time; lazy `renderBufferDirect` hook),
+  `programs()`, `newMaterials()`, `fragments()`, `overdraw`, `coverage`, `tells`, `forceAttack`, `lookOf`, `hitstopLog`.
+###### (17) Tests
+- `tools/bootcheck.js`: third safety config `@noTells` (renames `src/tells.js` away) and `&stub=tells`: boots on the stub, spawned mobs attack (`enemyAttack`/`tellStart`), and `tells.attack` with a
+  shape shows the fixed v3 `vfx.telegraph` decal; no uncaught errors.
+- `tools/playtest2.js` (§7.9): hitstop probe reads `game.debug.hitstopLog()` (by `seq`) and the hit's `castId` (captured at `combat.dealDamage`): the first hit of each castId logs a hitstop ≥ 0.025 s
+  (granted, or dropped by the 80 ms per-target budget); with the v4 kit, later hits of the same castId log none; DoT ticks none. Legacy hits without a castId keep the v3 volley rule.
+  Settings: "renderScale lowers the render size" (was: pixel ratio) and "shadows off" = map no longer updated (was: shadow-camera layer mask).
+- `tools/playtest4/core.js`: C1, C2, C3, C4, C5, C7 + debug hooks; `PT4_CORE_ONLY=c1,c2,…` runs single blocks (blocks: c5 params seed c1 c2 c3 c4 c7).
+- `seed=1` determinism check uses `game.seedRandom(1)` (the rAF loop consumes a boot-dependent number of draws before the harness freezes).
+
+###### Measured at core-b (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; this branch: v3 world/vfx/enemies/player, tells on the stub)
+
+Counts are representative; SwiftShader wall-clock ms are not (the 4 shared CPUs made 1-px `readPixels` syncs take 1–16 s during these runs).
+
+| Metric | Measured (branch) | Budget | Owner of the gap |
+|---|---|---|---|
+| Post passes, full-res equivalents (C1) | **1.41** (final 1.0 + bright 0.25 + 3 down / 2 up mips 0.16), 7 post calls | ≤ 2.0 | — |
+| Bright target / first mip / mips (C1) | 0.25 / 0.0625 of the render area / 3 (high 5) | ¼ / ≤ 1/16 / 3 | — |
+| MSAA at low / medium / high | 0 / 0 / 4 (FXAA off at high) | 0 / 0 / 4 | — |
+| Render size at a 1920×970 window, medium | 1406 × 710 = 0.998 MP (`renderSize(1920, 970, 1)`) | ≤ 1.0 MP | — |
+| Resolution step | viewport + uvScale follow, textures 38 → 38, 0 reallocations, ≈ 0 ms extra CPU | no realloc, ≤ 2 ms | — |
+| Threat-scene colour, bloom on/off/scale 0.8 | (255, 42, 61) in all three | ΔRGB ≤ 8 | — |
+| F-mage rotation p95 calls scene + shadow + overlay | 221 + 40 + 0 = **261** | ≤ 250 | vfx (player FX calls), world/mobmodels (shadow ≤ 30) |
+| F-mage triangles scene / shadow p95 | 636k / 92k | ≤ 700k / 50k | world, mobmodels, player (shadow casters) |
+| F-mage transparents in the scene pass p95 | 74 | ≤ 55 | vfx |
+| F-mage uploads p95 | 1443 KB in 120 calls | ≤ 150 KB / 30 calls | vfx (v3 particle pools upload full capacity), world |
+| F-mage simulation ms median (`PT.simMs`) | 1.4 | ≤ 3.5 | — |
+| Programs after boot | 136 | ≤ 130 | vfx/tells (kit + tells ≤ 10) at integration; post4 itself uses 4 |
+| First draws after boot (4-zone sweep) | 0 | 0 | — |
+| Boot warm-up (compile + one real draw of every object) | ≈ 2.0 s, 1072 draws (SwiftShader) | — | first-view hitch at Mirwen 8.4 → 6.1 s, Elderwood 1.1 → 0.74 s, plains 1.3 → 0.70 s (sync'd SwiftShader frames) |
+| Game-time / real-time at realDt 1/15 and 1/10 (C3) | 1.000 / 1.000 | ≥ 0.99 | — |
+| CPU of a 1/15 s frame vs a 1/60 frame (C3) | ≈ 1.0× (no module declares `substeps` yet → legacy modules run once per frame) | ≤ 1.6× | each playing owner when it sets `substeps:true` |
+| Hitstop: 30 light requests / s on one target (C4) | 0.075 s granted, rest dropped; other targets 0, no global freeze | ≤ 80 ms | — |
+| 성능 테스트 3 s (C7, driven mode) | 10–11 fps avg, 1 % low 10, L0, 640×360, CPU 12–14 ms | fields + exact restore | — |
+| Title benchmark (C7) | picks L2 on SwiftShader (misses 0.67–0.75, headroom ≈ 0) | picks a level | — |
+| Boot to ready (harness) | 5.8–7.2 s (P0a: 3.7–4.7 s; +≈ 2 s warm draws on SwiftShader) | recorded | — |
+
+Integration-only rows (C6, C8: GPU ratios, long frames, allocation, soak) are measured in wave C with every owner merged.
+
+###### Test results at core-b (this branch, tells on the stub, no other tags merged)
+- `node tools/playtest4.js core`: **132 passed, 0 failed, 0 skipped** (C1, C2, C3, C4, C5, C7 + debug hooks; 239 s).
+- `node tools/bootcheck.js`: all **17** configs OK (15 v3 configs + `@noTells` + `&stub=tells`: stub true, mobs attack, the stub's shaped attack shows the fixed v3 decal), exit 0.
+- `node tools/playtest.js --quick`: all checks PASS, exit 0.
+- `node tools/playtest2.js`: 75 PASS, 0 FAIL, exit 0 (hitstop and settings expectations updated per §7.9, see (17)).
+- `node tools/playtest3.js` (all sections): **1260 passed, 0 failed, 1 skipped** (1270 s). No playtest3 expectation changed in wave B (core section unchanged since core-p0a).
+- After the last governor fix (lock keeps the level): `PT4_CORE_ONLY=c2,c7` re-run 22/0.
+
+###### Measured at core-p0a (SwiftShader, 640×360, prod=1, governor=0, seed=1, medium; v3 render path still in place)
+
+| Metric | F-mage (static frame after set-up) | Budget (§1.2) |
+|---|---|---|
+| Draw calls scene + shadow + overlay | 170 + 40 + 0 = 210 (rotation samples 249–261) | ≤ 250 (C6, integration) |
+| Triangles scene + shadow | 600k + 90k | ≤ 700k |
+| Shadow pass | 40 calls / 90k tris | ≤ 30 / 50k (world, mobmodels, player own the casters; P0b core shadow camera) |
+| Post passes (full-res equivalents) | 4.17 (v3 chain: sanitize + bloom + output) | ≤ 2.0 (P0b post4) |
+| Programs after boot | 142–144 | ≤ 130 |
+| Allocation (2 s rotation) | 11.4 MB / game-s | ≤ 1.0 (owners' per-frame rules) |
+| Sim ms median / frame CPU median | 2.2 / 9.9 ms (submit 6.2 ms) | ≤ 3.5 / — (submit ≤ 4) |
+
+###### Test results at core-p0a (this branch, tells/vfx-kit on their stubs)
+- `node tools/playtest4.js` (core section): **73 passed, 0 failed, 5 skipped** (C1–C4, C7 = P0b) — C5 green; boot ≈ 3.7–4.7 s to ready (SwiftShader).
+- `node tools/bootcheck.js`: all 15 default configs `playing` (tells stubbed), exit 0. The third config (`src/tells.js` renamed away) is P0b item 17 (today `src/tells.js` does not exist, so every config already boots on the tells stub).
+- `node tools/playtest.js --quick`: all 4 legacy checks PASS (expected 404 of a missing module file is now ignored, like the playtest3 harness).
+- `node tools/playtest2.js`: story / sword / settings / perf all PASS (hitstop still global in P0a).
+- `node tools/playtest3.js` (all sections): 1259 passed, 1 failed (core `stub=all` count 12 → 13, fixed and re-run: core 198/0), 1 skipped.
+- Harness smoke: `PT.longFrames`, `PT.gpuRatio`, `PT.pixels.mask/sobel/iou`, `PT.baseline()` (v3 build boots in 4.7 s), `PT.gpuRatioPages`, `PT.alloc`, `PT.sheet` (144 KB) all return data.
+
+###### Legacy test updates (rule 9 / §7.9)
+- `tools/playtest3/core.js`: element colours per §3.2 incl. the shadow special case and the physical ramp; `screenShake` default 0.6; `damageNumbers` default `'merged'`.
+- `tools/playtest3/harness.js`: `tells` added to the module list (its 404 is an expected stub).
+- `tools/playtest3/core.js`: `stub=all` boots 13 stubs (ORDER gains tells).
+- `tools/playtest.js`: a 404 of a module file missing on disk is not a page error.
+
+###### Wave C round 1 — integration (branch `v4-polish`)
+
+Merged with `--no-ff`, one by one, no conflicts: `v4/core, world, mobmodels, tells, vfx, player, magic, melee, mobs, bosses, ux`
+(every branch had new commits). Requests: every `docs/v4/requests/*.md` carries a "Resolution" section.
+
+###### Integration fixes (seams, committed as "integration fix: …")
+- legacy skill adapter forwards `castId` / `skillId` (`skills/runtime.js`, `skills/adapters.js`); render warm layer 29 (30 = player `HIDDEN_LAYER`).
+- `timeScale.comp()` = 1 / lowest *compensating* scale (witch + bossDeath no longer runs the player at 4×).
+- reaction hits carry the trigger's `castId` (`combat/reactions.js`): one hitstop / burst per cast (playtest2 sword hitstop line passes).
+- ux damage arc switches the vfx radial hurt vignette off (`ui/threatui.js`).
+- `progression.mastery()` allocation-free (per-hit path).
+- tells rim clones of a mob's hidden LOD view follow the body's visibility (`tells/body.js` + `mobs/rig.js lod.userData.rimVisibleWith`): rims were never drawn beyond the LOD distance.
+- tests: C5 stub probe / overlay-call probe with the real tells; world beacon starts unset (ux sets objective beacons); vfx motif probe picks an unregistered pair;
+  MG1.g waits for an earlier finisher; PL1 shadows magic's read-only `castLock` getter; T4 refreshes the v4 LOD state; harness attributes non-world objects
+  (`world.debug.owns`) to `other`; C6 / C8 implemented in `tools/playtest4/core.js` (`--perf`, or `PT4_CORE_ONLY=c6,c8`; 9 ABAB pairs, `PT4_PAIRS`).
+
+###### Final §1 numbers (merged build, SwiftShader, 640×360, prod=1, governor=0, seed=1, medium)
+
+GPU ratios were measured with the machine otherwise idle; an earlier run with playtest3 in parallel gave F-mage 0.553 (pairs 0.14–2.2): the ratio is only
+meaningful on a quiet machine.
+
+| Metric | Measured | Budget | Result |
+|---|---|---|---|
+| **GPU ratio v4 ÷ v3 (MSAA 4), ABAB 9 pairs median — F-mage** | **0.251** (pairs 0.21–0.57) | ≤ 0.45 | pass |
+| **GPU ratio — F-ranger** | **0.335** (0.28–0.37) | ≤ 0.45 | pass |
+| **GPU ratio — S-plains** | **0.338** (0.32–0.46) | ≤ 0.65 | pass |
+| Draw calls max over sweep S-village / plains / mirwen / elderwood | 164 / 127 / 141 / 156 | ≤ 175 / 140 / 160 / 160 | pass |
+| Draw calls p95 F-mage / F-ranger / B-nidhoggra (scene + shadow + overlay) | 176 (154+22+0) / 169 (147+22+0) / 104 (94+11+4) | ≤ 250 | pass |
+| F-mage group shares p95 (scene / shadow) | world 112/7, enemies 23/12, fx 18/2, player 4/1, other 12/0 | §1.2 rows | pass |
+| Shadow pass F-mage / F-ranger p95 | 22 calls / 26.5k tris; 22 / 26.1k | ≤ 30 / 50k | pass |
+| Triangles max S-* / F-mage / F-ranger | ≤ 503k / 476k / 460k | ≤ 600k / 700k | pass |
+| Transparent draws p95 F-mage / F-ranger | 40 / 30 | ≤ 55 | pass |
+| Fragments ÷ screen S-plains scene / post / world transparents | 1.64 / 1.41 / 0.009 | ≤ 2.2 / 2.0 / 0.5 | pass |
+| Fragments F-mage / F-ranger / B-nidhoggra scene+transparent | 1.54 / 1.62 / 1.23 | ≤ 3.5 | pass |
+| Player-FX coverage p95 / max F-mage, F-ranger | 1.13 / 1.15; 0.39 / 0.46 | ≤ 1.5 / 2.5 | pass |
+| Enemy-FX coverage p95 B-nidhoggra | 0 | ≤ 1.0 | pass |
+| Live particles max F-mage / F-ranger | 257 / 452 | ≤ 1000 | pass |
+| Uploads S-* median | 7.8–14.1 KB in 14–16 calls | ≤ 60 KB / 30 | pass |
+| **Uploads p95 F-mage / F-ranger** | **513 KB in 119 calls / 216 KB in 96 calls** | ≤ 150 KB / 30 | **fail** (fix item) |
+| Simulation ms median F-mage / F-ranger / B-nidhoggra | 1.4 / 1.3 / 1.2 | ≤ 3.5 / 4.5 | pass |
+| Render submit F-mage median / p95 | 3.2 / 4.2 ms | ≤ 4 / 6 ms | pass (SwiftShader, includes rasterisation) |
+| **New materials during the F-mage / F-ranger rotation** | **31 / 12** | ≤ 4 | **fail** (fix item) |
+| **Programs after boot** | **161** (growth during rotations 0, first draws 0) | ≤ 130 | **fail** (fix item) |
+| Long frames F-mage, 30 s simulation after warm | 0 > 50 ms, 0 > 33 ms (worst 15.9 ms) | 0 / ≤ 2 | pass (one earlier run under load: one 91 ms frame) |
+| **JS allocation F-mage / S-plains** | **4.70 / 4.00 MB per game-second** (v3: 9.0–11.5) | ≤ 1.0 / 0.3 | **fail** (fix items: mobs, player, world) |
+| 5-min soak (sim-fast) geometries / textures / objects | 664→664 / 76→76 / 2432→2228 | flat ≤ +2 % | pass |
+| **Zone transition, worst simulation frame after a teleport** | plateau 2.8, ascent 5.1, **mirwen 75**, elderwood 3.2 ms | ≤ 50 ms | **fail** (world) |
+| Render size at a 1920×970 window, medium (C1) | 1406 × 710 = 0.998 MP | ≤ 1.0 MP | pass |
+| Post passes (C1) | 1.41 full-res equivalents, 7 calls, bright ¼, mip 1/16, 3 mips | ≤ 2.0 | pass |
+| Point lights at medium | 0 | 0 | pass |
+| Game-time / real-time at 1/15, 1/10 s (C3) | 1.000 / 1.000; CPU 1/15 frame 1.44 × a 1/60 step | ≥ 0.99; ≤ 1.6 × | pass |
+| Hitstop 30 light requests / s (C4) | 0.075 s granted, no global freeze | ≤ 80 ms | pass |
+| 성능 테스트 3 s (C7, driven mode) | 10 fps avg / 10 1 % low, L0, 640×360, CPU 14.6 ms, exact restore | fields + restore | pass |
+| Title benchmark (C7) | L2 on SwiftShader (misses 0.5, headroom 0), applied | picks a level | pass |
+
+###### Integrated-laptop default (step 5)
+- Default quality **medium** (`DEFAULTS.quality = 'medium'`, unknown → medium, C5); medium preset = 1.0 MP pixel budget, MSAA 0 + FXAA, PCF 1024, 3 bloom mips, 0 point lights,
+  grass 0.4, particle caps 1000 / 300 (C5, C1).
+- Pixel budget: `renderSize(1920, 970, 1)` = 1406 × 710 (0.998 MP), `budgetPx=0.5` at 1280×720 → 942 × 530 (C1).
+- Governor (`debug.governor().simulate`, C2): 50 % misses at 60 Hz → L1 within 1.02 s; EMA > 1.6 T → L2 in one step; probe back up after 6 s with < 2 % misses
+  (revert + backoff 6 → 12 → 24 s); works at 144 Hz; L2 resolution controller (GPU-timer P-control and the miss-driven ×0.92 path, floor 0.8); fpsCap 30 respected;
+  `autoQuality` off and `dynamicRes` off honoured; L4 drops bloom without a new program.
+- 성능 테스트 (`game.quality.benchmark`) returns every field, restores the game exactly and formats the 복사 line; the ux settings menu calls it (ux section green).
+
+###### Test results (merged build)
+- `node tools/bootcheck.js`: all 17 configs `playing`, exit 0. Note: `@noBosses` boots with `stubbed:["enemies"]` (bossbase.js / golem.js import `./bosses/*` statically) — fix item bosses.
+- `node tools/playtest.js --quick`: all PASS, exit 0.
+- `node tools/playtest2.js`: 79 PASS, 0 FAIL, exit 0 (the "wind combo hitstop" line passes with the reaction castId fix).
+- `node tools/playtest3.js` (all): 1273 passed, **1 failed** (core check 11: programs 161 → 162 after reaching nidhoggra: the boss's instanced `nid-body` with
+  `instanceColor` compiles a toon variant that was not warmed — fix item bosses), 1 skipped.
+- `node tools/playtest4.js --full` (7000 s cap; melee cut off near its end, player and ux re-run separately): 849 + 145 passed, 28 + 3 failed before the
+  integration test fixes; after them the remaining failures are owner items (see the integration result / fix items): vfx V1 clamp + F-shadowblade
+  coverage (counting override 1.86), tells T4 rim interior 20 % (≤ 15 %), bosses B1 treant.pods, magic MG1.c detail floors (36/36 bespoke; the v4 combat camera
+  shrinks every look: v4/magic + v4/player alone gives fire.basic detail 417 vs 3,077 on the magic branch), MG1.d 33 new materials (--full), MG1.f IoU,
+  melee ML1.c detail floors, ML1.g dodge lock (fire c1 0.317 s) and cancel windows (wind.vortex, lightning.ult), ML1.f IoU.
+- `--sheets`: caster, melee, mobs, bosses sheets regenerated from the merged build and committed; review in `docs/v4/review.md`.
+- `--perf`: C6 / C8 as in the table above (GPU gates pass; uploads, new materials, programs, allocation and the Mirwen transition fail).
+
+#### v4 notes — world (`docs/v4/notes/world.md`)
+
+##### world — v4 notes
+
+Owner: world (`src/world.js`, `src/world/*`, `tools/playtest3/world.js`, `tools/playtest4/world.js`, these notes, `docs/v4/requests/world.md`).
+Branch `v4/world` (worktree `/home/user/wt4/world`) from tag `core-p0a`. Tags: **`world-p0a`** (heightField + static matrices), **`world-b`** (final).
+No newer core tag than `core-p0a` existed at the final run (`git tag -l`: core-p0a, models-p0a, world-p0a), so nothing else was merged.
+
+###### What was built (P0, all items of the §9 world task)
+
+| # | Item | Where | Result |
+|---|---|---|---|
+| p0a | `world.heightField` | `world.js`, `terrain.js HEIGHTFIELD_GLSL` | R32F `DataTexture` 241×241, NearestFilter, **vertex-centred** (texel (i, j) = getHeight(origin + i·texel)), origin (−180, −180), size 360 m, texel 1.5 m, `glsl` = `float awHeightField(sampler2D tex, vec2 xz)` (4 texelFetch, the getHeight triangle split). GPU error vs getHeight **0.00024 m** (4096 random points). Bilinear taps are NOT exact on cliffs (up to 1.9 m) — use the helper |
+| p0a | static matrices | `world.js freezeStaticMatrices()` | every object under a world-created scene root gets `matrixAutoUpdate = false` + one `updateMatrix()` (205 static, 23 dynamic: lights, sky dome, windmill sails, arena crystals, mirror door, prop Object3Ds, beacon) |
+| 1 | Terrain chunks + LODs + shader | `terrain.js` | 8×8 chunks (30×30 cells). LOD0 = one Mesh per chunk (exact grid, three.js frustum-culls its bounding sphere), drawn only within **120 m** (AABB distance). LOD1 = every 3rd grid line of all 64 chunks merged into **one** far mesh whose vertex shader collapses the chunks LOD0 draws (`uTerrNear` vec4[16] mask) → far terrain = 1 draw call. Skirts (both windings, 1.2 m / 3 m) on every chunk edge. getHeight / getGroundHeight / raycasts unchanged (CPU height array). New `ShaderMaterial` (`lights:true`, same look as the v3 4-step toon: gradient levels 0.42…1.0, hemisphere + sun + shadows + fog): lighting terms per vertex (sun N·L varying stepped per fragment = crisp bands), **one grain fetch where slope < 0.25** (cross-fade to biplanar 0.25–0.35, biplanar + strata above), 5-tap PCF terrain shadow, **one overlay-mask fetch only inside `uOverlayCircle`** (bounding circle of live burn / bless / curse texels, recomputed when the burn texture changes; r = 0 → no fetch anywhere), grain texture anisotropy 1 (aniso 4 alone was ~15 % of the Elderwood frame). Terrain never casts. Draw order: terrain after the renderOrder-0 opaques (early-z), sky + far mountains last |
+| 2 | Point lights | `fire.js`, `surface.js` | created only when `game.render.pointLights === true` (boot); stand-in object otherwise. 0 world point lights at medium |
+| 3 | Grass | `grass.js`, `world.js applySettings/applyBudget` | density `settings.grassDensity` (0.25/0.4/0.85) × `budget.grassMul` (live), fade distances × `grassNearFade` (0.6/0.7/1.0), `receiveShadow` per preset (off at low/medium, uniform only), chunks whose nearest point is beyond the fade end skipped on the CPU, far layer = 1-segment blades |
+| 4 | Flora | `flora.js` | tree range `settings.treeDist` (120/200/350 m) × `budget.floraMul`, small props at ½, outlines `min(settings.floraOutlineDist, budget.floraOutlineDist)` (20/35/55, L4 20). **Texture-indexed instancing**: each set keeps all instance matrices + colours in a static RGBA32F texture (5 texels/instance); a re-cull uploads only a Float32 index list (4 B per drawn instance, live range, skipped when unchanged). Re-cull at most every 4th frame and only when the camera moved > 2° / 1 m (or the player > 2 m), against a frustum padded by +16° FOV. Shadows: scene meshes never cast; one shadow-only InstancedMesh per family (deciduous / pine / rock, far-LOD geometry, `customDepthMaterial` reading the family texture) on layer 1 within 48 m (rocks 22 m) of the player |
+| 5 | Always-drawn village meshes | `world.js applyDistCull` | chimney smoke, altar glow + crystals, pond, world-tree halo + motes hidden outside the village radius (+15 m); sign labels only within 45 m of a sign; camp fires within 90 m; Mirwen mist within its radius + 25 m; Elderwood spores within 25 m of the wood; rot walls frustum-culled by one bounding sphere |
+| 6 | World transparents | `water.js`, `mirwen.js`, `elderwood.js`, culls above | water + village pond are **opaque** now (the old see-through look is a mix toward the terrain colour map with the old alpha curve; one opaque layer also early-z rejects the lakebed); Mirwen mist 90 → 48 sprites, ~55 % size, round-discarded |
+| 7 | Shadows | `world.js applyShadowQuality` | map size `settings.shadowSize` (1024 low/medium, 2048 high), extent ±32 m, sun 60 m up its direction (caster distance 60 m, camera far 110 m), texel-snapped; layer 1 (shadow-only casters) OR-ed into the shadow camera mask while shadows are on. Village: one position-only shadow proxy of the parts ≥ 1.6 m (layer 1); the detailed village mesh no longer casts |
+| 8 | Draw-call share | all of the above | see numbers below |
+| 9 | `world.setBeacon(pos|null, {kind})` | `beacon.js` | 40 m unlit pillar (vertical + view-angle fade) + ground ring = **2 calls**, prewarmed via `game.render.warm(…, {now:true})` (0 new programs on first draw); alpha fades from 15 m to 3 m and hides on reach (4 m); kinds quest 0x8fe8ff / camp 0xffa860 / boss 0xb994ff (no reserved threat hue) |
+| 10 | Surface damage descriptors | `names.js`, `surface.js` | `SURFACE_ATTACKS[kind] = {id:'surface.<kind>', nameKo, kind:'surface'}` for burning 불길, mud 진흙, cursed 저주받은 땅, blight 오염, void 공허 (+ barrel 불씨 항아리 폭발). Burning grass applies `burning` to the PLAYER with `source = SURFACE_SOURCES.burning` (enemies keep the legacy player-credited source); barrel explosions pass `attack` + `owner:'world'`; every world vfx call passes `owner:'world'`, no `0xffffff` effect colours |
+| 11 | Camp names | `terrain.js LAYOUT.camps` | 서쪽/동쪽/북쪽 뿔도깨비 야영지 |
+| 12 | Debug | `world.debug` | `setGrassVisible(on)`, `terrainChunks() → {total, visible, near, far, farInView, inView, calls}`, `transparents() → number`, `owns(obj)`, `roots()`, `flora()` |
+
+###### APIs (§7.4.2)
+```ts
+world.heightField: { tex, origin:{x,z}, size:{x,z}, texel, res:{x,z}, format:'R32F', filter:'nearest', glsl }   // world-p0a
+world.setBeacon(pos: Vector3 | null, { kind?: 'quest'|'camp'|'boss' }): void ; world.beacon {active, kind, reached, alpha, position}
+world.camps[i].entrance: Vector3          // P1 (delivered)
+world.routeTo(from, to, { step = 4, out = [] }): Vector3[]   // P1 coarse breadcrumbs (path network + straight segments, reused out)
+world.surfaceAttack(kind) / world.surfaceAttacks / world.surfaceSources / world.surfaceNamesKo
+world.debug.setGrassVisible(on), terrainChunks(), transparents(), owns(obj), roots(), flora()
+```
+`terrainChunks().visible` = LOD0 chunk meshes in view (one draw each); `farInView` = LOD1 chunks in view, all inside the single far draw.
+
+###### Measured (branch, SwiftShader, 640×360, prod=1&governor=0&seed=1, medium; tells/vfx-kit on core stubs)
+
+World-owned counts use `world.debug.owns()` (NPCs = ux, training dummies = mobs are not world; the harness `byGroup.world` includes them).
+
+| Metric | S-plains | S-village | S-mirwen | S-elderwood | Budget |
+|---|---|---|---|---|---|
+| World scene + shadow calls, max yaw | **105 + 7** | 94 + 6 | 98 + 6 | 92 + 7 | S-plains ≤ 110 + 14; others: total − player 12 − ui 4 (159 / 144 / 144) |
+| World shadow tris | 13k | 14k (village proxy 9k; was 35k with the full village mesh) | 12k | 17k | ≤ 20k |
+| All owners scene + shadow (v3 player 34 + 15 still in) | 147 + 25 | 171 + 37 | 158 + 39 | 156 + 42 | C6 at integration |
+| LOD0 terrain chunk draws (max) | 14 | 16 | 13 | 14 | ≤ 24 and < 64 |
+| World uploads per frame while turning 60°/s (max) | 21.6 KB | 18.8 KB | 19.3 KB | 17.1 KB | ≤ 60 KB |
+| All-owner GL uploads while turning (max / p95) | 171 / 11 KB | 171 / 12 KB | 175 / 16 KB | 20 / 17 KB | ≤ 60 KB (the max frames are other owners' full-capacity vfx particle uploads, see requests) |
+| World transparents ÷ screen (max yaw) | 0.01 | 0.02 | **0.04** (was 1.37: water 0.52 + mist 0.60) | 0.005 | ≤ 0.5 |
+| World scene fragments ÷ screen (max yaw) | 1.62 (v3 3.61) | 1.47 | 1.50 | 1.63 | S-* scene ≤ 2.2 all owners |
+
+- **noTerrain, S-elderwood, 960×540, ABAB median**: v3 0.60 → **0.86–0.92** with the terrain shading removed and its depth kept
+  (gate; three runs 0.864 / 0.918 / final in the report). Plain hide 0.78–0.86 (since the sky now draws last, hiding the terrain makes the sky shade the hole — v3's ablation
+  never paid that); MeshBasic vertex-colour terrain 0.96 (the remaining terrain cost is the grain fetch + shadow).
+  Three non-world point lights (vfx, v3) are hidden for this measurement (§2.2 medium = 0); with them visible the ratio is ~0.70.
+  SwiftShader pair spread is ±20 % on the shared 4-CPU machine (other agents), so single runs can land ±0.05.
+- S-plains draw-call breakdown at 0° (world only): terrain 14 chunks + 1 far, flora 33 (12 sets × near/far/outline), grass 3,
+  village 8 (from 100 m), gates 6, structures 3, ambience 3, fire barrels 3, sky 1, far mountains 1, water 1, world tree 2, beacon 0.
+  Shadow pass (world): flora families 3 (deciduous / pine / rock far-LOD casters), fire barrels 1, structures 1, windmill sails 1,
+  the layer hook 1 (degenerate, 0 px); the village proxy 1 when the village is in the shadow box.
+- Shadow-only casters: three r160 tests shadow casters against the VIEW camera's layers (WebGLShadowMap.renderObject), so the
+  shadow camera's layer mask (core `applyShadowMode`) has no effect; world uses a degenerate hook caster whose `onBeforeShadow`
+  enables layer 1 on the view camera for the shadow pass and the sky's `onBeforeRender` disables it before the next list build.
+- Programs: beacon adds 2 (prewarmed); terrain v4 replaces the toon terrain program 1:1; flora sets keep their v3 program keys + `|awinst`
+  (+1 depth program for the family casters). `world.init()` warms every world root with `game.render.warm(…, {now:true})` while the
+  culled sets are still visible (renderer.compile skips invisible objects), and a degenerate instanced+colour caster drawn in the
+  shadow pass for the first 8 frames compiles the default instanced+colour depth variant that flora no longer compiles (other
+  owners' coloured instanced casters used it first at the final boss: playtest3 core "programs do not grow" 147 → 148 without it).
+- heightField: 0.00024 m GPU, 0 CPU texel error.
+- Flora re-culls: 0 while still, 10 per 40 turning frames (every 4th frame).
+
+###### Tests (this branch, final code)
+- `node tools/playtest4.js world` (W1, B): **58 passed, 0 failed, 0 skipped** (304 s; ≈ 5 min on the shared machine: 4 S-* boots,
+  1 at 960×540 for the ABAB, 1 for presets/heightField/beacon/statics — above the 4-min guideline because of the 4-yaw fragment sweeps).
+  Final numbers: S-plains world 106 + 8 calls; S-village / mirwen / elderwood world totals 102 / 104 / 101 (≤ 159 / 144 / 144);
+  noTerrain gate 0.90 (plain hide 0.84, trivial material 0.92); world uploads ≤ 21.6 KB/frame; transparents ≤ 0.11 screens.
+- `tools/playtest3.js` all sections: 1258 passed, 2 failed (core "programs do not grow after the final boss" → fixed by the depth
+  warm-up above; combat "natural P0 triggers: magma" → flaky, passes on re-run). Re-run `playtest3.js core combat world`:
+  **388 passed, 0 failed**. `tools/playtest3/world.js` is unchanged (its v3 expectations still hold; rule 9: no update needed).
+- Final re-run after the last world commits: `tools/bootcheck.js` 15 / 15 configs `playing`, 0 NOT OK, exit 0 (one earlier run
+  died in core's bootcheck file server — a request raced the `@noBosses` rename, ENOENT on `bosses/hydra.js`; re-run clean);
+  `tools/playtest.js --quick` all PASS (exit 0); `tools/playtest2.js` story / sword / settings / perf all PASS (exit 0).
+
+###### Integration notes (checks marked I)
+- C6: world share holds in S-*; the S-village total (≤ 175) needs the player at 8 + 4 and the ux NPCs trimmed (requests).
+- The sky / far mountains draw last (renderOrder 100 / 99) and the terrain at renderOrder 1: an opaque object of another owner
+  with renderOrder > 1 would draw after the terrain (fine) and one > 100 after the sky (also fine: depth-tested).
+- Water is opaque: submerged parts of swimmers / the hydra are hidden below the surface instead of showing through faintly.
+
+###### P1
+- Delivered: `world.camps[i].entrance`, `world.routeTo` (coarse breadcrumbs helper).
+- Cut (fallbacks in place): grass crush inside `tells.footprints()` (footprint encoding not published by a tells tag yet; grass
+  still bends around the player); camp entrance banners (would cost draw calls; the beacon/compass point at the entrance);
+  see-through prefab variant only within 30 m (the OCC screen-door test is a few ALU ops on every prop; unchanged).
+
+#### v4 notes — vfx (`docs/v4/notes/vfx.md`)
+
+##### vfx — v4 notes
+
+Owner: vfx (`src/vfx.js`, `src/vfx/*`, `src/combat.js`, `src/combat/*`, `tools/playtest3/combat.js`, `tools/playtest4/vfx.js`, these notes, `docs/v4/requests/vfx.md`).
+Branch `v4/vfx`, worktree `/home/user/wt4/vfx`, from `core-p0a`; merged read-only: `world-b` (heightField). Tags: **`kit-p0a`** (kit + ducking + enemy style), **`vfx-b`** (final).
+
+###### What was built
+
+###### P0-A — the kit (`game.vfx.kit`, tag `kit-p0a`)
+| File | What |
+|---|---|
+| `vfx/kit.js` | assembly + API of §7.4.3: `line, registerShape, mesh, ribbon, bolt, spark, decal, glyph, GLYPHS, ramp, fxMaterial, registerMotif, motif, hasMotif, motifSource, tier, TIERS`. Handles `{alive, stop(fade), setPos, setDir, setScale, setAlpha}` (+ `push` for ribbons, `setEnds` for bolts). castId on every spec → `vfx.debug.byCast(id)`. Reserved shapes (`hatch`, `chevron`, `diamond`) are refused |
+| `vfx/linework.js` | ONE instanced premultiplied SDF program for ring / arc / poly / star / ticks / rays / spiral / crescent / glyph / dots / stipple and the decal kinds crack (Voronoi edges) / scorch (broken rings + ember stipple) / frost (hex grid) / ripple / strata (+ lichtenberg / flower / rune as glyph cells). Each instance is an annulus strip (48 × 3, tight to the line band + AA; discs only for filled shapes); planes ground (terrain-conforming through `world.heightField.glsl` in the vertex shader), flat, billboard, oriented; screen-space minimum width (px) via fwidth; back-out / linear / expand / contract scale-in, spin, erosion with a rim band. Two meshes (player = ducked, enemy/world = never ducked) share the program → ≤ 2 calls. Static attributes upload one coalesced range on spawn, dynamic ones the live range |
+| `vfx/glyphs.js` | 1024² R8 SDF atlas, 4×4 cells of 256 px, canvas-drawn + Felzenszwalb distance transform at boot (spread 16 px): 9 element sigils, hexagram, futhark band, 12-tick ring, lichtenberg, frost-hex, flower-5, feather |
+| `vfx/fxmesh.js` | FM: `registerShape('<el>.<shape>', geo, {blend, outline, max, emissiveBand})` merges into the element's shape atlas; ONE InstancedMesh per element (vertex shader collapses the non-selected shapes) + an inverted-hull outline InstancedMesh sharing the instance buffers → ≤ 2 calls per element. Toon ramp uniforms per element (4-step ramp, gradient attribute `aGrad`), emissive ≤ 1.2, erosion discard with a 0.04 `light` rim band, depthWrite false, back-to-front instance sort ≤ 64, live-range uploads. vfx registers `physical.shard`, `physical.chunk` |
+| `vfx/ribbon.js` | RB: camera-facing strips batched 8 per mesh, arc-length resampling (24 pts), taper, head-saturated / tail-desaturated colour, body alpha shorter than the edge, fast → slow streak scroll, premultiplied. Legacy `vfx.trail()` routes here |
+| `vfx/bolt.js` | BT: seeded recursive midpoint displacement (17 pts), 0–3 forks, thin `hi` core + `light` halo, regenerated every 2–3 frames, `mid` afterglow line. Legacy `vfx.beam()` routes here (straight beams = jagged 0) |
+| `vfx/motifs_generic.js` | the generic fallback for all 9 motif kinds × every element + physical, built from LW / SP / RB / BT with a distinct primary silhouette per element. A look relying on it marks its castId `generic` |
+| `vfx/duck.js` | `vfx.shared` (`uPlayerFxMul`, `uThreat` Vector4[16], `uThreatN`, `uCamPos`, `uPlayerPos`), `applyPlayerFx(material, {additive, role})` (side effect only; refuses `userData.shared` and raw shaders; chains `onBeforeCompile`; `customProgramCacheKey` = previous key — or the previous onBeforeCompile source — + `|awfx:<role>`), the factor per vertex from `gl_Position` (projInv / camWorld), `fxMulAt(pos, role)` CPU twin, `fxFactor(id, mul, durReal)`. Footprints from `tells.footprints()` every frame (kinds of `tells/shapes.js`; +0.5 m pad); near-camera smoothstep(1.5, 4); ×0.3 within 1 m of the camera→player segment (segment clamped at 90 % so effects at the player's body are not dimmed); line role ≥ 0.7 × base |
+| `vfx/enemystyle.js` | R11: `owner:'enemy'` → particles normal-blended "dark core + `fx.mid` rim" (shader flag), flashes ≤ 1.5 m, linework rings in dark / mid, no glyph circles (`runeCircle` with owner enemy → plain ring), never ducked; `isReservedHue`, `elementOfColor` (sRGB hue) |
+
+###### P0-B
+1. **Particles** (`vfx/particles.js`): one premultiplied mesh per owner group (player 2,000 capacity / other 400): additive + normal in ONE call (additive particles write alpha 0). Projected-size clamp in the vertex shader (12 % of screen height for soft / glow / smoke / puff / flare / dust, 20 % otherwise, stretch clamped too). Per-particle duck factor (`fxMulAt`, once per frame), no emission where m < 0.05. `uBoost` 1.0, no push toward white; near-white legacy colours → the element's `hi` / `light`. Live caps from `settings.particleCap / additiveCap` × `quality.budget.particleMul` (L5 emergency cap honoured): 500/150 low, 1,000/300 medium, 2,000/600 high (enemy+world ≤ 30 % of the total). Emitters go through the budget (scaled, thinned past 85 %, ducked). castId per particle. P1 done: soft sprites draw an octagon (≈ 17 % fewer fragments).
+2. **Coverage** (`vfx/coverage.js`): cast table (ring of 128, no allocation), a screen-space projector, a runtime estimator per item (particles, LW, FM, RB, BT, rune circles) driving soft / hard budgets (`coverageSoft/Hard × budget.coverageMul`): over soft the soft sprites shrink first, then other particles (only for their own share of the overshoot); over hard soft sprites stop emitting. Player-FX call cap (`settings.fxCalls`, 40 at medium): over it the oldest ghosts / shells / rune circles collapse (circles to a linework ring). `vfx.debug.coverage()` → `{screens, byOwner:{player, enemy, world}, parts, peak, calls}`; the counting override (`PT.fragments({owner:'player'})`) is the truth in tests.
+3. **Restraint**: `flashSprite` ≤ 1.5 m (× `budget.flareMul`); `dome()` = LW ring + rim-only shell ≤ 2 m (never near the camera); `screenFlash` tinted (white → ivory), alpha ≤ 0.25, ≤ 0.15 s, off with `flashReduce`; `fovKick` ≤ 4°, used by hitFeel only for `ult`; `shake(t)` × `settings.screenShake` (default 0.6); hitstop durations of §5.10 once per castId through `game.hitstop(sec, {tier, target})`; per target one motif spark (≤ 12), one burst per castId within 0.3 s (tier ≥ heavy); DoT ticks = 1 particle. `impact_<el>` / `explosion_<el>` = `kit.motif(el, 'burst')` + sparks (SZ / LF multipliers gone); the 6 reaction families + universal rebuilt from kit (≤ 60 particles, no domes, ≤ 1 ring, tinted flash only for burst / judgment). `flashEntity`: one flash clone per **source material** (shared by every entity using it), built when an entity registers (`combat.register` → `vfx.prepareFlash`), or `e.flashUniform` when offered. Point lights only when `game.render.pointLights`. Debris / ribbons / bolts / linework upload live ranges; debris is depthWrite false. 0 `0xffffff` in `src/vfx*` / `src/combat*`; fresnel / flame / shell intensities ≤ 1.2.
+4. **Combat**: burning re-ramp (`fxassets.flameMat`: base `fire.light` → `mid` → tip `fire.dark` at alpha 0.6, ×1.0); `statusfx.update` without per-frame iterator entries; `queryRadius` without per-call arrays (ring of 32 reused results when no `out`); `pipeline.js`: `× e.vulnerableMul` while `game.enemyTime < e.vulnerableUntil` (after resist; `lastFormula.vulnerable`), `hit.appliedStatuses`, `playerHurt {amount, element, source, sourceName, attackId, attackNameKo, attackKind, appliedStatuses, dot, surface, dir, time, attack}` (`dir` = unit xz toward the attacker), castId + dot passed to hitFeel; `combat.clearStatus(entity, id)`.
+5. **Telegraph fallback** (`vfx/telegraph.js`): winding fixed (no mirrored grid: normals up) AND DoubleSide, renderOrder 30, depthTest false, toneMapped false, threat palette (`core/threat.js`), LINEAR time front, pool 16 that never recycles an active decal (timing-only handle when full), `halfAngle` (rad) or legacy degrees; forwards to `game.tells.telegraph` when the real tells exists; `vfx.debug.telegraphs()`.
+
+###### APIs (in addition to v3)
+`vfx.kit.*` (above) · `vfx.shared` · `vfx.applyPlayerFx` · `vfx.fxMulAt` · `vfx.fxFactor` · `vfx.prepareFlash(entity)` · `vfx.hurtVignette = false` (ux opt-out) ·
+`vfx.debug = {coverage(), byCast(id), calls(), budget(), resetPeaks(), overdraw(on), setVisible(owner, on), telegraphs(), flashClones(), screenFlash(), isReservedHue, duck, cast}` ·
+every legacy call accepts `owner:'player'|'enemy'|'world'` and `castId`.
+
+###### Measured (SwiftShader, 640×360, medium, fxIntensity 1.0, legacy spell / sword looks on this branch)
+| Metric | Measured | Budget |
+|---|---|---|
+| F-mage player-FX coverage (counting override) p95 / max | 0.41 / 0.41 screens (estimator p95 0.73) | ≤ 1.5 / 2.5 |
+| F-ranger player-FX coverage p95 / max | 0.27 / 0.27 | ≤ 1.5 / 2.5 |
+| F-mage / F-ranger player-FX draw calls p95 | 8 / 11 | ≤ 40 |
+| F-mage / F-ranger live particles max | 354 / 411 | ≤ 1,000 |
+| Kit programs | 5 (linework 1 shared by both pools) | ≤ 6 (kit + tells ≤ 10) |
+| FM calls, 20 instances of 2 shapes | 2 | ≤ 2 per element |
+| Ring solid raster ÷ disc (annulus check) | 0.15 | < 0.3 |
+| impact_<el> ×9 newWhite peak | 0.00 % | ≤ 1.5 % |
+| reaction families newWhite | ≤ 0.02 % | ≤ 4 % |
+| reaction presets particles | 5–33 | ≤ 60 |
+| new materials from vfx/combat in 30 s F-sword | 1 (total 25: 24 from `enemies/base.js showIcon`, mobs) | ≤ 4 |
+| projected size soft / other | 0.07 / 0.16 of screen height | ≤ 0.12 / 0.20 |
+
+(Every number above is reported by `node tools/playtest4.js vfx`. Integration (`I`) checks — retention, C6 sums — depend on the real looks of magic / melee.)
+
+###### Tests
+- `node tools/playtest4.js vfx` — V1–V4 (functional page with shaderCheck, F-sword 30 s, F-mage + F-ranger; `--full` adds the other classes). Dev split: `VFX_PART=quick|fsword|f`.
+- `tools/playtest3/combat.js` updated per §7.9 (rule 9): the telegraph block runs on a `&stub=tells` page and asserts the fallback pool 16, DoubleSide / renderOrder 30 / depthTest off, triangle normals up, linear fill, > 500 changed px for circle / ring / cone / line; on the main page with the real tells it asserts forwarding through `tells.debug.pool()`.
+- Final run on this branch: `node tools/playtest4.js vfx` **53 passed, 0 failed** (231 s). Legacy: bootcheck all configs `playing` (exit 0), `playtest.js --quick` all PASS, `playtest3.js` (all sections) **1265 passed, 0 failed, 1 skipped**, `playtest3.js combat` 95 / 0. `playtest2.js` (exit 0) logs one FAIL "wind combo hitstop on every hit": two spell-tier light hits log 0.025 s — §5.10 sets light = 0.025 s and §7.9 hands that assertion to core (requests).
+
+###### P1
+- Done: octagon quads for soft sprites; small signature layers for 13 reactions.
+- Cut / open: half-resolution soft-smoke target at governor L1+ (needs core; requested); ribbon segments ÷ 2 at L1 (`fxDetail` currently only drops FM outlines); bespoke signatures for every reaction (families + 13 signatures only).
+
+###### Known issues
+- The runtime coverage estimator over-estimates by ≈ 1.5–2× (conservative; rune circles / items near the camera are bounded by their on-screen box); the counting override is authoritative. With the L1 pre-emptive headroom on ultimates (coverage × 0.6) soft sprites may shrink for ~4 s in busy fights.
+- Spell objects created by magic / melee that are not named `spells*`/`sword*` nor tagged `userData.owner = 'player'` are invisible to the harness's player group.
+- Legacy callers of `screenFlash` / `fovKick` outside hitFeel are clamped (alpha ≤ 0.25, ≤ 0.15 s, ≤ 4°) but not tier-gated; magic / melee should stop calling them except for U / F tiers.
+
+#### v4 notes — tells (`docs/v4/notes/tells.md`)
+
+##### tells — v4 notes
+
+Owner: tells (`src/tells.js`, `src/tells/*`, `tools/playtest4/tells.js`, `docs/v4/notes/tells.md`, `docs/v4/requests/tells.md`).
+Branch `v4/tells` (from `core-p0a`), worktree `/home/user/wt4/tells`. Merged read-only: `world-p0a`, `world-b`, `kit-p0a`, then `vfx-b` (vfx). `core-b` did not exist at the final run, so the core
+render path is the `core-p0a` version (v3 composer chain, global hitstop).
+
+Tags: **`tells-p0a`** (attack / handle / hitTest / canAttack / punish / events + the instanced decal), `tells-b` (before `kit-p0a`
+appeared), **`tells-b.2`** (this state: `kit-p0a` + `vfx-b` merged, T2 re-run with kit linework over the decals, P1 element glyph).
+
+###### What exists
+
+`game.tells` (factory `createTells(game)` in `src/tells.js`; returns null → core stub when `game.render.threatScene` is missing). Every visual lives in
+`game.render.threatScene` (drawn by core after the post chain: never bloomed, fogged, tone-mapped or dimmed by player FX).
+
+| File | Content |
+|---|---|
+| `src/tells.js` | TellHandle timing, events, persistence (`tells` save section), canAttack / punish / nextImpact, active() / footprints(), rim assignment, legacy `telegraph(o)` adapter, `hazardAt`, debug |
+| `src/tells/shapes.js` | shape records, decal quads, footprint packing (`FOOT_KIND`), `hitTest`/`shapeDistance` = core `tellgeom.js` reference |
+| `src/tells/timing.js` | §5.7 floors (`MIN`, `LOCK` from core), melee classification, sounds, perfect window, teaching slow-mo, end animation |
+| `src/tells/decals.js` | ONE ShaderMaterial for every decal shape; instanced families `radial` (circle/ring/cone, 16 shared with `linear`), `linear` (line/capsule/conecap), `zone` (hazard/safe, 8), `wave` (jump shockwaves, 4), `marker` (projectile rings, 12), `ribbon` (P1, 6) |
+| `src/tells/icons.js` | ONE instanced sprite batch (64) over a canvas mask atlas: glint star, ⚠, ⤒, !, diamond sparkle, rising chevron, ring, `공격 기회!` |
+| `src/tells/body.js` | rim clones (4 slots; skinned + static material per slot), `rimSources(e)` fallback chain |
+| `src/tells/zones.js` | hazard / safe zones, projectile markers, shockwaves, punish sparkles |
+| `src/tells/thumbs.js` | `renderThumb(kind, size)` via `game.render.snapshot` (same materials) |
+| `src/tells/text.js` | Korean world text (`공격 기회!`) |
+
+###### Timing (one source)
+- `attack(e, spec)` → `TellHandle | null` (null while `canAttack(e, {melee})` is false). `dur = tellDuration(windup, cls, assist.tellMul, e.timeMul)` (core reference:
+  `max(windup, MIN[cls]) × max(0.9, tellMul) × timeMul`), on `game.enemyTime`; lock at `max(spec.lockAt ?? 0.35, LOCK[cls])` before the hit. No first-encounter bonus.
+- `consumeStrike()` is the only strike latch: true exactly once on the first sub-step with `enemyTime ≥ start + dur` (emits `tellEnd {reason:'strike'}`); `stop(reason)` →
+  `tellEnd {reason}`. Handles never consumed are cancelled 2 s after their hit; handles of dead/dying/removed enemies are cancelled.
+- `tellCommit` at the lock (from `update`, once per frame) + `tell_commit` / `tell_parry` sound + glint; `tellFirst {tell}` once per kind per save (save section `tells`
+  = `{seen}`); teaching slow motion `timeScale.set('teach', 0.4, 0.6, {compensate, priority: 2})` ~0.3 s before the hit of that first tell when `assist.teachSlowmo`.
+- Per-entity hitstop: `update` extends un-struck handles by the frame's `enemyTime` delta while `e.hitstopUntil > realTime` (see requests/core).
+- `spec.shape.follow`: origin follows the enemy until the lock; `setPos/setDir/setEnd` are ignored after the lock (aim frozen).
+- Jump tells: travelling ring from the hit (12 m/s, 0.25 m band, `maxR`), `h.shockwaveR()`, `h.shockwaveHits(pos, pad)`.
+- `canAttack(e, {melee})`: false during the punish window; with `melee` also false when the enemy is outside the camera frustum and > 3 m from the player.
+  `attack()` classifies melee from `spec.melee` or `cls ∈ {mobLight, mobHeavy, combo, elite}` (projectile tells are never melee).
+- `punish(e, dur, {mul = 1.25})` → `e.vulnerableUntil` (enemyTime) / `e.vulnerableMul`, `punishWindow`, `punish` sound, 4 rotating diamonds + `공격 기회!`.
+
+###### Decal shader (§5.2, §5.3)
+Local shape SDF per fragment (circle, ring, cone = pie SDF, line = box, capsule = segment, conecap = segment ∪ rotated pie), metres-per-pixel from `fwidth`:
+dark outer band `max(0.12 m, 3 px)` α 0.75 outside the true edge · rim `max(0.18 m, 3 px | strong 5 px)` α 0.95 inside the edge (parry: 12 dashes per circle / 1 m dashes on
+straight edges; unblockable: double rim), ×1.5 after the lock, lock flash = own hue × (1 + 0.35) clamped (never toward white) for 0.1 s · fill 0.16 (strong 0.28, hazard hatch
+0.18, safe 0.12) · region behind the linear front 0.32 · front line 0.12 m (≥ 1 px) in a lighter rim tint, `#FFF4F0` once `remaining ≤ 0.20 s × assist.perfectMul` · 3 flat
+chevrons scrolling 0.6 Hz toward the hit on directional shapes · P1 faint element glyph (below) · end: 0.5 fill for 2 frames, fade 0.12 s. Colours are uniform arrays indexed by tell kind, refreshed from
+`threatColor(kind, assist.colorblind)` when the preset changes (shapes unchanged). Placement: grid quads mapped in the vertex shader (orientation-preserving, normals +y,
+DoubleSide), height from `world.heightField` (same triangle interpolation as `getHeight`, texelFetch), lift 0.06 m; flat at `pos.y` when the shape stands > 1 m above the terrain.
+Fallback without `heightField`: per-decal 24×24 CPU height grid rows in one R32F texture, rebuilt only when the decal moves > 0.1 m (same program, same families).
+P1 element glyph: `attack()` reads `spec.el ?? spec.element ?? e.element ?? e.el` (`fire, ice, lightning, wind, water, earth, nature, light, shadow`;
+aliases holy→light, void/dark→shadow, thunder/electric→lightning, frost→ice, poison→nature; `spec.glyph:false` opts out; physical/unknown → none) and stores
+`(atlas index + 1) × 64` in the style bits (no new attribute, no extra upload). The fragment samples the vfx kit glyph SDF atlas (`game.vfx.kit.glyph(el).tex`,
+bound once on first use; a 1×1 blank R8 texture is bound before, so the program is the same with or without the kit) with `textureGrad` (gradients taken
+before any branch) and analytic SDF AA; drawn under the chevrons/front/rim at α 0.20 in the rim hue 45 % toward `#FFF4F0`: circle (centre, r ≤ 0.45 R, ≤ 2 m),
+cone (0.55 R along the axis), line/capsule (mid-length); not on rings, conecaps, hazards, safe zones, markers, waves. Measured (T4, r 3 circle at 6 m, 960×540):
+1,195 px changed, mean ΔRGB 13, max 34; decal footprint vs no glyph 14,270 / 14,230 px (+0.3 %); still 4 tells programs.
+Soft occlusion: scene point from `post.sceneDepth` (`projInv`, `camWorld`), occluder only when nearer by > 0.3 m **and** > 1.0 m above the decal plane → α × 0.40.
+
+###### Body tells
+Rim clones of `e.rimSource()` (≤ 2 meshes; fallback `e.model.skin.meshes`, then the two largest opaque meshes): SkinnedMesh bound to the source skeleton/bindMatrix (or Mesh),
+`matrixAutoUpdate = false`, matrices copied in `preOverlay()`; BackSide hull expanded 2–3 px in clip space (+1 px after the lock, +1 px strong), alpha 0.35 → 1 over the windup,
+flash at lock; fragment hard depth compare `hullDepth ≤ sceneDepth + 0.05 m`. ≤ 4 rim draw calls (nearest by remaining time, one mesh per enemy first, then second meshes).
+`preOverlay` clears the canvas depth when rims are active (the hull self-occludes with depthTest).
+
+###### Other APIs
+`projectile(obj, {r = 0.6})` · `hazard({pos, r|shape, dur, kind, nameKo})` · `safe({pos, r|shape, dur})` (safe zones are in `footprints()`) · `hazardAt(pos, pad)` ·
+`telegraph(o)` (v3 adapter: full degrees → rad half-angle, or `halfAngle` in rad; `tell` / `unblockable` / grab → unblockable, parryable → parry, else danger;
+times on `game.time` like v3; v3 handle + `setPosition` alias + `onDone`; `owner:'player'` → timed handle without a decal, since the threat scene is enemy-only) ·
+`active()` (reused records + `locked`, `handle`) · `footprints()` (`{data: Float32Array(64), n}`, 8 nearest to the player: true shapes, conecap = capsule + cone, safe zones,
+hazards, winding-up bodies r + 1 m) · `renderThumb(kind, size)` (`danger, parry, unblockable, jump, projectile, hazard, safe, punish, perfect`) · `MIN`, `LOCK` ·
+`debug.{setVisible, pixelsOf, pool, rims, sprites, occlusion, heightAt, reset, resetSeen, handles, …}`.
+
+###### Measured (branch, SwiftShader, `prod=1&governor=0&seed=1`, medium)
+
+| Metric | Measured | Budget |
+|---|---|---|
+| Overlay draw calls with every cue live (decals, zones, wave, marker, sprites, punish) | 6 (12,950 tris); + rims ≤ 4 | ≤ 12 (decals ≤ 6, rims ≤ 4, sprites 1, markers 1) |
+| Decal draw calls (families visible) | ≤ 5 (radial, linear, zone, wave, ribbon) | ≤ 6 |
+| tells programs | 4 (`tells-decal`, `tells-sprite`, `tells-rim` skinned + static) | ≤ 4 (kit + tells ≤ 10) |
+| Uploads with 16 decals live | 1,536 B/frame (one interleaved bufferSubData per visible family) | ≤ 16 KB |
+| Allocation in `tells.update` + `preOverlay` (10 tells + zones + marker + punish, CDP sampling 1 KB) | ≈ 6 B/frame | ~0 (§2.7) |
+| `tells.update` CPU (same load) | median < 0.1 ms, p95 0.1 ms | — |
+| T1 changed px at 8 m, 960×540, grass on | circle 61.8k, ring 166.8k, cone 32.7k, line 39.3k, capsule 34.7k, conecap 35.2k | ≥ 600 (v3: 0) |
+| heightField conformance (6 m decal, 5 spots, vertices + cell midpoints) | max 0.008 m | ≤ 0.1 m |
+| T2 telegraph px with player VFX over the decals ÷ hidden (vfx-b linework + ~710 legacy particles) | 1.027 / 1.012 / 1.001 / 1.001 (before kit-p0a: 1.06–1.07) | ≥ 0.95 |
+| T2 grass on ÷ off | 0.997–0.998 | ≥ 0.95 |
+| T2 behind a 2.6 m wall (median per-pixel contribution ratio) | 0.418 (mean 0.437: the wall's lowest metre is not an occluder by rule) | 0.40 ± 0.05 |
+| T2 rim colour bloom on vs off | ΔRGB max 1 | ≤ 8 |
+| T4 rim clone (bokoblin, v3 model): interior changed / perimeter outlined | 8.1–12.6 % / 90–96 % (pose varies between runs) | ≤ 15 % / ≥ 60 % |
+| Progress linearity / strike latch | error 0 / exactly once, on the due sub-step | ≤ 0.02 / ≤ 1 sub-step |
+| hitTest vs core reference | 0 mismatches / 10,000 points (+ 1,000 handle `contains`) | 0 |
+| Flash rate (rim region luminance, 20 Hz sampling) | 0 peaks | ≤ 3 Hz |
+| Boot programs (bootcheck, all configs) | 146 (core-p0a baseline 142 + the 4 tells programs) | ≤ 130 overall (core/C6, integration) |
+
+Integration-only (I) checks to verify at wave C: T2 with real looks (R-mage, R-sword, R-boss) — the branch form shows the threat scene is independent of anything drawn in the
+main scene (ratios > 1 because particles behind the decal raise the per-pixel diff); enemy-body-visible rows depend on mobs adopting `tells.attack` + rim sources.
+
+###### Tests on this branch
+- `node tools/playtest4.js tells`: **101 passed, 0 failed, 0 skipped** (83 s; T1–T4, P1 glyph, the no-heightField fallback page, rule 5/6 greps), with world-b + kit-p0a + vfx-b merged. `TELLS_ONLY=<regex>` runs a subset (development only).
+- `node tools/bootcheck.js` (15/15 configs reach their state; only the expected 404s of the two renamed-directory configs), `tools/playtest.js --quick`: pass.
+- `tools/playtest2.js`: pass (79 checks; the kit-p0a hitstop failure is gone with vfx-b).
+- `tools/playtest3.js` (all sections, vfx-b merged): **1266 passed, 0 failed, 1 skipped** (937 s).
+- No playtest3 section is owned by tells (§7.1), so no legacy expectations changed (rule 9).
+
+###### P1
+- **Done**: 0.35 m vertical rising-edge ribbon on circle/ring AoE rims > 6 m (same program, `ribbon` family, height grows with the progress; 1 call).
+- **Done**: faint element glyph in the fill (vfx kit glyph atlas; see the decal section). Fallback without the kit: no glyph (retried at most once per second), same program.
+- **Cut**: nothing.
+
+###### Known issues / notes
+- `kit-p0a`'s `vfx.telegraph` forwards **every** call to `tells.telegraph`, including the player-cast `fx('telegraph')` AoE previews of spells/sword archetypes, which
+  therefore show as red danger decals in the threat scene until magic/melee pass `owner:'player'` (the adapter then skips the decal) or stop calling it (requests/vfx).
+- Mobs/bosses still use `ctx.tele` (→ the adapter, timed on `game.time`) and `ctx.telegraphs.show` rings (main scene) until they adopt `tells.attack` (requests).
+- `tools/playtest3.js combat` "natural P0 triggers … magma" (vfx-owned section) was flaky after the `kit-p0a` merge; it passed in the final run with `vfx-b`.
+- The glyph atlas (1024² R8, owned by vfx) is bound to the decal material on the first elemental tell; if vfx has not drawn a glyph yet that first frame
+  uploads it once (≈ 1 MB + mips). Mobs/bosses must pass `spec.el` (or set `e.element`) to get glyphs.
+- `canAttack`'s off-screen test uses the camera frustum with the enemy's upper-body sphere; it recomputes the frustum per call (cheap, allocation-free).
+- Thumbnails and the `공격 기회!` text use the system Korean font of the canvas; on machines without one the text cell falls back to the browser's default sans-serif.
+
+#### v4 notes — mobs (`docs/v4/notes/mobs.md`)
+
+##### mobs — v4 notes (branch `v4/mobs`, from `core-p0a`; merged read-only: `core-b`, `tells-b.2`, `mobmodels-b`, vfx via core-b)
+
+###### What was built (all P0 items of the §9 task)
+1. **Model contract** (§4.0): `base.modelFor(ctx, type, opts, legacy)` = `MobModels.createModel?.(type, opts) ?? MobModels.wrapLegacy?.(legacy()) ?? legacy()`;
+   every behaviour file uses it (wolf alpha = pack slot 0 → `{variant:'alpha'}`, shaman `{element}`, chuchu `{variant}` incl. `wind`).
+   `makeEnemy` forwards `e.rimSource()`, `e.tellAnchor(kind)`, `e.flashUniform`; `model.update(dt)` runs once per visual frame for v4 models;
+   the v3 outline/shadow distance loop runs only for wrapped v3 models. `enemies.previewModel(type, opts)` → registered preview or `MobModels.preview`;
+   `enemies.registerPreview(type, fn)` for bosses. `enemies.prewarm()` returns `MobModels.warmObject()` (+ `GolemMod.prewarmGolem?.(game)`).
+2. **Attacks on one TellHandle**: `base.beginAttack(ctx, e, id, shape)` builds the `tells.attack` spec from `codex.ATTACK_SPECS` (exact §4 ids, tells,
+   windups, rad half-angle shapes, lockAt) with `nameKo` from the codex, emits the extended `enemyAttack`; `null` → the AI repositions (strafe / cooldown).
+   Strikes resolve only through `h.consumeStrike()`. Rhythm: anticipation (`windupK`) → **hold 0.13 s** (pose frozen, no damping) → strike ≤ 0.12 s
+   (`RHYTHM`, `attackPhase`) → slump/recovery pose for the punish duration. Lobs use the release point (`attackPhase(h, h.lockAt)`).
+3. **Hitbox = decal**: hits test `h.contains(playerPos)` (locked decal, pad 0.15); `ctx.meleeCheck` = cone through `tells.hitTest` (no +radius 0.4, no
+   d < 1 m shortcut); `ctx.slam(center, r, {handle?, shape?, attack})` tests the handle/shape; jump avoid = feet − ground > 0.6 m. Travelling attacks
+   (chuchu lunge capsule + landing circle, lizard lunge capsule w 1.6, wolf dart line ≤ 9 × 1.3) hit on body contact **inside the drawn shape** only.
+   Every hit carries `attack:{id, nameKo, kind}` + `sourceName`; every enemy vfx call passes `owner:'enemy'` (loot / camp celebration `owner:'world'`).
+4. **Punish**: `base.punishAfter(ctx, e, id)` → `tells.punish(e, dur × timeMul, {mul})` with the §4 table; recovery state lasts the window; `tells.canAttack`
+   blocks attacks (verified). Shaman cast interrupted by a hit → `dazed` 1.5 s + punish ×1.5. Voidknight slam parry → `e.parryDur = 2.0` stagger.
+5. **Projectiles** (`projectiles.js`, also bosses): homing ≤ 0.5 s at ≤ 120°/s (slerp-limited), then straight; speed capped 8 (mob) / 10 (`source.isBoss`);
+   shaman 7.5, wraith 8; ≤ 6 enemy orbs (oldest fizzles); enemy style (dark core `fx.dark`, `fx.mid` rim, no white); `tells.projectile(orb)` marker;
+   `enemies.orbCount()`, `enemies.orbEta(pos)`; casters take the single ranged token (`ctx.takeRangedToken`). Spore clouds are `tells.hazard`s and tick only
+   while the hazard lives; the cloud sits on the drawn landing circle; fire hits inside a cloud burn it away; golem boulders telegraph via `ctx.tele`.
+6. **Behaviour fixes**: voidknight bash = 0.55 s visible shield raise, only after 2 consecutive guarded hits, knockback only; combo decals one by one
+   (0.80/0.55/0.65, cones 3.2/3.2/3.6, half-angles 1.0/0.70/1.0, rune slot per step via `model.setComboStep?.`); back hits ×1.5; wolf circle 4.5 m,
+   one wolf attacks at a time (`ctx._wolfAttacker`), slide 0.8 s punish; shaman/wraith blink cd ≥ 8 s with a 0.4 s shimmer at the destination first,
+   no cast for 1 s after a blink; wraith stays visible 1.2 s after firing (punish); chuchu aura every 2.0 s = 0.5 s glow + circle r 1.6 (`check` class);
+   weak-element hits pop a 말랑이 at ≤ 40 % HP; lizard lightning ×1.5 while wet, ice in water → frozen 2 s, −30 % speed out of water; no wraith mask weak point.
+7. **Data**: NEW `src/enemies/codex.js` — `CODEX` (16 entries: 8 types + 8 `chuchu:<variant>`), `ATTACK_SPECS`, `WEAK`, `CHU_WEAK`, `CHU_NAMES`, `TYPE_NAMES`,
+   `nameOf`, `attackMeta`, `attacksOf`, `applyWeakness`. Every entity: `weakness/resist/immune`, `attacks`, `debugAttack(id)`, `timeMul`, `type`, `codexKey`.
+   `enemies.registerCodex/codex()`, `noteEncounter(type)` (save section `encounters`), `enemyEncounter {type, enemy, first, sight}` on first sight
+   (≤ 30 m, in the frustum, scanned every 0.25 s) and on first aggro per session, `aggroCount()`, `spawnBench(n)` / `despawnBench(list)` (no damage /
+   loot / XP / kill count), `debugResetEncounters()` (test hook). `dummy.practice('danger'|'parry')` = slow ×1.5 tells swing; the v3
+   `enemies.practiceAttack(entity)` keeps v3 timing (legacy decal through the tells adapter) so story/playtest2 stay unchanged.
+8. **Time**: enemy logic dt = step dt × `assist.enemySpeed` (tells times the windups on `game.enemyTime`); per-entity hitstop skips the whole update while
+   `e.hitstopUntil > game.realTime` (tells extends the frozen handle); `scaling.js` DIFFICULTY_FALLBACK gains `story`, `telegraphMul` = 1 everywhere,
+   `checkAddSec` (+ `checkAdd` alias); `ctx.tele` no longer multiplies anything.
+9. **Perf**: `enemies.substeps = true`; poses / springs / `model.update` / icons only on `game.frame.lastStep`; animation half rate 30–60 m, paused > 60 m
+   (camera distance); `game.render.warm(e.object)` on the first spawn of each type+variant for wrapped v3 models only (v4 mob materials are shared
+   and warmed at boot by `MobModels.prewarm`; bosses warm in `prewarmBoss`) — warming every first spawn put a one-frame warm burst (≈ 1150 calls)
+   into playtest3's village draw-call sample; wander allocations removed; tell shapes are per-entity reusable
+   objects; `separate()` unchanged (no `new`; the sampled "allocation" there is V8 heap-number churn).
+10. `enemies.js`: `import * as GolemMod from './enemies/golem.js'` (`GolemMod.createGolem`, `GolemMod.prewarmGolem?.(game)`).
+
+Korean player text lives only in `codex.js` (entity names via `typeName`); remaining Korean in mobs files: the v3 `'붕괴!'` canvas word texture
+(`common.js`) and `GOLEM_INFO` (bosses data kept in `enemies.js` for the golem) — both exempted in the rule-6 check and listed here.
+
+###### Measured (branch, SwiftShader, 640×360, prod=1&governor=0&seed=1)
+- `node tools/playtest4.js mobs`: **116 passed, 0 failed** (≈ 28 s). M1 per attack (tellStart → damage, hold before the strike):
+  boko swing 0.80 s / hold 0.32 s* · boko leap 1.25 / 0.12 · shaman orb (cast 1.0) · chuchu lunge 0.78 / 0.12 · chuchu aura 0.50 (check class) / 0.12 ·
+  lizard thrust 0.80 / 0.12 · lizard lunge 0.93 / 0.12 · shroom lob 1.90 (+ cloud tick) / 0.12 · wolf bite 0.90 / 0.12 · wraith bolt (cast 1.0) / 0.12 ·
+  voidknight combo 0.80 / 0.55 / 0.65 · slam 1.10 · bash 0.55 — every id ≥ its §5.7 floor; hitbox ±0.3 m correct for every non-projectile shape.
+  (*longest still run; includes the converged anticipation.)
+- Orbs: last homing turn at 0.50 s, max turn rate 36°/s (limit 120°/s), shaman 7.5 m/s; sideways walk at 5.5 m/s from 10 m dodges; `orbEta` within
+  0.11 s of the real arrival; 10 orbs requested → 6 alive.
+- Animation rate: 60 / 30 / 0 pose updates per second at < 30 m / 30–60 m / > 60 m.
+- `enemies.update` with the 12-mob F roster (armoured, attacking): median **0.30 ms**, p95 0.90 ms per frame (host CPU, render off).
+- Enemy-owned FX ≤ 1.0 screens p95 in B-* and the C6 draw-call rows are integration (I) checks — not measured here; enemy FX now go through
+  `owner:'enemy'` (enemy style) and orb visuals shrank (halo 1.3→1.1, 2.6→1.9 m, trails 0.42→0.3 m wide, emitter 32→18/s).
+
+###### Legacy tests (this branch)
+- Full `tools/playtest3.js` (before the warm fix): 1264 passed, 3 failed (core zones elderwood calls 314/310, perf elderwood 314/310, narrative village
+  1440/290 — all the first-spawn warm burst). After the fix: `playtest3.js narrative core` 0 failed (village + elderwood within budget).
+- `tools/bootcheck.js` exit 0 (all configs playing, no console errors). `tools/playtest.js --quick` all PASS. `tools/playtest2.js --only sword` 0 FAIL
+  (full run earlier: story/settings/perf unchanged). `tools/playtest3.js enemies`: **139 passed, 0 failed, 1 skipped**.
+- §7.9: `tools/playtest3/enemies.js` gained "§4 windups: tellStart → damage" (bokoblin.swing, lizard.thrust, voidknight.combo1 = 0.80 s). The boss
+  checks are unchanged: `docs/v4/requests/bosses.md` did not exist when this branch was built, so no new boss expectations were applied.
+
+###### P1
+- Cut: alpha-wolf hesitation after the alpha dies (codex does not mention it), shroom "hit the cap during the windup pops the sac", wolf crack pulse
+  driven from behaviour (mobmodels' `pose('windup')` offers it; the behaviour pose code drives the v3 pivots). Fallbacks: v3 behaviour.
+
+#### v4 notes — mobmodels (`docs/v4/notes/mobmodels.md`)
+
+##### mobmodels — v4 notes
+
+Owner: mobmodels (`src/enemies/models.js`, `src/enemies/models2.js`, `src/enemies/mobs/*`, `tools/playtest4/mobmodels.js`, `tools/playtest4/sheets/mobs/*`).
+Branch `v4/mobmodels` (from `core-p0a`), worktree `/home/user/wt4/mobmodels`. Tags: `models-p0a` (registry + wrapLegacy), `mobmodels-b` (final).
+`models.js` / `models2.js` are unchanged (append-only rule kept; the v3 builders stay for wrapLegacy and the "v3 row" of the sheets).
+
+###### What was built
+
+###### Registry — `src/enemies/mobs/index.js` (PLAN §7.4.6)
+- `createModel(type, {variant?, element?, scale?, seed?, game?}) → EnemyModel | null` for `bokoblin, shaman, chuchu, lizard, shroom, wolf, wraith, voidknight, dummy`
+  (`TYPES`). Variant keys: `shaman:<element>` (any element; fire/ice pre-built), `chuchu:<normal|fire|ice|lightning|wind|water|nature|light|shadow>`, `wolf` / `wolf:alpha`.
+- `wrapLegacy(v3Model | Object3D) → EnemyModel` (models-p0a): augments the v3 object in place (all v3 fields stay): `meshes`, `proxy` (= v3 outline mesh), `lod` (= body),
+  `bones`, `features` (all false, `legacy:true`), `tellAnchors` (bones, else a head anchor at `headTop`), `flashUniform` (setter; lazily clones the body materials once per
+  entity with the same program keys and drives their emissive), `rimSource()`, `pose(name, t)` adapter (humanoid / quad / blob), `update()` no-op, `dispose()`.
+- `preview(type, opts)` → fresh idle-posed root (v3 fallback); `prewarm(game)` → every mob material (body, shell, glow, outline), warms them as skinned meshes via
+  `game.render.warm(warmObject())` and builds all types/variants in `requestIdleCallback`; also `buildAll()`, `stats()`, `defFor(type, opts)`, `legacyModel(type)`, `warmObject()`.
+
+###### Kit — `src/enemies/mobs/rig.js`
+- **One build per type**: parts are primitive *specs* rebuilt at 3 detail levels → ONE indexed skinned geometry holding `[body | LOD]` index ranges (Uint8 colours,
+  Int8 normals, Uint8 skin indices/weights), a glow geometry (unlit, colours ≤ 1.2), a silhouette-only proxy (big parts only; no cards, trims, thin or small parts).
+  Shared `boneInverses`; an instance builds only Bones + Skeleton + 4 SkinnedMesh wrappers.
+- **Draws**: body + glow + outline proxy (3; bokoblin/lizard/dummy have no glow → 2). Beyond the LOD distance the body draws its LOD range and the proxy hides (≤ 2).
+  **Shadow**: `onBeforeShadow` switches the body to its LOD range, so the only caster is the LOD (≤ 2k tris; accessories, springs, glow, eyes never cast).
+- **Per-instance hit flash with shared materials**: bone 0 is a dummy; `flashUniform.value` is written into its matrix element `[0].w` in `onBeforeRender`
+  (bone texture) and read by the shared body/shell shader (key `toonRim+dis+mob4` = `toonMat` rim + dissolve chunk + flash). 0 new materials, no program flips.
+- **Outline material** (`outlineMat`): skinned inverted hull pushed along the projected normal by a constant **1.6 px** (`uRes` = `game.post.sceneRes`) + a 3 cm pull
+  toward the camera (lines survive where feet/hems meet the floor). One program; colour per species = uniform. (The v3 world-space hull falls below 1 px at gameplay range.)
+- **humanoid2** (v3 13 bones, v3 rest layout and hip heights, + `jaw`, `lidL/lidR` (blink = scale-y), `thumb`/`fingers` per hand, spring bones), **reptile** variant
+  (`digitigrade` knee → ankle, counter-rotated in `update()`; `tail1..4`), **quadruped** (wolf: `rig, neck, jaw, leg/low/paw ×4, tail1..3, ears, lids`).
+  Smooth 2-bone weights (0.5/0.5 at the joint, 6 cm band) at shoulders, elbows, hips, knees, waist, neck, jaw and tail segments.
+- **Vertex colours**: crevice AO baked from part ellipsoids (−25 %), ground-contact darkening (−15 % in the lowest 12 cm), belly/underside gradients, darker extremities,
+  species painters (war paint, glyph trim, moss/lichen, scale-ridge bands, back stripe, plate-bevel trim); the toon material adds the fresnel rim band.
+- **Faces**: `eye()` = sclera + iris + pupil (round or slit) + highlight; lids with a seeded 3–6 s blink; brows/brow ridges; jaws with teeth/tusks/fangs.
+- **Poses** `pose(name, t)`: idle, walk, windup (anticipation squash ×1.15), hold (identical for every t), strike, recover (slump), stagger, die; `poseTarget()` for damping.
+- **update(frameDt)** (no-op unless `game.frame.lastStep`; allocation-free): springs (lag behind the parent's model-local velocity + sway), blink, LOD/outline switch from
+  `game.quality.budget` (preset `enemyLodDist` × `enemyLodMul`; outlines ≤ `enemyOutlineDist`; 1 m hysteresis), digitigrade ankles / level paws, chuchu blink bone.
+
+###### Species (`src/enemies/mobs/<type>.js`) — every §4.1–4.8 Model item
+| Type | Body+glow / LOD = shadow tris (budget) | Items |
+|---|---|---|
+| bokoblin | 7998 / 1495 (≤ 8k, proxy ≤ 2.5k) | tusked under-bite jaw, heavy brow ridge, 2 distinct curved horns × 2 ring bands, 4-finger fist around a knotted club (3 bone spikes, leather wrap), loincloth front/back springs, shoulder strap, belt pouch, bone necklace, ear springs, war paint, belly gradient |
+| shaman | ≈5.5k / 1143 (≤ 7k) | hooked nose, mouth line + fangs, painted brow, slit glowing eyes + lids, long-fingered hands, robe lathe + glyph-trim band, 2 hem spring strips, hood + feather crest (spring), staff skull + feathers (spring), element gem in an orbiting ring (`halo`, grows in windup) |
+| chuchu ×9 | ≈1.3–1.6k / 186 (≤ 4k) | 20×14 translucent shell, glyph-shaped core per element, squash-ring band, smile / `O` / `x x` states, pseudopods, crown springs; crowns: flame tongues, hex prisms, antenna sparks, leaf swirl, droplet, sprout, halo, shadow horns |
+| lizard | ≈5.1k / 956 (≤ 8.5k) | digitigrade legs, long snout + teeth rows + jaw, slit pupils + lids, 4-bone tail (tail3/4 springs), dorsal frill flaring on windup (spring + pose), ridge bands, wet-skin gradient, bone-tipped spear + cloth wrap (spring), shell pauldron |
+| shroom | ≈4.9k / 826 (≤ 7k) | cap on spring bones, pleated gill fan, 7 spore pores (glow, swell in windup), spots, moss/lichen, sleepy lids, stub arms with 3 fingers, 3 root toes per foot, spore sac |
+| wolf (+alpha) | ≈3.9k / 794–857 (≤ 8k) | lighter slate palette, pale muzzle + chest blaze, back stripe, fur tufts (neck ruff spring, shoulders, haunches, tail), 3-bone tail, ear springs, fangs, glowing amber slit eyes, flank void cracks (swell in the crouch); alpha: bigger mane + white scar |
+| wraith | ≈3.7k / 503 (≤ 6k) | hood with bone mask (eye holes, crack, jaw + teeth, eye glow), skeletal clawed hands, 16-link chain, 3 hem spring strips + ragged skirt, hood-tip spring, lifted dusty-violet palette |
+| voidknight | ≈4.6k / 1070 (≤ 9k) | 3-plate bevelled pauldrons + trim, breastplate + ab plates + gorget, 19 rivets, tabard springs, sword + shield with 6 rune slots (`setComboStep(n)`), visor glow |
+| dummy | 1548 / 410 | stitched sack face (button eyes, brows, mouth), rope bindings, target, cross-bar `swing` bone, straw-tuft + tag springs |
+
+###### Measured (branch, SwiftShader 640×360, prod=1&governor=0&seed=1, medium; `node tools/playtest4.js mobmodels`)
+- **MM1**: contract green for every type + variant and for `wrapLegacy` of all 9 v3 builders; instances share geometry/materials (skeleton cloned only).
+  Spawn median 0.1–0.5 ms (≤ 1). First sight (create + `render.warm` + upload + first draw minus the same frame once warm; best of 5 fresh builds per type,
+  `gpuSync` before every sample): worst ≈ 4.7 ms (≤ 8); medians 1–17 ms are dominated by stalls of the shared 4-CPU machine.
+  Draws at 8 m: 2–3 scene + 1 shadow per mob; at 34 m: 1–2, outline hidden, `rimSource()` → LOD.
+  **12-mob F roster** (2 bokoblin, 2 wolf, lizard, shaman, voidknight, shroom, wraith, chuchu ×3): **26 scene calls / 41.6k tris + 12 shadow calls / 9.6k tris**
+  (budget 36 + 12, 140k + 24k); 12 × (pose + update) ≈ 0.17 ms/frame. Geometry GPU size 55–280 KB per type; build 2–107 ms per type (boot / idle time).
+- **MM2**: features checklist incl. blink and moving springs green for all keys; eye group at 8 m / 1280×720 (fov 62°): 15–46 px (≥ 6);
+  outline visible on 4 sides on the Elderwood floor (grass hidden, model at 5.5 m, camera pitch −0.4; ≥ 50 % of each side's extreme scanlines outlined);
+  body mean linear luma on the Elderwood floor: wolf 0.184, wolf alpha 0.20, voidknight 0.205, wraith 0.209 (≥ 0.18), lowest body (shaman) 0.154 (≥ 0.12).
+- **Sheets** (`--sheets`): `tools/playtest4/sheets/mobs/<type>.png` (v3 row above v4; front / ¾ / side at 3 m, ¾ windup 3 m, front 8 m, ¾ windup 8 m; tall models are
+  framed at the distance that fits, labelled) + `wolf_alpha.png` + `chuchu_variants.png`, each ≤ 150 KB.
+
+###### Palette deviations (documented)
+- wolf flank fur `#6A6682` instead of `#5E5A72` (with `#5E5A72` the body measured 0.168–0.177 < 0.18 on the Elderwood floor); muzzle/chest `#B9B3C8` as specified.
+- voidknight: `#3B3550` only in recesses; plate faces `#7A72A0`/`#9890BC`, trim `#8C93B8` (`#3B3550`-dominant plates measured 0.129).
+
+###### Legacy tests
+- No `tools/playtest3/` section belongs to mobmodels (nothing to update per §7.9). `models.js`/`models2.js` are unchanged, so bootcheck / playtest / playtest2 / playtest3
+  see the v3 models exactly as before until mobs switches to the registry.
+
+###### P1 (cut, working fallbacks)
+- LOD cross-fade (hard switch with 1 m hysteresis), extra accessories, variant idle FX, wraith trailing smoke ribbon (needs `vfx.kit.ribbon`, enemy-owned).
+
+###### Integration notes (I checks)
+- The F-* aggregate / C6 numbers apply once mobs uses `createModel` (docs/v4/requests/mobmodels.md); until then the game still draws the v3 models.
+- `enemies.js`' v3 LOD loop (outlines 45 m, shadows 70 m) must skip `e.model.v4` models (their `update()` owns LOD and outline distance).
+
+###### Test results at `mobmodels-b` (this branch; tells/vfx kit on their core stubs; only `core-p0a` merged — no newer dependency tag existed)
+- `node tools/playtest4.js mobmodels --sheets`: **126 passed, 0 failed** (sheets written); `node tools/playtest4.js mobmodels`: **117 passed, 0 failed, 1 skipped** (sheets).
+  Includes static rule 5 (no `0xffffff`, glow/emissive ≤ 1.2) and rule 1 (imports) greps over `src/enemies/mobs/*`.
+- `node tools/bootcheck.js`: exit 0 (all configs `playing`). `node tools/playtest.js --quick`: all legacy checks PASS. `node tools/playtest2.js`: exit 0.
+  `node tools/playtest3.js enemies`: 138 passed, 0 failed, 1 skipped (its rule-9 grep also scans `src/enemies/mobs/*`: loops written as `i <= 4`).
+
+#### v4 notes — bosses (`docs/v4/notes/bosses.md`)
+
+##### bosses — v4 notes (owner: bosses; branch `v4/bosses`, from `core-p0a`; merged read-only: `core-b`, `tells-b.2`, `mobmodels-b`, `vfx-b`)
+
+###### What was built
+- **`src/enemies/bosses/codex.js`** (NEW, Korean data table): `BOSS_ATTACKS` (every §4.9–4.14 attack id → tell, cls, windup, windup2, shape in rad
+  half-angles, lockAt, punishDur/Mul, kind), `BOSS_CODEX` (complete `CodexEntry` for golem, hydra, nox, treant, kalis, nidhoggra with the exact §4
+  texts and briefs; no windup seconds, `parryKo` only on parry attacks, `{dodgeKey}/{defendKey}/{jumpKey}/{punishSec}` tokens), `BOSS_BRIEF`,
+  `BOSS_UI` (check labels, crystal name), `attackSpec(id)`, `attacksOf(type)`, `codexOf(type)`, `registerBossCodex(game)` (idempotent;
+  also called on module load when `window.game` exists, from `bosses/index.js` via `api.registerCodex`, and from `prewarmGolem`).
+- **`bossbase.js` v4 contract** (exports, used by every boss incl. golem):
+  - `bossAttack(ctx, e, id, over)` → `game.tells.attack` with the table numbers + `nameKo`; emits extended `enemyAttack {id, nameKo, tell, windup}`;
+    refuses during a break; records handles (`e._handles`) and holds (`e._holds`).
+  - `bossHit(ctx, e, handle|shape|null, hit, {jumpAvoid, pad})` — the ONE boss hit path (`h.contains` / `tells.hitTest`, fallback
+    `core/tellgeom`); `attack:{id, nameKo, kind}` + `sourceName` on every hit; decoys absorb; `jumpAvoid` = feet − ground > 0.6 m clears.
+  - `rhythm(game, h)` → `wind | hold | strike | done` (hold 0.15 s at the top after lock, strike = last 0.12 s); `cancelled(h)`, `stopAttacks(e)`,
+    `bossPunish(ctx, e, dur, mul)` (tells.punish or stub-equivalent), `attackMeta(id)` (frozen, reused), `BOSS_BREAK`, `RHYTHM`.
+  - `finishBoss(ctx, e, o)` (last line of every factory): `weakness/immune/attacks/debugAttack/timeMul/cameraHint/codexKey/brief/flashUniform/
+    tellAnchor/rimSource`; `bossSpawn` payload gains `brief`; **break → 3.5 s stagger** (`bossBroken {boss, dur}`, punish ×1.5, attacks stopped
+    and refused, gauge refill after the 12 s cd); boss logic on **`game.enemyTime`** deltas; **per-entity hitstop** (`e.hitstopUntil` skips the
+    update; tells extends the handle); pose once per frame on `game.frame.lastStep`, frozen during every live hold, half rate > 30 m and paused
+    > 60 m (not for the arena-sized bosses); flash uniform decay; first sight (≤ 30 m, in view) / first aggro → `enemies.noteEncounter?.()` +
+    `enemyEncounter`; `enemies.registerPreview?.()`; `warmSkinnedShadow` (see requests/core).
+- **Attacks reworked per §4** (all through tells, one strike latch `h.consumeStrike()`, aim tracking until lock via `setPos/setDir/setEnd`):
+  - golem: slam = jump tell + `spec.shockwave` (front 1 + 12 m/s, hit once when it passes the player with feet − ground ≤ 0.6 m), recover 1.3 s ×1.25;
+    throw = landing circle from windup start (windup + flight, lock 0.35 s before release), own ballistic rock mesh; punch = parry cone 8.5 / 1.05,
+    whiff → fist planted 1.2 s + cage opens (×2), parry → 1.6 s stagger (×2); poise 280 → 2.4 s stagger (×2); breakMax 100.
+  - hydra: ≤ 1 bite + ≤ 1 other; bite line ≤ 17 × 3.2 → head low 2.0 s ×1.5; spit = 3 non-homing orbs at predicted points + static landing
+    markers r 1.2 (`tells.projectile`); tide ring 5.5–19 with `tells.safe` pillar tops (+ ice discs while frozen), hit only in the water;
+    spouts 3 circles at 1.2 / 1.55 / 1.9; freeze check `bossCheck freeze`.
+  - nox: teleport-slash = raven-smoke marker at an arrival point in front of / beside the player inside the camera view (sampled ±0.75 rad,
+    inside the arena) + line 7 × 1.6, arrival 0.3 s, dash in the last 0.12 s; perfect parry → 2 s stagger ×1.5; ≤ 1 per Nox incl. the clone
+    (`melee:false`: he strikes from the in-view marker); volley 3 (p2 4) homing 0.5; wave cone 7 / 0.61; void-shield break → 3 s kneel ×1.5.
+  - treant: stomp r 6.5, sweep cone 12 / 1.05 → arm stuck 1.5 s, arm plates ×2 + punish; roots 3 (p3 5) lines 18 × 2.2 (half-width 1.1);
+    pods glow/tell 1.0 s and self-burst 9 s after landing (still burst at once when hit — fire source).
+  - kalis: slash = one conecap decal (5.5 m dash capsule w 1.8 + end cone 3.2 / 1.0) → mirror armour cracks 1.0 s ×1.5; visible 반격 자세
+    (shield glows) → a hit starts the 0.5 s counter cone 3 / 0.44; volley 3 (p2 4) homing 0.5; burst r 3.4 (no rune circle); beams from the
+    ledge mirrors; check = bar (`bossCheck stagger`, `checkAddSec ?? checkAdd`) + 3 crystal targets (his detached shards) → 4 s stagger.
+  - nidhoggra: claw parry r 5 → head sags 2.6 s after a parry / 1.2 s after a whiff; breath unblockable cone 26 / 0.61, 1.8 s, root-pillar
+    shadow wedges via `tells.safe`; rain 4 circles 1.4 + 0.2 k; rods / tide checks unchanged.
+- **Enemy-owned FX**: every boss vfx call passes `owner:'enemy'`; no `0xffffff`, no flashSprite / screenFlash / point-light flash / runeCircle;
+  glow multipliers ≤ 1.15; big spell presets scaled ×0.6, bursts halved.
+- **Models** (§4.0 contract on all six: `proxy` (outline + rim source + the only shadow caster), `lod`, `bones`, `features`, `tellAnchors`,
+  `flashUniform`, `rimSource()`, `update()` springs on lastStep):
+  - golem: NEW `bosses/golem_model.js` (`buildGolemModel`, `previewGolem`; golem.js `prewarmGolem(game)`): detail-2 rocks, rune strips + crack
+    seams in a per-instance glow material (phase colour = uniform), crystal core in a 4-arc rock cage that opens (stagger / planted fist),
+    rock-cluster fists with knuckle shards, 6 moss strands on springs, thrown-rock mesh.
+  - nox: beak helm (3 layered plates + bone beak), feather pauldrons, 6 feather-cloak spring strips, talon gauntlets + toe talons, barbed
+    feather blade with twin glow edges; palette charcoal / violet trim / bone. Clone = translucent material (built in prewarm).
+  - treant: cracked bevelled bark plates with per-plate ember glow (shown while burning), rib-roots around the heart, root fingers, shoulder
+    mushroom clusters, face (eye hollows + glow, mouth knot), 10 vine strips on springs, lifted palette.
+  - kalis: white→glass-blue plate gradient, facet crown, tassets, 4-strip cape on springs, mirror shield (glows in the stance), mirror spear,
+    6 instanced orbiting shards (1 draw, tilt/shrink while cracked = the P1 crack cue, 3 detach as the check crystals).
+  - hydra / nidhoggra (P0: v3 meshes): contract fields, silhouette proxy (hydra) / instanced outline (nidhoggra), lifted palettes,
+    slit-pupil eyes + tooth glints (hydra), 3-per-side eye rows (nidhoggra), shadow casters reduced (nidhoggra 4).
+- **`bosses/rig.js`** (NEW): `proxyParts`, `strips` / `updateStrips` (Spring chains), `contract`.
+- **`tools/playtest4/bosses.js`**: B1 + B2 (+ `--sheets`); `PT_BOSSES=a,b` env filter for quick runs.
+
+###### APIs (for others)
+`e.attacks`, `e.debugAttack(id)` (clears punish/break first; checks return null and emit `bossCheck start`), `e.isBroken()`, `e.cameraHint`,
+`e.brief`, `e.tellAnchor(kind)`, `e.rimSource()`, `e.flashUniform`, `e.codexKey`; events `bossBroken {boss, dur}`, `enemyEncounter`,
+`enemyAttack {enemy, kind, id, nameKo, tell, windup}`; `bossCheck` kinds `freeze | stagger | rods | tide`.
+golem.js exports `createGolem`, `prewarmGolem(game)`.
+
+###### Measured (branch; 640×360, SwiftShader, prod=1 governor=0 seed=1)
+`node tools/playtest4.js bosses`: **207 passed, 0 failed, 6 skipped** (557 s; skips = `enemies.registerCodex` absent until `mobs-b`).
+
+| boss | body tris (budget) | proxy tris | boss draw calls (budget) | shadow calls |
+|---|---|---|---|---|
+| golem | 5 096 (≤ 14k) | 892 | 3 (≤ 22) | 1 |
+| hydra | 12 144 (P1 ≤ 32k) | 1 214 | 7 (≤ 22) | 1 |
+| nox | 5 592 (≤ 16k) | 444 | 4 (≤ 22) | 1 |
+| treant | 7 375 (≤ 32k) | 432 | 4 (≤ 22) | 1 |
+| kalis | 4 486 (≤ 16k) | 444 | 5 (≤ 22) | 1 |
+| nidhoggra | 12 028 (P1 ≤ 60k) | 11 016 | 27 (≤ 40) | 4 (≤ 6) |
+
+All §4.9–4.14 attack ids: tellStart windup ≥ §5.7 floor, hold ≥ 0.1 s at lock (0.367 s measured), decal = hitbox (±0.3 m), metadata on every
+hit, punish windows block attacks, break → `bossBroken {dur 3.5}` with 0 attack starts; 0 boss first draws during the fights; enemy-owned FX
+coverage p95 ≤ 0.004 screens branch-side (budget ≤ 1.0); no console errors in any B-* scene.
+
+###### Legacy tests
+- `tools/bootcheck.js`: all configs `playing`, no console errors.
+- `tools/playtest.js --quick`: all PASS (exit 0).
+- `tools/playtest2.js`: story / settings / perf all PASS; sword logs one FAIL "wind combo hitstop on the first hit of each castId" — it comes
+  from the merged `vfx-b` (§5.10 light-tier 0.025 s hits; vfx notes hand it to core per §7.9), passes on `core-b`, not boss code.
+- `tools/playtest3.js` (all sections): **1265 passed, 1 failed, 1 skipped** before the fix below; the failure (narrative "village draw calls
+  ≤ 290": 513) was caused by golem warms queued at spawn and flushed in a later rendered frame outside the fight (see requests/core: the warm
+  layer = the hero's hidden layer 30). Fixed (golem materials shared, warm immediate and only when not yet warm): `playtest3.js narrative`
+  154 / 0, `playtest3.js enemies` 138 / 0 / 1 skipped, `playtest4.js bosses` (golem) 36 / 0 re-run after the fix.
+No playtest3 section is owned by bosses; the boss expectations for `tools/playtest3/enemies.js` (mobs) are filed in `docs/v4/requests/bosses.md`.
+
+###### P1 status
+- Done (cheap): kalis shard "crack" cue during the punish window (shards tilt and shrink); extra secondary motion (moss, vines, capes, cloak).
+- Cut (fallback = the P0 v3 meshes with the contract): hydra ≤ 32k and nidhoggra ≤ 60k remodels, nidhoggra wing veins, boss voice barks at
+  tellStart. Turntable sheets have the v3 row only for golem (the v3 boss builders were replaced in place).
+
+###### Known issues
+- On this branch `ctx.projectiles.orb` is the v3 orb (homes 3.2 s, no `attackId` in `playerHurt`); boss orbs get homing caps and attack
+  metadata from the `mobs-b` orb at integration (bosses already pass `homing`/`attackId`).
+- The golem is still pre-built as the v3 model by the v3 `enemies.js`; golem.js builds the v4 model at spawn (0 new programs measured) until
+  mobs' `prewarmGolem` call lands (in `mobs-b`).
+- Enemy-FX coverage is measured branch-side with `vfx-b` + legacy particles; the hard number is the integration I-check.
+
+#### v4 notes — magic (`docs/v4/notes/magic.md`)
+
+##### magic — v4 notes
+
+Owner: magic (`src/spells.js`, `src/spells/*`, `src/spells/motifs/*`, `tools/playtest3/magic.js`, `tools/playtest4/magic.js`,
+`tools/playtest4/sheets/caster/*`, these notes, `docs/v4/requests/magic.md`).
+Branch `v4/magic`, worktree `/home/user/wt4/magic`, from `core-p0a`; merged read-only: `vfx-b` (kit), `tells-b.2`, `core-b`
+(via the tells / vfx merges). Final tag: see the end of this file.
+
+###### What was built
+
+###### Look engine (`src/spells/looks.js`, `src/spells/looks_rows.js`)
+- **Cast context.** Every cast (archetype, bespoke impl, legacy def, finisher, support) runs inside `begin()/end()`; deferred work
+  (timers, projectiles, zones, objects, movers) captures the context and restores it, so every visual **and every hit** carries the
+  cast's `castId` (`ctx.castId ?? game.nextCastId()`; legacy staff casts adopt the id the runtime issued, see requests (core 1)).
+- **Legacy vfx gate.** Every `game.vfx.*` call of `src/spells*` goes through `looks.fx(name, args)`: no point-light flashes, no domes
+  / glow sprites / flare / soft puffs, `screenFlash` / `fovKick` only for U/F tiers (tinted `mid`, alpha ≤ 0.25, ≤ 0.15 s, off with
+  `flashReduce`), bursts → element accents within the tier particle cap, shockwaves → LW rings, beams → BT bolts or tapered ribbons,
+  decals → DC linework, player "telegraphs" → dotted rotating target rings in the element `light` step (R5), **ground rune circles →
+  the spells sigil** (normal-blended `mid`, alpha-tested; sky circles stay on the vfx pool).
+- **Hooks** `castFx / body / impact / target / zone / crawl / nova / wave / strike / blink / aura / spike` resolve bespoke row →
+  archetype default → element motif. 36 bespoke rows (`BESPOKE_IDS`): the 12 ★ skills, every `*.basic / *.charged / *.ult` of the
+  registry and the starter loadouts of mage, ranger and spiritcaller (MG1.b derives this set from the registry + `PRESETS` and fails
+  if a row is missing).
+- **Budget facade** over `game.vfx.kit`: per-tier handle and particle ceilings of §1.4 are enforced per cast (excess refused).
+  Impacts never starve the primary shape: a `burst` may use ≤ ½ and a per-target `spark` ≤ ¼ of the tier's handles; the burst that
+  `vfx.hitFeel` plays on the first hit **is** the row's bespoke impact, once per `castId`. Cone / nova build their primary before the
+  hits. Palette discipline in the facade: line bodies in `mid`, `light` for rims / cores, 2 px screen-space line floor (1.8 on the
+  ground; 2.6 + opaque for the violet elements), bolts as a crisp `mid` core with a narrow halo, pale-ramp FM bodies (ice, lightning,
+  wind) tinted toward `mid`.
+- `spells.lookOf(id)` / `game.debug.lookOf(id, 'caster')` → `'bespoke' | 'archetype' | 'generic' | 'legacy'` (declared; MG1 measures it).
+- `game.spells.castLock` → seconds of non-cancellable cast recovery: > 0 only during the ultimate anticipation (0.14 s, awakened
+  0.2 s) and while a finisher plays; 0 otherwise.
+- **Warm-up**: at boot every motif × element, every gate path and every row runs once off-screen (y = −400) and is drawn by the core
+  warm pass; sigil pool 10, materials cached by key.
+
+###### Motifs (`src/spells/motifs/*.js`, §3.5)
+- `fire.js` (flame lathe tongues in 3 sizes with a thin `hi` core, comet, crescent petals, meteor rock), `ice.js` (hex prisms in 2
+  sizes + stubs, bipyramid shards, lance), `lightning.js` (soft plasma orb, rod spike, rune disc; BT bolts), `wind.js` (crescent
+  blades, leaves; RB streamlines), `water.js` (teardrop droplets, curling wave sheet with crest band, beads): all 9 kinds each
+  (`cast, trail, burst, spark, zone, pillar, wave, aura, summon`) via `kit.registerMotif`, shapes via `kit.registerShape`.
+- `others.js`: caster stand-ins for earth / nature / light / shadow, registered only while the kit has none (melee overwrites them),
+  plus the ranger arrow heads `<el>.arrow` with element fletching.
+- Impacts: one LW `rays` handle for the 8-petal fire opening, SP particle crowns (water) and shard debris (ice) instead of one FM
+  instance per droplet / shard, so a burst fits its handle share.
+
+###### Restraint (P0-A)
+0 `0xffffff` / `#ffffff` in `src/spells*` (grep, MG static), every emissive / intensity multiplier ≤ 1.2, element ramps only
+(`palette.js`), no domes, flashes per the gate, sigils normal-blended (additive violet / blue over grass washed out to grey),
+every private spell material through `vfx.applyPlayerFx?.(m, {role})`, spell objects `depthWrite:false` in the transparent pass and
+`userData.noCameraCollide = true`.
+
+###### Measured (branch, `node tools/playtest4.js magic`, 640×360, prod=1 governor=0 seed=1, fx 1.0)
+
+Measurement (`MG.measure`): plains meadow (−30, 30), yaw 0, dummy at 7 m, same spot / camera / dummy for every cast, meadow soaked
+(no grass fire between casts); per frame the player-FX coverage estimator, a regular grid of diffs plus adaptive diffs whenever the
+estimator rises (impact frames), coverage truth from `PT.fragments` at every new estimator maximum above the ceiling (others scaled by
+the measured fragments / estimate ratio); detail / crisp at the peak frame, saturation pixel-weighted over the window.
+
+Final run (`magic-b`, 48 casts = 36 bespoke + 12 archetype representatives; 565 s): **23 passed, 4 failed, 1 skipped**.
+
+| Check | Budget | Measured |
+|---|---|---|
+| MG static (rule 5, reserved shapes, 5 motif files) | 0 white literals, multipliers ≤ 1.2 | pass (25 files) |
+| MG1.b registration / lookOf | 104 registry ids ≥ archetype, 36 bespoke | pass |
+| MG1.a first cast CPU | ≤ 8 ms | max 8.9 ms (`lightning.dash`, 7.5 ms "extra" = shared-CPU noise; 5.8 ms in the previous run), median 0.7 — **flaps** |
+| MG1.a first draws after warm-up | 0 | 0 |
+| MG1.g castLock | 0 free / ≤ 0.25 s in ult anticipation | 0 / 0.14 s / 0 |
+| MG1.c white peak | B ≤ 1.5 %, C/A ≤ 4 %, U ≤ 12 % | max 0.85 % |
+| MG1.c coverage | B ≤ 0.05 … U ≤ 1.0 | max 0.211, median 0.026 (all within tier) |
+| MG1.c detail / crisp | §1.4 floors | median 3,077 px / 0.714; misses: `nature.grapple` 1,724 (< 2,000), `nature.roots` 1,150 (< 1,200), `light.basic` 497 (< 500), `shadow.charged` crisp 0.231 (< 0.25) |
+| MG1.c saturation | ≥ 0.40 (B/C/A), ≥ 0.35 (Z/U); per-element min(floor, 0.85 × swatch) | median 0.512; misses (violet elements only): `lightning.basic` 0.354, `shadow.basic` 0.387, `shadow.ult` 0.337, `lightning.thunderclap` 0.397 |
+| MG1.d new materials per cast | 0 | 0 |
+| MG1.e stacked 7-cast rotation near-white | ≤ 12 % (v3 94–97 %) | 0 % |
+| MG1.f element silhouette IoU | < 0.5 | projectile 0.36, nova 0.30, cone 0.13, zone 0.46 |
+| page errors | 0 | 0 |
+| retention (R-mage / R-boss) | ≥ 95 % | SKIP (I, integration) |
+
+Run-to-run spread: the borderline rows move by ±0.03 sat / ±10 % detail between full runs and differ again in `MG_IDS` subset
+runs (e.g. `lightning.charged` 0.40+ in the full order, 0.36–0.37 alone), so the 4 to 6 misses above flap.
+Root cause of the violet misses: an opaque lightning / shadow `mid` swatch reads sat ≈ 0.49 through the post chain on the meadow,
+so thin AA linework lands at 0.35–0.40 (requests core (4)).
+
+Other suites in this worktree: `tools/bootcheck.js` exit 0 (all configs, no console errors); `tools/playtest3.js magic` 41/41
+(the rule-8 static scan now recurses into `src/spells/motifs/`, §7.9); `tools/playtest.js` exit 0; `tools/playtest2.js` exit 0,
+one sword-section line `FAIL wind combo hitstop on the first hit of each castId` (melee / core, not a magic file).
+
+###### P1 cut / open
+- P1 bespoke rows for awakened skills, the remaining actives and finisher polish were not started (they use the archetype looks,
+  which meet the tier budgets); seeded glyph variations not done.
+- `breadth.finisher` is declared `'archetype'` through the attuned element (core's `skills/fallback.js` draws it; requests core 2).
+- earth / nature / light / shadow use magic's stand-in motifs on this branch; once melee's motifs merge, the caster casts of those
+  elements use them (their handle use is then melee's).
+- **Open B misses (MG1.c / MG1.a, see Measured)**: violet saturation for 4 rows, detail for `nature.grapple` / `nature.roots` /
+  `light.basic`, crisp for `shadow.charged`, first-cast 8.9 ms once. Next steps: dark-step outlines for lightning / shadow lines
+  (more chroma at lower luma), a larger grapple anchor glyph in screen space, and a measurement that averages 2 casts per row.
+
+Final tag: `magic-b`.
+
+#### v4 notes — melee (`docs/v4/notes/melee.md`)
+
+##### melee — v4 notes
+
+Owner: melee (`src/sword.js`, `src/sword/*`, `src/sword/motifs/*`, `tools/playtest3/melee.js`, `tools/playtest4/melee.js`,
+`tools/playtest4/sheets/melee/*`, these notes, `docs/v4/requests/melee.md`).
+Branch `v4/melee` (from `core-p0a`), worktree `/home/user/wt4/melee`. Merged read-only: `core-b`, `vfx-b` (includes `kit-p0a`),
+`tells-b.2` (includes `tells-p0a`). No magic tag existed, so the five caster-owned elements use melee-local recipes (below).
+
+###### What was built
+
+###### Look engine (`src/sword/looks.js`)
+Every melee move runs inside a **cast context** `cc = {castId, tier, el, skillId, kind, row | arch, budgets…}` opened by the engine
+(combo press, charged release, skill, ultimate, finisher, support, counter) and carried by the action and by every task it schedules
+(`S.after` / `S.every` keep the cast they were scheduled in).
+- **castId** = `ctx.castId ?? game.nextCastId()` per move; on every hit (`hit.castId`) and every kit / particle spec.
+- **The gate** (`L.call`): every legacy `vfx.*` call of the sword files is restyled to the v4 language: element 4-step ramps (mid step
+  for bodies and lines, no white), no glow / flare / puff sprites (→ element accent shapes), normal-blended sparks (no white-out),
+  per-tier particle and handle budgets (§1.4), `explosion` / `impact` → one element `burst` per cast (none on tier B: §3.6 basic =
+  smear + ≤ 6 sparks per hit, nothing persists), `shockwave` → linework ring, `beam` → bolt or tapered ribbon, `flash*` → 2-frame
+  4-point star glint, `runeCircle` → **rune circle in kit linework** (outer ring → tick band → element sigil, opposed spins, back-out
+  scale-in; C / U / F only), `screenFlash` / `fovKick` only for U / F (tinted, ≤ 0.2 alpha / 0.15 s, off with 섬광 줄이기), shake ×0.6.
+- **Handle budget** = handles actually spawned for the castId (`vfx.debug.byCast`) + slash crescents; motif handle costs are learned
+  per `el:kind:tier` so later casts budget them exactly.
+- `sword.lookOf(id)` → `'bespoke'` for rows of `sword/rows.js`, else `'archetype'` (every registry id has an archetype look).
+- Without `vfx.kit` everything degrades to the restrained legacy calls (feature detection; logged once).
+
+###### Primary shape: the slash crescent (`src/sword/fx.js`)
+Vertex-built crescent band (inner 40 % empty, saturated `mid` body ≤ 0.7 alpha, thin `dark` inner line, rim mixing `mid`→`light`,
+1–2-frame `hi` line only at the head), leading edge carrying the element motif (fire tongues, ice frost teeth, lightning arc-crawl,
+wind streamlines, water crest, earth chipped edge, nature thorns, light halo ticks, shadow inverted value). Dissipation by erosion
+(no alpha haze; fragments below 0.12 alpha discarded). The plane leans 0.3 rad toward the chase camera so a swing reads as a shape.
+Blade trail: same ramp rules. The legacy `vfx.smear` duplicate is skipped when the kit exists. Per-element crescent profiles
+(band, span, height, life) give distinct silhouettes; daggers' basic cuts live ≤ 0.14 s.
+
+###### Motifs (`src/sword/motifs/{earth,nature,light,shadow}.js`, shared helpers in `common.js`)
+FM shapes registered with `kit.registerShape`: `earth.rock` (faceted, strata vertex bands), `earth.spike`, `earth.slab`, `earth.chip`,
+`nature.vine` (S-curve tapered tube, growth), `nature.thorn`, `nature.petal` (5-petal flower), `nature.leaf`, `nature.pod`,
+`light.ray`, `light.halo`, `light.feather`, `shadow.tendril`, `shadow.crescent`, `shadow.raven` + `shadow.raven2` (2-frame flap).
+All 9 motif kinds per element via `kit.registerMotif` (cast, trail, burst, spark, zone, pillar, wave, aura, summon), following the
+§3.5 never-lists (light ivory, never saturated gold; shadow never magenta; no hatch / chevrons / diamonds; earth never additive).
+Fire / ice / lightning / wind / water: magic's motifs are used automatically once registered; until then melee plays its own
+melee-local recipes from kit primitives (never the generic fallback).
+
+###### Looks per skill (`src/sword/rows.js`)
+- **Archetype looks** (`ARCH_LOOKS`, all 24 melee archetypes): weapon glyph flash at the start (2 frames) + one element motif at the
+  strike placed by the §3.6 rules (hit → burst at the target once per cast; crawler / lane / dash / blink / beam → ground `wave`
+  from the impact point forward; nova / leapslam / rain → burst + ring; pillar → `pillar`; zone / wall / mine → `zone`; summon;
+  buff → `aura`; cone → `wave` arc).
+- **Bespoke rows** (36 = the melee bespoke set enumerated from the registry: 12 ★ + every `*.basic`, `*.charged`, `*.ult` +
+  `starter_sword` / `starter_paladin` / `starter_shadowblade` skills): each row's first key shape is its signature (unique inside its
+  element), from the §3.7 melee delta column (e.g. fire.charged = fan of flame petals on the ground ahead of the overhead slash,
+  ice.nova = hexagonal frost ring + crystal fan from the impact point, earth.charged = strata spikes from the impact point forward,
+  light.ult = halo rings with ticks along the prism beam, water.ult = three outward wave rings with foam lines, shadow.step = ink
+  splash at departure and arrival + crescent bite …). Hooks: `start` (first action), `strike` (first hit window / event / archetype
+  strike, before the legacy fx of that frame); skills without an engine action run both at once.
+
+###### Dodge-cancel windows (§5.8) — `game.player.action.dodgeCancelable`
+Written every frame an action runs (true when idle): combo swings cancellable before `t0` and from `min(t1, t0 + 0.25 s)`;
+charged attacks while charging and from 0.10 s after release; actives from 0.10 s after their first damage frame (planned strike
+frame until then, 0.35 s without damage); ultimates from the first damage frame; finishers never, and fully invulnerable
+(`player.grantIframes(0.15)` every frame + super armour). No `game.hitstop` in melee files (feel through `vfx.hitFeel` tiers).
+
+###### Rules
+0 `0xffffff` / `#ffffff` and no intensity multiplier > 1.2 in `src/sword*`; no program-key flips (colours via uniforms /
+instance attributes); every private material through `vfx.applyPlayerFx(m, {role})` and returned from `warmup()`; all player FX
+`depthWrite:false`; pooled meshes, 0 new materials per cast; rows and motifs allocate only per cast, never per frame.
+
+###### Tests — `node tools/playtest4.js melee [--full] [--sheets]`
+Dev split: `MELEE_PART=first|dodge|measure|iou|probe`, `MELEE_IDS=a,b`, `MELEE_EVERY=6`, `MELEE_VERBOSE=1`.
+Static (rule 5, reserved shapes, no hitstop, files) · ML1.a first casts · ML1.b registration + declared looks · ML1.c per-cast
+measurement (ceilings + floors) · ML1.d materials · ML1.e stacked rotation · ML1.f element IoU · ML1.g dodge windows · sheets.
+
+###### Measured (branch `v4/melee`, 640×360 SwiftShader, run by parts: `MELEE_PART=first|dodge|measure|iou`)
+| Check | Result | Numbers vs budget |
+|---|---|---|
+| static (rule 5, reserved shapes, no `game.hitstop`, files) | PASS 8/8 | 17 files scanned, 0 hits |
+| ML1.a first casts | PASS | max 2.1 ms CPU (≤ 8 ms) over 57 casts; 0 first draws of never-drawn programs |
+| ML1.b registration / lookOf | PASS | 4 el × 9 motif kinds, 14 FM shapes; 104 ids ≥ archetype; 36 bespoke |
+| ML1.g dodge windows | PASS | longsword worst 0.25 s (c4_fire), hammer 0.15 s, daggers 0.083 s (≤ 0.25); charged 0 s after release (≤ 0.10); actives ≤ 0.10 s after first damage; ults from first damage; fire.finisher 293 frames, 0 cancellable, 0 vulnerable |
+| ML1.c ceilings (white, luma, cov, particles, handles) | PASS for all 57 | white max 0.02 % (≤ 1.5–15 %), cov max 0.465 (U ≤ 1.0; C ≤ 0.30 all pass), particles max 132 (U ≤ 150), handles ≤ tier cap (hard cap now) |
+| ML1.c floors | **FAIL 16/57** | sat below the swatch floor for cool elements (ice.basic 0.357 / 0.387, ice.nova 0.362, ice.ult 0.321, lightning.basic 0.31 / 0.40, lightning.charged 0.251, lightning.ult 0.282, wind.basic 0.346 / 0.382, wind.ult 0.332, water.ult 0.346 / 0.35, water.charged 0.346, shadow.basic 0.312, shadow.charged 0.348, lightning.mine 0.333); detail lightning.ult 5855 and fire.ult 7619 (U ≥ 8000; 7417 / 7350 alone) |
+| ML1.d materials | PASS | 0 new materials per cast after the first (57) |
+| ML1.e stacked 7-cast rotation | PASS | 0.0 % near-white (≤ 12 %) |
+| ML1.f element IoU | **FAIL 2/5 forms** | basic 0.35, nova 0.21, cone 0.48 pass; projectile 0.61 (water/light), zone 0.61 (wind/water) (< 0.5) |
+| retention (I) | SKIP | integration |
+
+Swatch saturation on the test ground (opaque `mid` ring + tinted solid, MG1 method): fire 0.748, ice 0.454, lightning 0.5,
+wind 0.447, water 0.545, earth 0.665, nature 0.637, light 0.252, shadow 0.567. ML1.c judges sat against `min(§1.4, 0.85 × swatch)`
+(MG1's rule, window-weighted), so the two families are measured alike.
+
+Legacy (worktree): `tools/bootcheck.js` exit 0 (all configs playing, no uncaught errors); `tools/playtest3.js melee` 98/0;
+`tools/playtest.js` exit 0; `tools/playtest2.js` exit 0 with one FAIL line "wind combo hitstop on the first hit of each castId:
+repeat" — a reaction hit without `castId` (request 4a; flaky across owners' runs).
+
+###### Late fixes (this pass)
+- Hard per-cast handle cap: every kit spawn of a motif (also the once-per-cast burst `vfx.hitFeel` plays through `kit.motif`, spark
+  motifs and decals) runs under the cast's §1.4 cap; spawns past it return an inert handle.
+- FX solids (FM meshes) stop when the chase camera reaches them (depth < 2.5 m or distance < 3 m): a lunge through the target carried
+  the camera into the impact flower (nature.charged peak coverage 1.47 → 0.04).
+- `light.ray` built at pillar width (uniform scale keeps the kit's coverage estimate honest: light.charged 0.60 → 0.15).
+- Rows: lightning.ult owns its beams / impacts (paced strikes no longer starved by the legacy beam + burst), fire.ult inner ring,
+  smaller roots / sanctuary footprints, Z decals ≤ 2.2 m, crescent and blade-trail rims lean to `mid` (less `light` / `hi` mix).
+- ML1 harness isolation: spells zones cleared between casts (sanctuary kept ticking into later casts), meadow soaked / regrown,
+  legacy leftovers waited out; these were the cause of most earlier sat / cov failures in the full sequence.
+
+
+###### Known issues / P1
+- Open B floors (above): cool-element saturation (request 3) and two U detail floors; two IoU pairs (projectile water/light,
+  zone wind/water) — the zone / projectile forms of those elements need more distinct primary shapes (P1 polish).
+- ML1.c with all 57 casts takes ≈ 8–13 min on the shared machine; run it by parts.
+
+Cut: bespoke looks for the remaining (non-bespoke-set) rows — they use their archetype look; finisher polish (the finishers run the
+v3 cinematics through the gate: one tinted flash ≤ 0.15 s, budgets F); per-weapon smear textures.
+
+#### v4 notes — player (`docs/v4/notes/player.md`)
+
+##### player — v4 notes
+
+Owner: player (`src/player.js`, `src/player/*`, `tools/playtest3/player.js`, `tools/playtest4/player.js`, these notes, `docs/v4/requests/player.md`).
+Branch `v4/player` (from `core-p0a`), worktree `/home/user/wt4/player`. Merged read-only: **`tells-b.2`** (which carries `world-b`, `kit-p0a`
+and `vfx-b`) and **`core-b`** (post4 render path, governor, sub-steps, per-entity hitstop). `mobs`/`bosses`/`magic`/`melee`/`ux` tags did not exist:
+`enemies.orbEta`, `spells.castLock`, `action.dodgeCancelable` (v3 sword), `cameraHint` are feature-detected.
+
+###### Status
+
+| Item (task) | State |
+|---|---|
+| P0 1 kits (§5.8 numbers, §6.10 names, `defend.canParry`) | done |
+| P0 2 pending-perfect (tells.nextImpact / enemies.orbEta) + after-impact grace refund | done |
+| P0 3 keymap-only input, 0.25 s buffer, dodgeBuffered / dodgeRejected, dodge along the held input | done |
+| P0 4 post-hit protection (melee only, 0.35 s after a non-DoT hit ≥ 12) | done |
+| P0 5 witch time (§5.9 conditions), perfectDodge payload, counterReady 1.2 s | done |
+| P0 6 per-entity hitstop: animation freeze, input keeps buffering | done (`game.playerHitstopUntil`, `entity.hitstopUntil`, `player.hitstopUntil`) |
+| P0 7 story auto-revive in place, 50 % HP after 2 s | done |
+| P0 8 combat camera (6.6 m / FOV +4 / shoulder 0.9, boss tell +10 %, cameraHint, cameraDist, noCameraCollide) | done |
+| P0 9 model: ≤ 8 + 4 calls, ≤ 30k / 6k tris every class; FX through applyPlayerFx + ramps; no per-frame allocation; visual work on lastStep | done |
+| P1 aim assist (`settings.aimAssist` 약 / 강: 8° / 12° pick cone, v3 4.5° when 끔) | done |
+| P1 directional hurt poses | already in v3 (`anim.hurtKick` from the hit direction); unchanged |
+| P1 soft lock-on (T / middle mouse, middle-third framing, ring pulse on tellStart) | **cut**: core's keymap has no `lockOn` action and §5.8 forbids key literals; fallback = no lock-on (the combat camera framing works without it). Request: core adds `lockOn` to the keymap. |
+
+###### What was built
+
+###### Kits (`src/player/kits.js`)
+- `KITS[cls].dodge = {type, dist, iframes, perfectWin, grace: 0.05, …}`: mage blink 0.30 / 0.20, sword dashstep 0.30 / 0.20, ranger backflip 0.42 (= the
+  whole flip) / 0.20, paladin shieldstep 0.20 + `superArmor` 0.38 / **perfect brace 0.15** (`brace: true`), spiritcaller spiritswap 0.30 / 0.20,
+  shadowblade shadowroll 0.40 / 0.22. Defend perfect windows 0.22 (barrier, guard, shield, counter nominal); ward 0; focus none.
+- `kit.defend.canParry` = type ∈ {barrier, guard, shield, counter} and perfect > 0 (mage, sword, paladin, shadowblade).
+- `KIT_NAMES` = the §6.10 glossary (점멸 · 질풍보 · 백덤블링 · 방패 돌진 · 정령 교대 · 그림자 구르기 / 마력 방벽 · 막기 · 방패 막기 · 정령 결계 · 반격 자세 · 집중);
+  `PERFECT_KO = {dodge:'완벽 회피!', parry:'완벽 패링!', barrier:'완벽 방벽!'}`; `GRACE = 0.05`.
+
+###### Dodge / defence (`src/player.js`)
+- **Input**: only `game.input.keymap` actions (`dodge`, `dodgeAlt` = Mouse3, `defend`, `jump`, `sprint`; legacy `game.KEYS` twin when the keymap
+  is missing). WASD stays as the movement axes (no keymap actions exist for them).
+- **Gate**: `(!action.active || action.cancelable || action.dodgeCancelable) && !(game.spells.castLock > 0)`. A press while the gate is closed (or the
+  dodge is on cooldown / mid-dodge / stunned) is queued (`player.inputBuffer = {action, t}`); the first allowed frame within 0.25 s executes it and emits
+  `dodgeBuffered {action, waited}`; on expiry `dodgeRejected {action, reason:'locked'|'cooldown'}`; no stamina → `dodgeRejected {reason:'stamina'}` at once.
+  A buffered defend starts the block only if the key is still held (a released tap has nothing to hold).
+- **Direction**: every dodge follows the held movement input (camera-relative, read before action / stun scaling). Without input: blink / swap forward,
+  rolls / dashes away from the camera view, ranger backflip backward; with input the ranger faces away from the travel direction (a real backflip toward it).
+- **Pending-perfect**: at the dodge (or defend) press `t = min(tells.nextImpact(pos), enemies.orbEta(pos))`; the matching `tells.active()` record gives
+  the attacker and `targetsPlayer`. `t ≤ window × assist.perfectMul` → pending until `enemyTime + t + 0.06`; a hit absorbed by the i-frames (or the
+  block) inside it is perfect. Without any prediction source (`Infinity`) the v3 rule applies on game time (a hit within the window after the press).
+- **Clocks**: the prediction compares in **enemy time**; i-frames, super armour, counter stance and the block timer run on **game time** (uncompensated):
+  under a compensated slow motion (witch, the tells teaching slow motion) the player moves at full speed while the protection keeps pace with the slowed
+  enemies (found by PL1: with compensated i-frames the teaching slow motion made perfect dodges land as hits). Dodge travel stays compensated.
+- **Grace**: `playerHurt` (non-DoT) records `player.lastEnemyHit = {t (realTime), amount, attacker, attack, appliedStatuses}`; a dodge / block / counter
+  that *starts* with its press ≤ 0.05 s real after that hit refunds the HP, clears those statuses (`combat.clearStatus`) and counts as perfect `{grace:true}`.
+- **Perfect reward** (one path for dodge / parry / barrier / brace, ≤ 1 per 0.25 s): `perfectDodge {source, attacker, witch, grace, kind, calloutKo, kit, cls, position}`,
+  `counterReady {dur: 1.2}`, `player.counterReady` 1.2 s (the sword / skills counter hooks consume it). Parries also keep the v3 `parry` event; their
+  hitstop is `game.hitstop(0.08, {tier:'parry', target: attacker})`. The v3 per-perfect `slow('parry', …)` and full-screen flashes are gone.
+- **Witch time** only if `assist.witchSlowmo`, the dodged attack's tell targeted the player (recent `tellStart` ring or the pending record), no other
+  player-targeted tell has ≤ 0.3 s left, and ≥ 4 s since the last one ended: `timeScale.set('witch', 0.5, 0.6, {compensate:true})`,
+  `post.setGrade('witch', 0.6, {durReal: 0.6})`, `vfx.fxFactor('witch', 0.6, 0.6)`. Arbitration (teach / cinematic win) is core's.
+- **Paladin brace**: a pending-perfect hit during the shield step → `{cancel, parried, perfect}` (the attacker's `onParried` stagger), shield-parry effects, `kind:'brace'`.
+- **Post-hit protection**: after a non-DoT hit ≥ 12 (`playerHurt.amount`), hits with `attackKind === 'melee'` (`hit.attack.kind`, else an enemy-entity
+  source without `projectile` / dot tags) are cancelled for 0.35 s game time; projectiles, hazards, surfaces and debug hits still apply.
+- **Per-entity hitstop**: while `max(player.hitstopUntil, entity.hitstopUntil, game.playerHitstopUntil) > game.realTime` the visual block (pose, springs,
+  cape, FX) is skipped; timers, movement and the input buffer keep running (`debugState().animFrozen`).
+- **Sub-steps** (`core-b`): `player.substeps = true`; gameplay (input, buffer, timers, movement, collisions) runs every sub-step; the visual block
+  (fidgets, animation weights, `anim.update`, IK, springs, bow string, gem, charge circle, sigil, ghosts, cape, rig merge update, camera) runs once on
+  `game.frame.lastStep` with `frameDt × timeComp()` and the frame's real dt (PL1: a 1/15 s frame → 2 player steps, 1 visual pass).
+- **Auto-revive** (`assist.autoRevive`, 이야기): 2 s after death, in place, 50 % HP, 2 s i-frames, statuses cleared, `playerRespawn {inPlace, autoRevive}`;
+  the `dead` state / respawn timer are never entered.
+
+###### Camera (`updateCamera`)
+- `wCombat` eases (≈ 95 % in 0.6 s) to 1 while any enemy entity with `aggro`/`debugAggro` is within 15 m (or the boss hint applies): boom 5.5 → 6.6 m,
+  FOV +4°, shoulder 1.2 → 0.9. +10 % boom while a `tells.active()` record belongs to a boss. Boss `cameraHint {dist, height}` within 40 m as multipliers.
+  `settings.cameraDist` near / normal / far = ×0.9 / ×1 / ×1.15. Aim zoom keeps its ratio to the current boom. Colliders flagged `noCameraCollide`
+  (record, `userData` or `object.userData`) are ignored by the boom. `player.camera = {hint, dist, fov, combat, bossTell, shoulder}` (read only).
+
+###### Model (`src/player/merge.js`, `model.js`, `cape.js`, `swordsman.js`)
+- `mergeRig(root, {cape, skirt, slots, exclude})` replaces the v3 per-material `skinMerge` (kept as the fallback): the ~244 parts (every class's gear)
+  are the bones of one skeleton (+ an identity bone for the world-space cape) and draw as **one body SkinnedMesh** (one toon material: vertex colours,
+  per-vertex emissive vec4 whose w selects a uniform colour slot for the staff gem / gem motes / weapon gems, one 912×144 canvas atlas for torso,
+  skirt, capelet and cape at half resolution with wrapped gutters; double-sided parts get a flipped copy), **one outline** (shares the body's vertex buffers,
+  own index, per-vertex thickness) and **one decimated shadow proxy** (vertex clustering at 4.5 cm per part; its main-pass draw is collapsed outside the
+  clip volume, so it costs a call but no fragments). The draw index holds only the triangles of parts visible since the last outfit change (index rebuild
+  on growth / on `refresh()` at class change), so hidden class gear costs no triangles.
+- Skirt (`Skirt.bindSink`) and cape (`Cape.detach`, `writeCape`) write live ranges into the merged buffers (`addUpdateRange`).
+- Flash: `entity.flashUniform = rig.skin.flash` → `vfx.flashEntity` tints the body through a uniform (no material clones).
+- Sword edge glow: both blade faces merged into one mesh. The gem core (hidden inside the gem) is not drawn.
+- Player FX (`fx.js` RuneCircle + Afterimages, `defense.js` Barrier, the gem halo): private materials patched once through `game.vfx.applyPlayerFx`
+  (`role:'line'` for the rune circles, `'fill'` otherwise); tints from `game.elements.fx(el)` (mid / light), never white; ghost fresnel ≤ 1.2×.
+  Burst colours in `player.js` are ramp pairs `[mid, light]` (cached) or fixed non-white pairs; per-frame emitters reuse their option objects.
+- Allocation fixes: cape constraint loop (typed rest lengths, no boxed doubles), `writeCape` / ghost bake without `subarray` views, `for…of` loops removed,
+  ghost uploads limited to the visible range.
+
+###### APIs (PLAN §7.4.8)
+`player.kit.dodge.{iframes, perfectWin, grace}`, `player.kit.defend.{perfect, canParry}` · `player.counterReady` (seconds left, truthy) ·
+`player.camera.{hint, dist, fov, combat, bossTell, shoulder}` · `player.inputBuffer` `{action, t} | null` · `player.lastEnemyHit` `{t, amount, attacker, attack, appliedStatuses} | null` ·
+`player.hitstopUntil` (get / set, realTime) · `player.debugState()` (+ `pending, buffer, protect, witchReadyIn, dodgeDir, animFrozen, revive`) ·
+`player.rig.skin` = `{skeleton, meshes:[body, outline, proxy], body, outline, proxy, flash, stats, refresh(), recolor(), update()}`.
+Events emitted: `dodgeBuffered`, `dodgeRejected`, `perfectDodge` (+ `attacker, witch, grace, kind, calloutKo`), `counterReady`, `playerRespawn {inPlace, autoRevive}`;
+consumed: `playerHurt`, `tellStart`.
+
+###### Measured (branch, SwiftShader 640×360, `prod=1&governor=0&seed=1`, medium)
+
+| Metric | v3 | v4 (this branch) | Budget |
+|---|---|---|---|
+| Player model scene calls (worst state per class: weapon drawn / charging) | 25–34 | mage 4 · sword 4 · ranger 3 · paladin 3 · spiritcaller 4 · shadowblade 3 | ≤ 8 |
+| Player shadow calls | 15–16 | 1 (every class) | ≤ 4 |
+| Player scene triangles (body + outline + proxy + cape) | 24.6k / 27.3k (mage / sword, cape not counted) | 18.3k–23.9k | ≤ 30k |
+| Player shadow triangles | 8.2k / 12.6k | 2.7k–3.7k | ≤ 6k |
+| Merged rig | 42 skinned meshes | 3 (body 21.4k tris capacity, outline 12.5k, proxy 6.3k; drawn: visible outfit only) | — |
+| Player-file allocation while moving (CDP sampling, 4 s) | — | 2.9–3.8 KB / game-second (writeCape, deform remnants) | ≤ 32 KB/s (section check; F-* scene ≤ 1 MB/s) |
+| Buffer uploads per frame, whole scene, player idle / moving (S-plains spot, no enemies) | — | 7.3 KB / 13.2 KB in 13–14 calls (skirt 5.9 KB + cape 2.1 KB when moving) | F-* ≤ 150 KB |
+
+PL1 timings (enemy time): perfect press at −0.177 s → pending, the absorbed hit → `perfectDodge`; grace press at +0.04 s real → full refund; witch time
+lasts 0.60 s real (timeScale 0.5, comp 2); combat boom 6.600 m / FOV 66.0 (base 62); boss hint 1.5 → 9.90 m; story revive 2.0 s → 137.5 / 274 HP.
+Real v3 sword combo: a dodge pressed 4 frames into **c4 (fire)** is still locked at +0.25 s → `dodgeRejected {locked}` at +0.28 s (melee's ML1 lock ≤ 0.25 s fixes it).
+
+###### Tests (final run, `tells-b.2` + `core-b` merged)
+- `node tools/playtest4.js player`: **59 passed, 0 failed** (≈ 52 s; 3 boots: mage main page, sword combo page, story + `witch=0` page).
+- `node tools/playtest3.js player`: **226 passed, 0 failed** (section updated per §7.9: §5.8 kit numbers per class; the rig perf check counts drawn
+  triangles of the v4 merge, ≤ 3 skinned draws, ≤ 30k tris, proxy ≤ 6k — v3 asserted ≤ 51 draws / ≤ 40.2k capacity triangles).
+- `node tools/playtest3.js` (all sections): **1273 passed, 0 failed, 1 skipped**.
+- `node tools/bootcheck.js`: every config `playing`, exit 0 (404s only for the configs that rename modules away).
+- `node tools/playtest.js --quick`: all legacy checks PASS, exit 0.
+- `node tools/playtest2.js`: exit 0; one logged FAIL `sword: wind combo hitstop on the first hit of each castId` (a legacy non-melee hit without a castId gets
+  no hitstop under vfx-b's volley rule; the same FAIL is in `docs/v4/notes/vfx.md` before any player change — vfx / core, not player).
+- `node tools/playtest4.js core` (core's section, for information): 130 / 2 — `C5 stubs: tellCommit at lock` and the 1-overlay-call threat check fail
+  because the real tells (`tells-b.2`) are merged here; core's.
+
+###### Integration notes (I checks)
+- C6: the player group is now `byGroup.player` 3–4 + 1 calls; the rune circles, barrier and ghosts live in the main scene with `userData.owner = 'player'`
+  (the harness counts them under `fx`).
+- The shadow proxy is a SkinnedMesh with the default depth material; core's warm-up may want to include the shadow pass (requests/core 4).
+
+#### v4 notes — ux (`docs/v4/notes/ux.md`)
+
+##### ux v4 notes
+
+Branch v4/ux from core-p0a; merged (read-only) core-b, tells-b.2, mobs-b. No bosses tag exists yet: boss codex /
+bossSpawn.brief are feature-detected (playtest uses a fixture entry).
+
+###### Built (P0, all 12 items)
+1. `ui.fmtKo(text, ctx)` (src/ui/fmt.js): tokens {dodgeKey} {defendKey} {jumpKey} {sprintKey} {interactKey} {skillsKey}
+   {codexKey} {confirmKey} from `game.input.keymap.label`, {dodgeName} {defendName} from the kit, {punishSec} live;
+   can-parry rule (mage/sword/paladin/shadowblade yes; ranger/spiritcaller no -> parryKo hidden, hint variant B).
+2. `game.ui.hint(id, textKo, opts)` (src/ui/hints.js): one slot under the compass, action-gated dismissal, <= 2 shows per
+   id persisted in `game.save.section('hints')`, full §6.2 catalogue; timed TUT queue removed; queued during
+   cinematics/dialogue; boss fights only tell/punish/projectile/hazard hints; MP hint variant picked from a live check.
+3. Monster codex (src/ui/monsters.js, codex tab '몬스터'): unknown/seen/defeated, role, weak/resist icons, tip, attacks
+   이름 — 예고 — 대처 (+parryKo when allowed), kill count, thumbnails via `game.render.snapshot(game.enemies.previewModel(t))`
+   at unlock (glyph fallback); `game.save.section('monsterCodex')` (fallback localStorage 'aw_monster_codex_v4').
+   First-sight strip on enemyEncounter{sight}, 첫 조우 card after the kill / 3 s after combat, boss brief card, weak/resist
+   icons on HP bars after the first hit, boss attack name for tells >= 1 s, '붕괴!' on bossBroken.
+4. 가이드 tab (src/ui/guide.js): controls from the keymap, legend with real `tells.renderThumb(kind)` thumbnails and exact
+   §5.1 texts, 회피와 방어, 원소 반응 기초, 현재 목표; auto-opens at the first pause; linked from the recap.
+5. Death recap (src/ui/recap.js): playerHurt ring buffer, killer + attack, last 5 hits, grouped DoT/hazards, class-correct
+   tip, 4 buttons, respawn line, 3-deaths easy suggestion; story difficulty = auto-revive strip only.
+6. Threat UI (src/ui/threatui.js): off-screen arrows from `tells.active()` (42 % ellipse, tell colour, progress ring, max 4,
+   pooled DOM), orb dots, directional damage arc (replaces the radial vignette), hazard edge vignette with source name.
+7. Settings (src/ui/settingsMenu.js): 5 tabs, every §6.8 key, 재시작 후 적용 rows, 낮음/보통/높음 + separate 자동 품질 조절,
+   렌더 해상도 line, 성능 테스트 + result card + 복사, FPS overlay, §2.2 offer/drop-back toasts, rebinding of
+   dodge/dodgeAlt/defend via `keymap.rebind`, difficulty cards on 새 게임 (src/ui/newgame.js), --ui-scale with 12 px floor.
+8. HUD declutter: pooled nodes, damage numbers <= 6 with 0.4 s same-target merge, XP merged into the corner counter,
+   centre banners queued while aggroed.
+9. Onboarding: short intro (4 key shots), Noah 6 lines + '옛이야기를 더 듣는다', hold F/Space fast-forward + auto-advance
+   0.4 s, Esc -> '대화 건너뛰기', class panel badges/stars/one-liners/자세히, training telegraph lesson, objective how lines
+   (story/script4.js HOW) and `world.setBeacon` on every objective step.
+10. Build help (src/ui/build.js): 추천 node glow, 자동 배분 (on for 이야기) through canLearn/learn + auto-equip + toast,
+    reaction chip tooltips, inline lock reasons, equip hint.
+11. Copy fixes per §6.10 (callouts, HUD_KO.check, jargon, dodge/defend names, '빙결의 글라시아').
+12. Audio (src/audio.js, src/audio/tells.js): the 12 recipes, spatialised tell sounds (<= 2 concurrent, nearest by remaining
+    time), music duck -3 dB while a tell targets the player, unknown names no-op; cinematic flashes <= 0.15 s, not white,
+    off with flashReduce (src/cinematic/flash.js).
+
+###### P1 cut
+Dialogue backlog, 화력/생존 build paths, breadcrumb trail — not built; fallbacks: plain dialogue, single 추천 path, beacon.
+
+###### Measured (branch, SwiftShader)
+- `node tools/playtest4.js ux`: 89 passed, 0 failed (98 s).
+- ui.update median 0.000 ms / p99 2.7 ms at 960×540 (budget 1.5 / 6 ms).
+- Damage numbers max 6; hints visible max 1; concurrent tell sounds max 2; off-screen arrow within 1 frame of tellStart.
+- Short intro 28.2 s (budget <= 30 s), full intro 89.7 s.
+- Legacy: bootcheck exit 0 (all configs playing); playtest.js --quick exit 0 all PASS; playtest3 ui+narrative 275/0;
+  playtest2 exit 0 with one non-ux FAIL "wind combo hitstop on the first hit of each castId" (reaction hit without castId,
+  already filed by melee as request 4a; reproduces on other owners' branches).
+- playtest3 ui.js §7.9 change: '+XP number spawned' now checks the merged corner counter (§6.9).
