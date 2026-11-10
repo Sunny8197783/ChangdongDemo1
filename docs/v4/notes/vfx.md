@@ -61,3 +61,34 @@ every legacy call accepts `owner:'player'|'enemy'|'world'` and `castId`.
 - The runtime coverage estimator over-estimates by ≈ 1.5–2× (conservative; rune circles / items near the camera are bounded by their on-screen box); the counting override is authoritative. With the L1 pre-emptive headroom on ultimates (coverage × 0.6) soft sprites may shrink for ~4 s in busy fights.
 - Spell objects created by magic / melee that are not named `spells*`/`sword*` nor tagged `userData.owner = 'player'` are invisible to the harness's player group.
 - Legacy callers of `screenFlash` / `fovKick` outside hitFeel are clamped (alpha ≤ 0.25, ≤ 0.15 s, ≤ 4°) but not tier-gated; magic / melee should stop calling them except for U / F tiers.
+
+## Fix round 1 (integration review items)
+Measured on this branch (SwiftShader, 640×360, prod, governor 0) after merging `v4-polish`.
+
+1. **Hit flash saturation (user point 6)** — fixed at the root in `vfx.flashEntity`: a per-entity governor (key = `flashUniform` or flash set)
+   starts a new pulse at most every 0.18 s and scales it by the recent hit rate (heat, decay 1.7/s, floor 0.35); first hit = full pulse,
+   pulse ≤ 0.1 s. F-spiritcaller 5 s rotation (240 hits), enemy flash value over 720 samples: before p95 0.83 / max 0.97 / 11.3 % of samples
+   > 0.5 → after p95 0.21 / max 0.61 / 0.4 %. New V3 check: 120 hits/s for 2 s → max 0.33, lit 36 % of frames, first hit 0.96.
+2. **Player-FX coverage of fills built outside the kit** — `applyPlayerFx` materials now report each main-camera draw
+   (`material.onBeforeRender`) to a foreign-FX governor in `vfx/duck.js`: drawn-surface-area estimate (mean projection: area/2
+   double-sided, /4 single-sided; flat items by orientation; ≈ 0 when faded out), shrinkable = role `fill`/`particle` (rune circles /
+   sigils, role `line`, never shrink), 3-observation persistence within 0.1 s, a same-frame hard cap, allowance = 0.35 × soft budget −
+   0.3 × the rune-circle estimate. Shrinking is a uniform (`uAwShrink`, vertex scaled toward the item's origin in clip space): no
+   program change, fewer fragments. F-shadowblade counting override max 2.95 → 1.42 screens (ultimate fresnel shells from
+   `spells/assets.js fresnelMat` were ~1.7 screens the estimator never saw); F-mage / paladin / spiritcaller rotations: shrink never
+   engages. `vfx.debug.coverage().parts.{foreign, foreignShrink, foreignRaw}`, `vfx.debug.duck.foreignDebug(on)`.
+3. **Programs** — `applyPlayerFx` role and premultiplied/straight output are per-material uniforms; the key suffix is one `|awfx`
+   (was `|awfx:<role><a|n>`); the telegraph fallback is warmed only without the real tells. bootcheck 161 → 159. Attribution of the
+   161 (F-mage, 4 s rotation): the `awfx` programs are NOT duplicates of unpatched ones (only 3 of 37 shared a base key; stripping the
+   role split saves 2) — they differ by the base material's own flags (map / vertexColors / transparent / side) and replace the
+   programs those materials would compile anyway. vfx-owned programs: kit 6 (kit + tells = 6 + 4 = 10), particles 1, runes 2, glow 2,
+   ghost 1, debris 2, status 6. The rest: world/scene ≈ 70, cinematic stage 8, magic `groundMat(kind)` 4 fragment variants of one
+   shader (`spells/assets.js:266`, element baked into the fragment text → one shader with a `uKind` uniform saves 3), other numbered
+   ShaderMaterials in spells / sword prewarm ≈ 23 (requests).
+4. **Uploads** — attribution (F-mage, sampled frames, bytes per sampled frame, max): `src/player/fx.js` after-image bake
+   ≈ 370 KB (range lo..hi spans every class's gear: 17,705 vertices × position + normal), `src/player/merge.js` playerBody ≈ 450 KB on
+   rebuild frames, playerShadow 35 KB; vfx at most ≈ 55 KB (ribbons 32, particles 17, bolts 3.5, status 3, linework 1.5, FM 1.4).
+   vfx changes: particles 4 → 1 interleaved buffer, linework 7 → 2, ribbons / bolts 4 → 1, FM life/tint 2 → 1, statusfx live ranges
+   (was full capacity every frame). C6-method p95: F-mage 513 KB / 119 calls → 501 KB / 102 calls, F-ranger 216 KB / 96 → 216 KB / 78.
+   The byte budget (150 KB) needs the player-owned fixes (requests); the call budget (30) also needs world (flora 6, grass 4–5 per frame)
+   and player (cape ranges accumulate one bufferSubData per step between renders).
