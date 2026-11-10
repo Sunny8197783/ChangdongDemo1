@@ -133,7 +133,10 @@ function installInPage() {
   PT.armor = (e) => {
     if (!e) return e;
     e.ptArmor = true; e.hp = e.maxHp = 1e7; e.staggerDmg = 1e9; e.noTumble = true; e.poiseMax = 0; e.poise = 0;
-    e.aggro = true; e.debugAggro = true; e.alert = true; e.xpValue = 0;
+    e.debugAggro = true; e.xpValue = 0;
+    // engage through the real aggro path: base.js alert() returns early when e.aggro is already set, so assigning
+    // aggro alone left every mob 'idle' forever (no attacks in any F-*/R-* measurement). Bosses are always aggro.
+    if (!e.isBoss && !e.aggro) { e.aggro = true; if (!e.state || e.state === 'idle' || e.state === 'return') e.setState?.('alert'); }
     return e;
   };
   PT.keepAlive = () => {
@@ -162,6 +165,22 @@ function installInPage() {
     try { e = g.enemies?.spawn?.(type, pos, { ...opts }) || g.debug?.spawn?.(type, { ...opts, pos }); } catch (err) { PT.note(`spawn ${type} failed: ${err.message}`); }
     return e;
   };
+  /** Teleports the player into the live boss's arena, `dist` m from the boss (towards the arena centre when the boss
+   *  is off-centre), and faces it. B-* / R-boss scenes: &boss=<id> spawns the boss in its arena but leaves the player
+   *  at the spawn (the shrine, ~270 m away). */
+  PT.toBoss = (dist) => {
+    const b = g.enemies?.boss, bp = b?.object?.position; if (!bp) return null;
+    dist = dist ?? 9 + Math.min(6, b.radius || 0);
+    const c = b.arena?.position || g.world?.bossArena?.position || bp;
+    let dx = c.x - bp.x, dz = c.z - bp.z, L = Math.hypot(dx, dz);
+    if (L < 2) { dx = 0; dz = 1; L = 1; }
+    const x = bp.x + dx / L * dist, z = bp.z + dz / L * dist;
+    PT.tp(x, z, 0.05);
+    PT.lookAt(bp.x, bp.z, -0.12);
+    return Math.hypot(bp.x - x, bp.z - z);
+  };
+  /** Faces the camera / player towards world (x, z): yaw 0 looks down −z. */
+  PT.lookAt = (x, z, pitch = -0.2) => { const p = g.player.object.position; PT.look(Math.atan2(-(x - p.x), -(z - p.z)), pitch); };
   /** Set up a §1.1 scene in the booted page (deterministic with seed=1). Returns {id, spot, enemies, boss}. */
   PT.scene = (id) => {
     const kind = id.split('-')[0], arg = id.slice(id.indexOf('-') + 1);
@@ -173,6 +192,7 @@ function installInPage() {
       if (arg === 'village' && g.world?.playerSpawn) spot = { x: g.world.playerSpawn.x, z: g.world.playerSpawn.z };
     }
     if (kind !== 'B' && !(kind === 'R' && arg === 'boss')) PT.tp(spot.x, spot.z, 0.1);
+    else if (arg !== 'nidhoggra') PT.toBoss();   // nidhoggra: &quest=final already places the player
     if (kind === 'S' || kind === 'P') PT.clearEnemies(false);
     const foes = [];
     if (kind === 'F' || kind === 'P') {
@@ -192,10 +212,15 @@ function installInPage() {
       } else {
         PT.clearEnemies(true);
         const b = g.enemies?.boss; const pp = g.player.object.position;
-        for (const [t, dx, dz] of R_ROSTER.slice(0, 2)) { const e = PT.spawnAt(t, pp.x + dx, pp.z + dz); if (e) foes.push(PT.armor(e)); }
+        const bp = b?.object?.position;
+        // the two mobs stand between the player and the boss (R_ROSTER offsets are for a −z facing)
+        const yaw = bp ? Math.atan2(-(bp.x - pp.x), -(bp.z - pp.z)) : 0, cs = Math.cos(yaw), sn = Math.sin(yaw);
+        for (const [t, dx, dz] of R_ROSTER.slice(0, 2)) {
+          const e = PT.spawnAt(t, pp.x + dx * cs + dz * sn, pp.z - dx * sn + dz * cs); if (e) foes.push(PT.armor(e));
+        }
         if (b) { b.ptArmor = true; foes.push(b); }
       }
-      PT.look(0, -0.25);
+      if (arg === 'boss' && g.enemies?.boss?.object) { const bp = g.enemies.boss.object.position; PT.lookAt(bp.x, bp.z, -0.12); } else PT.look(0, -0.25);
     } else if (kind === 'B') {
       const b = g.enemies?.boss; if (b) { b.ptArmor = true; b.aggro = true; foes.push(b); }
     }

@@ -304,3 +304,21 @@ meaningful on a quiet machine.
   magic (default + sheets) 24 / 3 (MG1.c), melee (default + sheets) 30 / 4 (ML1.c, ML1.f), player 59 / 0, ux 89 / 0.
 - `--sheets`: caster, melee, mobs, bosses sheets regenerated from the merged build and committed; review in `docs/v4/review.md`.
 - `--perf`: C6 / C8 as in the table above (GPU gates pass; uploads, new materials, programs, allocation and the Mirwen transition fail).
+
+## Fix round 1 (review items)
+- **Fight scenes now fight.** `PT.armor` set `e.aggro = true`, so `base.js alert()` returned early and every F-*/R-* mob stayed `idle`: every
+  earlier C6 F-* row (and the tells R-scene numbers) came from fights without enemy attacks. It now enters `alert` (bosses untouched).
+  F-mage after setup: 12/12 `alert`, then chase/circle/cast. C6 adds a real-fight check (F-*: ≥ 1 `enemyAttack` per 2 s; B-*: boss in range + ≥ 1 attack).
+- **B-* / R-boss scenes in the arena.** `PT.toBoss()` teleports ~10 m from the boss towards the arena centre and faces it (`PT.lookAt`);
+  R-boss mobs stand between the player and the boss. B-golem 271.9 m → 11 m (golem.throw tells), R-boss kalis 9 m and in view (burst, volley).
+  C6 measures B-golem and B-kalis by default (all mid bosses with --full) at ≤ 225 calls and enemy-FX ≤ 1.0.
+- **Frame cap**: `src/core/framegate.js` accumulator (deadline += 1000/cap, 1 ms jitter tolerance, resync after a stall). Simulated with ±0.3 ms
+  jitter: 60/120/144/165/240 Hz all 60 fps at cap 60 (old rule: 144 Hz 48, 165 Hz 55); 144 Hz at cap 30 → 30. C2 checks it.
+- C6 with real attacks (640×360): F-mage 179 calls p95 (157+22+**6 overlay**), 3 attacks / 6.4 s, enemy-FX cov 0.075, player cov 1.16;
+  F-ranger 182 (overlay 7), 10 attacks, enemy-FX 0.46; B-nidhoggra 104; **B-golem 96, enemy-FX 0.057; B-kalis 89, enemy-FX 0**. Draw-call,
+  transparent, coverage, fragment and sim rows still pass. Still failing (owner items, unchanged in kind): uploads p95 F-mage 518 KB / 126 calls,
+  F-ranger 272 KB / 109, bosses 483-512 KB; new materials 29 / 12; programs 161-165.
+- JS allocation re-measured with real fights (sampling, MB per game-second): **F-mage 9.86** (was 4.70 with idle mobs), S-plains 4.04,
+  R-boss 13.7. Top sites: F-mage enemies.js:460 `separate` 0.65, vfx/ribbon.js:133 0.55, player/cape.js:91 0.52, combat/statusfx.js:123 0.49,
+  enemies/base.js:376 0.41, common.js:307 0.24, player/anim.js:97 0.24; R-boss ribbon.js:133 **1.36**, separate 0.77, base.js:376 0.50,
+  cape.js 0.50, common.js 0.33, particles.js:162 0.31, mobs/rig.js:347 0.30. (owners: mobs, vfx, player, mobmodels.)
