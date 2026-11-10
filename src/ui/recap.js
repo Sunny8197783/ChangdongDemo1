@@ -6,7 +6,7 @@ import { RECAP_KO } from './text.js';
 
 const RING = 8;
 
-export function createRecap(game, { screens, hud, fmt, canParry, entryOf, actions, confirm, anim }) {
+export function createRecap(game, { screens, hud, fmt, canParry, parryText, entryOf, actions, confirm, anim }) {
   const ev = game.events;
   const ring = [];
   for (let i = 0; i < RING; i++) ring.push({ used: false, amount: 0, element: '', src: '', atk: '', atkId: '', type: '', dot: false, kind: '', time: 0 });
@@ -71,7 +71,7 @@ export function createRecap(game, { screens, hud, fmt, canParry, entryOf, action
     const en = k ? entryOf(k.type) : null;
     if (en) {
       const a = (en.attacks || []).find((x) => x.id === k.atkId) || (en.attacks || []).find((x) => x.nameKo === k.atk) || null;
-      if (a) { tip = fmt(a.counterKo || ''); if (a.parryKo && canParry()) tip += ' · ' + fmt(a.parryKo); }
+      if (a) { tip = fmt(a.counterKo || ''); if (a.parryKo && canParry()) tip += ' · ' + parryText(a, null); }
       else tip = fmt(en.tipKo || '');
     }
     last = {

@@ -96,7 +96,7 @@ module.exports = async function ux(PT) {
     PT.check('UX1 recap: killer name + attack name', r && r.killer === en.nameKo && r.attack === a.nameKo && r.amount === 18, r && [r.killer, r.attack, r.amount]);
     PT.check('UX1 recap: killer line', /「.+ · .+」에 쓰러졌습니다 \(18 피해\)/.test(document.querySelector('.aw-death-killer')?.textContent || ''), document.querySelector('.aw-death-killer')?.textContent);
     PT.check('UX1 recap: last hits ≤ 5 with seconds, DoT grouped', r && r.hits.length >= 2 && r.hits.length <= 5 && r.hits.some((x) => x.grouped && x.n === 4) && r.hits.every((x) => x.sec >= 0), r?.hits);
-    const wantTip = u.fmtKo(a.counterKo) + (a.parryKo && u.canParry() ? ' · ' + u.fmtKo(a.parryKo) : '');
+    const wantTip = u.fmtKo(a.counterKo) + (a.parryKo && u.canParry() ? ' · ' + u.parryText(a, null) : '');
     PT.check('UX1 recap: class-correct codex tip', r && r.tip === wantTip, [r?.tip, wantTip]);
     const btns = [...document.querySelectorAll('.aw-death.show [data-rc]')].map((b) => b.textContent);
     PT.check('UX1 recap: buttons 다시 일어서기 / 보조 기능 조정 / 몬스터 도감 보기 / 위험 표시 보기', btns.length === 4 && /^다시 일어서기 \(.+\)$/.test(btns[0]) && btns[1] === '보조 기능 조정' && btns[2] === '몬스터 도감 보기' && btns[3] === '위험 표시 보기', btns);
@@ -161,6 +161,12 @@ module.exports = async function ux(PT) {
     PT.check('UX1 codex: rendered model thumbnails for every type with a preview model', imgs.length >= withModel && imgs.length > 0, { imgs: imgs.length, withModel, n });
     PT.check('UX1 defeated entries list attacks (이름 — 예고 — 대처) + kill count', document.querySelectorAll('.aw-codex .aw-ment.defeated .aw-ment-a').length >= n && !!document.querySelector('.aw-ment-kills'));
     PT.check('UX1 mage sees parryKo lines', !!document.querySelector('.aw-ment-parry') === Object.values(all).some((e) => e.attacks.some((a) => a.parryKo)));
+    const ctext = document.querySelector('.aw-codex')?.innerText || '';
+    const blank = ctext.match(/.{0,24}(\s초 동안|\{\w+\}).{0,8}/g) || [];
+    PT.check('UX3 codex text has no blank duration or raw token (/\\s초 동안|\\{\\w+\\}/)', blank.length === 0 && ctext.length > 200, blank.slice(0, 4));
+    const wantP = { 'voidknight.slam': '2.0', 'nox.teleportSlash': '2.0', 'bokoblin.swing': '1.6' };
+    const gotP = {}; for (const t in all) for (const a of all[t].attacks) if (a.parryKo && wantP[a.id]) gotP[a.id] = (u.parryText(a, null).match(/([\d.]+)초/) || [])[1];
+    PT.check('UX3 parry stun seconds from live values (not the miss-punish window)', Object.keys(gotP).every((k) => gotP[k] === wantP[k]) && Object.keys(gotP).length >= 1, gotP);
     PT.note(`codex page: ${ents.length} entries, ${imgs.length} rendered thumbnails (${withModel} preview models)`);
     PT.check('UX2 codex hint dismissed by opening the codex', u.debug.hintVisible() !== 'codex');
     M.reset(); u.closeCodex(); PT.step(0.05); u.openCodex('mon'); PT.step(0.05);

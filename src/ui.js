@@ -655,11 +655,11 @@ export function createUI(game) {
   const confirmBox = createConfirm(game, sub, screens);
   const prompt = createPrompt(game, sub, hud);
   // ------------------------------------------------------------------ v4 friendliness modules (§6)
-  const monsters = createMonsters(game, { hud, fx: fxLayer, fmt, canParry: F.canParry, punishSec: F.punishSec, anim: restartAnim,
+  const monsters = createMonsters(game, { hud, fx: fxLayer, fmt, canParry: F.canParry, punishSec: F.punishSec, parryText: F.parryText, anim: restartAnim,
     onCardShown: () => hints.hint('codex', HINTS_KO.codex, { until: 'codexOpened', dur: 10 }) });
   codex.setMonsters?.(monsters);
   const guide = createGuide(game, { screens, fmt, canParry: F.canParry, objective: () => currentObjective(), openCodex: () => api.openCodex('mon'), onClose: () => onModalClosed('guide') });
-  const recap = createRecap(game, { screens, hud, fmt, canParry: F.canParry, entryOf: (t) => monsters.entryOf(t), confirm: (t, y, n) => openConfirm(t, y, n), anim: restartAnim,
+  const recap = createRecap(game, { screens, hud, fmt, canParry: F.canParry, parryText: F.parryText, entryOf: (t) => monsters.entryOf(t), confirm: (t, y, n) => openConfirm(t, y, n), anim: restartAnim,
     actions: {
       respawn: () => doRespawn(),
       assist: () => { settingsMenu.open('assist'); syncModalLock(); },
@@ -1576,6 +1576,7 @@ export function createUI(game) {
     queueTutorial: (text) => queueTut(text),
     fmtKo: (text, ctx) => fmt(text, ctx),
     canParry: () => F.canParry(),
+    parryText: (attack, e) => F.parryText(attack, e),
     encounterStrip: (type) => monsters.encounterStrip(type),
     encounterCard: (type) => monsters.encounterCard(type),
     bossBrief: (p) => monsters.bossBrief(p),
