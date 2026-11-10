@@ -9,7 +9,8 @@ const once = (key, fn) => { if (!cache.has(key)) cache.set(key, fn()); return ca
 /** Time uniform for the status shaders (advanced by statusfx.update). */
 export const uTime = { value: 0 };
 
-export function fresnelMat(color, { power = 2.2, intensity = 1.4, core = 0.1, opacity = 1 } = {}) {
+export function fresnelMat(color, { power = 2.2, intensity = 1.1, core = 0.1, opacity = 1 } = {}) {
+  intensity = Math.min(1.2, intensity);   // v4 rule 5: no emissive multiplier > 1.2
   return new THREE.ShaderMaterial({
     uniforms: {
       color: { value: new THREE.Color(color) }, power: { value: power },
@@ -61,11 +62,12 @@ export function flameMat() {
       uniform float time; varying vec2 vUv; varying float vPhase;
       void main(){
         float y = vUv.y;
-        vec3 c = mix(vec3(1.0,0.95,0.6), vec3(1.0,0.45,0.08), smoothstep(0.05,0.55,y));
-        c = mix(c, vec3(0.9,0.12,0.03), smoothstep(0.55,1.0,y));
-        float flick = 0.8 + 0.2*sin(time*23.0 + vPhase*3.0 + y*8.0);
-        float a = (1.0 - smoothstep(0.6, 1.0, y)) * flick;
-        gl_FragColor = vec4(c * 1.25 * a, a);
+        // v4 burning re-ramp (PLAN §3.8): base fire.light → body fire.mid → tip fire.dark at alpha 0.6; ×1.0 intensity, no white
+        vec3 c = mix(vec3(1.0, 0.647, 0.227), vec3(0.941, 0.4, 0.102), smoothstep(0.08, 0.5, y));
+        c = mix(c, vec3(0.478, 0.118, 0.039), smoothstep(0.5, 0.95, y));
+        float flick = 0.85 + 0.15*sin(time*23.0 + vPhase*3.0 + y*8.0);
+        float a = mix(0.9, 0.6, smoothstep(0.0, 0.85, y)) * (1.0 - smoothstep(0.9, 1.0, y)) * flick;
+        gl_FragColor = vec4(c * a, a);
       }`,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   }));
@@ -96,7 +98,7 @@ export function tintFlameMat(core, edge) {
         float y = vUv.y;
         vec3 c = mix(uCore, uEdge, smoothstep(0.1, 0.85, y));
         float a = (1.0 - smoothstep(0.55, 1.0, y)) * (0.8 + 0.2 * sin(time * 21.0 + y * 9.0 + vPhase * 3.0));
-        gl_FragColor = vec4(c * 1.3 * a, a);
+        gl_FragColor = vec4(c * a, a);
       }`,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   });
