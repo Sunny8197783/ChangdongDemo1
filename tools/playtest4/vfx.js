@@ -114,8 +114,8 @@ async function functional(PT, root) {
     // motif registry: generic fallback marks the cast; registered motif used
     // integration: magic / melee register motifs for most element × kind pairs; probe the generic path on an unregistered pair
     const EL9 = ['physical', 'fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow'], KINDS = ['burst', 'spark', 'pillar', 'wave', 'zone', 'cast', 'trail', 'orbit', 'shield'];
-    let gp = null; for (const el of EL9) { for (const k of KINDS) if (!K.hasMotif(el, k)) { gp = [el, k]; break; } if (gp) break; }
-    gp = gp || ['physical', 'orbit'];
+    let gp = null; for (const el of EL9) { if (el === 'physical') continue; for (const k of KINDS) if (!K.hasMotif(el, k)) { gp = [el, k]; break; } if (gp) break; }   // physical never marks generic
+    gp = gp || ['fire', 'zz-unregistered'];   // every pair registered: an unknown kind still marks the cast generic
     let fp = null; for (const el of EL9) if (el !== 'physical' && !K.hasMotif(el, 'pillar')) { fp = el; break; }
     const cid = g.nextCastId();
     K.motif(gp[0], gp[1], { pos: P0, castId: cid });
