@@ -68,7 +68,7 @@ export function buildElMoves2(S, h) {
       vfx('groundDecal', 'crack', p, r + 0.5, 8);
     },
     water(p, r, big) {
-      vfx('burst', V(p.x, p.y + 0.3, p.z), { count: big ? 34 : 24, shape: 'droplet', color: [0xffffff, 0x4fb4ff], speed: 7, spread: 0.45, dir: S.UP, size: 0.16, sizeEnd: 0.05, life: 0.7, gravity: 14, drag: 0.8 });
+      vfx('burst', V(p.x, p.y + 0.3, p.z), { count: big ? 34 : 24, shape: 'droplet', color: [0xe8d9b0, 0x4fb4ff], speed: 7, spread: 0.45, dir: S.UP, size: 0.16, sizeEnd: 0.05, life: 0.7, gravity: 14, drag: 0.8 });
       vfx('burst', V(p.x, p.y + 0.2, p.z), { count: 10, shape: 'bubble', color: [0xe8f8ff, 0x7fd3ff], speed: 3, spread: 1, size: 0.18, sizeEnd: 0.05, life: 0.6, gravity: -1, drag: 2 });
       vfx('shockwave', p, { color: 0x7fd3ff, radius: r + 0.6, duration: 0.45, opacity: 0.85, thickness: 0.25 });
       vfx('groundDecal', 'ripple', p, r, 6);
@@ -87,7 +87,7 @@ export function buildElMoves2(S, h) {
         const a = (i / n) * TWO_PI;
         vfx('beam', V(p.x, p.y + 0.9, p.z), V(p.x + Math.sin(a) * r, p.y + 0.6, p.z + Math.cos(a) * r), { color: 0xffe9a8, width: 0.16, duration: 0.22, jagged: 0, segments: 2 });
       }
-      vfx('burst', V(p.x, p.y + 1, p.z), { count: 20, shape: 'mote', color: [0xffffff, 0xffd36a], speed: 4, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, gravity: -2, drag: 2 });
+      vfx('burst', V(p.x, p.y + 1, p.z), { count: 20, shape: 'mote', color: [0xe8d9b0, 0xffd36a], speed: 4, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, gravity: -2, drag: 2 });
       vfx('flashSprite', V(p.x, p.y + 1, p.z), 0xffe9a8, 2.4, 0.12);
       vfx('runeCircle', p, { element: 'light', r: r + 0.4, dur: 0.9, rotSpeed: 2 });
       vfx('groundDecal', 'rune', p, r, 6);
@@ -177,7 +177,7 @@ export function buildElMoves2(S, h) {
           S.arc({ yaw: a.yaw0, a0: -1.9, a1: 1.7, rout: 3.4, rin: 1.4, h: 1.0, sweep: 0.07, life: 0.4, tilt: 0.12 });
           for (let d = 1.5; d <= len; d += 1.4) {
             const q = ground(V(from.x + dir.x * d, 0, from.z + dir.z * d));
-            S.after(d * 0.012, () => vfx('burst', V(q.x, q.y + 0.4, q.z), { count: 6, shape: 'droplet', color: [0xffffff, 0x4fb4ff], speed: 5, spread: 0.5, dir: S.UP, size: 0.14, life: 0.55, gravity: 12, drag: 1 }));
+            S.after(d * 0.012, () => vfx('burst', V(q.x, q.y + 0.4, q.z), { count: 6, shape: 'droplet', color: [0xe8d9b0, 0x4fb4ff], speed: 5, spread: 0.5, dir: S.UP, size: 0.14, life: 0.55, gravity: 12, drag: 1 }));
           }
           S.hitLine(from, dir, len, 2.4, { amount: dmg, kb: 9, status: { wet: { dur: 8 } }, heavy: true, dirMode: 'fwd' }, null, 'water');
           for (let d = 3; d <= len; d += 3.5) S.zone('water', ground(V(from.x + dir.x * d, 0, from.z + dir.z * d)), { r: 2.2, dur: 6 });

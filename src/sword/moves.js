@@ -48,9 +48,9 @@ export function buildMoves(S) {
     else if (el === 'lightning') { for (let i = 0; i < (big ? 3 : 1); i++) { _t.set(p.x + rand(-1, 1), p.y + rand(-0.5, 1), p.z + rand(-1, 1)); vfx('beam', p, _t, { color: c.a, width: 0.06, duration: 0.09, jagged: 0.5, segments: 6 }); } }
     else if (el === 'wind') vfx('burst', p, { count: Math.round(6 * s), shape: 'soft', color: [0xeafff4, 0x7fffc0], speed: 4 * s, spread: 1, size: 0.3, sizeEnd: 0.8, life: 0.3, drag: 3, alpha: 0.6 });
     else if (el === 'earth') vfx('burst', p, { count: Math.round(6 * s), shape: 'smoke', additive: false, color: [0xd9c094, 0x9a8460], speed: 3 * s, spread: 0.8, size: 0.3, sizeEnd: 0.9, life: 0.5, drag: 3 });
-    else if (el === 'water') vfx('burst', p, { count: Math.round(9 * s), shape: 'droplet', color: [0xffffff, 0x4fb4ff], speed: 5 * s, spread: 0.9, size: 0.12, sizeEnd: 0.04, life: 0.5, gravity: 10, drag: 1.5 });
+    else if (el === 'water') vfx('burst', p, { count: Math.round(9 * s), shape: 'droplet', color: [0xe8d9b0, 0x4fb4ff], speed: 5 * s, spread: 0.9, size: 0.12, sizeEnd: 0.04, life: 0.5, gravity: 10, drag: 1.5 });
     else if (el === 'nature') vfx('burst', p, { count: Math.round(6 * s), shape: 'leaf', additive: false, color: [0xc8f080, 0x4f9a2a], speed: 4 * s, spread: 1, size: 0.14, sizeEnd: 0.07, life: 0.7, gravity: 2, drag: 1.5 });
-    else if (el === 'light') { vfx('burst', p, { count: Math.round(8 * s), shape: 'mote', color: [0xffffff, 0xffd36a], speed: 4 * s, spread: 1, size: 0.1, sizeEnd: 0, life: 0.45, gravity: -1, drag: 2 }); if (big) vfx('flashSprite', p, 0xffe9a8, 1.6, 0.08); }
+    else if (el === 'light') { vfx('burst', p, { count: Math.round(8 * s), shape: 'mote', color: [0xe8d9b0, 0xffd36a], speed: 4 * s, spread: 1, size: 0.1, sizeEnd: 0, life: 0.45, gravity: -1, drag: 2 }); if (big) vfx('flashSprite', p, 0xffe9a8, 1.6, 0.08); }
     else if (el === 'shadow') vfx('burst', p, { count: Math.round(6 * s), shape: 'wisp', color: [0xe2c8ff, 0x5b2a8a], speed: 3 * s, spread: 1, size: 0.24, sizeEnd: 0.5, life: 0.45, gravity: -1, drag: 2.5 });
   }
   const E2 = buildElMoves2(S, { V, ground, front, flourish, col });
@@ -465,7 +465,7 @@ export function buildMoves(S) {
             vfx('decal', tgtP, { color: 0xc9a4ff, radius: aw ? 7 : 5, duration: 0.8, opacity: 0.7 });
             const tip = P().getSwordTip(V());
             vfx('beam', V(tip.x, tip.y + 30, tip.z), tip, { color: 0xe8d8ff, width: 0.35, duration: 0.35, jagged: 1, segments: 14, branches: 2 });
-            vfx('flash', tip, { color: 0xc9a4ff, intensity: 6, distance: 12, duration: 0.4 });
+            vfx('flash', tip, { color: 0xc9a4ff, distance: 12, duration: 0.4 });
             S.sfx('charge', { pitch: 1.5 });
           }],
           [0.6, () => {
@@ -485,7 +485,7 @@ export function buildMoves(S) {
               const foes = S.foesNear(p, 14, []);
               const e = foes[Math.floor(Math.random() * foes.length)];
               const q = e ? e.object.position.clone() : ground(V(p.x + rand(-6, 6), 0, p.z + rand(-6, 6)));
-              vfx('beam', V(q.x, q.y + 22, q.z), q, { color: 0xffffff, width: 0.55, duration: 0.3, jagged: 1.3, segments: 14, branches: 3 });
+              vfx('beam', V(q.x, q.y + 22, q.z), q, { color: 0xe8d9b0, width: 0.55, duration: 0.3, jagged: 1.3, segments: 14, branches: 3 });
               vfx('explosion', V(q.x, q.y + 0.5, q.z), { element: 'lightning', scale: 1.3 });
               S.hitCircle(V(q.x, q.y + 0.5, q.z), 3.5, { amount: 45, kb: 6, launch: 4, status: { shocked: 3 }, hs: 0.12, shake: 0.5, heavy: true, sound: false });
               S.sfx('explode_lightning', { position: q, volume: 0.7 });
@@ -501,7 +501,7 @@ export function buildMoves(S) {
         hits: [{ t0: 0.34, t1: 0.8, shape: 'arc', a0: -Math.PI / 2, a1: -Math.PI / 2 - TWO_PI, reach: 3, spec: { amount: 18, kb: 8, hs: 0.1, shake: 0.3, heavy: true, onHit: (e, p) => flourish('wind', p, true) }, arc: { a0: -1.2, a1: -1.2 - TWO_PI, h: 1.0, life: 0.45 } }],
         events: [[0.45, () => {
           S.fx.orbit.start(count, life, R);
-          S.fx.orbit.mat.color.setHex(aw ? 0xd8fff0 : 0xa8ffd6);
+          S.fx.orbit.mat.color.setHex(palOf('wind').b);
           const p = S.pos();
           vfx('burst', V(p.x, p.y + 1, p.z), { count: 30, shape: 'soft', color: [0xeafff4, 0x6fffbf], speed: 7, spread: 1, size: 0.4, sizeEnd: 1.2, life: 0.5, drag: 3, alpha: 0.5 });
           vfx('shockwave', ground(p.clone()), { color: 0xa0ffd8, radius: 4, duration: 0.4, opacity: 0.8 });
@@ -535,7 +535,7 @@ export function buildMoves(S) {
           if (aw) for (let i = 0; i < 2; i++) { const an = P().facing + (i ? 1 : -1) * 1.1; pts.push(ground(V(c.x + Math.sin(an) * 5, 0, c.z + Math.cos(an) * 5))); }
           const tip = P().getSwordTip(V());
           vfx('beam', tip, V(tip.x, tip.y + 25, tip.z), { color: 0xffc070, width: 0.4, duration: 0.6, jagged: 0, segments: 2 });
-          vfx('flash', tip, { color: 0xffb060, intensity: 5, distance: 10, duration: 0.6 });
+          vfx('flash', tip, { color: 0xffb060, distance: 10, duration: 0.6 });
           S.sfx('golem_step', { pitch: 0.6 });
           pts.forEach((q, i) => {
             vfx('decal', q, { color: 0xffb060, radius: 5.5, duration: 1.2, opacity: 0.6 });
@@ -570,7 +570,7 @@ export function buildMoves(S) {
         const p = S.pos(), c = palOf(el);
         vfx('burst', V(p.x, p.y + 1, p.z), { count: 36, color: [c.a, c.b], speed: 5, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, shape: 'spark', drag: 2.5 });
         vfx('shockwave', ground(p.clone()), { color: c.a, radius: 3.5, duration: 0.5, opacity: 0.8 });
-        vfx('flash', V(p.x, p.y + 1.5, p.z), { color: c.a, intensity: 4, distance: 8, duration: 0.5 });
+        vfx('flash', V(p.x, p.y + 1.5, p.z), { color: c.a, distance: 8, duration: 0.5 });
         vfx('screenFlash', c.a, 0.15, 0.4);
         S.sfx('cast_' + el, { position: p }); S.sfx('blessing', { volume: 0.5 });
       }]] };
@@ -612,7 +612,7 @@ export function buildMoves(S) {
       buildup(S2, t) { auraBuild('lightning', t); },
       impact(S2, c) {
         const yaw = P().facing;
-        S.arc({ pos: V(c.x, c.y, c.z), yaw, tilt: Math.PI / 2, a0: 2.4, a1: -1.4, rout: 14, rin: 9, h: 0, sweep: 0.08, life: 0.7, colA: 0xb48cff, colB: 0xffffff, noise: 0.9 });
+        S.arc({ pos: V(c.x, c.y, c.z), yaw, tilt: Math.PI / 2, a0: 2.4, a1: -1.4, rout: 14, rin: 9, h: 0, sweep: 0.08, life: 0.7, colA: 0xb48cff, colB: 0xe8d9b0, noise: 0.9 });
         for (let i = 0; i < 14; i++) { const an = Math.random() * TWO_PI, r = Math.random() * 11; const q = ground(V(c.x + Math.sin(an) * r, 0, c.z + Math.cos(an) * r)); S.after(Math.random() * 0.4, () => vfx('beam', V(q.x, q.y + 26, q.z), q, { color: 0xe8d8ff, width: 0.4, duration: 0.3, jagged: 1.3, segments: 14, branches: 3 })); }
         vfx('explosion', V(c.x, c.y + 1, c.z), { element: 'lightning', scale: 2.4 });
         vfx('screenFlash', 0xf0e8ff, 0.32, 0.45);

@@ -19,6 +19,7 @@ import { buildClassMoves, CLASS_MOVES_KO } from './sword/classmoves.js';
 import { weaponFor, palOf, ambOf, statusOf, CAST_KIND, WEAPONS } from './sword/weapons.js';
 import { registerMeleeArchetypes } from './sword/archetypes.js';
 import { registerMeleeBespoke } from './sword/bespoke.js';
+import { createLooks } from './sword/looks.js';
 
 const MIN_CHARGE = 0.35, FULL_CHARGE = 1.2;
 const BUFFER_T = 0.42, COMBO_RESET = 0.55;
@@ -26,23 +27,44 @@ const TWO_PI = Math.PI * 2;
 const SLOT_OF = { combo: 'basic', heavy: 'charged', ultimate: 'ultimate', ultimateAwakened: 'ultimate', support: 'support', finisher: 'finisher' };
 const DIGITS = CLASSIC_ELEMENTS.map((_, i) => 'Digit' + (i + 1));
 const CHARGE_STANCE = { longsword: 'charge', hammer: 'hammerCharge', daggers: 'daggerCharge' };
+// v4 dodge-cancel windows (PLAN §5.8): combo lock ≤ 0.25 s, charged from 0.10 s after release, actives from 0.10 s after the first
+// damage frame (0.35 s without damage), ultimates from the first damage frame, finishers locked but fully invulnerable.
+const COMBO_LOCK = 0.25, AFTER_DMG = 0.10, NO_DMG = 0.35;
 
 export function createSword(game) {
   const { scene, events } = game;
   const P = () => game.player;
   const prog = () => game.progression;
   const vfx = () => game.vfx;
-  const vcall = (name, ...a) => { try { return vfx()?.[name]?.(...a); } catch (e) { return null; } };
+  // v4: every legacy vfx call of the melee files goes through the look gate (sword/looks.js)
+  const vcall = (name, ...a) => { try { return look.call(name, a); } catch (e) { warnOnce('vcall:' + name, e); return null; } };
   const sfx = (name, opts) => { try { game.audio?.play?.(name, opts); } catch (e) { /* */ } };
   const warned = new Set();
   const warnOnce = (k, ...a) => { if (!warned.has(k)) { warned.add(k); console.warn('[sword]', k, ...a); } };
 
-  // ---------------- fx pools ----------------
+  // ---------------- fx pools (every material built here, once; private materials ducked through vfx.applyPlayerFx) ----------------
+  const fxMats = [];
+  const onMat = (m, role) => { fxMats.push(m); try { game.vfx?.applyPlayerFx?.(m, { role }); } catch (_) { /* vfx optional */ } };
+  const FXO = { game, onMat };
   const fx = {
-    arcs: new SlashArcs(scene, 20), trail: new BladeTrail(scene), trail2: new BladeTrail(scene),
-    iceSpikes: new Spikes(scene, 'ice', 64), rockSpikes: new Spikes(scene, 'rock', 48), crystal: new Spikes(scene, 'crystal', 48),
-    stones: new StoneSwords(scene, 3), orbit: new OrbitBlades(scene, 12), dragon: new Dragon(scene, 26),
+    arcs: new SlashArcs(scene, 20, FXO), trail: new BladeTrail(scene, FXO), trail2: new BladeTrail(scene, FXO),
+    iceSpikes: new Spikes(scene, 'ice', 64, FXO), rockSpikes: new Spikes(scene, 'rock', 48, FXO), crystal: new Spikes(scene, 'crystal', 48, FXO),
+    stones: new StoneSwords(scene, 3, FXO), orbit: new OrbitBlades(scene, 12, FXO), dragon: new Dragon(scene, 26, FXO),
   };
+  // spike pools count against the cast's accent budget (sword/looks.js) and carry its castId
+  for (const k of ['iceSpikes', 'rockSpikes', 'crystal']) {
+    const pool = fx[k], raw = pool.spawn.bind(pool);
+    pool.spawn = (p, h, w, delay, life, tilt, color) => (look.spikeOk() ? raw(p, h, w, delay, life, tilt, k === 'crystal' ? crystalTint(color) : color, look.cur?.castId || 0) : null);
+  }
+  // falling stone swords land later (fx update, outside the cast): their onLand runs inside the cast that spawned them
+  { const st = fx.stones, rawS = st.spawn.bind(st);
+    st.spawn = (t, sc, fall, onLand) => { const cc = look.cur; return rawS(t, sc, fall, onLand ? (x) => { const prev = look.cur; look.cur = cc || prev; try { return onLand(x); } finally { look.cur = prev; } } : null); }; }
+  const crystalTint = (hex) => { const el = look.cur?.el || element; const R = look.h.rampOf(el); return hex == null || hex >= 0xe0e0e0 ? R.mid : hex; };
+
+  // ---------------- look engine (cast contexts + vfx gate + motifs; registered in the FACTORY before the boot prewarm) ----------------
+  const engineRef = { get weapon() { return weapon; }, S: null };
+  const look = createLooks(game, engineRef);
+  try { look.installMotifs(); } catch (err) { console.error('[sword] motifs', err); }
 
   // ---------------- state ----------------
   let element = 'fire', index = 0;
@@ -50,9 +72,10 @@ export function createSword(game) {
   let poseW = 0;
   const pose = new Float32Array(PF), tplPose = new Float32Array(PF);
   let comboStep = 0, comboIdle = 9, buffer = 0, bufferKind = null;
-  const bufferTag = { skillId: null, slot: null };
+  const bufferTag = { skillId: null, slot: null, castId: 0 };
   let charging = false, chargeT = 0, chargeFrac = 0, chargeLoop = null, chargeFull = false, chargeFxT = 0;
   let v3Charge = false;           // showing the charge pose for game.skills' RMB charge
+  let lastCastId = 0;             // castId of the last melee cast (tests: vfx.debug.byCast)
   const cooldowns = { heavy: 0, ultimate: 0, support: 0 };
   let idleT = 0, ambT = 0, igniteCd = 0, airAttacks = 0;
   const tasks = [];
@@ -79,19 +102,25 @@ export function createSword(game) {
   const styleNow = () => P()?.style || CLASS_DEFS[clsOf()]?.style || 'longsword';
 
   // ---------------- scheduler (gameplay time: hitstop stretches it) ----------------
-  function after(t, fn) { tasks.push({ t, fn, every: 0, left: 0 }); }
-  function every(interval, duration, fn) { tasks.push({ t: 0, fn, every: interval, left: duration }); }
+  // tasks carry the cast context they were scheduled in (their vfx stay attributed to that castId and its budget)
+  let tickDepth = 0;
+  function after(t, fn) { tasks.push({ t, fn, every: 0, left: 0, look: look.cur }); }
+  function every(interval, duration, fn) { tasks.push({ t: 0, fn, every: interval, left: duration, look: look.cur }); }
   function runTasks(dt) {
+    const prev = look.cur;
     for (let i = tasks.length - 1; i >= 0; i--) {
       const k = tasks[i];
       if (!k) continue;
       k.t -= dt;
+      look.cur = k.look;
       if (k.every) {
         k.left -= dt;
-        if (k.t <= 0) { k.t += k.every; try { if (k.fn(k) === false) k.left = 0; } catch (err) { console.error('[sword] task', err); k.left = 0; } }
+        // repeating tasks are multi-hit ticks of their cast (§5.10: no hitstop, one feel per castId) → their hits carry the 'tick' tag
+        if (k.t <= 0) { k.t += k.every; tickDepth++; try { if (k.fn(k) === false) k.left = 0; } catch (err) { console.error('[sword] task', err); k.left = 0; } finally { tickDepth--; } }
         if (k.left <= 0) { const j = tasks.indexOf(k); if (j >= 0) tasks.splice(j, 1); }
       } else if (k.t <= 0) { const j = tasks.indexOf(k); if (j >= 0) tasks.splice(j, 1); try { k.fn(); } catch (err) { console.error('[sword] task', err); } }
     }
+    look.cur = prev;
   }
 
   // ---------------- targeting ----------------
@@ -152,6 +181,10 @@ export function createSword(game) {
     const tags = ['melee', weapon.id];
     if (spec.tags) for (const t of spec.tags) tags.push(t);
     if (counter) tags.push('counter');
+    // repeated hits of one cast on the same target from a repeating task (orbiting blades, zones, travelling waves re-hitting)
+    // are multi-hit ticks (§5.10: one hitstop / feel per castId) → 'tick' tag
+    { const cc0 = look.cur; if (cc0) { const hs = cc0.hitTargets || (cc0.hitTargets = new WeakSet());
+      if (hs.has(e)) { if (tickDepth > 0 && !tags.includes('tick')) tags.push('tick'); } else hs.add(e); } }
     const kind = act?.kind;
     let tier = spec.tier;
     if (!tier) tier = counter ? 'crit' : spec.heavy ? ((kind === 'ultimate' || kind === 'finisher') ? 'ult' : 'heavy') : 'light';
@@ -178,20 +211,22 @@ export function createSword(game) {
     }
     if (spec.ctx) { try { spec.ctx.hit(hit); } catch (_) { /* */ } }
     else if (act && act.tagSkill) { hit.skillId = act.tagSkill; hit.slot = act.tagSlot; }
+    // v4: castId on every hit (one hitstop / feel per cast); melee plays its own contact sparks + final burst (§3.6)
+    const cc = look.cur;
+    const cid = cc?.castId || spec.ctx?.castId || hit.castId || 0;
+    if (cid) hit.castId = cid;   // hits outside any cast keep no castId (legacy rule), never 0
+    if (game.vfx?.kit) hit.noImpactFx = true;
     let res = null;
     try { res = game.combat?.dealDamage?.(e, hit); } catch (err) { console.error('[sword] dealDamage', err); }
     if (!res || (!res.damage && !res.reaction)) return res;
     // combat v3 adds awakening itself; a v2 combat (or a stub) needs the old melee contribution
     if (!isCombatV3() && !tags.includes('finisher')) { try { prog()?.addAwakening?.(res.damage * 0.12); } catch (_) { /* */ } }
-    // blade sparks along the cut (melee-specific; combat's hitFeel adds the element impact + freeze + shake)
-    const col = palOf(el);
+    // per blade contact: one element motif spark (≤ 6 particles); the full burst plays only on the move's final hit
+    if (cc && act && cc === act.look && act.dmgT == null) act.dmgT = act.t;
     if (spec.sparks !== false) {
-      const heavy = hit.heavy || tier === 'ult';
       v4.copy(dir).setY(0.25).normalize();
-      vcall('burst', point, { count: Math.round((heavy ? 22 : 12) * (counter ? 1.6 : 1) * (weapon.id === 'hammer' ? 1.3 : 1)), color: counter ? [0xfff2a0, 0xffffff] : [col.b, col.a], speed: heavy ? 11 : 8, speedVar: 3, spread: 0.55, dir: v4, size: 0.09, sizeEnd: 0, life: 0.28, lifeVar: 0.1, shape: 'spark', drag: 3.5, gravity: 6, velocityStretch: 0.06 });
-      if (weapon.id === 'hammer' && heavy) vcall('burst', point, { count: 6, shape: 'dust', additive: false, color: [0xe6dbc0, 0xb8a98a], speed: 3, spread: 1, size: 0.35, sizeEnd: 0.9, life: 0.5, drag: 3 });
+      look.contact(point, v4, el, !!hit.heavy || tier === 'ult');
     }
-    if (counter) vcall('screenFlash', 0xfff0b0, 0.18, 0.18);
     if (spec.sound !== false) {
       sfx(hit.heavy ? 'sword_hit_heavy' : 'sword_hit', { position: point, pitch: rand(0.92, 1.08) * (weapon.id === 'hammer' ? 0.75 : weapon.id === 'daggers' ? 1.2 : 1) });
     }
@@ -257,13 +292,14 @@ export function createSword(game) {
   /** Spawn a crescent relative to the hero. o: {yaw (abs), tilt, pitch, a0, a1, rout, rin, h, sweep, life, fwdOff, scale, vel, grow, opacity, el} */
   function arc(o) {
     const yaw = o.yaw ?? P().facing;
-    const c = palOf(o.el || element);
+    if (!look.arcFor(o)) return null;            // per-element crescent profile + per-cast budget (sword/looks.js)
     v1.copy(o.pos || pos()); v1.y += o.h ?? 1.1;
     if (o.fwdOff) v1.addScaledVector(fwd(v2, yaw), o.fwdOff);
     return fx.arcs.spawn({
-      pos: v1, yaw, tilt: o.tilt || 0, pitch: o.pitch || 0, start: o.a0, span: o.a1 - o.a0,
-      rin: o.rin ?? (o.rout ?? 2.5) * 0.58, rout: o.rout ?? 2.5, colA: o.colA ?? c.a, colB: o.colB ?? c.b, sweep: o.sweep ?? 0.09,
-      life: o.life ?? 0.26, noise: o.noise ?? c.noise, scale: o.scale || 1, vel: o.vel, grow: o.grow, opacity: o.opacity ?? 1,
+      // v4: the crescent plane leans 0.3 rad toward the chase camera so the swing reads as a shape, not an edge-on sliver
+      pos: v1, yaw, tilt: o.tilt || 0, pitch: (o.pitch || 0) - (o.noLean ? 0 : 0.3), start: o.a0, span: o.a1 - o.a0,
+      rin: o.rin ?? (o.rout ?? 2.5) * 0.58, rout: o.rout ?? 2.5, el: o.el, kind: o.kind, sweep: o.sweep ?? 0.09,
+      life: o.life ?? 0.26, scale: o.scale || 1, vel: o.vel, grow: o.grow, opacity: Math.min(1, o.opacity ?? 1), castId: o.castId, seed: o.seed,
     });
   }
   /** DESIGN §9 A1: 1–2 frame smear crescent (combat's pooled mesh) in the slash plane. */
@@ -272,7 +308,8 @@ export function createSword(game) {
     v1.copy(pos()); v1.y += h;
     smE.set(-Math.PI / 2 + (tilt || 0) * 0.6, yaw - Math.PI / 2, tilt || 0, 'YXZ');
     smQ.setFromEuler(smE);
-    vcall('smear', weapon.smear, v1, smQ, reach, el);
+    // v4: the slash crescent is the primary shape (§3.6); the legacy vfx smear only plays without the kit
+    if (!game.vfx?.kit) vcall('smear', weapon.smear, v1, smQ, reach, el);
   }
 
   // ---------------- actions ----------------
@@ -307,7 +344,7 @@ export function createSword(game) {
       reachMul: scaleW ? weapon.reachMul : 1,
       evDone: new Uint8Array((spec.events || []).length), vyDone: new Uint8Array((spec.setVy || []).length),
       prevS: new Float32Array((spec.hits || []).length).fill(-1), airborne: !pl.grounded && airAttacks < 4,
-      tagSkill: tag.skillId, tagSlot: tag.slot,
+      tagSkill: tag.skillId, tagSlot: tag.slot, look: look.cur, dmgT: null,
     };
     tag.skillId = null; tag.slot = null;
     if (!pl.grounded) airAttacks++;
@@ -322,11 +359,15 @@ export function createSword(game) {
     }
     pl.setSwordDrawn(true);
     idleT = 0;
+    // bespoke row hook: the cast's first action starts
+    const cc = act.look;
+    if ((cc?.row || cc?.arch) && !cc.started) { cc.started = true; act.rowAct = true; look.hook('start', act, spec.ctx); }
     return act;
   }
   function endAction(interrupted) {
     if (!act) return;
     const a = act; act = null;
+    if (a.rowAct) { const prev = look.cur; look.cur = a.look; look.hook('end', a, interrupted); look.cur = prev; }
     try { a.onEnd?.(a, interrupted); } catch (err) { console.error('[sword] onEnd', err); }
   }
   const sInWin = (t, t0, t1) => clamp((t - t0) / Math.max(1e-4, t1 - t0), 0, 1);
@@ -384,6 +425,35 @@ export function createSword(game) {
   }
 
   function updateAction(dt) {
+    const prev = look.cur;
+    if (act?.look) look.cur = act.look;
+    try { updateAction2(dt); } finally { look.cur = prev; }
+  }
+  /** §5.8 dodge-cancel window of action a at action time tNow (action-time units: seconds × a.speed). */
+  function dodgeWindow(a, tNow) {
+    if (a._dw === undefined) {
+      let t0 = Infinity, t1 = -Infinity;
+      for (const h of (a.hits || [])) { t0 = Math.min(t0, (h.t0 ?? 0) * a.dur); t1 = Math.max(t1, (h.t1 ?? 0) * a.dur); }
+      let e0 = Infinity;
+      for (const e of (a.events || [])) e0 = Math.min(e0, e[0] * a.dur);
+      a._dw = { t0, t1, e0, plan: Math.min(t0, a.strikeT != null ? a.strikeT * a.dur : Infinity) };
+    }
+    const w = a._dw, sp = a.speed || 1;
+    if (a.dodgeCancel != null) return tNow >= a.dodgeCancel * a.dur;
+    const k = a.kind;
+    if (k === 'finisher') return false;                                      // fully invulnerable instead
+    if (k === 'combo' || k === 'recover') {
+      const T0 = Number.isFinite(w.t0) ? w.t0 : w.e0;
+      if (!Number.isFinite(T0)) return true;
+      const T1 = Number.isFinite(w.t1) ? Math.max(w.t1, T0) : T0 + COMBO_LOCK * sp;
+      return tNow < T0 || tNow >= Math.min(T1, T0 + COMBO_LOCK * sp - 1e-4);
+    }
+    if (k === 'heavy') return tNow >= AFTER_DMG * sp;                         // released 0.10 s ago
+    const fd = a.dmgT != null ? a.dmgT : (Number.isFinite(w.plan) ? w.plan : null);
+    if (k === 'ultimate') return fd != null ? tNow >= fd : tNow >= NO_DMG * sp;
+    return fd != null ? tNow >= fd + AFTER_DMG * sp : tNow >= NO_DMG * sp;   // actives / supports / counters
+  }
+  function updateAction2(dt) {
     const pl = P(), A = pl.action;
     const a = act;
     if (!a) {
@@ -405,16 +475,12 @@ export function createSword(game) {
     A.facing = a.facing === 'free' ? null : (a.trackCamera ? pl.yaw + Math.PI : a.yaw0);
     A.turn = a.turn || 40;
     A.move = a.move ?? 0.15;
-    A.cancelable = tNow >= (a.cancel ?? a.dur) * 1;
-    // dodge/guard cancel: once the last hit window has closed (ultimates/finishers stay committed
-    // unless the move sets dodgeCancel explicitly)
-    if (a._dc === undefined) {
-      let m = 0; for (const h of (a.hits || [])) m = Math.max(m, h.t1 ?? 0);
-      a._dc = a.dodgeCancel != null ? a.dodgeCancel * a.dur
-        : (a.kind === 'finisher' || a.kind === 'ultimate') ? Infinity : m * a.dur;
-    }
-    A.dodgeCancelable = A.cancelable || tNow >= a._dc;
-    A.noGlide = true; A.superArmor = !!a.superArmor;
+    A.cancelable = a.kind !== 'finisher' && tNow >= (a.cancel ?? a.dur) * 1;
+    // v4 dodge-cancel windows (§5.8; player.js reads action.dodgeCancelable): the complete truth of "may dodge now"
+    const dw = dodgeWindow(a, tNow);
+    A.dodgeCancelable = a.kind !== 'finisher' && (A.cancelable || dw);
+    A.noGlide = true; A.superArmor = !!a.superArmor || a.kind === 'finisher';
+    if (a.kind === 'finisher') { try { pl.grantIframes?.(0.15); } catch (_) { /* */ } }
     A.gravityMul = a.gravityMul ?? (a.airborne ? 0.15 : 1);
     A.setVy = NaN;
     if (a.airborne && tPrev === 0 && a.kind === 'combo') A.setVy = 0.5;
@@ -434,6 +500,11 @@ export function createSword(game) {
       if (s >= 1) A.bodyYaw = 0;
     } else A.bodyYaw = 0;
     try { a.onUpdate?.(dt * a.speed, a, A); } catch (err) { console.error('[sword] onUpdate', err); act = null; return; }
+    // bespoke row hook: the strike frame (first hit window / first event / archetype strike) — before the legacy fx of that frame
+    if (a.rowAct && !a.struckHook) {
+      const w = a._dw; const tS = Math.min(w.t0, w.e0, a.strikeT != null ? a.strikeT * a.dur : Infinity);
+      if (tNow >= tS || !Number.isFinite(tS)) { a.struckHook = true; a.look.struck = true; look.hook('strike', a, a.ctx); }
+    }
     // events + hits
     const ev = a.events;
     if (ev) for (let i = 0; i < ev.length; i++) if (!a.evDone[i] && tNow >= ev[i][0] * a.dur) { a.evDone[i] = 1; try { ev[i][1](a); } catch (err) { console.error('[sword] event', err); } }
@@ -528,13 +599,18 @@ export function createSword(game) {
     comboStep = 0;
   }
 
-  function comboAttack(emit = true) {
+  function comboAttack(emit = true, castId = 0) {
     const ms = moveset();
     const step = comboStep % ms.len;
-    const spec = ms.combo(element, step);
+    if (bufferTag.skillId) { tag.skillId = bufferTag.skillId; tag.slot = bufferTag.slot; castId = castId || bufferTag.castId || 0; bufferTag.skillId = null; bufferTag.slot = null; bufferTag.castId = 0; }
+    // one cast context per combo press (tier B): castId on every hit and spec, budgets, the slash crescent as the primary shape
+    const cc = look.begin({ kind: 'combo', el: element, skillId: tag.skillId || `${element}.basic`, castId: castId || 0, tier: 'B' });
+    const prev = look.cur; look.cur = cc;
+    let spec;
+    try { spec = ms.combo(element, step); } finally { look.cur = prev; }
     if (!spec) return false;
-    if (bufferTag.skillId) { tag.skillId = bufferTag.skillId; tag.slot = bufferTag.slot; bufferTag.skillId = null; bufferTag.slot = null; }
-    startAction(spec);
+    look.cur = cc;
+    try { startAction(spec); } finally { look.cur = prev; }
     events.emit('swordSwing', { element, step, cls: clsOf(), weapon: weapon.id });
     if (emit && step === 0) S.emit('basic', `sword_${element}_basic`);
     comboStep = (step + 1) % ms.len;
@@ -545,8 +621,9 @@ export function createSword(game) {
     // 반격: after 완벽 회피 / 간파 the next attack is a guaranteed-crit flurry rush onto the attacker
     const pl = P();
     const tgt = (pl.counterTarget?.alive && pl.counterTarget) || findTarget(9, -0.5);
-    const spec = moves.flurry(element, tgt, weapon.id);
-    startAction(spec);
+    const cc = look.begin({ kind: 'counter', el: element, skillId: null, tier: 'A' });
+    const prev = look.cur; look.cur = cc;
+    try { const spec = moves.flurry(element, tgt, weapon.id); startAction(spec); } finally { look.cur = prev; }
     if (act) act.counter = true;
     pl.consumeCounter();
     comboStep = 0;
@@ -562,7 +639,12 @@ export function createSword(game) {
     try { chargeLoop = game.audio?.loop?.('sword_charge', { volume: 0.6 }) || null; } catch (e) { chargeLoop = null; }
     events.emit('chargeStart', { element, cls: clsOf() });
   }
-  function doHeavy(frac) {
+  function doHeavy(frac, castId = 0) {
+    const cc = look.cur && look.cur.kind === 'heavy' ? look.cur : look.begin({ kind: 'heavy', el: element, skillId: tag.skillId || `${element}.charged`, castId, tier: 'C' });
+    const prev = look.cur; look.cur = cc;
+    try { return doHeavy2(frac); } finally { look.cur = prev; }
+  }
+  function doHeavy2(frac) {
     const spec = moveset().heavy(element, clamp(frac, 0, 1));
     if (!spec) return false;
     // soft-lock: a charged release snaps onto an enemy near the camera direction (was: pure camera aim → whiffs)
@@ -586,33 +668,40 @@ export function createSword(game) {
     } else if (release) comboAttack(); // tap: plain swing
   }
   /** Charge presentation (own RMB in the legacy keymap, or game.skills' charge in v3). */
+  let chargeCC = null, chargeLine = null;
   function chargeVisual(dt, frac) {
     const pl = P(), A = pl.action;
     const before = chargeFrac;
     chargeFrac = clamp(frac, 0, 1);
-    const c = palOf(element);
-    if (before < 1 && chargeFrac >= 1 && !chargeFull) {
-      chargeFull = true;
-      S.getWeaponPoint('main', v1);
-      vcall('burst', v1, { count: 22, color: [c.b, c.a], speed: 5, spread: 1, size: 0.1, sizeEnd: 0, life: 0.35, shape: 'spark', drag: 2.5 });
-      vcall('flashSprite', v1, c.a, 1.6, 0.18);
-      vcall('runeCircle', v4.copy(pos()), { element, r: 1.6 * weapon.reachMul, dur: 0.7, rotSpeed: 3 });
-      sfx('ui_select', { pitch: 1.5 });
-    }
-    chargeFxT -= dt;
-    if (chargeFxT <= 0) {
-      chargeFxT = 0.04 - chargeFrac * 0.015;
-      pl.getSwordBase(v2); S.getWeaponPoint('main', v3);
-      const n = 1 + Math.round(chargeFrac * 2);
-      for (let i = 0; i < n; i++) {
-        v1.lerpVectors(v2, v3, Math.random());
-        v4.set(rand(-1, 1), rand(-0.3, 1), rand(-1, 1)).normalize();
-        v1.addScaledVector(v4, 0.9);
-        v4.negate();
-        vcall('burst', v1, { count: 1, color: [c.b, c.a], speed: 2.6, spread: 0, dir: v4, size: 0.07, sizeEnd: 0.02, life: 0.32, drag: 0, gravity: 0, shape: 'spark', velocityStretch: 1.4 });
+    // anticipation (§3.6 melee): a charge line along the blade edge (RB, light → mid) that thickens with the charge,
+    // inward accent sparks (≤ 8 /s), one rune circle + a 2-frame hilt glyph at full charge (circles only for charged / U / F)
+    if (!chargeCC || chargeCC.el !== element) { chargeCC = look.begin({ kind: 'heavy', el: element, skillId: `${element}.charged`, tier: 'C', track: false }); chargeLine = null; }
+    const prevCC = look.cur; look.cur = chargeCC;
+    try {
+      if (!chargeLine?.alive && game.vfx?.kit) {
+        const tipObj = pl.gear?.tip || pl.gear?.sockets?.tip || null;
+        if (tipObj?.isObject3D) chargeLine = look.h.ribbon(chargeCC, { follow: tipObj, width: 0.06, taper: 0.9, life: 0.18, el: element, maxLen: 0.9, alpha: 0.75 });
       }
-      if (chargeFrac > 0.25 && Math.random() < 0.5) { S.getWeaponPoint('main', v1); vcall('burst', v1, { count: 1, color: c.a, speed: 0.4, spread: 1, size: 0.35 + chargeFrac * 0.4, sizeEnd: 0, life: 0.2, shape: 'soft' }); }
-    }
+      chargeLine?.setScale?.(0.6 + chargeFrac * 0.8);
+      if (before < 1 && chargeFrac >= 1 && !chargeFull) {
+        chargeFull = true;
+        S.getWeaponPoint('main', v1);
+        look.motif(element, 'cast', { pos: v1.clone(), r: 0.35, life: 0.12, castId: chargeCC.castId });
+        vcall('runeCircle', v4.copy(pos()), { element, r: 1.2 * weapon.reachMul, dur: 0.6, rotSpeed: 3 });
+        sfx('ui_select', { pitch: 1.5 });
+      }
+      chargeFxT -= dt;
+      if (chargeFxT <= 0) {
+        chargeFxT = 0.14 - chargeFrac * 0.04;
+        pl.getSwordBase(v2); S.getWeaponPoint('main', v3);
+        v1.lerpVectors(v2, v3, 0.5 + 0.5 * Math.sin(game.time * 7));
+        v4.set(Math.sin(game.time * 13), 0.4, Math.cos(game.time * 13)).normalize();
+        v1.addScaledVector(v4, 0.7);
+        v4.negate();
+        chargeCC.pLeft = Math.max(chargeCC.pLeft, 2);
+        vcall('burst', v1, { count: 1, speed: 2.4, spread: 0, dir: v4, size: 0.06, sizeEnd: 0.02, life: 0.28, drag: 0, gravity: 0, shape: 'spark', velocityStretch: 0.05, el: element });
+      }
+    } finally { look.cur = prevCC; }
     pose.set(STANCE[CHARGE_STANCE[weapon.id]] || STANCE.charge);
     // trembling weapon at high charge
     pose[3] += Math.sin(game.time * 40) * 0.015 * chargeFrac;
@@ -621,19 +710,24 @@ export function createSword(game) {
     A.active = true; A.pose.set(pose); A.poseW = poseW;
     A.facing = pl.yaw + Math.PI; A.turn = 18; A.move = 0.35; A.vel.set(0, 0, 0); A.setVy = NaN; A.gravityMul = 1;
     A.cancelable = true; A.noGlide = true; A.bodyYaw = 0; A.superArmor = false;
-    const em = pl.gear?.edgeMat?.uniforms?.uIntensity; if (em) em.value = 1 + chargeFrac * 1.6;
+    A.dodgeCancelable = true;           // §5.8: charged attacks are dodge-cancellable while charging
+    const em = pl.gear?.edgeMat?.uniforms?.uIntensity; if (em) em.value = 1 + chargeFrac * 0.2;   // emissive ≤ 1.2 (rule 5)
   }
   function updateCharge(dt) {
     chargeT += dt;
     chargeVisual(dt, chargeT / FULL_CHARGE);
   }
 
-  function doUltimate(awakened) {
-    const spec = moves.ultimate(element, { ...ctx(), awakened });
-    if (!spec) return false;
-    if (charging) endCharge(false);
-    startAction(spec);
-    return true;
+  function doUltimate(awakened, castId = 0) {
+    const cc = look.begin({ kind: 'ultimate', el: element, skillId: tag.skillId || `${element}.${awakened ? 'awakened' : 'ult'}`, castId, tier: 'U' });
+    const prev = look.cur; look.cur = cc;
+    try {
+      const spec = moves.ultimate(element, { ...ctx(), awakened });
+      if (!spec) return false;
+      if (charging) endCharge(false);
+      startAction(spec);
+      return true;
+    } finally { look.cur = prev; }
   }
   function ultimate() {
     if (cooldowns.ultimate > 0) { events.emit('spellFail', { reason: 'cooldown', spellId: `sword_${element}_ultimate` }); return; }
@@ -641,11 +735,12 @@ export function createSword(game) {
     cooldowns.ultimate = CD.ultimate;
     S.emit('ultimate', `sword_${element}_ultimate${ctx().awakened ? '_awakened' : ''}`);
   }
-  function doSupport(skillId) {
+  function doSupport(skillId, castId = 0) {
     const def = moves.support(element);
     if (!def) return false;
-    startBuff(element, def, skillId);
-    startAction(moves.supportAction(element));
+    const cc = look.begin({ kind: 'support', el: element, skillId: skillId || `${element}.sup`, castId, tier: 'Z' });
+    const prev = look.cur; look.cur = cc;
+    try { startBuff(element, def, skillId); startAction(moves.supportAction(element)); } finally { look.cur = prev; }
     return true;
   }
   function support() {
@@ -662,7 +757,7 @@ export function createSword(game) {
     try { game.stats?.set?.(src, def.mods, { duration: def.duration }); } catch (err) { warnOnce('stats.set', err); }
     try {
       const c = palOf(el);
-      buffs.emitter = vfx()?.emitter?.({ follow: P().object, offset: v4.set(0, 1, 0), rate: 18, count: 1, color: [c.a, c.b], speed: 1.2, spread: 1, size: 0.12, sizeEnd: 0, life: 0.6, shape: def.shape || 'spark', gravity: def.gravity ?? -1.5, drag: 1, duration: def.duration }) || null;
+      buffs.emitter = vcall('emitter', { follow: P().object, offset: v4.set(0, 1, 0), rate: 8, count: 1, color: [c.a, c.b], speed: 1.2, spread: 1, size: 0.1, sizeEnd: 0, life: 0.6, shape: def.shape || 'spark', gravity: def.gravity ?? -1.5, drag: 1, duration: def.duration, el }) || null;
     } catch (e) { buffs.emitter = null; }
   }
   function endBuff() {
@@ -680,6 +775,12 @@ export function createSword(game) {
     const fin = moves.finisher(element);
     if (!fin) return false;
     if (charging) endCharge(false);
+    const fcc = look.begin({ kind: 'finisher', el: element, skillId: tag.skillId || `${element}.finisher`, castId: finCastId || 0, tier: 'F' });
+    const prevF = look.cur; look.cur = fcc;
+    try { return finisher2(fin, free, fcc); } finally { look.cur = prevF; }
+  }
+  let finCastId = 0;
+  function finisher2(fin, free, fcc) {
     const tgt = findTarget(16, -0.2);
     const center = new THREE.Vector3();
     if (tgt) center.copy(tgt.object.position); else center.copy(pos()).addScaledVector(fwd(v1), 7);
@@ -696,21 +797,22 @@ export function createSword(game) {
       if (impacted) return; impacted = true;
       sfx('finisher_impact', { position: center });
       events.emit('finisherImpact', { element, point: center.clone(), cls: clsOf() });
-      try { fin.impact(S, center, tgt); } catch (err) { console.error('[sword] finisher impact', err); }
+      const prev = look.cur; look.cur = fcc;
+      try { fin.impact(S, center, tgt); } catch (err) { console.error('[sword] finisher impact', err); } finally { look.cur = prev; }
     };
     const done = () => { impact(); if (act === hold) { endAction(false); startAction({ name: 'fin_end', kind: 'finisher', tpl: 'raiseSlam', dur: 0.6, cancel: 0.4, move: 0, target: null, facing: P().facing }); } };
     const cin = game.cinematic;
     const cinOk = cin?.finisher && !(game.stubbed || []).includes('cinematic');
     if (cinOk) {
       try {
-        cin.finisher({ cls: clsOf(), element, name: fin.name, target: tgt, center, onBuildup: (t) => { try { fin.buildup?.(S, t, center); } catch (_) { /* */ } }, onImpact: impact, onEnd: done });
+        cin.finisher({ cls: clsOf(), element, name: fin.name, target: tgt, center, onBuildup: (t) => { const prev = look.cur; look.cur = fcc; try { fin.buildup?.(S, t, center); } catch (_) { /* */ } finally { look.cur = prev; } }, onImpact: impact, onEnd: done });
         return true;
       } catch (err) { console.error('[sword] cinematic.finisher', err); }
     }
     // non-cinematic fallback: slow-mo power-up then impact
     try { game.timeScale?.set?.('ult', 0.35, 1.2); } catch (_) { /* */ }
-    vcall('screenFlash', palOf(element).a, 0.25, 0.6);
-    after(0.45, () => { vcall('fovKick', -8, 0.6); });
+    vcall('screenFlash', palOf(element).a, 0.2, 0.15);
+    after(0.45, () => { vcall('fovKick', -3, 0.3); });
     after(0.55, done);
     return true;
   }
@@ -728,25 +830,30 @@ export function createSword(game) {
     if (el && el !== element) setElementLocal(el);
     const skillId = opts.skillId || null;
     const slot = SLOT_OF[kind] || 'skill';
+    // castId: the skills runtime's when it passes one (ctx.castId), else a fresh one (PLAN §7.4.7)
+    const castId = opts.castId ?? game.nextCastId?.() ?? 0;
+    lastCastId = castId;
     let ok = false;
     inSkillsCast++;
     try {
       if (kind === 'combo') {
         if (pl.counterReady > 0 && !charging) ok = counterFlurry();
-        else if (canComboNow()) { tag.skillId = skillId; tag.slot = slot; if (!act && comboIdle > COMBO_RESET) comboStep = 0; ok = comboAttack(false); }
-        else { buffer = BUFFER_T; bufferKind = 'combo'; bufferTag.skillId = skillId; bufferTag.slot = slot; ok = true; }
+        else if (canComboNow()) { tag.skillId = skillId; tag.slot = slot; if (!act && comboIdle > COMBO_RESET) comboStep = 0; ok = comboAttack(false, castId); }
+        else { buffer = BUFFER_T; bufferKind = 'combo'; bufferTag.skillId = skillId; bufferTag.slot = slot; bufferTag.castId = castId; ok = true; }
       } else if (kind === 'heavy') {
         if (charging) { charging = false; try { chargeLoop?.stop?.(); } catch (_) { /* */ } chargeLoop = null; }
         tag.skillId = skillId; tag.slot = slot;
-        ok = doHeavy(opts.charge ?? 1);
+        ok = doHeavy(opts.charge ?? 1, castId);
       } else if (kind === 'ultimate' || kind === 'ultimateAwakened') {
         tag.skillId = skillId; tag.slot = slot;
-        ok = doUltimate(kind === 'ultimateAwakened' || !!opts.awakened);
+        ok = doUltimate(kind === 'ultimateAwakened' || !!opts.awakened, castId);
       } else if (kind === 'support') {
         tag.skillId = skillId; tag.slot = slot;
-        ok = doSupport(skillId);
+        ok = doSupport(skillId, castId);
       } else if (kind === 'finisher') {
+        tag.skillId = skillId; tag.slot = slot; finCastId = castId;
         ok = finisher(true);
+        finCastId = 0;
       }
     } catch (err) { console.error('[sword] playLegacy', el, kind, err); ok = false; }
     finally { inSkillsCast--; tag.skillId = null; tag.slot = null; }
@@ -770,8 +877,7 @@ export function createSword(game) {
     element = el;
     const list = v3Mode() ? ALL_ELEMENTS : CLASSIC_ELEMENTS;
     index = Math.max(0, list.indexOf(el));
-    const c = palOf(el);
-    fx.trail.setColor(c.a, c.b); fx.trail2.setColor(c.a, c.b);
+    fx.trail.setElement(el); fx.trail2.setElement(el);
   }
   /**
    * setElement(el, {silent}) — v3: called by skills.attune with {silent:true} (emits nothing); any other v3 caller is
@@ -794,6 +900,8 @@ export function createSword(game) {
 
   // ---------------- blade ambience ----------------
   function bladeAmbience(dt) {
+    // v4 (R4 restraint): no ambient particle stream on the drawn weapon; the element reads from the slash edge instead
+    if (dt >= 0) return;
     const pl = P();
     if (!pl.swordDrawn) return;
     ambT -= dt;
@@ -861,6 +969,7 @@ export function createSword(game) {
     fx.arcs.update(dt, game.time);
     fx.iceSpikes.update(dt); fx.rockSpikes.update(dt); fx.crystal.update(dt); fx.stones.update(dt); fx.dragon.update(dt);
     fx.orbit.update(dt, pos());
+    look.update(dt);
     runTasks(dt);
     for (const k in cooldowns) if (cooldowns[k] > 0) cooldowns[k] = Math.max(0, cooldowns[k] - dt);
     igniteCd -= dt;
@@ -873,7 +982,7 @@ export function createSword(game) {
     try { arch?.update?.(dt); } catch (err) { warnOnce('archetypes.update', err); }
 
     if (!active() || game.state !== 'playing') {
-      if (!active()) { if (act) endAction(true); if (charging) endCharge(false); v3Charge = false; pl.action.active = false; fx.trail.update(dt, false, baseW, tipW); fx.trail2.update(dt, false, baseW, tipW); }
+      if (!active()) { if (act) endAction(true); if (charging) endCharge(false); v3Charge = false; pl.action.active = false; pl.action.dodgeCancelable = true; fx.trail.update(dt, false, baseW, tipW); fx.trail2.update(dt, false, baseW, tipW); }
       return;
     }
     const inp = game.input;
@@ -933,7 +1042,7 @@ export function createSword(game) {
     const sk = game.skills;
     const skCharging = !ownInput && !!sk?.charging && canAct && !pl.blocking && !pl.dashing;
     if (skCharging && !v3Charge) { v3Charge = true; chargeFull = false; chargeFxT = 0; if (act && act.kind === 'combo' && pl.action.cancelable) endAction(true); P().setSwordDrawn(true); }
-    else if (!skCharging && v3Charge) { v3Charge = false; chargeFrac = 0; }
+    else if (!skCharging && v3Charge) { v3Charge = false; chargeFrac = 0; chargeLine?.stop?.(); chargeLine = null; chargeCC = null; }
 
     if (charging) updateCharge(dt);
     else if (v3Charge && !act) chargeVisual(dt, sk.chargeFrac || 0);
@@ -965,7 +1074,7 @@ export function createSword(game) {
   }
 
   function warmObjects() {
-    return [fx.arcs.items[0].mesh, fx.trail.mesh, fx.trail2.mesh, fx.iceSpikes.mesh, fx.rockSpikes.mesh, fx.crystal.mesh, fx.orbit.mesh, fx.dragon.mesh, fx.dragon.coreMesh,
+    return [...fx.arcs.items.map((x) => x.mesh), fx.trail.mesh, fx.trail2.mesh, fx.iceSpikes.mesh, fx.rockSpikes.mesh, fx.crystal.mesh, fx.orbit.mesh, fx.dragon.mesh, fx.dragon.coreMesh,
       ...fx.stones.items.map((x) => x.m), ...(arch?.warmup?.() || []), ...(bespoke?.warmup?.() || [])];
   }
   function warmup() {
@@ -984,8 +1093,9 @@ export function createSword(game) {
   }
 
   // ---------------- melee archetypes + bespoke forms (registered in the FACTORY, CONTRACT §2/§7.3) ----------------
+  engineRef.S = S;
   const engine = {
-    game, S, M, moves, fx,
+    game, S, M, moves, fx, look,
     get weapon() { return weapon; }, get act() { return act; }, get element() { return element; },
     startAction, endAction, applyHit, hitCircle, hitLine, findTarget, foesNear, after, every, arc, smear,
     setElementLocal, refreshWeapon, tag, TPL,
@@ -999,7 +1109,13 @@ export function createSword(game) {
     get charging() { return charging || v3Charge; }, get chargeFrac() { return chargeFrac; },
     get comboStep() { return comboStep; }, get action() { return act; }, get buff() { return buffs.id; },
     get weapon() { return weapon; },
-    cooldowns, fx, S,
+    cooldowns, fx, S, look,
+    /** v4 (PLAN §7.4.7): declared look level of a registry skill in the melee family ('bespoke' | 'archetype'); ML1 measures it. */
+    lookOf: (id) => look.lookOf(id),
+    get lastCastId() { return look.last?.castId || lastCastId; },
+    /** every private sword material (built once at construction; for warm-up and the 0-new-materials check) */
+    materials: () => fxMats.slice(),
+    substeps: false,
     getHudState, update, setElement,
     /** Test hook: run a move directly: kind 'combo'|'heavy'|'ultimate'|'finisher'|'support', opts {charge, step} */
     debugUse(kind, opts = {}) {
@@ -1011,6 +1127,18 @@ export function createSword(game) {
       else if (kind === 'support') { cooldowns.support = 0; support(); }
       else if (kind === 'counter') counterFlurry();
       return !!act;
+    },
+    /** Test hook: end the current move, drop scheduled tasks and every pooled sword effect (+ the vfx particles / kit). */
+    clearFx() {
+      if (act) endAction(true);
+      if (charging) endCharge(false);
+      tasks.length = 0; endBuff();
+      fx.arcs.clear(); fx.trail.clear(); fx.trail2.clear();
+      for (const k of ['iceSpikes', 'rockSpikes', 'crystal']) { for (const it of fx[k].items) it.alive = false; fx[k].update(0); }
+      for (const it of fx.stones.items) { it.alive = false; it.m.visible = false; }
+      fx.orbit.stop(); fx.orbit.update(0, pos()); fx.dragon.active = false; fx.dragon.update(0);
+      try { game.vfx?.clear?.(); } catch (_) { /* */ }
+      chargeLine = null; chargeCC = null;
     },
     /** main.js prewarm: hidden instances are already in the scene; nothing extra to add. */
     prewarm() { return null; },

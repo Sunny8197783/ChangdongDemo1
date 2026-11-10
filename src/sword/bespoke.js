@@ -51,7 +51,7 @@ export function registerMeleeBespoke(game, E) {
       for (let i = 0; i < waves; i++) S.after(0.25 + i * every, () => {
         const cc = ground(pos().clone());
         vfx('shockwave', cc, { color: 0x7fd3ff, radius: r, duration: 0.8, opacity: 0.85, thickness: 0.5 });
-        for (let k = 0; k < 12; k++) { const an = (k / 12) * TWO_PI; vfx('burst', V(cc.x + Math.sin(an) * r * 0.6, cc.y + 0.3, cc.z + Math.cos(an) * r * 0.6), { count: 4, shape: 'droplet', color: [0xffffff, 0x4fb4ff], speed: 6, spread: 0.4, dir: S.UP, size: 0.16, life: 0.7, gravity: 12 }); }
+        for (let k = 0; k < 12; k++) { const an = (k / 12) * TWO_PI; vfx('burst', V(cc.x + Math.sin(an) * r * 0.6, cc.y + 0.3, cc.z + Math.cos(an) * r * 0.6), { count: 4, shape: 'droplet', color: [0xe8d9b0, 0x4fb4ff], speed: 6, spread: 0.4, dir: S.UP, size: 0.16, life: 0.7, gravity: 12 }); }
         S.hitCircle(V(cc.x, cc.y + 0.6, cc.z), r, h.spec(ctx, { amount: p.dmg || 40, kb: 7, tier: 'ult', dirMode: 'out' }), null, 4, 'water');
         S.sfx('explode_water', { position: cc });
       });
@@ -136,7 +136,7 @@ export function registerMeleeBespoke(game, E) {
             S.applyHit(e, h.spec(ctx, { amount: p.dmg || 18, tags: ['heavy', 'judgment'], tier: 'ult', kb: 2 }), S.centerOf(e, V()), _u.clone(), 'light');
           }
         }
-        if (Math.random() < 0.5) vfx('burst', ends[0], { count: 3, shape: 'mote', color: [0xffffff, 0xffd36a], speed: 4, spread: 1, size: 0.18, life: 0.35 });
+        if (Math.random() < 0.5) vfx('burst', ends[0], { count: 3, shape: 'mote', color: [0xe8d9b0, 0xffd36a], speed: 4, spread: 1, size: 0.18, life: 0.35 });
       },
     });
   }
@@ -194,6 +194,17 @@ export function registerMeleeBespoke(game, E) {
     'light.ult': (ctx) => light(ctx, false), 'light.awakened': (ctx) => light(ctx, true),
     'shadow.ult': (ctx) => shadow(ctx, false), 'shadow.awakened': (ctx) => shadow(ctx, true),
   };
-  for (const id in IMPLS) { try { A?.registerImpl?.(id, 'melee', IMPLS[id]); } catch (err) { console.warn('[sword] registerImpl', id, err); } }
+  const kindOf = (ctx) => (ctx.def?.slot === 'finisher' ? 'finisher' : 'ultimate');
+  const wrap = (id, fn) => (ctx) => {
+    const L = E.look;
+    const cc = L ? L.begin({ skillId: ctx.skillId || id, el: ctx.element, castId: ctx.castId, kind: kindOf(ctx) }) : null;
+    const prev = L ? L.cur : null; if (L) L.cur = cc;
+    try { fn(ctx); } finally {
+        // a skill that started no engine action still gets its look (start + strike at once)
+        if (L && cc && (cc.row || cc.arch) && !cc.started) { cc.started = true; L.hook('start', null, ctx); L.hook('strike', null, ctx); }
+        if (L) L.cur = prev;
+      }
+  };
+  for (const id in IMPLS) { try { A?.registerImpl?.(id, 'melee', wrap(id, IMPLS[id])); } catch (err) { console.warn('[sword] registerImpl', id, err); } }
   return { ids: Object.keys(IMPLS), warmup() { return []; } };
 }
