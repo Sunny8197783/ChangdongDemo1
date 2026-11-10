@@ -861,7 +861,7 @@ async function c8(PT) {
   // ---------------- S-plains allocation + zone transition hitch (CPU)
   const ps = await PT.bootScene('S-plains');
   if (ps.ready) {
-    const al = await PT.alloc(ps, 10, { rotate: false });
+    const al = await PT.alloc(ps, 10, { rotate: false, warm: 20 });   // §1.2: 20 s after warm
     res.allocPlains = al;
     PT.check(`C8 S-plains: JS allocation ${al.mbPerGameSec} MB per game-second ≤ 0.3`, al.mbPerGameSec <= 0.3, al.top.slice(0, 8));
     const tr = await ps.eval(() => {

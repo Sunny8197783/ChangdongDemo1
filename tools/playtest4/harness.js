@@ -6,7 +6,7 @@
 //   const pg = await PT.bootScene(id, {w, h, params})   boot with the §1.1 scene's URL params, then in-page PT.scene(id)
 //   await pg.run(label, (arg) => { …in page… }, arg)    result returned; in-page PT.check/skip/note collected
 //   PT.check(name, cond, info) · PT.skip(name, why) · PT.note(text) · PT.flags {perf, full, sheets}
-//   await PT.alloc(pg, seconds, {cadence, cls})  CDP HeapProfiler sampling → {mbPerGameSec, totalMB, top:[[site, MB/s]], gcPauses:null}
+//   await PT.alloc(pg, seconds, {cadence, rotate, warm})  CDP HeapProfiler sampling → {mbPerGameSec, totalMB, top:[[site, MB/s]], gcPauses:null}
 //   await PT.sheet(pg, frames, path, {cols, cellW, cellH, labels})  contact sheet PNG (≤ 150 KB) from data URLs
 //   await PT.gpuRatioPages(pgA, pgB, {pairs = 5, prep})  ABAB frozen-frame GPU ratio A/B across two pages (median of pair ratios)
 //   await PT.baseline(params, opts)  boots the v3 baseline build (git archive of V3_REF into tools/playtest4/out/v3base)
@@ -439,7 +439,7 @@ function installInPage() {
         const rec = { t: +(t - warm).toFixed(3), draws, coverage: cov, particles: st.particles ?? null };
         if (onSample) onSample(rec);
         out.push(rec);
-      } else g.step(1, dt, false);
+      } else g.step(1, dt, measure && t + dt >= warm && (frame % sampleEvery) === sampleEvery - 1);   // a sampled frame follows a rendered frame (as in play: uploads / ranges do not pile up across unrendered steps)
       frame++;
     }
     g.input.simulate(null);
@@ -640,7 +640,9 @@ function createHarness({ out = console.log, root = ROOT, flags = {} } = {}) {
       return PT.boot(params, { ...opts, root: dir });
     },
     /** CDP heap sampling over `seconds` game-seconds of a rotation (or plain steps) → MB allocated per game-second. */
-    async alloc(pg, seconds = 20, { cadence = 0.5, rotate = true, interval = 8192 } = {}) {
+    async alloc(pg, seconds = 20, { cadence = 0.5, rotate = true, interval = 8192, warm = 0 } = {}) {
+      // PLAN §1.2 samples "20 s after warm": `warm` game-seconds of plain steps run before sampling starts (V8 tiers up the hot code first)
+      if (warm > 0) await pg.eval(async (warm) => { for (let k = 0; k < warm; k++) { window.game.step(60, 1 / 60, false); await new Promise((r) => setTimeout(r, 0)); } }, warm);
       const cdp = await pg.cdp();
       await cdp.send('HeapProfiler.enable');
       await cdp.send('HeapProfiler.startSampling', { samplingInterval: interval, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
