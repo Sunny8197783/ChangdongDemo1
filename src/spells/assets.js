@@ -8,8 +8,10 @@ const once = (key, fn) => { if (!cache.has(key)) cache.set(key, fn()); return ca
 /** Global time uniform shared by all spell shaders (updated by spells.update). */
 export const uTime = { value: 0 };
 
-/** Additive fresnel glow shell. */
+/** Fresnel rim shell (v4 R1: intensity ≤ 1.2, rim-weighted alpha; colour from the element ramps). */
+export const FX_MAX = 1.2;
 export function fresnelMat(color, { power = 2.2, intensity = 1.4, core = 0.1, opacity = 1 } = {}) {
+  intensity = Math.min(FX_MAX, intensity); core = Math.min(core, 0.3);
   return new THREE.ShaderMaterial({
     uniforms: {
       color: { value: new THREE.Color(color) }, power: { value: power },
@@ -34,8 +36,9 @@ export function fresnelMat(color, { power = 2.2, intensity = 1.4, core = 0.1, op
   });
 }
 
-/** Bright glowing core (white center fading to color at edges). */
+/** Glowing core (v4: centre lifts toward a lighter tint of the colour, never white; intensity ≤ 1.2). */
 export function coreMat(color, intensity = 2.2) {
+  intensity = Math.min(FX_MAX, intensity);
   return new THREE.ShaderMaterial({
     uniforms: { color: { value: new THREE.Color(color) }, intensity: { value: intensity }, time: uTime },
     vertexShader: /* glsl */`
@@ -51,7 +54,7 @@ export function coreMat(color, intensity = 2.2) {
       void main(){
         float d = abs(dot(normalize(vN), normalize(vV)));
         float n = 0.85 + 0.15 * sin(vP.x*9.0 + time*14.0) * sin(vP.y*7.0 - time*11.0);
-        vec3 c = mix(color, vec3(1.0), smoothstep(0.55, 1.0, d)) * intensity * n;
+        vec3 c = mix(color, min(color * 1.35 + 0.08, vec3(0.95)), smoothstep(0.55, 1.0, d)) * intensity * n;
         gl_FragColor = vec4(c, 1.0);
       }`,
     blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
@@ -86,11 +89,11 @@ export function flameMat() {
       uniform float time; varying vec2 vUv; varying float vPhase;
       void main(){
         float y = vUv.y;
-        vec3 c = mix(vec3(1.0,0.95,0.6), vec3(1.0,0.45,0.08), smoothstep(0.05,0.55,y));
-        c = mix(c, vec3(0.9,0.12,0.03), smoothstep(0.55,1.0,y));
+        vec3 c = mix(vec3(1.0,0.647,0.227), vec3(0.941,0.4,0.102), smoothstep(0.05,0.55,y));
+        c = mix(c, vec3(0.478,0.118,0.039), smoothstep(0.55,1.0,y));
         float flick = 0.8 + 0.2*sin(time*23.0 + vPhase*3.0 + y*8.0);
         float a = (1.0 - smoothstep(0.6, 1.0, y)) * flick;
-        gl_FragColor = vec4(c * 1.25 * a, a);
+        gl_FragColor = vec4(c * a, a);
       }`,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   }));
@@ -200,10 +203,11 @@ export function sigilTexture() {
   });
 }
 
-/** Additive textured material for ground sigils. */
+/** Textured material for ground sigils. v4 (R1/R6): normal-blended in the element `mid` step — additive violet / blue over green grass
+ *  washed out to grey (lightning.ult sat 0.24); the canvas carries the line alpha, so the same crisp rune circle reads saturated. */
 export function sigilMat(color) {
   return new THREE.MeshBasicMaterial({
-    map: sigilTexture(), color, transparent: true, blending: THREE.AdditiveBlending,
+    map: sigilTexture(), color, transparent: true, blending: THREE.NormalBlending,
     depthWrite: false, opacity: 1, side: THREE.DoubleSide, toneMapped: false, fog: false,
   });
 }
@@ -231,14 +235,14 @@ const groundFrag = {
     vec3 col = mix(vec3(0.55,0.08,0.02), vec3(1.0,0.45,0.05), heat);
     col = mix(col, vec3(1.0,0.9,0.45), smoothstep(0.75,1.0,n2+heat*0.3));
     float a = edge * (0.45 + 0.55*heat);
-    gl_FragColor = vec4(col * 1.6 * a * fade, a * fade);`,
+    gl_FragColor = vec4(col * a * fade, a * fade);`,
   ice: /* glsl */`
     vec2 q = p * 1.1; float n = fbm(q*1.5);
     float cr = 1.0 - smoothstep(0.0, 0.06, abs(fract(n*5.0) - 0.5));
     vec3 col = mix(vec3(0.55,0.85,1.0), vec3(0.85,0.98,1.0), n);
     col += vec3(0.6,0.9,1.0) * cr * 0.8;
     float sp = pow(max(0.0, sin(p.x*13.0 + time*2.0) * sin(p.y*11.0 - time*1.7)), 24.0);
-    col += sp * 1.5;
+    col += sp * 0.6;
     float a = edge * 0.75;
     gl_FragColor = vec4(col * a * fade, a * fade);`,
   lava: /* glsl */`
@@ -247,7 +251,7 @@ const groundFrag = {
     vec3 crust = vec3(0.16,0.06,0.04);
     vec3 glow = mix(vec3(1.0,0.3,0.02), vec3(1.0,0.85,0.3), cracks);
     float g = max(cracks, smoothstep(0.6, 0.9, n));
-    vec3 col = mix(crust, glow * 2.2, g);
+    vec3 col = mix(crust, glow * 1.1, g);
     float a = edge;
     gl_FragColor = vec4(col * fade, a * fade);`,
   water: /* glsl */`

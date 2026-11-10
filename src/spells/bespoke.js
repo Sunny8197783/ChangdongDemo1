@@ -3,6 +3,7 @@
 // Registered with game.archetypes.registerImpl(id, 'caster', fn) in the spells factory. They reuse the archetype engine
 // (spells/archetypes.js) for hits, movers and VFX, and pass UNSCALED base damage (§8.3). skills emits skillCast/spellCast.
 import * as THREE from 'three';
+import { glint, GLINT } from './palette.js';
 import { elColor } from '../core/elements.js';
 
 const OPTIONAL_FX = new Set(['groundDecal', 'runeCircle', 'flashSprite', 'dome', 'debris']);
@@ -13,7 +14,7 @@ export function createBespoke(S, api, AR, { summons }) {
   const { game } = S;
   const E = game.events;
   // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
-  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return S.looks ? S.looks.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const pl = () => game.player;
   const ppos = () => pl()?.object?.position || S.playerPos();
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
@@ -22,7 +23,7 @@ export function createBespoke(S, api, AR, { summons }) {
 
   /** Shared ultimate anticipation: slow-mo beat, FOV kick, sigils under the caster, a rising flare. */
   function ultIntro(ctx, aw = false) {
-    const el = ctx.element, col = elColor(el, 'mid');
+    const el = ctx.element, col = elColor(el, el === 'shadow' ? 'edge' : 'mid');   // shadow: violet rim colour (its mid is near-black)
     const pp = ppos();
     try { game.timeScale?.set?.('ult', aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); } catch (_) { /* */ }
     fx('screenFlash', col, aw ? 0.22 : 0.12, aw ? 0.4 : 0.25);
@@ -31,7 +32,7 @@ export function createBespoke(S, api, AR, { summons }) {
     const fp = v1.set(pp.x, S.height(pp.x, pp.z) + 0.05, pp.z).clone();
     S.props.sigil(fp, { color: col, radius: aw ? 3.4 : 2.2, duration: aw ? 0.9 : 0.6, spin: 3 });
     if (aw) {
-      S.props.sigil(fp, { color: 0xffffff, radius: 1.6, duration: 0.9, spin: -4 });
+      S.props.sigil(fp, { color: GLINT, radius: 1.6, duration: 0.9, spin: -4 });
       fx('shockwave', fp.clone().setY(fp.y + 1), { color: col, radius: 3, duration: 0.45, vertical: true, thickness: 0.3 });
     }
     fx('burst', fp.clone().setY(fp.y + 1), { count: aw ? 60 : 30, shape: AR.shape(el), color: [elColor(el, 'core'), col], speed: 8, spread: 1, size: 0.16, life: 0.5, drag: 2 });
@@ -54,7 +55,7 @@ export function createBespoke(S, api, AR, { summons }) {
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2, r = (p.r || 14) * 0.85;
         v1.set(at.x + Math.cos(a) * r, 0, at.z + Math.sin(a) * r); v1.y = S.height(v1.x, v1.z);
-        fx('burst', v1, { count: 14, shape: 'droplet', color: [0xffffff, 0x4fb4ff], dir: v2.set(0, 1, 0), spread: 0.15, speed: 12, size: 0.25, life: 0.9, gravity: 12 });
+        fx('burst', v1, { count: 14, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], dir: v2.set(0, 1, 0), spread: 0.15, speed: 12, size: 0.25, life: 0.9, gravity: 12 });
       }
       fx('shake', 0.35);
       S.sfx('explode_water', { position: at });
@@ -77,8 +78,8 @@ export function createBespoke(S, api, AR, { summons }) {
           const c = start.clone().addScaledVector(dir, d); c.y = S.height(c.x, c.z);
           const a = c.clone().addScaledVector(side, -(p.r || 7)), b = c.clone().addScaledVector(side, p.r || 7);
           api.line(a, b, 2.6, hit, { seen, element: 'water' });
-          fx('burst', c.clone().setY(c.y + 0.4), { count: 26, shape: 'droplet', color: [0xffffff, 0x4fb4ff], disc: false, radius: p.r || 7, dir: v2.set(dir.x, 1.2, dir.z), spread: 0.25, speed: 8, size: 0.26, life: 0.7, gravity: 12 });
-          fx('burst', c.clone().setY(c.y + 1.6), { count: 6, shape: 'puff', color: [0xffffff, 0xbfeaff], alpha: 0.5, additive: false, radius: (p.r || 7) * 0.8, speed: 2, up: 1, size: 1.4, sizeEnd: 2.4, life: 0.6 });
+          fx('burst', c.clone().setY(c.y + 0.4), { count: 26, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], disc: false, radius: p.r || 7, dir: v2.set(dir.x, 1.2, dir.z), spread: 0.25, speed: 8, size: 0.26, life: 0.7, gravity: 12 });
+          fx('burst', c.clone().setY(c.y + 1.6), { count: 6, shape: 'puff', color: [glint(0xbfeaff), 0xbfeaff], alpha: 0.5, additive: false, radius: (p.r || 7) * 0.8, speed: 2, up: 1, size: 1.4, sizeEnd: 2.4, life: 0.6 });
           if (d % 6.6 < 2.3) api.zones.spawn('water', c, { radius: p.puddle?.r || 4, duration: p.puddle?.dur || 30 });
           if (d < 22) S.later(0.06, step);
         };
@@ -241,8 +242,8 @@ export function createBespoke(S, api, AR, { summons }) {
     const top = c.clone().setY(c.y + 1);
     if (el === 'water') {   // 심해의 노래: a water leviathan bursts from the ground
       for (let i = 0; i < 3; i++) fx('shockwave', top.clone(), { color: 0x7fd3ff, radius: R * (0.5 + i * 0.25), duration: 0.6 + i * 0.2, thickness: 1.5 });
-      fx('burst', top, { count: 200, shape: 'droplet', color: [0xffffff, 0x1f6fb8], dir: new THREE.Vector3(0, 1, 0), spread: 0.25, speed: 26, size: 0.4, life: 1.6, gravity: 14 });
-      fx('burst', top.clone().setY(top.y + 8), { count: 40, shape: 'puff', color: [0xffffff, 0xbfeaff], alpha: 0.6, additive: false, radius: 4, speed: 3, size: 2.4, sizeEnd: 4, life: 1.4 });
+      fx('burst', top, { count: 200, shape: 'droplet', color: [glint(0x1f6fb8), 0x1f6fb8], dir: new THREE.Vector3(0, 1, 0), spread: 0.25, speed: 26, size: 0.4, life: 1.6, gravity: 14 });
+      fx('burst', top.clone().setY(top.y + 8), { count: 40, shape: 'puff', color: [glint(0xbfeaff), 0xbfeaff], alpha: 0.6, additive: false, radius: 4, speed: 3, size: 2.4, sizeEnd: 4, life: 1.4 });
       api.zones.spawn('flood', c, { r: R, dur: 6, params: { waves: 0, rxBonus: { lightning: 1.4, ice: 1.4 } } });
     } else if (el === 'nature') {   // 영원의 숲: a forest rises in rings
       for (let ring = 0; ring < 3; ring++) for (let i = 0; i < 10; i++) {
@@ -257,8 +258,8 @@ export function createBespoke(S, api, AR, { summons }) {
         const q = new THREE.Vector3(c.x + Math.cos(a) * r, 0, c.z + Math.sin(a) * r); q.y = S.height(q.x, q.z);
         S.later(i * 0.06, () => fx('beam', q.clone().setY(q.y + 30), q.clone(), { color: 0xffe9a8, width: 1.6, duration: 0.8, jagged: 0.02, segments: 4 }));
       }
-      fx('beam', top.clone().setY(top.y + 40), top.clone(), { color: 0xffffff, width: 3.2, duration: 1.0, jagged: 0.01, segments: 4 });
-      fx('burst', top, { count: 160, shape: 'feather', color: [0xffffff, 0xffe08a], radius: 2, speed: 14, spread: 1, size: 0.45, life: 1.6, drag: 1.5 });
+      fx('beam', top.clone().setY(top.y + 40), top.clone(), { color: GLINT, width: 3.2, duration: 1.0, jagged: 0.01, segments: 4 });
+      fx('burst', top, { count: 160, shape: 'feather', color: [glint(0xffe08a), 0xffe08a], radius: 2, speed: 14, spread: 1, size: 0.45, life: 1.6, drag: 1.5 });
       api.zones.spawn('holy', c, { r: R * 0.6, dur: 8, params: { healPct: 0.02, radiantPerSec: 1 } });
     } else {   // 까마귀 군주: a raven-winged knight descends — raven storm + a void implosion
       fx('burst', top.clone().setY(top.y + 6), { count: 120, shape: 'raven', color: [0x2a1040, 0x9a5cff], radius: 3, speed: 16, spread: 1, size: 0.6, life: 1.4, drag: 1 });
@@ -277,7 +278,11 @@ export function createBespoke(S, api, AR, { summons }) {
     const R = game.archetypes;
     let n = 0;
     for (const id in IMPL) {
-      const fn = IMPL[id];
+      const impl = IMPL[id], L = S.looks;
+      const fn = (ctx) => {
+        const prev = L ? L.begin({ castId: ctx.castId, skillId: ctx.skillId || id, el: ctx.element, style: ctx.style, family: ctx.family }) : null;
+        try { return impl(ctx); } finally { if (L) L.end(prev); }
+      };
       try { (R?.registerImpl || game.skills?.registerImpl)?.call(R || game.skills, id, 'caster', fn); n++; } catch (err) { console.warn('[spells.bespoke] register ' + id, err); }
     }
     return n;

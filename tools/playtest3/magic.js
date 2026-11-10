@@ -10,7 +10,8 @@ module.exports = async function magic(PT) {
   // ------------------------------------------------------------ static: no class literals in magic files (rule 8)
   {
     const root = PT.root;
-    const files = ['src/spells.js', ...fs.readdirSync(path.join(root, 'src/spells')).map((f) => 'src/spells/' + f)];
+    const walk = (d) => fs.readdirSync(path.join(root, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(d + '/' + e.name) : [d + '/' + e.name]);   // v4: src/spells/motifs/
+    const files = ['src/spells.js', ...walk('src/spells')];
     const bad = [];
     for (const f of files) {
       const txt = fs.readFileSync(path.join(root, f), 'utf8').split('\n');
