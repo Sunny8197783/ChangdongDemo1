@@ -371,14 +371,30 @@ export function createLooks(S) {
    *  occluder: it fades while it stands between the camera and the player or an enemy (§5.4 readability; returns false when refused,
    *  so the caller's instanced prop keeps platforms and walls visible). */
   const occl = [];
+  let zig = 0; const _qz = new THREE.Quaternion(), _zAx = new THREE.Vector3(0, 0, 1);
+  const COLUMN = { fire: 'fire.flame', lightning: 'lightning.spike', wind: 'wind.crescent', water: 'water.droplet', nature: 'nature.leaf', light: 'light.feather', shadow: 'shadow.tendril' };
   function spike(x, y, z, o = {}) {
     if (!on()) return false;
     const r = rowHook('spike', x, y, z, o); if (r !== undefined) return r;
+    // a wall / pillar eruption of a non-earth cast takes the element's own column shape (fire tongue, lightning spike, water droplet …):
+    // every element used to raise the same rock row (MG1.f wall silhouettes 0.8+ between elements)
+    const ce = o.el === 'earth' ? cur?.el : null, colName = ce && COLUMN[ce] && kitReal?._fm?.hasShape?.(COLUMN[ce]) ? COLUMN[ce] : null;
+    if (colName) {
+      const H = Math.max(0.6, o.height || 1.6), rad = kitReal._fm.shapeOf(colName)?.radius || 0.5;
+      const life = (o.rise ?? 0.14) + (o.hold ?? 1.5) + (o.sink ?? 0.45);
+      const hc = K.mesh(colName, { pos: new THREE.Vector3(x, y + H * 0.45, z), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tiltX || 0, o.yaw || 0, o.tiltZ || 0)),
+        scale: H / (2 * rad), life, tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true, el: ce, alpha: 0.85 });
+      if (!hc || hc === DEAD || hc.alive === false) return !o.keep;
+      if (H >= 1.2 && occl.length < 48) occl.push({ h: hc, x, z, y, top: y + H, r: Math.max(0.5, (o.width || 1) * 0.6), a: 1 });
+      return true;
+    }
     const earth = o.el === 'earth';
     const life = (o.rise ?? 0.14) + (o.hold ?? 1.5) + (o.sink ?? 0.45), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tiltX || 0, o.yaw || 0, o.tiltZ || 0));
     let h, top;
     if (earth) {
       const H = Math.max(0.6, o.height || 1.6), W = Math.max(0.4, o.width || 1);
+      // upright rows (walls, steps) lean alternately along the row: a zig-zag of strata, never the ice row's upright prisms
+      if (!o.tiltX && !o.tiltZ) { const lean = (zig++ % 2 ? 0.5 : -0.5); q.multiply(_qz.setFromAxisAngle(_zAx, lean)); }
       const sc = new THREE.Vector3(W * 1.7, H * 0.78, W * 1.7);   // physical.shard: 0.4 × 1.2 octahedron → ≈ 0.94 H tall, 0.7 W wide
       h = K.mesh('physical.shard', { pos: new THREE.Vector3(x, y + H * 0.25, z), quat: q, scale: sc, life, tIn: Math.max(0.08, o.rise ?? 0.14), tOut: Math.min(0.5, o.sink ?? 0.45), erode: true,
         el: 'earth', color: rampOf('earth').light, tintAmt: 0.85, alpha: 0.9 });
