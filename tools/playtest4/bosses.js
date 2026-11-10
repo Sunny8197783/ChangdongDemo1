@@ -91,6 +91,7 @@ function attackRun({ id, mode, jump }) {
           && pillars.every((q) => Math.hypot(q.x - pi[0], q.z - pi[1]) > 9)) || pairs[0];
       }
     }
+    if (mode && !placedAfterLock && !h.alive && out.diedAt == null) out.diedAt = +(t - h.start).toFixed(3);
     if (chosen) {
       const pt = mode === 'inside' ? chosen[0] : chosen[1];
       window.BT.place(pt[0], pt[1]);
@@ -213,7 +214,8 @@ module.exports = async function bosses(PT) {
     const ids = await pg.eval(() => (BT.boss()?.attacks || []).map((a) => a.id));
     const MIN = await pg.eval(() => ({ ...(game.tells?.MIN || {}) }));
     const rows = [];
-    for (const aid of ids) {
+    const onlyIds = (process.env.PT_BOSS_ATTACKS || '').split(',').filter(Boolean);
+    for (const aid of ids.filter((a) => !onlyIds.length || onlyIds.includes(a))) {
       const decal = !NO_DECAL[aid];
       const modes = decal ? ['inside', 'outside'] : [null];
       for (const mode of modes) {
@@ -222,7 +224,7 @@ module.exports = async function bosses(PT) {
       }
       if (aid === 'golem.slam') { const r = await pg.run('B1 golem.slam jumping', attackRun, { id: aid, mode: 'inside', jump: true }); if (r) rows.push({ ...r, jump: true }); }
     }
-    for (const aid of ids) {
+    for (const aid of ids.filter((a) => !onlyIds.length || onlyIds.includes(a))) {
       const R = rows.filter((r) => r.id === aid && !r.jump);
       const ri = R.find((r) => r.mode === 'inside') || R[0], ro = R.find((r) => r.mode === 'outside');
       const check = aid === 'kalis.check' || aid === 'nidhoggra.rods' || aid === 'nidhoggra.tide';
@@ -232,8 +234,8 @@ module.exports = async function bosses(PT) {
       PT.check(`B1 ${aid}: tellStart windup ≥ floor (${ri.cls} ${floor})`, ri.tellStart && ri.tellStart.id === aid && ri.tellStart.windup >= floor - 1e-6 && /[가-힣]/.test(ri.tellStart.nameKo || ''), ri.tellStart);
       if (ri.hold) PT.check(`B1 ${aid}: hold pose ≥ 0.1 s at lock`, ri.holdMax >= 0.1 - 1e-6, ri.holdMax);
       if (!NO_DECAL[aid]) {
-        PT.check(`B1 ${aid}: hitbox = decal (0.3 m inside → hit)`, !!ri.hurt && ri.placed, { hurt: ri.hurt, placed: ri.placed });
-        PT.check(`B1 ${aid}: hitbox = decal (0.3 m outside → no hit)`, !!ro && !ro.hurt && ro.placed, ro && { hurt: ro.hurt });
+        PT.check(`B1 ${aid}: hitbox = decal (0.3 m inside → hit)`, !!ri.hurt && ri.placed, { hurt: ri.hurt, placed: ri.placed, diedAt: ri.diedAt });
+        PT.check(`B1 ${aid}: hitbox = decal (0.3 m outside → no hit)`, !!ro && !ro.hurt && ro.placed, ro && { hurt: ro.hurt, placed: ro.placed, diedAt: ro.diedAt });
         if (ri.hurt) PT.check(`B1 ${aid}: tellStart → damage ≥ floor; attack metadata on the hit`, ri.hurt.et >= floor - 1 / 60 && /[가-힣]/.test(ri.hurt.nameKo || '') && !!ri.hurt.kind, ri.hurt);
       }
       PT.check(`B1 ${aid}: no runeCircle attack marker`, (ri.runeCircles || 0) === 0 && (!ro || (ro.runeCircles || 0) === 0));

@@ -201,7 +201,7 @@ export function createTreant(ctx, arena, opts = {}) {
     const obj = new THREE.Object3D(); game.scene.add(obj);
     const pod = { id: 'treantPod' + i, team: 'enemy', isProp: true, alive: false, object: obj, hp: 1, maxHp: 1, radius: 0.7, height: 1.2, mass: 1e6,
       statuses: {}, velocity: new THREE.Vector3(), xpValue: 0, slot: i, t: 0,
-      onHit() { burstPod(pod); }, onDeath() { burstPod(pod); }, getCenter(out = new THREE.Vector3()) { return out.copy(obj.position).setY(obj.position.y + 0.6); } };
+      onHit() { if (!pod.fused) burstPod(pod); }, onDeath() { if (!pod.fused) burstPod(pod); }, getCenter(out = new THREE.Vector3()) { return out.copy(obj.position).setY(obj.position.y + 0.6); } };
     pods.push(pod);
   }
   function dropPods(n) {
@@ -211,14 +211,14 @@ export function createTreant(ctx, arena, opts = {}) {
       const a = rand(0, 6.28), r = rand(5, Math.min(14, A.radius - 3));
       pod.object.position.set(p.x + Math.sin(a) * r, 0, p.z + Math.cos(a) * r);
       pod.object.position.y = ctx.groundH(pod.object.position.x, pod.object.position.z);
-      pod.alive = true; pod.hp = 1e6; pod.maxHp = 1e6; pod.t = 0; pod.h = null;
+      pod.alive = true; pod.hp = 1e6; pod.maxHp = 1e6; pod.t = 0; pod.h = null; pod.fused = false;
       try { game.combat.register(pod); } catch (_) { /* */ }
       ctx.dust(pod.object.position, 0.8);
     }
   }
   function burstPod(pod, hh = null) {
     if (!pod.alive) return;
-    pod.alive = false;
+    pod.alive = false; pod.fused = false;
     if (pod.h && !hh) { pod.h.stop(); pod.h = null; }
     try { game.combat.unregister(pod); } catch (_) { /* */ }
     const c = pod.object.position;
@@ -298,6 +298,8 @@ export function createTreant(ctx, arena, opts = {}) {
     }
     return bossHit(ctx, e, L.h, { attack: 'treant.roots', amount: D.roots, element: 'nature', knockback: 4, launch: 10, heavy: true, status: { rooted: 1.0 }, from: atkPos });
   }
+  // debugAttack('treant.pods') fuses its pod (pod.fused): hits never pop it early, so the debug tell always resolves on its
+  // own (a pet / aura / stray hit popping the glowing pod made the hitbox test non-deterministic). AI pods stay poppable.
   // pods: 9 s after landing a pod glows (tells 'treant.pods', 1.0 s) and bursts on its own
   function podTick(dt) {
     for (const pod of pods) {
@@ -306,7 +308,7 @@ export function createTreant(ctx, arena, opts = {}) {
         pod.h = bossAttack(ctx, e, 'treant.pods', { shape: { pos: pod.object.position }, hold: false });
         if (!pod.h) pod.t = 8;
       }
-      if (pod.h) { if (pod.h.consumeStrike()) { const hh = pod.h; pod.h = null; burstPod(pod, hh); } else if (cancelled(pod.h)) pod.h = null; }
+      if (pod.h) { if (pod.h.consumeStrike()) { const hh = pod.h; pod.h = null; burstPod(pod, hh); } else if (cancelled(pod.h)) { pod.h = null; pod.fused = false; } }
     }
   }
 
@@ -389,7 +391,7 @@ export function createTreant(ctx, arena, opts = {}) {
   finishBoss(ctx, e, { type: 'treant', cameraHint: { dist: 1.7, height: 1.6 }, preview: () => buildTreant().root, noDistanceRate: true,
     debugAttack: (id) => {
       stopAttacks(e); atk = null; tele = null; roots = [];
-      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9.5; podTick(0); return pod.h; }
+      if (id === 'treant.pods') { for (const q of pods) if (q.h && !q.h.alive) q.h = null; dropPods(1); const pod = pods.find((q) => q.alive && !q.h); if (!pod) return null; pod.t = 9.5; podTick(0); pod.fused = !!pod.h; return pod.h; }
       return start(String(id).replace(/^treant\./, ''));
     },
     onBroken: () => { atk = null; tele = null; roots = []; } });
