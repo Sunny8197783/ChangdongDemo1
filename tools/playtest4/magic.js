@@ -263,6 +263,9 @@ module.exports = async function (PT) {
   if (want('g')) await pg.run('MG1.g castLock', () => {
     const g = window.game, MG = window.MG, Sp = g.spells;
     MG.clear(); g.step(30, 1 / 60, false);
+    // a finisher from MG1.a may still be playing (cinematic onEnd / 11 s safety net): wait for it (integration)
+    let waited = 0; while (Sp.castLock > 0 && waited < 13) { g.step(60, 1 / 60, false); waited++; }
+    if (waited) PT.note(`waited ${waited} s for an earlier finisher to end`);
     PT.check('castLock = 0 when free', Sp.castLock === 0, Sp.castLock);
     g.debug.cast('fire.basic', { aim: MG.aim() });
     PT.check('castLock = 0 after a basic', Sp.castLock === 0, Sp.castLock);
