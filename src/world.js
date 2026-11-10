@@ -43,7 +43,7 @@ export function createWorld(game) {
 
   // ---------------------------------------------------------------- renderer tuning
   renderer.toneMappingExposure = 1.08;
-  if (game.bloomPass) { game.bloomPass.threshold = 0.9; game.bloomPass.strength = 0.45; game.bloomPass.radius = 0.55; }
+  // bloom threshold / strength / radius are core's (main.js applyQuality); world no longer writes the v3 values
   scene.background = SKY.horizon.clone();
   scene.fog = new THREE.Fog(new THREE.Color(0xb7d3ee), 60, 470); // bluish aerial perspective: far ridges go periwinkle
 

@@ -159,7 +159,7 @@ function grassShader(layer) {
         float patchy = sin(base.x * 0.13 + sin(base.y * 0.071) * 2.0) * sin(base.y * 0.11 + 1.3) * 0.5 + 0.5;
         float hgt = mix(${L.height[0].toFixed(3)}, ${L.height[1].toFixed(3)}, fract(rnd * 7.31 + bi * 0.17));
         hgt *= (0.5 + 0.5 * dens) * (0.75 + 0.5 * patchy) * keep * sqrt(fade);
-        hgt *= 1.0 - burn.r * 0.9;
+        hgt *= 1.0 - max(burn.r * 0.9, burn.g * 0.55);   // burning blades are consumed: the low flame linework stands above them
         float t = position.y;
         float w = position.x * ${L.width.toFixed(3)} * (1.0 - t * 0.85) * (0.8 + 0.4 * fract(rnd * 3.7)) * (1.0 + camD * ${L.widthGrow.toFixed(4)});
         float ground = terrainH(base);

@@ -505,7 +505,7 @@ export function buildTerrain(game) {
       #include <fog_pars_fragment>
       #include <lights_pars_begin>
       #include <shadowmap_pars_fragment>
-      // 5-tap PCF (centre + 4 diagonals at the light's shadow radius): terrain only, ~⅓ of the 17-tap PCF cost
+      // 4-tap PCF (the 4 diagonals at the light's shadow radius, equal weights): terrain only, ¼ of the 17-tap PCF cost
       float terrShadow() {
         #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
           DirectionalLightShadow L = directionalLightShadows[0];
@@ -513,9 +513,8 @@ export function buildTerrain(game) {
           sc.xyz /= sc.w; sc.z += L.shadowBias;
           if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
           vec2 d = L.shadowRadius / L.shadowMapSize;
-          return (texture2DCompare(directionalShadowMap[0], sc.xy, sc.z) * 2.0
-            + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(-d.x, -d.y), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(d.x, -d.y), sc.z)
-            + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(-d.x, d.y), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(d.x, d.y), sc.z)) / 6.0;
+          return (texture2DCompare(directionalShadowMap[0], sc.xy + vec2(-d.x, -d.y), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(d.x, -d.y), sc.z)
+            + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(-d.x, d.y), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + vec2(d.x, d.y), sc.z)) * 0.25;
         #else
           return 1.0;
         #endif

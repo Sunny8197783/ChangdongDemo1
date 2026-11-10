@@ -23,6 +23,9 @@ export function createBurnField() {
   return { tex, data, xform };
 }
 
+// flame size (m): visible tongue ≤ 0.42 × 0.95 × 1.4 × 1.3 (aPar.y) × 1.2 (flicker) × 0.9 (tip) ≈ 0.78 m, typically 0.4–0.5 m
+// (knee height; v3 flames were 2–4.8 m cards)
+const FLAME_SIZE = 0.42;
 const FLAME_CAP = 400, SMOKE_CAP = 90, ICE_CAP = 24, EMBER_CAP = 260;
 
 export function buildSurface(game, world, terrain, field, grass) {
@@ -93,41 +96,83 @@ export function buildSurface(game, world, terrain, field, grass) {
   const fParA = new THREE.InstancedBufferAttribute(fPar, 4).setUsage(THREE.DynamicDrawUsage);
   flameGeo.setAttribute('aCenter', fPosA); flameGeo.setAttribute('aPar', fParA);
   flameGeo.instanceCount = 0;
+  // v4 review fix: grass fire is LOW (≤ knee height ≈ 0.5 m) linework — a crisp orange tongue outline over a faint fill —
+  // instead of tall filled cards, and it ducks like player FX (PLAN §5.4): inside a threat footprint (tells.footprints via
+  // vfx.shared, bound lazily in update) or near the camera→player segment a flame sinks to 35 % height and 30 % alpha,
+  // so enemies and telegraphs stay readable through a burning meadow.
+  const duckU = { uThreat: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) }, uThreatN: { value: 0 },
+    uCamPos: { value: new THREE.Vector3() }, uPlayerPos: { value: new THREE.Vector3(0, -1e4, 0) } };
   const flameMat = new THREE.ShaderMaterial({
-    uniforms: { uTime },
+    uniforms: { uTime, ...duckU },
     transparent: true, depthWrite: false, blending: THREE.NormalBlending,
     vertexShader: /* glsl */`
       attribute vec4 aCenter; attribute vec4 aPar; uniform float uTime;
-      varying vec2 vUv; varying float vSeed; varying float vHeat; varying float vNear;
+      uniform vec4 uThreat[16]; uniform int uThreatN; uniform vec3 uCamPos; uniform vec3 uPlayerPos;
+      varying vec2 vUv; varying float vSeed; varying float vHeat; varying float vA;
+      // same footprint test as vfx/duck.js awInThreat (kinds 1 circle, 2 ring, 3 cone, 4 line, 5 capsule; +0.5 m)
+      float inThreat(vec2 p) {
+        for (int i = 0; i < 8; i++) {
+          if (i >= uThreatN) break;
+          vec4 a = uThreat[2 * i]; vec4 b = uThreat[2 * i + 1];
+          vec2 d = p - a.xy; float k = a.z; float l = length(d);
+          if (k < 1.5) { if (l < a.w + 0.5) return 1.0; }
+          else if (k < 2.5) { if (l < a.w + 0.5 && l > b.z - 0.5) return 1.0; }
+          else if (k < 3.5) {
+            if (l < a.w + 0.5) {
+              if (l < 0.5) return 1.0;
+              float ang = acos(clamp(dot(d / l, b.xy), -1.0, 1.0));
+              if (ang <= b.z || l * sin(min(ang - b.z, 1.5707)) < 0.5) return 1.0;
+            }
+          } else {
+            float t = dot(d, b.xy);
+            if (k < 4.5) { if (t > -0.5 && t < b.w + 0.5 && length(d - b.xy * t) < a.w + 0.5) return 1.0; }
+            else { t = clamp(t, 0.0, b.w); if (length(d - b.xy * t) < a.w + 0.5) return 1.0; }
+          }
+        }
+        return 0.0;
+      }
       void main(){
         vUv = position.xy; vSeed = aCenter.w; vHeat = aPar.z;
-        float fl = 1.0 + 0.16 * sin(uTime * 12.0 + aCenter.w * 7.0) + 0.1 * sin(uTime * 21.0 + aCenter.w * 3.0);
+        float fl = 1.0 + 0.12 * sin(uTime * 12.0 + aCenter.w * 7.0) + 0.08 * sin(uTime * 21.0 + aCenter.w * 3.0);
+        vec3 ab = uPlayerPos - uCamPos;
+        float st = clamp(dot(aCenter.xyz - uCamPos, ab) / max(dot(ab, ab), 1e-4), 0.0, 0.9);
+        float seg = length(aCenter.xyz - (uCamPos + ab * st)) < 1.5 ? 1.0 : 0.0;
+        float duck = max(inThreat(aCenter.xz), seg);
         vec4 mv = modelViewMatrix * vec4(aCenter.xyz, 1.0);
-        // flames between the camera and the hero (a self-centred igniteRing puts the camera boom inside the fire)
-        // fade out instead of filling the screen
-        vNear = smoothstep(2.0, 5.5, -mv.z);
+        vA = smoothstep(2.0, 5.5, -mv.z) * (1.0 - 0.7 * duck);
         float sz = aPar.x * (0.45 + 0.55 * aPar.z);
-        mv.xy += vec2(position.x * sz * 0.55, position.y * sz * aPar.y * fl);
+        mv.xy += vec2(position.x * sz * 0.55, position.y * sz * aPar.y * fl * (1.0 - 0.65 * duck));
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */`
-      uniform float uTime; varying vec2 vUv; varying float vSeed; varying float vHeat; varying float vNear;
+      uniform float uTime; varying vec2 vUv; varying float vSeed; varying float vHeat; varying float vA;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float noise(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);
         return mix(mix(hash(i),hash(i+vec2(1,0)),u.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x), u.y); }
+      // signed distance (uv units, < 0 inside) to a flame tongue of scale s (1 = outer, ~0.5 = inner lick)
+      float tongue(vec2 uv, float s) {
+        float y = uv.y / s;
+        float w = s * (1.0 - y) * (0.5 + 0.9 * sqrt(max(y, 0.0))) * 0.8;
+        return max(abs(uv.x) - w, max(-uv.y, (y - 0.9) * 0.5));
+      }
       void main(){
+        if (vA < 0.01) discard;
         vec2 uv = vUv;
-        float n = noise(vec2(uv.x * 3.0 + vSeed, uv.y * 4.0 - uTime * 3.4)) * 0.6 + noise(vec2(uv.x * 7.0, uv.y * 8.0 - uTime * 5.2 + vSeed)) * 0.4;
-        uv.x += (n - 0.5) * 0.5 * uv.y;
-        float w = (1.0 - uv.y) * (0.55 + 0.45 * sqrt(max(uv.y, 0.0)) * 2.0) * 0.8;
-        float shape = 1.0 - smoothstep(w * 0.5, w, abs(uv.x));
-        shape *= smoothstep(1.0, 0.5, uv.y + n * 0.4) * smoothstep(0.0, 0.1, uv.y);
-        float core = (1.0 - smoothstep(0.0, w * 0.6, abs(uv.x))) * smoothstep(0.75, 0.1, uv.y + n * 0.2);
-        vec3 c = mix(vec3(0.55, 0.05, 0.01), vec3(0.98, 0.32, 0.03), smoothstep(0.0, 0.8, shape));
-        c = mix(c, vec3(1.0, 0.66, 0.22), core * 0.8);
-        c = mix(c, vec3(0.45, 0.04, 0.01), smoothstep(0.55, 0.95, uv.y) * 0.6);
-        gl_FragColor = vec4(c * (0.8 + 0.2 * vHeat), clamp(shape * 1.4, 0.0, 0.92) * (0.5 + 0.5 * vHeat) * vNear);
-        if (gl_FragColor.a < 0.004) discard;
+        float n = noise(vec2(uv.x * 3.0 + vSeed, uv.y * 3.0 - uTime * 3.0));
+        uv.x += (n - 0.5) * 0.35 * uv.y;
+        uv.y += (n - 0.5) * 0.12 * uv.y;
+        float so = tongue(uv, 1.0), si = tongue(uv - vec2(0.0, 0.02), 0.52);
+        float px = fwidth(so), aa = px + 0.004;
+        float wO = max(0.06, px * 0.9), wI = max(0.045, px * 0.7);           // ≥ ~2 px / 1.5 px lines at any distance
+        float lineO = 1.0 - smoothstep(wO, wO + aa, abs(so + wO));           // crisp outer contour, drawn just inside the edge
+        float lineI = 1.0 - smoothstep(wI, wI + aa, abs(si + wI));           // inner lick
+        float fill = 1.0 - smoothstep(-aa, 0.0, so);
+        vec3 c = vec3(0.45, 0.06, 0.02);
+        c = mix(c, vec3(1.0, 0.42, 0.07), lineO);
+        c = mix(c, vec3(1.0, 0.78, 0.32), lineI);
+        float a = max(max(lineO * 0.95, lineI * 0.85), fill * 0.3) * (0.55 + 0.45 * vHeat) * vA;
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(c, a);
       }`,
   });
   const flames = new THREE.Mesh(flameGeo, flameMat);
@@ -162,7 +207,7 @@ export function buildSurface(game, world, terrain, field, grass) {
       varying vec2 vUv; varying float vA; varying float vL;
       void main(){ vec2 d = vUv - vec2(0.0, 0.5); float r = length(d * vec2(1.0, 2.0));
         float m = smoothstep(1.0, 0.2, r);
-        gl_FragColor = vec4(mix(vec3(0.16, 0.14, 0.13), vec3(0.5, 0.5, 0.52), vL), m * vA * 0.75); }`,
+        gl_FragColor = vec4(mix(vec3(0.16, 0.14, 0.13), vec3(0.5, 0.5, 0.52), vL), m * vA * 0.4); }   // thin haze, never a wall`,
   });
   const smoke = new THREE.Mesh(smokeGeo, smokeMat);
   smoke.frustumCulled = false; smoke.renderOrder = 4; smoke.name = 'grassSmoke';
@@ -433,17 +478,17 @@ export function buildSurface(game, world, terrain, field, grass) {
       const seed = (k * 0.6180339 + sub * 0.37) % 1;
       const ox = (((k * 7919) % 97) / 97 - 0.5) * 1.1 + (sub ? 0.5 : 0), oz = (((k * 104729) % 89) / 89 - 0.5) * 1.1 - (sub ? 0.4 : 0);
       const x = x0 + (i + 0.5) * cs + ox, z = z0 + (j + 0.5) * cs + oz;
-      const y = terrain.getHeight(x, z) - 0.05;
+      const y = terrain.getHeight(x, z) + 0.08;
       fPos[fc * 4] = x; fPos[fc * 4 + 1] = y; fPos[fc * 4 + 2] = z; fPos[fc * 4 + 3] = seed * 100;
       const h2 = ((k * 2654435761) >>> 0) % 1000 / 1000;
-      fPar[fc * 4] = size * (sub ? 0.65 : 1) * (0.6 + fuel[k] * 0.35) * (0.6 + h2 * 0.8); fPar[fc * 4 + 1] = 1.3 + seed * 1.1; fPar[fc * 4 + 2] = heat[k]; fPar[fc * 4 + 3] = 0;
+      fPar[fc * 4] = size * (sub ? 0.7 : 1) * (0.6 + fuel[k] * 0.35) * (0.6 + h2 * 0.8); fPar[fc * 4 + 1] = 1.0 + seed * 0.3; fPar[fc * 4 + 2] = heat[k]; fPar[fc * 4 + 3] = 0;
       fc++;
       if (ec < EMBER_CAP && (sub === 0) && (k % 2 === 0)) { ePos[ec * 3] = x; ePos[ec * 3 + 1] = y; ePos[ec * 3 + 2] = z; ec++; }
     };
-    for (let q = 0; q < near.length && fc < FLAME_CAP * 0.75; q++) for (let s = 0; s < per; s++) putFlame(near[q], 1.5, s);
+    for (let q = 0; q < near.length && fc < FLAME_CAP * 0.75; q++) for (let s = 0; s < per; s++) putFlame(near[q], FLAME_SIZE, s);
     if (far.length) {
       const room = Math.max(1, FLAME_CAP - fc), stride = Math.max(1, Math.ceil(far.length / room));
-      const big = 1.5 * Math.sqrt(stride);
+      const big = Math.min(0.7, FLAME_SIZE * Math.sqrt(stride));
       for (let q = 0; q < far.length; q += stride) putFlame(far[q], big, 0);
     }
     // smoke over burning + freshly burnt cells
@@ -690,6 +735,11 @@ export function buildSurface(game, world, terrain, field, grass) {
     update(dt, realDt) {
       const t = game.realTime;
       uTime.value = t;
+      // flame ducking: share vfx's footprint uniforms by reference once vfx exists (vfx updates them every frame)
+      const VS = game.vfx?.shared;
+      if (VS?.uThreat && flameMat.uniforms.uThreat !== VS.uThreat) {
+        for (const k of ['uThreat', 'uThreatN', 'uCamPos', 'uPlayerPos']) if (VS[k]) flameMat.uniforms[k] = VS[k];
+      }
       eUniforms.uScale.value = game.renderer.domElement.height / 720;
       if (dt > 0) {
         acc += dt;
