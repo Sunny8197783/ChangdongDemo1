@@ -25,18 +25,18 @@ export function createAdapters(game, log) {
     castSpell(spellId, opts) {
       const sp = spells(); if (!sp || sp.isStub) return false;
       try {
-        if (typeof sp.castById === 'function') return sp.castById(spellId, { free: true, charge: opts.charge, aim: opts.aim, awakened: opts.awakened }) !== false;
+        if (typeof sp.castById === 'function') return sp.castById(spellId, { free: true, charge: opts.charge, aim: opts.aim, awakened: opts.awakened, castId: opts.castId, skillId: opts.skillId }) !== false;
         if (typeof sp.cast === 'function') {
           const [el, kind] = splitSpell(spellId);
           if (!SPELL_KIND[kind]) return false;
-          return sp.cast(el, kind, { free: true, charge: opts.charge, aim: opts.aim }) !== false;
+          return sp.cast(el, kind, { free: true, charge: opts.charge, aim: opts.aim, castId: opts.castId, skillId: opts.skillId }) !== false;
         }
       } catch (err) { log('legacySpell:' + spellId, '[skills] legacy spell failed', spellId, err); }
       return false;
     },
     playSword(element, kind, opts) {
       const M = swordApi(); if (!M || typeof M.playLegacy !== 'function') return false;
-      try { return M.playLegacy(element, kind, { free: true, charge: opts.charge, aim: opts.aim, skillId: opts.skillId, awakened: opts.awakened }) !== false; }
+      try { return M.playLegacy(element, kind, { free: true, charge: opts.charge, aim: opts.aim, skillId: opts.skillId, awakened: opts.awakened, castId: opts.castId }) !== false; }
       catch (err) { log('legacySword:' + element + kind, '[skills] legacy sword failed', element, kind, err); }
       return false;
     },

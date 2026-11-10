@@ -321,7 +321,7 @@ export function installRuntime(game, K) {
     // must play the skill the tree describes (meteor, fire spirit, ...), not the old v2 sword move list.
     const legacyOk = def.legacy && (fam === 'caster' ? ctx.style === 'staff' || !ctx.style
       : fam === 'melee' ? def.slot !== 'ultimate' && def.slot !== 'support' : true);
-    if (legacyOk && K.adapters.tryLegacy(def, fam, el, { charge: opts.charge, aim: ctx.aim, skillId: id, awakened: ctx.awakened })) return 'legacy';
+    if (legacyOk && K.adapters.tryLegacy(def, fam, el, { charge: opts.charge, aim: ctx.aim, skillId: id, awakened: ctx.awakened, castId: ctx.castId })) return 'legacy';
     // finisher without legacy: cinematic path (works for all 9 elements, §16)
     if (def.slot === 'finisher' && game.cinematic?.finisher && !game.cinematic.isStub) {
       const target = ctx.aim?.target;

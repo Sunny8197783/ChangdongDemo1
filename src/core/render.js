@@ -17,7 +17,7 @@ export function createRender(game, { renderer, scene, camera, rawCompile, sceneT
   //      driver's per-state pipeline and the geometry upload are paid before first sight:
   //      scene objects → 64×64 HalfFloat target with the main scene's lights (only the object's layer is drawn);
   //      threat-scene objects → a 1×1 scissored draw on the canvas (the sRGB canvas variant).
-  const WARM_LAYER = 30;
+  const WARM_LAYER = 29;   // 30 = player HIDDEN_LAYER, 31 = CLEAR_LAYER, 1 = world shadow-only
   const warmRT = new THREE.WebGLRenderTarget(64, 64, { type: THREE.HalfFloatType, depthBuffer: true });
   warmRT.texture.name = 'warm64';
   const warmCam = new THREE.PerspectiveCamera(60, 1, 0.05, 2000);
