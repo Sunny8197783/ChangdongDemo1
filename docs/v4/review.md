@@ -1,7 +1,7 @@
 # v4 review gate (PLAN §1.8) — wave C round 1
 
-Reviewer: core integration step. Input: every committed contact sheet in `tools/playtest4/sheets/{caster,melee,mobs,bosses}`
-(52 + 62 + 11 + 6 PNGs, generated on the owner branches; the merged code of those files is unchanged by the integration) and one
+Reviewer: core integration step. Input: every contact sheet in `tools/playtest4/sheets/{caster,melee,mobs,bosses}` (52 + 62 + 11 + 6 PNGs; caster, mobs
+and bosses regenerated from the merged build with `--sheets`, melee as noted below) and one
 R-* frame per class at 960×540 from the merged build (`R-mage`, `R-sword`, `R-ranger`, `R-paladin`, `R-spiritcaller`,
 `R-shadowblade`, `R-boss`; captured after ≈ 5 s of the §1.1 readability rotation; PNGs stay untracked).
 Criteria: the user's points 3 (refined and pretty, not merely flashy; magic circles are the reference), 4 (detailed monster
@@ -11,24 +11,34 @@ Verdict per item: **pass** or **fix** (every fix is also a fix item for its owne
 
 ## Skill contact sheets — caster (`magic`)
 
+Reviewed twice: the branch sheets (v3 camera) and the sheets regenerated from the merged build with `--sheets` (v4 combat
+camera from `player`; these are the committed ones). Verdicts refer to the merged sheets.
+
 | Item | Verdict | Notes |
 |---|---|---|
-| Sheet format (§1.8: 3 frames at 640×360) | **fix** | Every sheet is 528×117 (frames ≈ 176×97 after the 150 KB downscale). At that size the looks cannot be judged; the effect sits ≈ 10 m from a camera behind the mage. Frame the caster from the side / closer, crop each frame around the effect or use fewer, larger frames so a frame stays ≥ 480 px wide. |
-| Visibility of the looks (all 9 elements, B/C/A/Z) | **fix** | In 40+ of 52 sheets the impact frame shows only a 2–6 px sliver (earth.basic, ice.basic, nature.*, shadow.chains, water.*, wind.gust …). Restraint is right (§3), but a skill must still read: the anticipation glyph / circle and the impact linework should be visible at sheet scale. |
-| Ultimates (fire/ice/lightning/wind/water/nature/shadow .ult) | **fix** | The U-tier impact and dissipation frames are empty or near-empty. The ultimate is the one place the plan allows a full rune circle + motif; none is visible. |
-| Archetype × element sheets (cone, nova, projectile, zone) | **fix** | 27 cells per sheet at ≈ 95 px wide: nothing distinguishable. |
-| fire.phoenix framing | **fix** | Camera sits inside the mage (half the frame is the hat). |
-| In-game look (R-mage frame) | **fix** | Three solid ice crystals (ice prison / pillar) stand between the camera and the enemies and cover ≈ 25 % of the screen; the §5.4 near-camera fade / ducking does not reach these spell objects. Burning-grass flames on the left (see world). |
+| Ultimate rune circles (fire, ice, lightning, shadow, water .ult) | pass | Crisp concentric linework in the element `mid` hue, no white wash, the hero stays readable — exactly the "magic circle" quality the user likes. shadow.ult's orb + ring reads well. |
+| light.ult, nature.ult, wind.ult | **fix** | The circle is faint (pale on pale grass) and the impact frame shows no motif; light.ult also exceeds its handle cap (29). |
+| U-tier sheets have only 2 frames | **fix** | fire/ice/light/lightning/nature/shadow/water/wind .ult sheets lack the dissipation frame (§1.8 asks for 3). |
+| B / C / A / Z looks (basic, charged, actives) | **fix** | At the shipped camera most bespoke B/C looks are a 3–10 px sliver next to the staff (fire.basic, ice.basic, lightning.basic, nature.*, wind.*, water.basic, light.basic); MG1.c confirms: detail floors fail for 36/36 bespoke rows on the merged build (fire.basic 448 px). Restraint is right, but each skill needs one legible shape (glyph, crisp ring or arc) at gameplay distance. |
+| earth.charged / earth.ult / earth.wall | **fix** | Large dark-brown opaque slabs; they read heavy and block the view — use the earth ramp's lighter steps and linework edges instead of near-black solids. |
+| water.charged | **fix** | An opaque saturated blue dome covers the target and the ground around it (fill, not linework). |
+| fire.phoenix framing | **fix** | The sheet camera sits inside the mage (half the frame is the hat / a black silhouette). |
+| Archetype × element sheets | **fix** | 27 cells per sheet at ≈ 95 px wide; only cone·water, nova·fire and nova·lightning are visible. Use larger cells. |
+| In-game look (R-mage frame) | **fix** | Three solid ice crystals (ice prison / pillar) stand between the camera and the enemies and cover ≈ 25 % of the screen; the §5.4 near-camera fade / ducking does not reach these spell objects. |
 
 ## Skill contact sheets — melee (`melee`)
 
+Reviewed twice: the branch sheets (v3 camera) and the sheets regenerated from the merged build (v4 combat camera; committed).
+
 | Item | Verdict | Notes |
 |---|---|---|
-| Sheet framing | **fix** | A tree trunk stands between the camera and the hero on the ML1 spot in ≈ 50 of 62 sheets and covers the swing. Move the spot or the camera. Leftovers of earlier casts (burning grass, soaked blue ground) appear in the anticipation frames of later casts (ice.nova, ice.prison, ice.slide, earth.*, light.*). |
-| Element identity | **fix** | earth, nature, wind and water basics/charged/zone share the same pale cyan column + cyan ground pool; earth should read as rock/sand linework, nature as leaf/vine green. |
-| fire, ice.nova, shadow (charged, step, ult), lightning.mine | pass | Distinct silhouettes in the element hue, crisp edges, no white wash; shadow.ult's crescent blades are the best melee look. |
-| Opacity / fill | **fix** | fire.ember, fire.rising, fire.cyclone, fire.sup and fire.awakened stack many tall flame sprites around the hero; read as fill rather than linework (point 3: "flashy, not refined"). |
-| In-game look (R-sword, R-paladin frames) | **fix** | R-paladin: tall orange flame cards fill the lower half of the screen (burning grass from the paladin's fire skill + the skill's own flames) — enemies are not visible. R-sword: earth spikes and a light pillar are fine, but no enemy is in view at the sampled moment (rotation aims away). |
+| Sheet framing | **fix** | On the ML1 spot a tree trunk and its canopy sit between the camera and the hero in ≈ 55 of 62 merged sheets; the canopy covers the top third and the trunk the swing. Move the spot or the camera. |
+| Visibility at the shipped camera | **fix** | With the v4 combat camera most looks shrink to a few px around the hero (earth.basic, fire.basic, light.basic, lightning.basic, nature.*, water.*, wind.*); ML1.c detail floors fail for 36/36 bespoke rows on the merged build. Each swing needs one legible arc / ring at gameplay distance. |
+| ice.nova crystals, shadow.ult crescent + rings, light.sanctuary ring, ice.ult / water.ult ground lines | pass | Crisp, element-coloured, readable without fill; these match the "magic circle" quality. |
+| Element identity (branch sheets) | **fix** | On the branch sheets earth, nature, wind and water basics / charged / zone shared one pale cyan column + cyan pool; in the merged sheets they are too small to tell apart (ML1.f IoU: projectile lightning/wind 0.61, zone wind/water 0.64). |
+| Opacity / fill (fire family, branch sheets) | **fix** | fire.ember, fire.rising, fire.cyclone, fire.sup and fire.awakened stacked tall flame sprites around the hero (fill rather than linework). |
+| Leftovers between casts | **fix** | Burning grass and soaked ground from earlier casts show in later anticipation frames (ice.nova, ice.prison, ice.slide on the branch). |
+| In-game look (R-sword, R-paladin frames) | **fix** | R-paladin: tall orange flame cards fill the lower half of the screen (burning grass lit by the paladin's fire skill + the skill's own flames) — enemies are hidden. R-sword: earth spikes and a light pillar are fine, but no enemy is in view at the sampled moment. |
 
 ## Model turntables — mobs (`mobmodels`)
 
