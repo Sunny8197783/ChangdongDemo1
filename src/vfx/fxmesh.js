@@ -144,8 +144,9 @@ export function createFxMesh(game, hooks = {}) {
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
     const cap = f.cap;
     if (!f.attrs) {
-      const mk = () => { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4); a.setUsage(THREE.DynamicDrawUsage); return a; };
-      f.attrs = { life: mk(), tint: mk() };
+      // life | tint interleaved (stride 8): one upload per family instead of two (fix round 1)
+      const buf = new THREE.InstancedInterleavedBuffer(new Float32Array(cap * 8), 8, 1); buf.setUsage(THREE.DynamicDrawUsage);
+      f.attrs = { buf, life: new THREE.InterleavedBufferAttribute(buf, 4, 0), tint: new THREE.InterleavedBufferAttribute(buf, 4, 4) };
     }
     geo.setAttribute('iLife', f.attrs.life); geo.setAttribute('iTint', f.attrs.tint);
     const old = f.mesh;
@@ -216,7 +217,7 @@ export function createFxMesh(game, hooks = {}) {
       const n = f.n;
       order.length = n; for (let i = 0; i < n; i++) order[i] = f.recs[i];
       if (n > 1 && n <= 64) order.sort((a, b) => b.depth - a.depth);    // back to front
-      const L = f.attrs.life.array, Tn = f.attrs.tint.array;
+      const LT = f.attrs.buf.array;
       let outlineN = 0;
       for (let i = 0; i < n; i++) {
         const r = order[i];
@@ -229,9 +230,9 @@ export function createFxMesh(game, hooks = {}) {
         _s.copy(r.scale).multiplyScalar(sc * r.userScale);
         _m.compose(r.pos, _q, _s);
         f.mesh.setMatrixAt(i, _m);
-        const k = i * 4;
-        L[k] = er; L[k + 1] = al * r.mul; L[k + 2] = r.shape.index; L[k + 3] = r.enemy ? 1 : 0;
-        Tn[k] = r.tint.r; Tn[k + 1] = r.tint.g; Tn[k + 2] = r.tint.b; Tn[k + 3] = r.tintAmt;
+        const k = i * 8;
+        LT[k] = er; LT[k + 1] = al * r.mul; LT[k + 2] = r.shape.index; LT[k + 3] = r.enemy ? 1 : 0;
+        LT[k + 4] = r.tint.r; LT[k + 5] = r.tint.g; LT[k + 6] = r.tint.b; LT[k + 7] = r.tintAmt;
         if (r.shape.outline && hooks.outlinesOn()) outlineN++;
         const z = Math.max(r.depth, 0.4);
         if (r.depth > -2) { const rad = r.shape.radius * Math.max(_s.x, _s.y, _s.z); let c = 0.55 * Math.PI * rad * rad * p00 * p11 / (4 * z * z) * (1 - er) * Math.min(1, al * 1.5);
@@ -243,7 +244,7 @@ export function createFxMesh(game, hooks = {}) {
       f.mesh.visible = n > 0; f.outline.visible = outlineN > 0 && n > 0;
       if (n > 0) {
         const im = f.mesh.instanceMatrix; im.clearUpdateRanges(); im.addUpdateRange(0, n * 16); im.needsUpdate = true;
-        for (const a of [f.attrs.life, f.attrs.tint]) { a.clearUpdateRanges(); a.addUpdateRange(0, n * 4); a.needsUpdate = true; }
+        { const a = f.attrs.buf; a.clearUpdateRanges(); a.addUpdateRange(0, n * 8); a.needsUpdate = true; }
         calls += 1 + (f.outline.visible ? 1 : 0);
       }
     }

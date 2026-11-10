@@ -41,9 +41,13 @@ export function createStripBatch(game, { blocks = 8, pts = 32, material, name, o
   const nv = blocks * pts * 2;
   const g = new THREE.BufferGeometry();
   const P = new Float32Array(nv * 3), T = new Float32Array(nv * 4), C = new Float32Array(nv * 3), C2 = new Float32Array(nv * 3);
-  const mk = (arr, n) => new THREE.BufferAttribute(arr, n).setUsage(THREE.DynamicDrawUsage);
-  const aP = mk(P, 3), aT = mk(T, 4), aC = mk(C, 3), aC2 = mk(C2, 3);
-  g.setAttribute('position', aP); g.setAttribute('aT', aT); g.setAttribute('aC', aC); g.setAttribute('aC2', aC2);
+  // writers fill the four CPU arrays; flush() packs the live range into ONE interleaved buffer (P3 | T4 | C3 | C2 3, stride 13)
+  // so a batch costs one bufferSubData per frame instead of four (fix round 1)
+  const IB = new THREE.InterleavedBuffer(new Float32Array(nv * 13), 13); IB.setUsage(THREE.DynamicDrawUsage);
+  const I = IB.array;
+  for (let v = 0; v < nv; v++) I[v * 13 + 1] = -1e4;
+  g.setAttribute('position', new THREE.InterleavedBufferAttribute(IB, 3, 0)); g.setAttribute('aT', new THREE.InterleavedBufferAttribute(IB, 4, 3));
+  g.setAttribute('aC', new THREE.InterleavedBufferAttribute(IB, 3, 7)); g.setAttribute('aC2', new THREE.InterleavedBufferAttribute(IB, 3, 10));
   const idx = [];
   for (let b = 0; b < blocks; b++) for (let k = 0; k < pts - 1; k++) { const v = (b * pts + k) * 2; idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2); }
   g.setIndex(idx);
@@ -62,7 +66,13 @@ export function createStripBatch(game, { blocks = 8, pts = 32, material, name, o
       mesh.visible = hi >= 0;
       if (hi < 0) return 0;
       const n = (hi + 1) * pts * 2;
-      for (const [a, s] of [[aP, 3], [aT, 4], [aC, 3], [aC2, 3]]) { a.clearUpdateRanges(); a.addUpdateRange(0, n * s); a.needsUpdate = true; }
+      for (let v = 0, j = 0, v3 = 0, v4 = 0; v < n; v++, j += 13, v3 += 3, v4 += 4) {
+        I[j] = P[v3]; I[j + 1] = P[v3 + 1]; I[j + 2] = P[v3 + 2];
+        I[j + 3] = T[v4]; I[j + 4] = T[v4 + 1]; I[j + 5] = T[v4 + 2]; I[j + 6] = T[v4 + 3];
+        I[j + 7] = C[v3]; I[j + 8] = C[v3 + 1]; I[j + 9] = C[v3 + 2];
+        I[j + 10] = C2[v3]; I[j + 11] = C2[v3 + 1]; I[j + 12] = C2[v3 + 2];
+      }
+      IB.clearUpdateRanges(); IB.addUpdateRange(0, n * 13); IB.needsUpdate = true;
       g.setDrawRange(0, (hi + 1) * (pts - 1) * 6);
       return 1;
     },

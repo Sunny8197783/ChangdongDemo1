@@ -185,9 +185,10 @@ async function functional(PT, root) {
     const mC = new T.MeshBasicMaterial({ color: 0x2f8fd6, transparent: true });
     const k0 = mA.customProgramCacheKey();
     V.applyPlayerFx(mA, { role: 'line' }); V.applyPlayerFx(mB, { role: 'line' }); V.applyPlayerFx(mC, { role: 'fill' });
-    const ka = mA.customProgramCacheKey(), kb = mB.customProgramCacheKey(), kc = mC.customProgramCacheKey();
+    const mD = new T.MeshBasicMaterial({ color: 0x2f8fd6, transparent: true }); V.applyPlayerFx(mD, { role: 'line', additive: true });
+    const ka = mA.customProgramCacheKey(), kb = mB.customProgramCacheKey(), kc = mC.customProgramCacheKey(), kd = mD.customProgramCacheKey();
     const sh = new T.MeshBasicMaterial(); sh.userData.shared = true; V.applyPlayerFx(sh);
-    PT.check('applyPlayerFx: distinct program keys (prev key + role), shared materials refused', ka !== kb && ka !== kc && kb !== kc && ka.startsWith(k0) && ka.includes('awfx:line') && !sh.userData.__awFx, { ka: ka.slice(-40), kb: kb.slice(-40), kc });
+    PT.check('applyPlayerFx: keeps the previous key, role / blend are uniforms (no key split), shared materials refused', ka !== kb && ka !== kc && kc === kd && ka.startsWith(k0) && ka.endsWith('|awfx') && !sh.userData.__awFx, { ka: ka.slice(-40), kb: kb.slice(-40), kc, kd });
     const geo = new T.PlaneGeometry(1, 1); const cam2 = g.camera; const ms = [mA, mB, mC].map((m) => { const o = new T.Mesh(geo, m); o.position.copy(cam2.position).addScaledVector(f, 5); g.scene.add(o); return o; });
     g.renderNow();
     const progs = ms.map((o) => g.renderer.properties.get(o.material).currentProgram);
@@ -241,14 +242,14 @@ async function functional(PT, root) {
     V.burst(P0, { count: 10, shape: 'flare', color: [0xffffff, 0xff2a3d], owner: 'enemy', size: 5 });
     const O = g.scene.children.find((o) => o.name === 'vfx-particles-enemy');
     PT.step(0.016);
-    const arr = O.geometry.attributes.iCol.array, n = O.geometry.instanceCount;
+    const ca = O.geometry.attributes.iCol, n = O.geometry.instanceCount;
     const hiSet = new Set(els.map((e) => K.ramp(e).hi.getHex()));
     let hiHits = 0, reserved = 0, maxSize = 0;
     const cc = new T.Color();
-    const pos = O.geometry.attributes.iPos.array;
+    const pa = O.geometry.attributes.iPos;
     for (let i = 0; i < O.geometry.instanceCount; i++) {
-      cc.setRGB(arr[i * 4], arr[i * 4 + 1], arr[i * 4 + 2]); const h = cc.getHex();
-      if (hiSet.has(h)) hiHits++; if (V.debug.isReservedHue(h)) reserved++; maxSize = Math.max(maxSize, pos[i * 4 + 3]);
+      cc.setRGB(ca.getX(i), ca.getY(i), ca.getZ(i)); const h = cc.getHex();
+      if (hiSet.has(h)) hiHits++; if (V.debug.isReservedHue(h)) reserved++; maxSize = Math.max(maxSize, pa.getW(i));
     }
     const lwE = K._lw.pools.enemy; let lwHi = 0, lwRes = 0;
     for (let i = 0; i < lwE.n; i++) { const r = lwE.recs[i]; if (hiSet.has(r.c.getHex())) lwHi++; if (V.debug.isReservedHue(r.c.getHex())) lwRes++; }
@@ -283,6 +284,13 @@ async function functional(PT, root) {
     for (let i = 0; i < 10; i++) { V.flashEntity(d0, 0x8fdcf5, 0.05); PT.step(0.06); }
     const c2 = V.debug.flashClones();
     PT.check('flashEntity never clones per hit (≤ 1 set per entity)', c2 === c1 && c1 - c0 <= 16, { first: c1 - c0, later: c2 - c1 });
+    // repeated-hit cap (fix round 1, user point 6): a sustained combo never holds a mob at solid white
+    const fe = { object: new T.Group(), flashUniform: { value: 0 } };
+    V.flashEntity(fe, 0xffe0b0, 0.08); PT.step(1 / 60); const fFirst = fe.flashUniform.value;
+    let fMax = 0, fHi = 0, fOn = 0, fN = 0;
+    for (let i = 0; i < 120; i++) { V.flashEntity(fe, 0xffe0b0, 0.08); V.flashEntity(fe, 0xffd0ff, 0.08); PT.step(1 / 60); if (i >= 30) { const v = fe.flashUniform.value; fN++; fMax = Math.max(fMax, v); if (v > 0.5) fHi++; if (v > 0.05) fOn++; } }
+    PT.check('flashEntity: first hit full pulse, sustained 120 hits/s capped (max ≤ 0.6, lit ≤ 60 % of frames)', fFirst >= 0.8 && fMax <= 0.6 && fHi === 0 && fOn / fN <= 0.6,
+      { first: +fFirst.toFixed(2), max: +fMax.toFixed(2), litShare: +(fOn / fN).toFixed(2) });
     // screen flash: tinted, ≤ 0.25, ≤ 0.15 s, off with flashReduce
     V.screenFlash(0xffffff, 0.9, 1.0);
     const sf = V.debug.screenFlash();
@@ -296,6 +304,23 @@ async function functional(PT, root) {
     const S = g.settings, PR = S.PRESETS || {};
     const presetOk = PR.low?.particleCap === 500 && PR.low?.additiveCap === 150 && PR.medium?.particleCap === 1000 && PR.medium?.additiveCap === 300 && PR.high?.particleCap === 2000 && PR.high?.additiveCap === 600;
     const cam = g.camera, f = new T.Vector3(); cam.getWorldDirection(f);
+    // foreign player FX (spell / sword objects patched through applyPlayerFx): over budget → the largest items shrink (fix round 1)
+    {
+      V.clear(); K.clear?.();
+      const fm = new T.MeshBasicMaterial({ color: 0x2f8fd6, transparent: true, side: T.DoubleSide }); V.applyPlayerFx(fm, { role: 'fill' });
+      const big = new T.Mesh(new T.SphereGeometry(5, 16, 12), fm); big.position.copy(cam.position).addScaledVector(f, 6.5); big.userData.owner = 'player'; g.scene.add(big);
+      const big2 = new T.Mesh(big.geometry, new T.MeshBasicMaterial({ color: 0x2f8fd6, transparent: true, side: T.DoubleSide })); V.applyPlayerFx(big2.material, { role: 'fill' }); big2.position.copy(big.position).add(new T.Vector3(-f.z, 0, f.x).multiplyScalar(4)); big2.userData.owner = 'player'; g.scene.add(big2);
+      const one = (o) => o === big || o === big2;
+      const fr0 = PT.fragments({ owner: one }).scene;
+      for (let i = 0; i < 40; i++) { big.updateMatrixWorld(); PT.step(1 / 60, true); }
+      const parts = V.debug.coverage().parts, fr1 = PT.fragments({ owner: one }).scene;
+      g.scene.remove(big, big2); big.geometry.dispose(); fm.dispose(); big2.material.dispose();
+      for (let i = 0; i < 40; i++) PT.step(1 / 60);
+      const relax = V.debug.coverage().parts.foreign;
+      PT.check('foreign player FX over budget shrink toward their origin (counted fragments drop, estimate ≤ soft budget), released when gone',
+        parts.foreignRaw > 2 && parts.foreignShrink < 0.9 && fr1 < fr0 * 0.85 && parts.foreign <= 1.5 && relax === 0,
+        { raw: +parts.foreignRaw.toFixed(2), shrink: +parts.foreignShrink.toFixed(2), est: +parts.foreign.toFixed(2), fr0: +fr0.toFixed(2), fr1: +fr1.toFixed(2), relax });
+    }
     const P0 = cam.position.clone().addScaledVector(f, 8);
     const caps = {};
     const v = S.values, keep = { pc: v.particleCap, ac: v.additiveCap };

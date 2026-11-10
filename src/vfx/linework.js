@@ -171,10 +171,13 @@ class Pool {
   constructor(game, mat, cap, owner) {
     this.cap = cap; this.n = 0; this.owner = owner;
     const g = stripGeometry();
-    const mk = (name) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
-    this.A = mk('iA'); this.B = mk('iB'); this.C = mk('iC'); this.D = mk('iD'); this.E = mk('iE'); this.F = mk('iF'); this.G = mk('iG');
-    this.dyn = [this.A, this.E, this.G];
-    this.stat = [this.B, this.C, this.D, this.F];
+    // two interleaved instance buffers (fix round 1: 2 uploads per pool instead of up to 7): per-frame A|E|G (stride 12),
+    // per-record B|C|D|F (stride 16, uploaded only for the changed slot range)
+    const ib = (stride) => { const b = new THREE.InstancedInterleavedBuffer(new Float32Array(cap * stride), stride, 1); b.setUsage(THREE.DynamicDrawUsage); return b; };
+    this.dynB = ib(12); this.statB = ib(16);
+    const at = (name, buf, off) => { const a = new THREE.InterleavedBufferAttribute(buf, 4, off); g.setAttribute(name, a); return a; };
+    this.A = at('iA', this.dynB, 0); this.E = at('iE', this.dynB, 4); this.G = at('iG', this.dynB, 8);
+    this.B = at('iB', this.statB, 0); this.C = at('iC', this.statB, 4); this.D = at('iD', this.statB, 8); this.F = at('iF', this.statB, 12);
     g.instanceCount = 0;
     this.geometry = g;
     this.mesh = new THREE.Mesh(g, mat);
@@ -224,12 +227,11 @@ export function createLinework(game, glyphs, hooks = {}) {
     return rec;
   }
   function writeStatic(P, i) {
-    const r = P.recs[i], k = i * 4;
-    const B = P.B.array, C = P.C.array, D = P.D.array, F = P.F.array;
-    B[k] = r.r2 / Math.max(r.r, 1e-4); B[k + 1] = r.width * 0.5; B[k + 2] = r.minPx; B[k + 3] = r.shapeId;
-    C[k] = r.quat.x; C[k + 1] = r.quat.y; C[k + 2] = r.quat.z; C[k + 3] = r.quat.w;
-    D[k] = r.a0; D[k + 1] = r.a1; D[k + 2] = r.p1; D[k + 3] = r.p2;
-    F[k] = r.c2.r; F[k + 1] = r.c2.g; F[k + 2] = r.c2.b; F[k + 3] = r.core;
+    const r = P.recs[i], k = i * 16, S = P.statB.array;
+    S[k] = r.r2 / Math.max(r.r, 1e-4); S[k + 1] = r.width * 0.5; S[k + 2] = r.minPx; S[k + 3] = r.shapeId;
+    S[k + 4] = r.quat.x; S[k + 5] = r.quat.y; S[k + 6] = r.quat.z; S[k + 7] = r.quat.w;
+    S[k + 8] = r.a0; S[k + 9] = r.a1; S[k + 10] = r.p1; S[k + 11] = r.p2;
+    S[k + 12] = r.c2.r; S[k + 13] = r.c2.g; S[k + 14] = r.c2.b; S[k + 15] = r.core;
     if (i < P.lo) P.lo = i; if (i > P.hi) P.hi = i;
   }
   function kill(P, i) {
@@ -265,9 +267,9 @@ export function createLinework(game, glyphs, hooks = {}) {
           else { r.follow.getWorldPosition(r.pos); if (r.followOff) r.pos.add(r.followOff); }
         }
       }
-      const A = P.A.array, E = P.E.array, G = P.G.array;
+      const Y = P.dynB.array;
       for (let i = 0; i < P.n; i++) {
-        const r = P.recs[i], k = i * 4;
+        const r = P.recs[i], k = i * 12;
         const t = r.t;
         let sc = 1;
         if (r.scaleIn === 2) sc = Math.min(1, t / Math.max(r.life, 1e-3));                       // expand over the whole life
@@ -282,9 +284,9 @@ export function createLinework(game, glyphs, hooks = {}) {
         }
         r.rot += r.spin * dt;
         const R = r.r * sc * r.userScale;
-        A[k] = r.pos.x; A[k + 1] = r.pos.y; A[k + 2] = r.pos.z; A[k + 3] = R;
-        E[k] = r.c.r; E[k + 1] = r.c.g; E[k + 2] = r.c.b; E[k + 3] = al * r.mul;
-        G[k] = r.plane; G[k + 1] = er; G[k + 2] = r.role; G[k + 3] = r.rot;
+        Y[k] = r.pos.x; Y[k + 1] = r.pos.y; Y[k + 2] = r.pos.z; Y[k + 3] = R;
+        Y[k + 4] = r.c.r; Y[k + 5] = r.c.g; Y[k + 6] = r.c.b; Y[k + 7] = al * r.mul;
+        Y[k + 8] = r.plane; Y[k + 9] = er; Y[k + 10] = r.role; Y[k + 11] = r.rot;
         // coverage estimate (screens): drawn area × projected density
         const dz = (r.pos.x - _cam.x) * _fw.x + (r.pos.y - _cam.y) * _fw.y + (r.pos.z - _cam.z) * _fw.z;
         if (dz > 0.2 && al > 0.01) {
@@ -301,10 +303,10 @@ export function createLinework(game, glyphs, hooks = {}) {
       }
       const n = P.n;
       P.geometry.instanceCount = n;
-      for (const a of P.dyn) { a.clearUpdateRanges(); if (n > 0) { a.addUpdateRange(0, n * 4); a.needsUpdate = true; } }
+      { const a = P.dynB; a.clearUpdateRanges(); if (n > 0) { a.addUpdateRange(0, n * 12); a.needsUpdate = true; } }
       if (P.hi >= P.lo) {
         const lo = P.lo, hi = Math.min(P.hi, Math.max(0, n - 1));
-        if (hi >= lo) for (const a of P.stat) { a.clearUpdateRanges(); a.addUpdateRange(lo * 4, (hi - lo + 1) * 4); a.needsUpdate = true; }
+        if (hi >= lo) { const a = P.statB; a.clearUpdateRanges(); a.addUpdateRange(lo * 16, (hi - lo + 1) * 16); a.needsUpdate = true; }
         P.lo = 1e9; P.hi = -1;
       }
       P.mesh.visible = n > 0;

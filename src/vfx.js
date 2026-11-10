@@ -313,31 +313,48 @@ export function createVFX(game) {
     flashSets.set(obj, set);
     return set;
   }
+  // Repeated-hit governor (v4 fix, user point 6): a new pulse starts at most every FLASH_GAP s per entity and its strength falls
+  // with the recent hit rate (heat, half-life ≈ 0.4 s) down to FLASH_MIN, so a sustained combo never holds a mob at solid white
+  // and its windup pose stays readable. First hit: full pulse.
+  const FLASH_GAP = 0.18, FLASH_MIN = 0.35, FLASH_DECAY = 1.7;
+  const flashHeat = new WeakMap();      // fu | flash set → {t0, heat, at}
+  let flashClock = 0;
+  function flashGate(key) {
+    let h = flashHeat.get(key);
+    if (!h) { h = { t0: -1e9, heat: 0, at: 0 }; flashHeat.set(key, h); }
+    h.heat = h.heat * Math.exp(-FLASH_DECAY * Math.max(0, flashClock - h.at)) + 1; h.at = flashClock;
+    if (flashClock - h.t0 < FLASH_GAP) return 0;          // inside the dark gap: no new pulse
+    h.t0 = flashClock;
+    return Math.max(FLASH_MIN, Math.min(1, 1.6 / (h.heat + 0.6)));
+  }
   function flashEntity(entity, color, duration = 0.1) {
     const obj = entity?.object || entity;
     if (!obj) return;
     const fu = entity?.flashUniform;
     if (fu && fu.value !== undefined) {   // mobmodels / bosses: one shared uniform (number or {color, amount})
+      const amt = flashGate(fu); if (!amt) return;
       let f = flashing.find((x) => x.fu === fu);
-      if (!f) { f = { fu, t: 0, dur: 0.1, color: new THREE.Color(), set: null }; flashing.push(f); }
-      f.t = 0; f.dur = Math.max(0.02, duration); f.color.setHex(color ?? 0xffe0b0);
+      if (!f) { f = { fu, t: 0, dur: 0.1, amt: 1, color: new THREE.Color(), set: null }; flashing.push(f); }
+      f.t = 0; f.amt = amt; f.dur = Math.min(0.1, Math.max(0.02, duration)); f.color.setHex(color ?? 0xffe0b0);
       return;
     }
     if (!obj.traverse) return;
     const set = flashSetOf(obj);
+    const amt = flashGate(set); if (!amt) return;
     let f = flashing.find((x) => x.set === set);
     if (!f) {
-      f = { fu: null, set, t: 0, dur: 0.1, color: new THREE.Color() }; flashing.push(f);
+      f = { fu: null, set, t: 0, dur: 0.1, amt: 1, color: new THREE.Color() }; flashing.push(f);
       for (const r of set.meshes) { if (r.m.material === r.orig) r.m.material = r.flash; }
     }
-    f.t = 0; f.dur = Math.max(0.02, duration); f.color.setHex(color ?? 0xffe0b0);
+    f.t = 0; f.amt = amt; f.dur = Math.min(0.1, Math.max(0.02, duration)); f.color.setHex(color ?? 0xffe0b0);
   }
   const _fc = new THREE.Color();
   function updateFlashes(realDt) {
+    flashClock += realDt;
     for (let i = flashing.length - 1; i >= 0; i--) {
       const f = flashing[i];
       f.t += realDt;
-      const p = f.t / f.dur, k = p >= 1 ? 0 : 1 - p * p;
+      const p = f.t / f.dur, k = (p >= 1 ? 0 : 1 - p * p) * f.amt;
       if (f.fu) {
         if (typeof f.fu.value === 'number') f.fu.value = k;
         else if (f.fu.value?.isColor) f.fu.value.copy(f.color).multiplyScalar(k);
@@ -600,9 +617,13 @@ export function createVFX(game) {
       runes.update(fdt, rd);
       applyCamera(rd);
       // budgets: coverage (largest contributor shrinks first) and draw calls (oldest persistent visuals collapse)
-      const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() }, rd);
+      // player FX built outside the kit (spell / sword objects through applyPlayerFx) get what the kit leaves of the budget
+      // (its own share of the soft budget: the kit estimate is conservative and must not starve the spell fills)
+      const fc = duck.foreignUpdate(budget.st.soft * 0.35, rd);
+      const st = budget.control({ soft: P.softCoverage, particles: P.coverage - P.softCoverage, rest: k.cover + runes.coverage() + fc }, rd);
       P.material.uniforms.uSoftMul.value = st.softMul; P.material.uniforms.uSizeMul.value = st.sizeMul;
-      covState.player = P.coverage + k.cover + runes.coverage(); covState.enemy = O.coverage + otherCover; covState.frame++;
+      covState.parts.foreign = fc; covState.parts.foreignShrink = duck.foreignShrink; covState.parts.foreignRaw = duck.foreignRaw;
+      covState.player = P.coverage + k.cover + runes.coverage() + fc; covState.enemy = O.coverage + otherCover; covState.frame++;
       covState.parts.soft = P.softCoverage; covState.parts.particles = P.coverage - P.softCoverage; covState.parts.linework = k.lwCover; covState.parts.kit = k.cover; covState.parts.runes = runes.coverage();
       if (covState.player > covState.peak) covState.peak = covState.player;
       let calls = (P.count > 0 ? 1 : 0) + k.calls + runes.calls() + debrisFx.calls();

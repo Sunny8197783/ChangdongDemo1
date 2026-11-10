@@ -183,7 +183,8 @@ export function createTelegraphs(game, vfx) {
     void timer;
   }
   function active() { let n = 0; for (const r of recs) if (r.active) n++; return n; }
-  function warm(group) { const m = new THREE.Mesh(recs[0].mesh.geometry, recs[0].mesh.material); m.frustumCulled = false; group.add(m); }
+  // fix round 1: the fallback program is only warmed when the real tells module is absent (−1 program in normal play)
+  function warm(group) { const T = game.tells; if (T && !T.isStub && typeof T.telegraph === 'function') return; const m = new THREE.Mesh(recs[0].mesh.geometry, recs[0].mesh.material); m.frustumCulled = false; group.add(m); }
   function debug() {
     const T = game.tells;
     const real = !!(T && !T.isStub && typeof T.telegraph === 'function');

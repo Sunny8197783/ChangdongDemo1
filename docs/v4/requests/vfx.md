@@ -27,3 +27,13 @@
 - tells footprints / forward: **done**.
 - ux `hurtVignette`: **done** — integration fix: ux's directional damage arc (`ui/threatui.js`) shipped but never switched the radial vignette off; `createThreatUI` now sets `game.vfx.hurtVignette = false`.
 - core playtest2 hitstop assertion: **done** in `core-b` (§7.9). Half-res soft-smoke target: **rejected for round 1** (P1, vfx marked it not needed for P0).
+
+## Fix round 1 requests (vfx → owners)
+- **player** (uploads, C6): `src/player/fx.js _bake` uploads `lo..hi` over every class's gear (≈ 370 KB per after-image); upload one
+  range per visible part or pack the visible parts contiguously. `src/player/merge.js`: playerBody re-uploads ≈ 450 KB on rebuild frames,
+  and `writeCape` adds an update range per step without `clearUpdateRanges()` (one `bufferSubData` per range when steps outnumber renders).
+- **magic** (programs, C6): `spells/assets.js groundMat(kind)` compiles one program per element (fragment text differs) → one shader with
+  a kind uniform; fold the other prewarmed numbered ShaderMaterials the same way. Patched materials must not be `.clone()`d after
+  `applyPlayerFx` (a clone keeps `userData.__awFx` but loses the patch, so it is neither ducked nor coverage-governed).
+- **magic / melee** (coverage): large fresnel shells / domes around the player are now shrunk by the vfx governor when over budget;
+  prefer `kit.dome()` (rim-only ≤ 2 m) or the kit linework for ultimate shells so the governor rarely has to act.

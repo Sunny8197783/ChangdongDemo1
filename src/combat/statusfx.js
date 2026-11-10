@@ -80,7 +80,10 @@ export function createStatusFX(game) {
   function flush() {
     for (const b of batches) {
       b.mesh.count = b.n; b.mesh.visible = b.n > 0;
-      if (b.n) { b.mesh.instanceMatrix.needsUpdate = true; if (b.mesh.instanceColor) b.mesh.instanceColor.needsUpdate = true; }
+      if (b.n) {   // live-range uploads only (fix round 1: was the whole capacity every frame)
+        const im = b.mesh.instanceMatrix; im.clearUpdateRanges(); im.addUpdateRange(0, b.n * 16); im.needsUpdate = true;
+        const ic = b.mesh.instanceColor; if (ic) { ic.clearUpdateRanges(); ic.addUpdateRange(0, b.n * 3); ic.needsUpdate = true; }
+      }
       if (b.outline) { b.outline.count = b.n; b.outline.visible = b.n > 0; }
       b.n = 0;
     }
