@@ -7,6 +7,7 @@
 // learn / unlearn / setRanks / respec / class change / deserialize.
 import { ELEMENTS } from './utils.js';
 import { ALL_ELEMENTS } from './elements.js';
+const NO_GATES = Object.freeze({ forGates: false });   // reused options (mastery() runs per hit)
 import { CLASS_DEFS, access as classAccess } from './classes.js';
 
 export const LEVEL_CAP = 30;
@@ -392,10 +393,10 @@ export function createProgression(game) {
     mastery(el) {
       let o = masteryObjs[el];
       if (!o) o = masteryObjs[el] = { points: 0, rank: 'none', dmgBonus: 0, milestones: [] };
-      const pts = P.pointsIn(el, { forGates: false });
+      const pts = P.pointsIn(el, NO_GATES);
       o.points = pts;
       let rk = 'none';
-      for (const [min, name] of MASTERY_RANKS) if (pts >= min) { rk = name; break; }
+      for (let i = 0; i < MASTERY_RANKS.length; i++) if (pts >= MASTERY_RANKS[i][0]) { rk = MASTERY_RANKS[i][1]; break; }   // no iterator allocation (per-hit path)
       if (rk === '대가' && P.access(el) !== 'primary' && !P.debug.ungate) rk = '전문';
       o.rank = rk;
       o.dmgBonus = 0.02 * Math.min(15, pts);
@@ -408,7 +409,7 @@ export function createProgression(game) {
     /** DESIGN §5.7 방랑자: +4% reaction damage per tree with ≥ 5 points (max 4); 3 such trees → 방랑자의 각성. */
     breadth() { refresh(); return breadthObj; },
     judgmentThreshold() {
-      const m10 = P.pointsIn('light', { forGates: false }) >= 10 ? 4 : 5;
+      const m10 = P.pointsIn('light', NO_GATES) >= 10 ? 4 : 5;
       const p2 = P.rank('light.p2');
       const p2v = p2 >= 2 ? 3 : p2 === 1 ? 4 : 5;
       return Math.max(3, Math.min(5, m10, p2v));
@@ -430,7 +431,7 @@ export function createProgression(game) {
     /** MASTERY ONLY: 1 + 0.02 × min(15, points in tree, granted excluded). */
     damageMul(el) {
       if (!nodeIndex.size && P._legacy?.path === 'master') return el === P._legacy.element ? 1.25 : 1;   // v2 fallback (skills absent)
-      return 1 + 0.02 * Math.min(15, P.pointsIn(el, { forGates: false }));
+      return 1 + 0.02 * Math.min(15, P.pointsIn(el, NO_GATES));
     },
 
     // ---- awakening (enabled iff any capstone OR breadth awakening; v2 master fallback)
