@@ -216,6 +216,8 @@ module.exports = async function player(PT) {
     const buf = P.events('dodgeBuffered'), rej = P.events('dodgeRejected'), dg = P.events('dodge');
     L.fresh();
     const S = g.spells; const had = Object.prototype.hasOwnProperty.call(S, 'castLock'), prev = S.castLock;
+    // magic exposes castLock as a read-only getter (integration): shadow it with a writable data property for the test
+    const desc = Object.getOwnPropertyDescriptor(S, 'castLock'); if (desc && desc.get) Object.defineProperty(S, 'castLock', { value: 0, writable: true, configurable: true, enumerable: true });
     try {
       S.castLock = 0.15;
       const n0 = buf.length, d0 = dg.length;
@@ -246,7 +248,7 @@ module.exports = async function player(PT) {
       const d4 = dg.length; L.press('KeyU'); const afterR = dg.length - d4;
       K.reset();
       PT.check('keymap rebind: dodge follows the binding (U dodges, Q does not)', afterQ === 0 && afterR === 1, { afterQ, afterR });
-    } finally { if (had) S.castLock = prev; else delete S.castLock; }
+    } finally { if (desc && desc.get) Object.defineProperty(S, 'castLock', desc); else if (had) S.castLock = prev; else delete S.castLock; }
   });
 
   // ------------------------------------------------------------ post-hit protection
