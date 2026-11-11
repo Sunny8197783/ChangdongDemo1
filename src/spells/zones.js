@@ -1,7 +1,6 @@
 // Persistent spell zones (fire field, ice field, lava pool, water puddle, storm cloud, tornado)
 // and zone fusions ("combining spells").
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { ELEMENT_COLORS } from '../core/utils.js';
 import {
   groundMat, makeGroundDisc, conformDisc, flameGeo, flameMat, crystalGeo, iceMatSolid, outlineBasic,
@@ -10,9 +9,9 @@ import {
 
 const NAMES = { fire: '화염 지대', ice: '얼음 지대', lava: '용암 지대', water: '물웅덩이', storm: '뇌우', tornado: '대회오리' };
 const LIFT = { fire: 0.12, ice: 0.22, lava: 0.3, water: 0.3, storm: 0.3, tornado: 0.1 };
-const WHITE = new THREE.Color(GLINT);
+const WHITE = new THREE.Color(0xffffff);
 const TORNADO_COLORS = {
-  wind: [0xeafff6, 0x5fa890], fire: [0xffd060, 0xe8360a], ice: [glint(0x5aaee8), 0x5aaee8], lightning: [0xf3e8ff, 0x7a4ae0],
+  wind: [0xeafff6, 0x5fa890], fire: [0xffd060, 0xe8360a], ice: [0xffffff, 0x5aaee8], lightning: [0xf3e8ff, 0x7a4ae0],
 };
 
 export function createZones(S) {
@@ -29,43 +28,12 @@ export function createZones(S) {
   // geometries shared by every pooled visual of a type (built once, never per pooled visual)
   const _geo = new Map();
   const sgeo = (k, fn) => { let g = _geo.get(k); if (!g) { g = fn(); _geo.set(k, g); } return g; };
-  const _groundMats = new Map();
-  const sharedGroundMat = (kind) => { let m = _groundMats.get(kind); if (!m) { m = groundMat(kind); _groundMats.set(kind, m); } return m; };
-  function discUniforms(r, sc, cam, geo, mat) {
-    const u = this.userData.u, mu = mat.uniforms;
-    mu.fade.value = u.fade.value; mu.radius.value = u.radius.value; mu.zap.value = u.zap.value; mu.seed.value = u.seed.value;
-    mat.uniformsNeedUpdate = true;
-  }
-  const _tornMats = new Map();
-  const sharedTornadoMat = (role) => { let m = _tornMats.get(role); if (!m) { m = tornadoMat(); _tornMats.set(role, m); } return m; };
-  function tornadoUniforms(r, sc, cam, geo, mat) {
-    const u = this.userData.mat.uniforms, mu = mat.uniforms;
-    mu.colA.value.copy(u.colA.value); mu.colB.value.copy(u.colB.value); mu.opacity.value = u.opacity.value; mu.speed.value = u.speed.value;
-    mat.uniformsNeedUpdate = true;
-  }
-  const _coreMats = new Map();
-  function tornadoCoreMat(el) {
-    const inf = el && el !== 'wind', key = inf ? el : 'wind';
-    let m = _coreMats.get(key);
-    if (!m) {
-      const b = (TORNADO_COLORS[key] || TORNADO_COLORS.wind)[1];
-      m = toonMat(0x9cc8b4, { emissive: 0x2a5a48, emissiveIntensity: 0.2 });
-      if (inf) { m.color.set(b).lerp(WHITE, 0.25); m.emissive.set(b); m.emissiveIntensity = 0.5; }
-      _coreMats.set(key, m);
-    }
-    return m;
-  }
-  for (const k of Object.keys(TORNADO_COLORS)) tornadoCoreMat(k);   // boot, not on the first infusion
   function makeVisual(type) {
     const g = new THREE.Group();
     const parts = { group: g };
     if (type !== 'tornado') {
       const kind = type === 'storm' ? 'water' : type;
-      // geometry per visual (conformed to the terrain in place); ONE material per kind (v4 §2: 0 new materials per cast): the per-disc
-      // uniforms live in disc.userData.u and are copied in just before the disc draws
-      const disc = new THREE.Mesh(makeGroundDisc(type === 'storm' ? 20 : 18), sharedGroundMat(kind));
-      disc.userData.u = { fade: { value: 1 }, radius: { value: 3 }, zap: { value: 0 }, seed: { value: Math.random() * 10 } };
-      disc.onBeforeRender = discUniforms;
+      const disc = new THREE.Mesh(makeGroundDisc(type === 'storm' ? 20 : 18), groundMat(kind));   // per visual: conformed to the terrain in place
       disc.renderOrder = 2; disc.frustumCulled = false;
       g.add(disc); parts.disc = disc;
     }
@@ -94,7 +62,7 @@ export function createZones(S) {
         pg.setAttribute('color', new THREE.BufferAttribute(col, 3));
         return pg;
       });
-      const cloudMat = toonMat(GLINT, { vertexColors: true, emissive: 0x4a2a80, emissiveIntensity: 0.25 });
+      const cloudMat = toonMat(0xffffff, { vertexColors: true, emissive: 0x4a2a80, emissiveIntensity: 0.25 });
       const cloud = new THREE.InstancedMesh(puffGeo, cloudMat, n);
       parts.cloudMat = cloudMat; parts.flick = 0;
       // single soft silhouette: one shell per puff would show between lobes, so the outline is hidden
@@ -114,20 +82,19 @@ export function createZones(S) {
       g.add(cloud, ol, rain); parts.cloud = cloud; parts.cloudOutline = ol; parts.rain = rain;
     }
     if (type === 'tornado') {
-      // shared materials (one per role); per-visual colour / opacity / speed in mesh.userData.mat (same shape as material.uniforms)
-      const tw = (role, speed) => { const u = { uniforms: { colA: { value: new THREE.Color(0xeafff6) }, colB: { value: new THREE.Color(0x5fa890) }, opacity: { value: 1 }, speed: { value: speed } } }; return u; };
-      const u1 = tw('outer', 1), u2 = tw('inner', 1.6), u3 = tw('base', 1);
-      const outer = new THREE.Mesh(tornadoGeo(), sharedTornadoMat('outer')); outer.userData.mat = u1; outer.onBeforeRender = tornadoUniforms;
-      const inner = new THREE.Mesh(tornadoGeo(), sharedTornadoMat('inner')); inner.userData.mat = u2; inner.onBeforeRender = tornadoUniforms;
+      const mat1 = tornadoMat(), mat2 = tornadoMat();
+      const outer = new THREE.Mesh(tornadoGeo(), mat1);
+      const inner = new THREE.Mesh(tornadoGeo(), mat2);
       inner.scale.set(0.62, 0.95, 0.62);
-      const base = new THREE.Mesh(sgeo('torus', () => new THREE.TorusGeometry(1, 0.35, 8, 32)), sharedTornadoMat('base')); base.userData.mat = u3; base.onBeforeRender = tornadoUniforms;
+      mat2.uniforms.speed.value = 1.6;
+      const base = new THREE.Mesh(sgeo('torus', () => new THREE.TorusGeometry(1, 0.35, 8, 32)), tornadoMat());
       base.rotation.x = Math.PI / 2; base.position.y = 0.3; base.scale.set(2.2, 2.2, 1);
       outer.renderOrder = inner.renderOrder = 6;
-      // opaque toon-shaded core gives the funnel a readable body against the sky (one cached material per infusion element)
-      const core = new THREE.Mesh(tornadoGeo(), tornadoCoreMat('wind'));
+      // opaque toon-shaded core gives the funnel a readable body against the sky
+      const core = new THREE.Mesh(tornadoGeo(), toonMat(0x9cc8b4, { emissive: 0x2a5a48, emissiveIntensity: 0.2 }));
       core.castShadow = true;
       g.add(outer, inner, base, core); parts.outer = outer; parts.inner = inner; parts.base = base; parts.core = core;
-      parts.mats = [u1, u2, u3];
+      parts.mats = [mat1, mat2, base.material];
     }
     return parts;
   }
@@ -157,13 +124,7 @@ export function createZones(S) {
       strikeDmg: o.strikeDmg ?? 18, strikeMul: o.strikeMul ?? 1, dmgMul: o.dmgMul ?? 1,
     };
     setupVisual(z);
-    // v4: linework zone look (looks.zone) instead of the filled disc / opaque funnel / cloud puffs; travelling zones follow a proxy
-    z.cur = S.looks?.cur || null; z.look = null; z.proxy = null; z.v4 = false;
-    if (S.looks?.on()) {
-      z.v4 = true; z.vis.group.visible = false;
-      if (type === 'tornado' || type === 'storm') { z.proxy = new THREE.Object3D(); z.proxy.position.copy(z.pos); z.proxy.name = 'spells-zone-proxy'; scene.add(z.proxy); }
-      z.look = S.looks.zone(type, z.pos.clone(), z.radius, z.duration + 0.3, { follow: z.proxy, el: type === 'lava' ? 'fire' : type === 'storm' ? 'lightning' : type === 'tornado' ? 'wind' : type });
-    }
+    z.cur = S.cast?.cur || null;
     zones.push(z);
     // terrain interaction (grass fire / extinguish / walkable ice)
     z.terrT = 0.9;
@@ -178,8 +139,8 @@ export function createZones(S) {
     if (p.disc) {
       conformDisc(p.disc.geometry, game.world, z.pos.x, z.pos.z, z.type === 'storm' ? R * 0.9 : R, LIFT[z.type] + Math.random() * 0.02);
       p.disc.position.set(z.pos.x, 0, z.pos.z);
-      p.disc.userData.u.radius.value = z.type === 'storm' ? R * 0.9 : R;
-      p.disc.userData.u.seed.value = Math.random() * 20;
+      p.disc.material.uniforms.radius.value = z.type === 'storm' ? R * 0.9 : R;
+      p.disc.material.uniforms.seed.value = Math.random() * 20;
     }
     if (p.crystals) {
       const d = p.crystalData;
@@ -209,25 +170,19 @@ export function createZones(S) {
   function setTornadoColor(z, el) {
     const [a, b] = TORNADO_COLORS[el] || TORNADO_COLORS.wind;
     for (const m of z.vis.mats) { m.uniforms.colA.value.set(a); m.uniforms.colB.value.set(b); }
-    if (z.vis.core) z.vis.core.material = tornadoCoreMat(el);
+    if (z.vis.core) { const inf = el && el !== 'wind'; const m = z.vis.core.material; m.color.set(inf ? b : 0x9cc8b4); if (inf) m.color.lerp(WHITE, 0.25); m.emissive.set(inf ? b : 0x2a5a48); m.emissiveIntensity = inf ? 0.5 : 0.2; }
   }
 
-  function dropLook(z) {
-    if (z.look) { S.looks?.stopAll(z.look); z.look = null; }
-    if (z.proxy) { scene.remove(z.proxy); z.proxy = null; }
-    if (z.v4) { z.v4 = false; z.vis.group.visible = true; }
-  }
   function remove(i) {
     const z = zones[i];
     zones.splice(i, 1);
-    dropLook(z);
     giveVisual(z.type, z.vis);
     try { z.onEnd?.(z); } catch (_) { /* */ }
   }
   function convert(z, type, duration) {
     const i = zones.indexOf(z);
     if (i < 0) return null;
-    zones.splice(i, 1); dropLook(z); giveVisual(z.type, z.vis);
+    zones.splice(i, 1); giveVisual(z.type, z.vis);
     return spawn(type, z.pos, { radius: z.radius, duration });
   }
 
@@ -258,11 +213,11 @@ export function createZones(S) {
       if (z.comboT > 0 && z.type !== 'tornado') continue;
       if (z.type === 'ice' && el === 'fire') { steamBurst(z); continue; }
       if (z.type === 'fire' && el === 'ice') {
-        S.vfx('burst', z.pos, { count: 30, color: [glint(0xdde6ee), 0xdde6ee], shape: 'smoke', speed: 3, spread: 1, size: 1, sizeEnd: 2.4, life: 1.2, drag: 2, gravity: 1.5, additive: false });
+        S.vfx('burst', z.pos, { count: 30, color: [0xffffff, 0xdde6ee], shape: 'smoke', speed: 3, spread: 1, size: 1, sizeEnd: 2.4, life: 1.2, drag: 2, gravity: 1.5, additive: false });
         S.sfx('steam', { position: z.pos }); remove(zones.indexOf(z)); continue;
       }
       if (z.type === 'water' && el === 'fire') {
-        S.vfx('burst', z.pos, { count: 26, color: [glint(0xdde6ee), 0xdde6ee], shape: 'smoke', speed: 3, spread: 1, size: 1, sizeEnd: 2.2, life: 1.1, drag: 2, gravity: 1.5, additive: false });
+        S.vfx('burst', z.pos, { count: 26, color: [0xffffff, 0xdde6ee], shape: 'smoke', speed: 3, spread: 1, size: 1, sizeEnd: 2.2, life: 1.1, drag: 2, gravity: 1.5, additive: false });
         S.sfx('steam', { position: z.pos }); remove(zones.indexOf(z)); continue;
       }
       if ((z.type === 'water' || z.type === 'storm') && el === 'lightning') { electroWater(z); continue; }
@@ -275,10 +230,10 @@ export function createZones(S) {
 
   function steamBurst(z) {
     const p = v2.copy(z.pos); p.y += 0.5;
-    S.vfx('burst', p, { count: 70, color: [glint(0xe6eef5), 0xe6eef5], shape: 'smoke', speed: 9, spread: 1, size: 1.4, sizeEnd: 4, life: 1.8, lifeVar: 0.5, drag: 2.2, gravity: 2.5, additive: false });
-    S.vfx('burst', p, { count: 40, color: [glint(0x9feaff), 0x9feaff], shape: 'spark', speed: 14, spread: 1, size: 0.12, life: 0.5, drag: 2 });
-    S.vfx('shockwave', p, { color: GLINT, radius: z.radius + 3, duration: 0.6, thickness: 1.2 });
-    S.vfx('flash', p, { color: 0xfff0e0, intensity: 1.2, distance: 16, duration: 0.4 });
+    S.vfx('burst', p, { count: 70, color: [0xffffff, 0xe6eef5], shape: 'smoke', speed: 9, spread: 1, size: 1.4, sizeEnd: 4, life: 1.8, lifeVar: 0.5, drag: 2.2, gravity: 2.5, additive: false });
+    S.vfx('burst', p, { count: 40, color: [0xffffff, 0x9feaff], shape: 'spark', speed: 14, spread: 1, size: 0.12, life: 0.5, drag: 2 });
+    S.vfx('shockwave', p, { color: 0xffffff, radius: z.radius + 3, duration: 0.6, thickness: 1.2 });
+    S.vfx('flash', p, { color: 0xfff0e0, intensity: 7, distance: 16, duration: 0.4 });
     S.vfx('shake', 0.45);
     S.sfx('steam', { position: p }); S.sfx('explode_fire', { position: p, pitch: 0.7 });
     hitAll(z, (e) => S.combat.dealDamage(e, { amount: 38, element: 'fire', source: 'player', point: center(e, new THREE.Vector3()), launch: 6, knockback: 6, noReaction: true, status: { wet: 5 }, tags: ['fusion'] }), 1.5);
@@ -293,19 +248,19 @@ export function createZones(S) {
       const a = rp(z).clone(); const b = rp(z).clone();
       S.vfx('beam', a, b, { color: ELEMENT_COLORS.lightning, width: 0.12, duration: 0.3, jagged: 0.5, segments: 10, branches: 1 });
     }
-    S.vfx('flash', surf, { color: 0xc9a4ff, intensity: 1.2, distance: z.radius * 3, duration: 0.3 });
+    S.vfx('flash', surf, { color: 0xc9a4ff, intensity: 6, distance: z.radius * 3, duration: 0.3 });
     S.sfx('impact_lightning', { position: surf });
     hitAll(z, (e) => {
       S.combat.applyStatus(e, 'wet', 4);
       S.combat.applyStatus(e, 'stunned', 1);
       S.combat.dealDamage(e, { amount: 16, element: 'lightning', source: 'player', point: center(e, new THREE.Vector3()), status: { shocked: 3 }, noReaction: true, tags: ['fusion'] });
     }, 0.5);
-    if (z.vis.disc) z.vis.disc.userData.u.zap.value = 1;
+    if (z.vis.disc) z.vis.disc.material.uniforms.zap.value = 1;
     S.combo('electro_water', '전기 수면', surf);
   }
   function freezeWater(z) {
     const p = v2.copy(z.pos); p.y += 0.3;
-    S.vfx('burst', p, { count: 50, color: [glint(0x7fe3ff), 0x7fe3ff], shape: 'shard', speed: 8, spread: 0.8, dir: UP, size: 0.2, life: 0.8, gravity: -8 });
+    S.vfx('burst', p, { count: 50, color: [0xffffff, 0x7fe3ff], shape: 'shard', speed: 8, spread: 0.8, dir: UP, size: 0.2, life: 0.8, gravity: -8 });
     S.vfx('shockwave', p, { color: 0xbff4ff, radius: z.radius + 1.5, duration: 0.5, thickness: 0.8 });
     S.sfx('impact_ice', { position: p });
     hitAll(z, (e) => { S.combat.clearStatus(e, 'wet'); S.combat.applyStatus(e, 'frozen', 3); S.combat.dealDamage(e, { amount: 14, element: 'ice', source: 'player', noReaction: true, tags: ['fusion'] }); }, 0.5);
@@ -317,7 +272,7 @@ export function createZones(S) {
     S.vfx('explosion', p, { element: 'fire', scale: 1.6 });
     S.vfx('burst', p, { count: 80, color: [0xffe080, 0xff3a00], shape: 'ember', speed: 18, dir: UP, spread: 0.3, size: 0.25, life: 1.4, gravity: -18 });
     S.vfx('debris', p, { count: 26, material: 'rock', color: 0x4a2014, size: 0.4, speed: 14, life: 2 });
-    S.vfx('flash', p, { color: 0xff5010, intensity: 1.2, distance: 20, duration: 0.5 });
+    S.vfx('flash', p, { color: 0xff5010, intensity: 10, distance: 20, duration: 0.5 });
     S.vfx('shake', 0.6);
     S.sfx('explode_earth', { position: p }); S.sfx('explode_fire', { position: p });
     for (let i = 0; i < 6; i++) { const q2 = rp(z, 0.7); S.props.pillars.spawn(q2.x, q2.y, q2.z, { height: 1.5 + Math.random() * 2, width: 0.8, hold: 0.8, delay: i * 0.04 }); }
@@ -343,9 +298,9 @@ export function createZones(S) {
     const name = el === 'fire' ? '화염 회오리' : el === 'ice' ? '눈보라' : '뇌전 회오리';
     const id = el === 'fire' ? 'fire_tornado' : el === 'ice' ? 'blizzard' : 'storm_tornado';
     const p = v2.copy(z.pos); p.y += 3;
-    S.vfx('burst', p, { count: 60, color: [ELEMENT_COLORS[el], GLINT], shape: el === 'fire' ? 'ember' : el === 'ice' ? 'snow' : 'spark', speed: 10, spread: 1, size: 0.25, life: 0.9, drag: 1.5 });
+    S.vfx('burst', p, { count: 60, color: [ELEMENT_COLORS[el], 0xffffff], shape: el === 'fire' ? 'ember' : el === 'ice' ? 'snow' : 'spark', speed: 10, spread: 1, size: 0.25, life: 0.9, drag: 1.5 });
     S.vfx('shockwave', z.pos, { color: ELEMENT_COLORS[el], radius: 7, duration: 0.6, thickness: 1 });
-    S.vfx('flash', p, { color: ELEMENT_COLORS[el], intensity: 1.2, distance: 16, duration: 0.4 });
+    S.vfx('flash', p, { color: ELEMENT_COLORS[el], intensity: 6, distance: 16, duration: 0.4 });
     S.vfx('shake', 0.3);
     S.sfx('reaction', { position: p });
     z.time = Math.max(z.time, 3.5);
@@ -388,20 +343,15 @@ export function createZones(S) {
     const t = game.time;
     for (let i = zones.length - 1; i >= 0; i--) {
       const z = zones[i];
-      const prevC = S.looks && z.cur ? S.looks.swap(z.cur) : undefined;
-      try { zoneStep(z, i, dt, t); } finally { if (prevC !== undefined) S.looks.swap(prevC); }
-    }
-  }
-  function zoneStep(z, i, dt, t) {
-    {
+      const prevC = S.cast && z.cur ? S.cast.swap(z.cur) : undefined;   // v4: zone ticks run in their cast context (castId)
+      try {
       z.age += dt; z.time -= dt; z.comboT -= dt; z.zapT -= dt;
-      if (z.time <= 0) { remove(i); return; }
-      if (z.proxy) z.proxy.position.copy(z.pos);
+      if (z.time <= 0) { remove(i); continue; }
       const fadeIn = Math.min(1, z.age / 0.25), fadeOut = Math.min(1, z.time / 0.6);
       const fade = fadeIn * fadeOut;
       const p = z.vis;
       if (p.disc) {
-        const u = p.disc.userData.u;
+        const u = p.disc.material.uniforms;
         u.fade.value = fade;
         u.zap.value = Math.max(0, u.zap.value - dt * 2.5);
       }
@@ -418,6 +368,7 @@ export function createZones(S) {
         case 'storm': updateStorm(z, dt, fade, tickNow, t); break;
         case 'tornado': updateTornado(z, dt, fade, tickNow, t); break;
       }
+      } finally { if (prevC !== undefined) S.cast.swap(prevC); }
     }
   }
 
@@ -436,7 +387,7 @@ export function createZones(S) {
   function updateFire(z, dt, fade, tickNow, t) {
     const p = z.vis, lava = z.type === 'lava';
     const fl = p.flames;
-    for (let i = 0; i < (z.v4 ? 0 : p.flameData.length); i++) {
+    for (let i = 0; i < p.flameData.length; i++) {
       const f = p.flameData[i];
       const k = (0.7 + 0.3 * Math.sin(t * 9 + f.ph) + 0.15 * Math.sin(t * 23 + f.ph * 3)) * fade * f.s * (lava ? 0.7 : 1);
       eu.set(0, f.ph, 0); q.setFromEuler(eu);
@@ -444,7 +395,7 @@ export function createZones(S) {
       v.set(f.x, f.y - 0.05, f.z);
       m4.compose(v, q, sc); fl.setMatrixAt(i, m4);
     }
-    if (!z.v4) fl.instanceMatrix.needsUpdate = true;
+    fl.instanceMatrix.needsUpdate = true;
     z.burstT -= dt;
     if (z.burstT <= 0) {
       z.burstT = lava ? 0.12 : 0.07;
@@ -460,7 +411,7 @@ export function createZones(S) {
   function updateIce(z, dt, fade, tickNow, t) {
     const p = z.vis, d = p.crystalData;
     const grow = Math.min(1, z.age / 0.3) * Math.min(1, z.time / 0.5);
-    for (let i = 0; i < (z.v4 ? 0 : d.length); i++) {
+    for (let i = 0; i < d.length; i++) {
       const c = d[i];
       eu.set(c.tx, c.yaw, c.tz); q.setFromEuler(eu);
       const s = c.s * grow;
@@ -468,16 +419,16 @@ export function createZones(S) {
       m4.compose(v, q, sc); p.crystals.setMatrixAt(i, m4);
       sc.multiplyScalar(1.1); m4.compose(v, q, sc); p.crystalOutline.setMatrixAt(i, m4);
     }
-    if (!z.v4) { p.crystals.instanceMatrix.needsUpdate = true; p.crystalOutline.instanceMatrix.needsUpdate = true; }
+    p.crystals.instanceMatrix.needsUpdate = true; p.crystalOutline.instanceMatrix.needsUpdate = true;
     z.burstT -= dt;
-    if (z.burstT <= 0) { z.burstT = 0.15; S.vfx('burst', rp(z), { count: 2, color: [glint(0xbff4ff), 0xbff4ff], shape: 'snow', speed: 1, dir: UP, spread: 0.6, size: 0.12, life: 1.1, gravity: 0.5 }); }
+    if (z.burstT <= 0) { z.burstT = 0.15; S.vfx('burst', rp(z), { count: 2, color: [0xffffff, 0xbff4ff], shape: 'snow', speed: 1, dir: UP, spread: 0.6, size: 0.12, life: 1.1, gravity: 0.5 }); }
     if (tickNow) hitAll(z, (e) => S.combat.applyStatus(e, 'chilled', 2));
   }
   function updateStorm(z, dt, fade, tickNow, t) {
     const p = z.vis, R = z.radius;
     const cy = z.pos.y + 13;
     const d = p.cloudData;
-    for (let i = 0; i < (z.v4 ? 0 : d.length); i++) {
+    for (let i = 0; i < d.length; i++) {
       const c = d[i];
       const a = c.a + t * 0.25;
       v.set(z.pos.x + Math.cos(a) * c.r * R * 0.85, cy + c.y + Math.sin(t * 0.8 + c.ph) * 0.3, z.pos.z + Math.sin(a) * c.r * R * 0.85);
@@ -486,11 +437,11 @@ export function createZones(S) {
       m4.compose(v, q, sc); p.cloud.setMatrixAt(i, m4);
       sc.multiplyScalar(1.08); m4.compose(v, q, sc); p.cloudOutline.setMatrixAt(i, m4);
     }
-    if (!z.v4) { p.cloud.instanceMatrix.needsUpdate = true; p.cloudOutline.instanceMatrix.needsUpdate = true; }
+    p.cloud.instanceMatrix.needsUpdate = true; p.cloudOutline.instanceMatrix.needsUpdate = true;
     if (p.cloudMat) { p.flick = Math.max(0, (p.flick || 0) - dt * 4); p.cloudMat.emissiveIntensity = 0.15 + p.flick * p.flick * 0.7 + Math.sin(t * 7.3) * 0.03; }
     p.rain.material.uniforms.opacity.value = Math.min(1, z.age / 0.8) * Math.min(1, z.time / 0.6);
     p.rain.material.uniforms.top.value = 13;
-    if (p.disc) p.disc.userData.u.fade.value = Math.min(1, z.age / 2.5) * Math.min(1, z.time / 0.6);
+    if (p.disc) p.disc.material.uniforms.fade.value = Math.min(1, z.age / 2.5) * Math.min(1, z.time / 0.6);
     if (tickNow) hitAll(z, (e) => S.combat.applyStatus(e, 'wet', 4));
     // lightning strikes
     z.strikeT -= dt;
@@ -501,8 +452,8 @@ export function createZones(S) {
       const to = target ? center(target, new THREE.Vector3()) : rp(z, 0.8).clone();
       const from = new THREE.Vector3(to.x + (Math.random() - 0.5) * 3, cy - 1, to.z + (Math.random() - 0.5) * 3);
       S.vfx('beam', from, to, { color: 0xd8c0ff, width: 0.35, duration: 0.28, jagged: 1.2, segments: 16, branches: 3 });
-      S.vfx('flash', to, { color: 0xc9a4ff, intensity: 1.2, distance: 18, duration: 0.2 });
-      S.vfx('burst', to, { count: 20, color: [glint(ELEMENT_COLORS.lightning), ELEMENT_COLORS.lightning], shape: 'spark', speed: 9, spread: 1, size: 0.12, life: 0.4, drag: 2 });
+      S.vfx('flash', to, { color: 0xc9a4ff, intensity: 8, distance: 18, duration: 0.2 });
+      S.vfx('burst', to, { count: 20, color: [0xffffff, ELEMENT_COLORS.lightning], shape: 'spark', speed: 9, spread: 1, size: 0.12, life: 0.4, drag: 2 });
       S.sfx('impact_lightning', { position: to, volume: 0.8 });
       p.flick = 1;
       if (target) {
@@ -550,7 +501,7 @@ export function createZones(S) {
       const a = Math.random() * 6.28, h = Math.random() * 8 * s;
       v2.set(z.pos.x + Math.cos(a) * (0.6 + h * 0.35), z.pos.y + h, z.pos.z + Math.sin(a) * (0.6 + h * 0.35));
       v3.set(-Math.sin(a), 0.5, Math.cos(a));
-      const col = el ? [ELEMENT_COLORS[el], GLINT] : [0x7fae5a, 0xd6f0e2];
+      const col = el ? [ELEMENT_COLORS[el], 0xffffff] : [0x7fae5a, 0xd6f0e2];
       S.vfx('burst', v2, { count: 2, color: col, shape: el === 'fire' ? 'ember' : el === 'ice' ? 'snow' : el === 'lightning' ? 'spark' : 'leaf', speed: 9, dir: v3, spread: 0.2, size: el ? 0.2 : 0.16, life: 0.6, drag: 0.5 });
       v2.set(z.pos.x, z.pos.y + 0.2, z.pos.z); S.vfx('burst', v2, { count: 6, color: [0xcdb68e, 0xa8916c], shape: 'smoke', speed: 5, spread: 0.7, dir: UP, size: 1.4, sizeEnd: 2.6, life: 0.8, drag: 2, additive: false, alpha: 0.6 });
       z.debrisT = (z.debrisT || 0) - 0.06;

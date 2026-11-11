@@ -4,7 +4,6 @@
 // blocks / stepping stones / walls (world platforms + temp colliders). Meshes are built once, pooled, share materials,
 // cast no shadows and are hidden when idle. Taunts go through enemies.setTauntTarget (feature-detected).
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { toonMat, addOutline } from '../core/utils.js';
 import { elColor } from '../core/elements.js';
@@ -49,11 +48,11 @@ function totemModel(mats) {
 }
 function cloneModel() {
   const g = new THREE.Group();
-  const mat = fresnelMat(0x6fc8ff, { power: 1.4, intensity: 1.2, core: 0.12 });
+  const mat = fresnelMat(0x6fc8ff, { power: 1.4, intensity: 1.6, core: 0.12 });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.9, 4, 10), mat); torso.position.y = 1.05;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), mat); head.position.y = 1.9;
   const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.9, 12, 1, true), mat); skirt.position.y = 0.45;
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), coreMat(0xdff6ff, 1.2)); core.position.y = 1.25;
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), coreMat(0xdff6ff, 2.2)); core.position.y = 1.25;
   g.add(torso, head, skirt, core); g.userData.parts = { torso, head, skirt }; g.userData.mat = mat;
   return g;
 }
@@ -61,26 +60,26 @@ function beaconModel(mats) {
   const g = new THREE.Group();
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 2.2, 6), mats.gold); pole.position.y = 1.1;
   const cage = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), mats.gold); cage.position.y = 2.35; cage.scale.set(1, 1.4, 1);
-  const flame = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), coreMat(0xfff2c0, 1.2)); flame.position.y = 2.35;
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10), fresnelMat(0xffd36a, { power: 1.6, intensity: 1.2, core: 0.05 })); halo.position.y = 2.35;
+  const flame = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), coreMat(0xfff2c0, 3)); flame.position.y = 2.35;
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10), fresnelMat(0xffd36a, { power: 1.6, intensity: 1.6, core: 0.05 })); halo.position.y = 2.35;
   addOutline(pole, 0.02);
   g.add(pole, cage, flame, halo); g.userData.parts = { flame, halo, cage };
   return g;
 }
 function mirrorModel() {
   const g = new THREE.Group();
-  const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), fresnelMat(0xfff6d0, { power: 0.9, intensity: 1.2, core: 0.3 }));
+  const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), fresnelMat(0xfff6d0, { power: 0.9, intensity: 1.8, core: 0.3 }));
   shard.scale.set(0.9, 1.4, 0.18);
-  const frame = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.05, 5, 32), fresnelMat(0xffc24a, { power: 0.4, intensity: 1.2, core: 0.6 }));
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.05, 5, 32), fresnelMat(0xffc24a, { power: 0.4, intensity: 2.2, core: 0.6 }));
   frame.scale.set(0.85, 1.3, 1);
   g.add(shard, frame); g.userData.parts = { shard, frame };
   return g;
 }
 function lightPillarModel() {
   const g = new THREE.Group();
-  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 9, 16, 1, true), fresnelMat(0xffe9a8, { power: 1.0, intensity: 1.2, core: 0.15 }));
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 9, 16, 1, true), fresnelMat(0xffe9a8, { power: 1.0, intensity: 2.0, core: 0.15 }));
   col.position.y = 4.5;
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 9, 8), coreMat(GLINT, 1.2)); core.position.y = 4.5;
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 9, 8), coreMat(0xffffff, 2.4)); core.position.y = 4.5;
   g.add(col, core); g.userData.parts = { col, core };
   return g;
 }
@@ -89,12 +88,12 @@ export function createSummons(S, api) {
   const { game } = S;
   const E = game.events;
   // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
-  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return S.looks ? S.looks.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const C = () => S.combat;   // shim: stamps the cast castId on every hit
   const mats = {
     bark: toonMat(0x6b4a2e, { emissive: 0x1a0f06, emissiveIntensity: 0.4 }), leaf: toonMat(0x6fcf4a, { emissive: 0x1d3a12, emissiveIntensity: 0.5 }),
     stone: toonMat(0x9a8268, { flatShading: true }), gold: toonMat(0xe8c060, { emissive: 0x4a3410, emissiveIntensity: 0.5 }),
-    glowNature: coreMat(0xd8ff9a, 1.2), glowEarth: fresnelMat(0xf0bd6e, { power: 0.5, intensity: 1.2, core: 0.6 }),
+    glowNature: coreMat(0xd8ff9a, 2.6), glowEarth: fresnelMat(0xf0bd6e, { power: 0.5, intensity: 2.2, core: 0.6 }),
   };
   const BUILD = { treant: () => treantModel(mats), totem: () => totemModel(mats), clone: cloneModel, beacon: () => beaconModel(mats), mirror: mirrorModel, lightpillar: lightPillarModel };
   const pools = {}; const POOLN = { treant: 1, totem: 1, clone: 2, beacon: 2, mirror: 2, lightpillar: 2 };
@@ -167,14 +166,14 @@ export function createSummons(S, api) {
     tv.copy(s.home); tv.y += 0.3;
     const col = elColor(o.element || (kind === 'treant' ? 'nature' : kind === 'totem' ? 'earth' : kind === 'clone' ? 'water' : 'light'), 'mid');
     fx('shockwave', tv, { color: col, radius: 2.5, duration: 0.45, thickness: 0.4 });
-    fx('burst', tv, { count: 30, shape: kind === 'treant' ? 'leaf' : kind === 'totem' ? 'dust' : kind === 'clone' ? 'droplet' : 'mote', color: [glint(col), col], speed: 4, up: 2, spread: 1, size: kind === 'totem' ? 0.6 : 0.2, life: 0.7, gravity: 3, additive: kind !== 'totem' });
+    fx('burst', tv, { count: 30, shape: kind === 'treant' ? 'leaf' : kind === 'totem' ? 'dust' : kind === 'clone' ? 'droplet' : 'mote', color: [0xffffff, col], speed: 4, up: 2, spread: 1, size: kind === 'totem' ? 0.6 : 0.2, life: 0.7, gravity: 3, additive: kind !== 'totem' });
     if (kind === 'treant' || kind === 'totem') fx('debris', tv, { count: 10, material: 'rock', color: kind === 'treant' ? 0x4a3420 : 0x7a6248, size: 0.25, speed: 6, life: 1.2 });
     S.sfx(kind === 'treant' ? 'cast_nature' : kind === 'totem' ? 'explode_earth' : kind === 'clone' ? 'cast_water' : 'cast_light', { position: tv, volume: 0.8 });
     E.emit('summonSpawn', { kind, skillId: s.skillId, point: s.home });
     return s;
   }
   const countSkill = (id) => live.reduce((n, s) => n + (s.skillId === id ? 1 : 0), 0);
-  function flash(s) { tv.copy(s.mesh.position); fx('burst', tv, { count: 14, shape: 'star', color: [glint(0xffe08a), 0xffe08a], speed: 5, spread: 1, size: 0.16, life: 0.3 }); }
+  function flash(s) { tv.copy(s.mesh.position); fx('burst', tv, { count: 14, shape: 'star', color: [0xffffff, 0xffe08a], speed: 5, spread: 1, size: 0.16, life: 0.3 }); }
 
   function onAllyHit(s, hit) {
     const src = hit?.source;
@@ -195,7 +194,7 @@ export function createSummons(S, api) {
       api.aoe(tv, b.r || 4, Object.assign({}, o.hit || {}, { amount: b.dmg || 60, status: b.status, tier: 'heavy', knockback: 5 }));
       S.sfx(s.kind === 'totem' ? 'explode_earth' : 'explode_water', { position: tv });
     } else {
-      fx('burst', tv, { count: 20, shape: s.kind === 'treant' ? 'leaf' : 'mote', color: [glint(elColor(o.element || 'nature', 'mid')), elColor(o.element || 'nature', 'mid')], speed: 3, spread: 1, size: 0.2, life: 0.6, gravity: 2 });
+      fx('burst', tv, { count: 20, shape: s.kind === 'treant' ? 'leaf' : 'mote', color: [0xffffff, elColor(o.element || 'nature', 'mid')], speed: 3, spread: 1, size: 0.2, life: 0.6, gravity: 2 });
     }
     if (s.ent) {
       s.ent.alive = false;
@@ -259,7 +258,7 @@ export function createSummons(S, api) {
           P.torso.rotation.y = Math.sin(T * 1.5) * 0.2; P.head.position.y = 1.9 + Math.sin(T * 2.2) * 0.04;
           m.userData.mat.uniforms.opacity.value = 0.7 + Math.sin(T * 6) * 0.1;
           s.fxT -= dt;
-          if (s.fxT <= 0) { s.fxT = 0.25; tv.copy(m.position); tv.y += 0.4; fx('burst', tv, { count: 2, shape: 'droplet', color: [glint(0x6fc8ff), 0x6fc8ff], speed: 1, up: 1.5, size: 0.1, life: 0.6, gravity: 6 }); }
+          if (s.fxT <= 0) { s.fxT = 0.25; tv.copy(m.position); tv.y += 0.4; fx('burst', tv, { count: 2, shape: 'droplet', color: [0xffffff, 0x6fc8ff], speed: 1, up: 1.5, size: 0.1, life: 0.6, gravity: 6 }); }
           break;
         }
         case 'beacon': {
@@ -295,7 +294,7 @@ export function createSummons(S, api) {
           m.scale.set(Math.max(0.01, k), Math.max(0.01, Math.min(1, s.t / 0.2)), Math.max(0.01, k));
           P.col.material.uniforms.opacity.value = 0.8 + Math.sin(T * 7) * 0.2;
           s.fxT -= dt;
-          if (s.fxT <= 0) { s.fxT = 0.2; tv.copy(m.position); tv.y += Math.random() * 6; fx('burst', tv, { count: 2, shape: 'mote', color: [glint(0xffe08a), 0xffe08a], radius: 0.6, speed: 0.3, up: 1.5, size: 0.16, life: 0.8 }); }
+          if (s.fxT <= 0) { s.fxT = 0.2; tv.copy(m.position); tv.y += Math.random() * 6; fx('burst', tv, { count: 2, shape: 'mote', color: [0xffffff, 0xffe08a], radius: 0.6, speed: 0.3, up: 1.5, size: 0.16, life: 0.8 }); }
           break;
         }
         default: break;
@@ -315,7 +314,7 @@ export function createSummons(S, api) {
  */
 export function createStructures(S, api) {
   const { game } = S;
-  const fx = (n, ...a) => { try { return S.looks ? S.looks.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const live = [];
   const tv = new THREE.Vector3();
   // the glacier block is a dedicated pooled mesh (2): a big faceted ice block with an outline
@@ -346,10 +345,10 @@ export function createStructures(S, api) {
     const life = o.life ?? 8, h = o.h ?? 4, r = o.r ?? 1.2;
     const H = { kind, pos: new THREE.Vector3(pos.x, gy, pos.z), t: 0, life, h, platform: null, collider: null, relay: null, mesh: null, alive: true };
     if (kind === 'ice') {
-      S.props.spikes.spawn(pos.x, gy - 0.3, pos.z, { height: h, width: r * 1.6, rise: 0.18, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28, keep: true });
+      S.props.spikes.spawn(pos.x, gy - 0.3, pos.z, { height: h, width: r * 1.6, rise: 0.18, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28 });
       for (let i = 0; i < 3; i++) { const a = i * 2.1 + 0.3; S.props.spikes.spawn(pos.x + Math.cos(a) * r * 0.9, gy - 0.2, pos.z + Math.sin(a) * r * 0.9, { height: h * 0.45, width: r * 0.7, rise: 0.2, delay: 0.05 * i, hold: life - 0.2, sink: 0.4, tiltX: Math.cos(a) * 0.35, tiltZ: Math.sin(a) * 0.35 }); }
     } else if (kind === 'rock' || kind === 'step') {
-      S.props.pillars.spawn(pos.x, gy - 0.2, pos.z, { height: h, width: r * 1.3, rise: 0.16, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28, keep: true });
+      S.props.pillars.spawn(pos.x, gy - 0.2, pos.z, { height: h, width: r * 1.3, rise: 0.16, hold: life, sink: 0.5, yaw: o.yaw ?? Math.random() * 6.28 });
     } else if (kind === 'glacier') {
       const m = glaciers.find((x) => !x.visible) || glaciers[0];
       m.visible = true; m.position.set(pos.x, gy + h + 8, pos.z); m.rotation.set(0, Math.random() * 6.28, 0); m.scale.set(r / 1.6, h / 2, r / 1.6);
@@ -381,7 +380,7 @@ export function createStructures(S, api) {
       const x = center.x + px * k, z = center.z + pz * k;
       const y = S.height(x, z);
       const eru = o.kind === 'ice' ? S.props.spikes : S.props.pillars;
-      eru.spawn(x, y - 0.3, z, { height: h * (0.85 + Math.random() * 0.3), width: 1.15, delay: i * 0.03, rise: 0.16, hold: life, sink: 0.5, yaw, keep: true });
+      eru.spawn(x, y - 0.3, z, { height: h * (0.85 + Math.random() * 0.3), width: 1.15, delay: i * 0.03, rise: 0.16, hold: life, sink: 0.5, yaw });
     }
     const H = { kind: 'wall', pos: new THREE.Vector3(center.x, gy, center.z), dir: dir.clone(), t: 0, life, alive: true, collider: null, o };
     try {

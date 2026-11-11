@@ -1,6 +1,5 @@
 // Pooled spell projectiles: movement, soft homing, terrain/entity collision, zone infusion.
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { elColor, elDef } from '../core/elements.js';
 import {
   coreMat, fresnelMat, flameGeo, flameMat, crystalGeo, iceMatSolid, crescentGeo, rockGeo, toonMat, addOutline,
@@ -39,17 +38,17 @@ export function createProjectiles(S) {
   const factories = {
     fireball() {
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.26, 14, 10), glowCore(game, 0xff8a2a, 1.2)));
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.5, 16, 12), fresnelMat(0xff5a10, { power: 1.4, intensity: 1.2, core: 0.15 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.26, 14, 10), glowCore(game, 0xff8a2a, 2.6)));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.5, 16, 12), fresnelMat(0xff5a10, { power: 1.4, intensity: 1.8, core: 0.15 })));
       const fl = new THREE.Mesh(flameGeo(), flameMat()); fl.rotation.x = -Math.PI / 2; fl.scale.set(0.9, 0.9, 0.9); fl.position.z = -0.1;
       g.add(fl); g.userData.spin = g.children[1];
       return g;
     },
     inferno() {
       const g = new THREE.Group();
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.55, 20, 14), glowCore(game, 0xff7a1a, 1.2)));
-      const s1 = new THREE.Mesh(sharedGeo('IcosahedronGeometry', 0.95, 2), fresnelMat(0xff4a08, { power: 1.2, intensity: 1.2, core: 0.12 }));
-      const s2 = new THREE.Mesh(sharedGeo('SphereGeometry', 1.35, 20, 14), fresnelMat(0xffb040, { power: 2.6, intensity: 1.2, core: 0.0 }));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.55, 20, 14), glowCore(game, 0xff7a1a, 2.8)));
+      const s1 = new THREE.Mesh(sharedGeo('IcosahedronGeometry', 0.95, 2), fresnelMat(0xff4a08, { power: 1.2, intensity: 2.2, core: 0.12 }));
+      const s2 = new THREE.Mesh(sharedGeo('SphereGeometry', 1.35, 20, 14), fresnelMat(0xffb040, { power: 2.6, intensity: 1.4, core: 0.0 }));
       g.add(s1, s2);
       const fg = flameGeo(), fm = flameMat();
       const ring = new THREE.Group();
@@ -69,7 +68,7 @@ export function createProjectiles(S) {
       c.rotation.x = Math.PI / 2; c.position.z = -0.6; c.scale.set(0.45, 0.75, 0.45);
       addOutline(c, 0.05, 0x1d4a66);
       g.add(c);
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.3, 12, 8), fresnelMat(0x7fe3ff, { power: 1.5, intensity: 1.2 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 0.3, 12, 8), fresnelMat(0x7fe3ff, { power: 1.5, intensity: 1.6 })));
       return g;
     },
     lance() {
@@ -78,16 +77,16 @@ export function createProjectiles(S) {
       c.rotation.x = Math.PI / 2; c.position.z = -1.6; c.scale.set(0.55, 2.1, 0.55);
       addOutline(c, 0.04, 0x1d4a66);
       g.add(c);
-      const glow = new THREE.Mesh(sharedGeo('CylinderGeometry', 0.05, 0.42, 3.6, 10, 1, true), fresnelMat(0xaef4ff, { power: 1.2, intensity: 1.2 }));
+      const glow = new THREE.Mesh(sharedGeo('CylinderGeometry', 0.05, 0.42, 3.6, 10, 1, true), fresnelMat(0xaef4ff, { power: 1.2, intensity: 2 }));
       glow.rotation.x = Math.PI / 2; glow.position.z = -0.2; g.add(glow);
-      const tipM = new THREE.Mesh(sharedGeo('SphereGeometry', 0.22, 10, 8), glowCore(game, 0xdffaff, 1.2)); tipM.position.z = 1.6; g.add(tipM);
+      const tipM = new THREE.Mesh(sharedGeo('SphereGeometry', 0.22, 10, 8), glowCore(game, 0xdffaff, 3)); tipM.position.z = 1.6; g.add(tipM);
       return g;
     },
     blade() {
       const g = new THREE.Group();
       const outer = new THREE.Mesh(crescentGeo(), new THREE.MeshBasicMaterial({ color: 0x8fffc1, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       outer.scale.set(1.25, 1, 1.25);
-      const inner = new THREE.Mesh(crescentGeo(), new THREE.MeshBasicMaterial({ color: GLINT, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const inner = new THREE.Mesh(crescentGeo(), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       inner.scale.set(0.95, 1, 0.8); inner.position.z = 0.05;
       g.add(outer, inner); g.userData.tint = outer.material;
       return g;
@@ -102,27 +101,23 @@ export function createProjectiles(S) {
     },
     meteor() {
       const g = new THREE.Group();
-      const r = new THREE.Mesh(rockGeo(), cmat('meteorRock', () => toonMat(0x5a2c1c, { flatShading: true, emissive: 0xff3a00, emissiveIntensity: 0.35 })));
+      const r = new THREE.Mesh(rockGeo(), toonMat(0x5a2c1c, { flatShading: true, emissive: 0xff3a00, emissiveIntensity: 0.35 }));
       r.scale.setScalar(5); addOutline(r, 0.025);
       g.add(r); g.userData.spin = r;
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 3.4, 20, 14), cmat('meteorRim', () => fresnelMat(0xff6a1f, { power: 1.2, intensity: 1.2, core: 0.1 }))));
-      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 4.6, 20, 14), cmat('meteorHalo', () => fresnelMat(0xffc060, { power: 2.5, intensity: 1.2 }))));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 3.4, 20, 14), fresnelMat(0xff6a1f, { power: 1.2, intensity: 2.4, core: 0.1 })));
+      g.add(new THREE.Mesh(sharedGeo('SphereGeometry', 4.6, 20, 14), fresnelMat(0xffc060, { power: 2.5, intensity: 1.4 })));
       const fl = new THREE.Mesh(flameGeo(), flameMat()); fl.scale.set(9, 9, 9); fl.position.y = 1; g.add(fl);
       return g;
     },
   };
   Object.assign(factories, extraFactories(game, glowCore));
-  // v4 §2: 0 new materials per cast — pooled meshes created on a pool miss reuse one material per key
-  const _mats = new Map();
-  const cmat = (k, fn) => { let m = _mats.get(k); if (!m) { m = fn(); _mats.set(k, m); } return m; };
-  for (const el of ['fire', 'ice', 'lightning', 'wind', 'water', 'earth', 'nature', 'light', 'shadow']) cmat('aura.' + el, () => fresnelMat(elColor(el, 'hex'), { power: 1.3, intensity: 1.2 }));   // infusion auras: boot
   function takeMesh(key) {
     if (!factories[key]) key = 'orb';
     const p = pools[key] || (pools[key] = []);
     const m = p.pop() || factories[key]();
     m.userData.key = key;
     if (!m.userData.aura) {
-      const aura = new THREE.Mesh(sharedGeo('SphereGeometry', 0.75, 14, 10), cmat('aura', () => fresnelMat(GLINT, { power: 1.3, intensity: 1.2 })));
+      const aura = new THREE.Mesh(sharedGeo('SphereGeometry', 0.75, 14, 10), fresnelMat(0xffffff, { power: 1.3, intensity: 2 }));
       aura.visible = false; m.add(aura); m.userData.aura = aura;
     }
     m.userData.aura.visible = false;
@@ -131,17 +126,13 @@ export function createProjectiles(S) {
     return m;
   }
   function giveMesh(key, m) { scene.remove(m); (pools[key] || (pools[key] = [])).push(m); }
-  // v4: projectiles carry a kit look (FM body + RB trail) that follows an invisible proxy; the v3 mesh is not used then
-  const L = S.looks;
-  const proxies = [];
-  function takeProxy() { const o = proxies.pop() || new THREE.Object3D(); o.name = 'spells-proxy'; o.userData.owner = 'player'; o.userData.noCameraCollide = true; scene.add(o); return o; }
-  function giveProxy(o) { scene.remove(o); proxies.push(o); }
 
   // ---------- spawn ----------
   const objPool = [];
   function spawn(o) {
     const p = objPool.pop() || { pos: new THREE.Vector3(), vel: new THREE.Vector3(), hits: new Set(), zones: [] };
     p.kind = o.kind; p.element = o.element; p.meshKey = factories[o.mesh] ? o.mesh : 'orb';
+    p.cur = S.cast?.cur || null;
     p.pos.copy(o.pos);
     p.vel.copy(o.dir).normalize().multiplyScalar(o.speed);
     p.speed = o.speed;
@@ -173,19 +164,12 @@ export function createProjectiles(S) {
     p.blocked = o.blockable !== false;  // world temp colliders (earth wall, ice wall) block/reflect
     p.hits.clear(); p.zones.length = 0;
     p.traveled = 0;
-    p.cur = L?.cur || null; p.look = null; p.proxy = null; p.lookKey = o.mesh;
-    if (L?.on() && o.look !== false) {
-      p.proxy = takeProxy(); p.proxy.position.copy(p.pos);
-      p.look = L.body(p, { mesh: o.mesh || p.meshKey, scale: o.scale || 1 });
-      if (!p.look) { giveProxy(p.proxy); p.proxy = null; }
-    }
-    p.trail = null; p.emitters = [];
-    if (p.look) { p.mesh = p.proxy; active.push(p); return p; }
     p.mesh = takeMesh(p.meshKey);
     p.mesh.scale.setScalar(o.scale || 1);
     tint(p.mesh, o.tint ?? (o.mesh && p.mesh.userData.elementTint !== false ? elColor(o.element, 'mid') : null), o.tint2 ?? elColor(o.element, 'edge'));
     p.mesh.position.copy(p.pos);
     orient(p);
+    p.trail = null; p.emitters = [];
     const col = o.trailColor ?? elColor(o.element, 'hex');
     try { if (o.trail !== false) { const tr = game.vfx?.trail?.(p.mesh, { color: col, width: o.trailWidth || 0.35 * (o.scale || 1), length: o.trailLength || 14, fade: 0.9 }); if (tr?.stop) p.trail = tr; } } catch (_) { /* */ }
     if (o.emitter) {
@@ -214,9 +198,7 @@ export function createProjectiles(S) {
     try { p.trail?.stop(); } catch (_) { /* */ }
     for (const e of p.emitters) { try { e.stop(); } catch (_) { /* */ } }
     p.emitters.length = 0;
-    if (p.look) { L.stopAll(p.look, true); p.look = null; const pr = p.proxy; p.proxy = null; p.mesh = null; S.laterReal(0.35, () => giveProxy(pr)); }
-    else { giveMesh(p.meshKey, p.mesh); p.mesh = null; }
-    p.cur = null;
+    giveMesh(p.meshKey, p.mesh); p.mesh = null;
     active.splice(i, 1);
     objPool.push(p);
   }
@@ -224,20 +206,12 @@ export function createProjectiles(S) {
   function infuse(p, el, comboName) {
     if (p.infused || el === p.element) return false;
     p.infused = el;
-    const shape = SHAPE_OF(el);
-    if (p.look) {   // v4: the infusing element wraps the body in its motif ring (linework), no extra emitter
-      const kit = L.kit;
-      const h = kit?.line?.({ shape: 'ring', el, follow: p.proxy, pos: p.pos, plane: 'billboard', r: 0.55, width: 0.035, life: Infinity, tIn: 0.1, tOut: 0.15, spin: 2, castId: p.cur?.castId });
-      if (h) p.look.push(h);
-      L.within(p.cur, () => L.motif(el, 'spark', { pos: p.pos.clone(), n: 6 }));
-      if (comboName) S.combo('infusion', comboName, p.pos);
-      return true;
-    }
     const a = p.mesh.userData.aura;
-    a.visible = true; a.material = cmat('aura.' + el, () => fresnelMat(elColor(el, 'hex'), { power: 1.3, intensity: 1.2 }));   // one per element (cached)
+    a.visible = true; a.material.uniforms.color.value.setHex(elColor(el, 'hex'));
     if (p.mesh.userData.tint) p.mesh.userData.tint.color.setHex(el === 'fire' ? 0xffa040 : el === 'ice' ? 0xbff4ff : elColor(el, 'mid'));
-    try { const em = game.vfx?.emitter?.({ follow: p.mesh, rate: 40, color: [elColor(el, 'hex'), glint(elColor(el, 'hex'))], shape, speed: 1.5, spread: 1, size: 0.18, sizeEnd: 0, life: 0.5, drag: 1 }); if (em?.stop) p.emitters.push(em); } catch (_) { /* */ }
-    S.vfx('burst', p.pos, { count: 26, color: [elColor(el, 'hex'), glint(elColor(el, 'hex'))], shape, speed: 6, spread: 1, size: 0.18, life: 0.5, drag: 2 });
+    const shape = SHAPE_OF(el);
+    try { const em = game.vfx?.emitter?.({ follow: p.mesh, rate: 40, color: [elColor(el, 'hex'), 0xffffff], shape, speed: 1.5, spread: 1, size: 0.18, sizeEnd: 0, life: 0.5, drag: 1 }); if (em?.stop) p.emitters.push(em); } catch (_) { /* */ }
+    S.vfx('burst', p.pos, { count: 26, color: [elColor(el, 'hex'), 0xffffff], shape, speed: 6, spread: 1, size: 0.18, life: 0.5, drag: 2 });
     if (comboName) S.combo('infusion', comboName, p.pos);
     return true;
   }
@@ -252,7 +226,6 @@ export function createProjectiles(S) {
     hit.knockback = p.knockback; hit.launch = p.launch; hit.status = p.status; hit.heavy = p.heavy;
     if (p.tags) hit.tags = p.tags; if (p.tier) hit.tier = p.tier;
     if (!hit.source) hit.source = 'player';
-    if (hit.castId == null && p.cur) hit.castId = p.cur.castId;
     const r = S.combat.dealDamage(e, hit);
     if (p.infused && e.alive) {
       const st = S.STATUS_OF[p.infused];
@@ -286,13 +259,8 @@ export function createProjectiles(S) {
   function update(dt) {
     for (let i = active.length - 1; i >= 0; i--) {
       const p = active[i];
-      const prevC = L && p.cur ? L.swap(p.cur) : undefined;
-      try { step(p, i, dt); } finally { if (prevC !== undefined) L.swap(prevC); }
-    }
-  }
-  const lastStep = () => game.frame?.lastStep !== false;
-  function step(p, i, dt) {
-    {
+      const prevC = S.cast && p.cur ? S.cast.swap(p.cur) : undefined;   // v4: deferred work runs in its cast context (castId)
+      try {
       p.age += dt; p.life -= dt;
       // homing
       if (p.homing > 0 && p.target && p.target.alive && p.age > 0.04) {
@@ -344,12 +312,7 @@ export function createProjectiles(S) {
         S.zones.checkProjectile(p);
         if (p.life <= 0) { if (p.explodeOnExpire) impact(p, false, null); try { p.onExpire?.(p, p.pos); } catch (_) { /* */ } done = true; }
       }
-      if (done) { release(p, i); return; }
-      if (p.look) {
-        p.proxy.position.copy(p.pos);
-        if (lastStep() && p.vel.lengthSq() > 1e-6) { dirV.copy(p.vel).normalize(); for (const h of p.look) if (h.setDir && h._r?.kind === 'fm') h.setDir(dirV); }
-        return;
-      }
+      if (done) { release(p, i); continue; }
       p.mesh.position.copy(p.pos);
       orient(p);
       const ud = p.mesh.userData, sp = ud.spin;
@@ -358,6 +321,7 @@ export function createProjectiles(S) {
       if (ud.wobble) { const w = 1 + Math.sin(p.age * 18) * 0.08; ud.wobble.scale.set(w, 2 - w, w); }
       if (ud.rings) ud.rings.rotation.z += dt * 9;
       void 0;
+      } finally { if (prevC !== undefined) S.cast.swap(prevC); }
     }
   }
 

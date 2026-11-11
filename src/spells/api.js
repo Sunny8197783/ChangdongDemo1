@@ -3,7 +3,6 @@
 // (combat.dealDamage applies the canonical formula, §8.3) and never calls hitFeel/hitstop/shake per hit.
 // Hits that overlap pods, crystals, flowers, mines and zones are routed to combat.reactObject / the zone twists.
 import * as THREE from 'three';
-import { glint } from './palette.js';
 import { elColor, elDef, ALL_ELEMENTS } from '../core/elements.js';
 
 const LEGACY_ZONES = new Set(['fire', 'ice', 'lava', 'water', 'storm', 'tornado']);
@@ -11,7 +10,7 @@ const LEGACY_ZONES = new Set(['fire', 'ice', 'lava', 'water', 'storm', 'tornado'
 export function createApi(S, { zones2, objects, legacy }) {
   const { game } = S;
   const C = () => S.combat;   // shim: stamps the cast castId on every hit
-  const fx = (n, ...a) => { try { return S.looks ? S.looks.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const tv = new THREE.Vector3(), tv2 = new THREE.Vector3(), tv3 = new THREE.Vector3(), tv4 = new THREE.Vector3();
   const near = [], objs = [], seen = new Set();
   const relays = [];        // prism relay points registered by pillars / mirrors / beacons / light pillars: {position, alive, kind}
@@ -84,7 +83,7 @@ export function createApi(S, { zones2, objects, legacy }) {
     return z;
   }
   function obsidian(p, r) {
-    fx('burst', tv.copy(p).setY(p.y + 0.4), { count: 40, shape: 'smoke', color: [glint(0xdde6ee), 0xdde6ee], alpha: 0.5, additive: false, speed: 2, up: 3, size: 1.2, sizeEnd: 2.8, life: 1.2 });
+    fx('burst', tv.copy(p).setY(p.y + 0.4), { count: 40, shape: 'smoke', color: [0xffffff, 0xdde6ee], alpha: 0.5, additive: false, speed: 2, up: 3, size: 1.2, sizeEnd: 2.8, life: 1.2 });
     try { game.world?.addPlatform?.({ id: 'obsidian', shape: 'disc', center: p.clone(), r: Math.min(4, r), top: S.height(p.x, p.z) + 0.3, life: 6 }); } catch (_) { /* */ }
     fx('groundDecal', 'crack', p.clone(), r, 6);
   }
@@ -190,7 +189,7 @@ export function createApi(S, { zones2, objects, legacy }) {
       seen.add(best);
       const to = c.getCenter ? c.getCenter(best, new THREE.Vector3()) : best.object.position.clone();
       fx('beam', pos.clone(), to, { color, width: opts.width || 0.12, duration: 0.3, jagged: 0.55, segments: 10, branches: 1 });
-      fx('burst', to, { count: 10, shape: 'spark', color: [glint(color), color], speed: 6, spread: 1, size: 0.1, life: 0.3, drag: 2 });
+      fx('burst', to, { count: 10, shape: 'spark', color: [0xffffff, color], speed: 6, spread: 1, size: 0.1, life: 0.3, drag: 2 });
       const h = makeHit(hitSpec, best, pos, bd); if (h) { if (opts.falloff) h.amount *= Math.pow(opts.falloff, hits.length); deal(best, h); }
       hits.push(best);
       pos.copy(to);
@@ -275,7 +274,7 @@ export function createApi(S, { zones2, objects, legacy }) {
       if (tgt) { d.subVectors(tgt.object.position, o); d.y = 0; d.normalize(); }
       else { const a = 0.7; const x = d.x * Math.cos(a) - d.z * Math.sin(a), z = d.x * Math.sin(a) + d.z * Math.cos(a); d.set(x, 0, z).normalize(); }
       relay.flashT = game.time;
-      fx('burst', o.clone(), { count: 8, shape: 'star', color: [glint(b.color), b.color], speed: 4, spread: 1, size: 0.16, life: 0.25 });
+      fx('burst', o.clone(), { count: 8, shape: 'star', color: [0xffffff, b.color], speed: 4, spread: 1, size: 0.16, life: 0.25 });
     }
   }
   function fire(b) {
@@ -343,7 +342,7 @@ export function createApi(S, { zones2, objects, legacy }) {
     const p = game.player; if (!p || p.entity?.alive === false || p.hp <= 0) return;
     const a = Math.min(shieldHp, ev.amount); shieldHp -= a;
     p.hp = Math.min(p.maxHp || 100, p.hp + a); if (p.entity) p.entity.hp = p.hp;
-    fx('burst', tv.copy(p.object.position).setY(p.object.position.y + 1.2), { count: 8, shape: 'shard', color: [glint(0xffe9a8), 0xffe9a8], speed: 4, spread: 1, size: 0.14, life: 0.3 });
+    fx('burst', tv.copy(p.object.position).setY(p.object.position.y + 1.2), { count: 8, shape: 'shard', color: [0xffffff, 0xffe9a8], speed: 4, spread: 1, size: 0.14, life: 0.3 });
   });
   function update(dt) {
     updateBeams(dt);

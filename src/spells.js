@@ -5,7 +5,6 @@
 // the CASTER implementations of all 24 archetypes (spells/archetypes.js) and the bespoke caster forms
 // (spells/bespoke.js), both registered in this FACTORY. Input is read only in the legacy keymap (or with skills stubbed).
 import * as THREE from 'three';
-import { glint, GLINT } from './spells/palette.js';
 import { ELEMENT_COLORS } from './core/utils.js';
 import { ALL_ELEMENTS, CLASSIC_ELEMENTS, ELEMENT_DEFS, elColor, elName } from './core/elements.js';
 import { familyOf } from './core/classes.js';
@@ -22,7 +21,7 @@ import { createApi } from './spells/api.js';
 import { createSummons, createStructures } from './spells/summons.js';
 import { createArchetypes } from './spells/archetypes.js';
 import { createBespoke } from './spells/bespoke.js';
-import { createLooks, skillOfSpell } from './spells/looks.js';
+import { createCastCtx, skillOfSpell } from './spells/castctx.js';
 
 const { uTime } = assets;
 const MIN_CHARGE = 0.25;
@@ -70,13 +69,12 @@ export function createSpells(game) {
     combatShim.dealDamage = (e, h) => c.dealDamage(e, L ? L.stamp(h) : h);
     return combatShim;
   };
-  let L = null;
+  let L = null;   // cast context (castId / castLock), spells/castctx.js
   const S = {
     game,
     get combat() { return combatOf(); },
     STATUS_OF,
-    /** Every legacy vfx call of spell code goes through the v4 look gate (looks.js fx). */
-    vfx(fn, ...a) { try { return L ? L.fx(fn, a) : game.vfx?.[fn]?.(...a); } catch (e) { if (!S._vfxErr) { S._vfxErr = 1; console.warn('[spells] vfx.' + fn, e); } return null; } },
+    vfx(fn, ...a) { try { return game.vfx?.[fn]?.(...a); } catch (e) { if (!S._vfxErr) { S._vfxErr = 1; console.warn('[spells] vfx.' + fn, e); } return null; } },
     sfx(name, opts) { try { game.audio?.play?.(name, opts); } catch (_) { /* */ } },
     height(x, z) { try { const h = game.world?.getHeight?.(x, z); return Number.isFinite(h) ? h : 0; } catch (_) { return 0; } },
     ground(p, out = tmp2) { out.set(p.x, S.height(p.x, p.z), p.z); return out; },
@@ -149,7 +147,7 @@ export function createSpells(game) {
     },
     chainBonus() { return S.support ? S.support.chainBonus : 0; },
   };
-  L = createLooks(S); S.looks = L;
+  L = createCastCtx(S); S.cast = L;
   L.install();
   const sceneN0 = game.scene?.children?.length ?? 0;
   S.props = createProps(game);
@@ -185,18 +183,12 @@ export function createSpells(game) {
     }
     return false;
   };
-  // archetypes + bespoke forms are registered in the FACTORY (CONTRACT §2: registries exist after the factory)
-  // v4 (R8 / R10): every pooled spell object built by the subsystems above is adopted once (noCameraCollide, ducking, no depth write)
+  // v4 (R8): every pooled spell object built by the subsystems above is tagged once (noCameraCollide, owner, threat-scene ducking)
   try {
     const kids = game.scene?.children || [];
-    if (S.props.spikes) S.props.spikes.override = (x, y, z, o) => L.spike(x, y, z, o);
-    if (S.props.pillars) S.props.pillars.override = (x, y, z, o) => L.spike(x, y, z, Object.assign(o, { el: 'earth' }));
-    const rawSigil = S.props.sigil;
-    S.props.sigil = (pos, o = {}) => L.sigil(pos, o, rawSigil);
-    for (const s of S.props.sigilPool || []) L.adopt(s, { role: 'line' });
-    S.props.onNewSigil = (s) => L.adopt(s, { role: 'line' });
-    for (let i = sceneN0; i < kids.length; i++) { const o = kids[i]; if (o?.name?.startsWith?.('kit-')) continue; L.adopt(o, { entity: /^spells\.summon\.(treant|totem|clone)/.test(o.name || '') }); }
+    for (let i = sceneN0; i < kids.length; i++) { const o = kids[i]; if (o?.name?.startsWith?.('kit-')) continue; L.adopt(o); }
   } catch (err) { console.warn('[spells] adopt', err); }
+  // archetypes + bespoke forms are registered in the FACTORY (CONTRACT §2: registries exist after the factory)
   let nArch = 0, nImpl = 0;
   try { nArch = arch.register(); nImpl = bespoke.register(); } catch (err) { console.warn('[spells] archetype registration', err); }
 
@@ -280,7 +272,7 @@ export function createSpells(game) {
     if (kind === 'finisher') return finisher(el, opts);
     const sid = kind === 'awakened' ? spellId(el, 'awakened') : opts.exact ? spellId(el, kind) : defId(el, kind);
     if (!ALL[sid]) return false;
-    const prev = L.begin({ castId: opts.castId, skillId: opts.skillId || skillOfSpell(sid), el, style: opts.style });
+    const prev = L.begin({ castId: opts.castId, skillId: opts.skillId || skillOfSpell(sid), el });
     try { return castInner(el, kind, opts); } finally { L.end(prev); }
   }
   function castInner(el, kind, opts) {
@@ -300,7 +292,7 @@ export function createSpells(game) {
       try { player()?.playCast?.('heavy', el); } catch (_) { /* */ }
       S.sfx('cast_' + el, { position: S.playerPos(), pitch: 0.8 });
       S.sfx('blessing', { position: S.playerPos(), volume: 0.6 });
-      try { S.support.start(el); L.castFx(S.playerPos().clone().setY(S.playerPos().y + 1.4), { el }); } catch (err) { console.error('[spells] support ' + id, err); }
+      try { S.support.start(el); } catch (err) { console.error('[spells] support ' + id, err); }
       game.events.emit('spellCast', { element: el, kind: 'support', spellId: id, origin: S.playerPos().clone() });
       return true;
     }
@@ -314,26 +306,26 @@ export function createSpells(game) {
     const chargeV = Math.max(MIN_CHARGE, Math.min(1, opts.charge ?? 1));
     const doCast = () => { try { def.cast(S, aim, chargeV); } catch (err) { console.error('[spells] cast ' + id, err); } };
     if (kind === 'ultimate') {
+      // v4: the anticipation is non-cancellable for its 0.1 / 0.16 s (castLock for the player's dodge buffer)
+      L.lock(def.awakened ? 0.2 : 0.14);
       // shared anticipation beat: brief slow-mo, zoom-in, sigil at the caster's feet, rising charge sound
-      // (v4: the anticipation is non-cancellable for its 0.1 / 0.16 s: castLock for the player's dodge buffer)
       const col = ELEMENT_COLORS[el], aw = !!def.awakened;
-      L.lock(aw ? 0.2 : 0.14);
-      L.castFx(aim.origin, { el });
-      S.vfx('flash', aim.origin, { color: col, intensity: aw ? 10 : 6, distance: aw ? 16 : 10, duration: 0.4 });
+      S.vfx('screenFlash', col, aw ? 0.22 : 0.12, aw ? 0.4 : 0.25); S.vfx('flash', aim.origin, { color: col, intensity: aw ? 10 : 6, distance: aw ? 16 : 10, duration: 0.4 });
       try { if (game.timeScale?.set) game.timeScale.set('ult', aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); else game.slowmo?.(aw ? 0.3 : 0.4, aw ? 0.35 : 0.2); } catch (_) { /* */ }
+      S.vfx('fovKick', aw ? -6 : -4, aw ? 0.4 : 0.3);
       try {
         const fp = S.playerPos().clone(); fp.y = S.height(fp.x, fp.z) + 0.05;
         S.props.sigil(fp, { color: col, radius: aw ? 3.4 : 2.2, duration: aw ? 0.9 : 0.6, spin: 3 });
         if (aw) {
-          S.props.sigil(fp, { color: L.on() ? (ELEMENT_DEFS[el]?.colors?.fx?.light ?? col) : GLINT, radius: 1.6, duration: 0.9, spin: -4 });
+          S.props.sigil(fp, { color: 0xffffff, radius: 1.6, duration: 0.9, spin: -4 });
           fp.y += 1;
           S.vfx('shockwave', fp, { color: col, radius: 3, duration: 0.45, vertical: true, thickness: 0.3 });
-          S.vfx('burst', fp, { count: 50, color: [col, glint(col)], shape: 'spark', speed: 9, spread: 1, size: 0.14, life: 0.5, drag: 2 });
+          S.vfx('burst', fp, { count: 50, color: [col, 0xffffff], shape: 'spark', speed: 9, spread: 1, size: 0.14, life: 0.5, drag: 2 });
         }
       } catch (_) { /* */ }
       S.sfx('charge', { position: aim.origin, pitch: aw ? 1.1 : 1.4 });
       S.later(aw ? 0.16 : 0.1, doCast);
-    } else { L.castFx(aim.origin, { el }); doCast(); }
+    } else doCast();
     game.events.emit('spellCast', { element: el, kind, spellId: id, origin: aim.origin.clone(), awakened: !!def.awakened });
     return true;
   }
@@ -342,7 +334,7 @@ export function createSpells(game) {
   function finisher(el, opts = {}) {
     const id = spellId(el, 'finisher'), def = ALL[id];
     if (!def || fin) return false;
-    const prev = L.begin({ castId: opts.castId, skillId: opts.skillId || el + '.finisher', el, tier: 'F' });
+    const prev = L.begin({ castId: opts.castId, skillId: opts.skillId || el + '.finisher', el });
     try { return finisherInner(el, opts, id, def); } finally { L.end(prev); }
   }
   function finisherInner(el, opts, id, def) {
@@ -389,6 +381,13 @@ export function createSpells(game) {
     const wasInv = ent ? !!ent.invulnerable : false;
     if (ent) ent.invulnerable = true;
     fin = { el, impacted: false, ended: false, ent, wasInv };
+    // hard stop (clearFx / tests): end the set piece, restore invulnerability and free the castLock immediately
+    fin.kill = () => {
+      try { S.setPieces.end(); } catch (_) { /* */ }
+      try { pl?.setCharging?.(false, el, 0); } catch (_) { /* */ }
+      try { game.timeScale?.clear?.('ult'); } catch (_) { /* */ }
+      if (ent && !wasInv) ent.invulnerable = false;
+    };
     S.setPieces.start(el, { hero, center: center.clone(), dir });
     try { pl?.playCast?.('ultimate', el); pl?.setCharging?.(true, el, 1); } catch (_) { /* */ }
     S.props.sigil(S.ground(hero).clone(), { color: ELEMENT_COLORS[el], radius: 3.2, duration: 3.5, spin: 1.5 });
@@ -432,7 +431,7 @@ export function createSpells(game) {
       // non-cinematic fallback: slow-mo power-up, then the blow
       try { if (game.timeScale?.set) game.timeScale.set('ult', 0.3, 2.2); else game.slowmo?.(0.3, 2.2); } catch (_) { /* */ }
       S.vfx('screenFlash', ELEMENT_COLORS[el], 0.25, 0.8);
-      S.vfx('fovKick', -4, 0.3);
+      S.vfx('fovKick', -7, 1.6);
       S.laterReal(1.9, doImpact);
       S.laterReal(2.6, doEnd);
     }
@@ -549,7 +548,7 @@ export function createSpells(game) {
           const def = SPELLS[spellId(chargeEl, 'heavy')] || { chargeTime: 1 };
           const before = chargeFrac;
           chargeFrac = Math.min(1, chargeFrac + dt * cs / (def.chargeTime || 1));
-          if (before < 1 && chargeFrac >= 1) { S.sfx('ui_select', { pitch: 1.5 }); S.vfx('burst', game.player?.getStaffTip ? game.player.getStaffTip(tmp) : S.playerPos(), { count: 16, color: [ELEMENT_COLORS[chargeEl], GLINT], shape: 'spark', speed: 4, spread: 1, size: 0.1, life: 0.35, drag: 2 }); }
+          if (before < 1 && chargeFrac >= 1) { S.sfx('ui_select', { pitch: 1.5 }); S.vfx('burst', game.player?.getStaffTip ? game.player.getStaffTip(tmp) : S.playerPos(), { count: 16, color: [ELEMENT_COLORS[chargeEl], 0xffffff], shape: 'spark', speed: 4, spread: 1, size: 0.1, life: 0.35, drag: 2 }); }
           try { player()?.setCharging?.(true, chargeEl, chargeFrac); } catch (_) { /* */ }
           S.props.setCharge(true, ELEMENT_COLORS[chargeEl], chargeFrac, dt);
           if (!input.mouseDown(2)) endCharge(true);
@@ -567,7 +566,6 @@ export function createSpells(game) {
     S.projectiles.update(dt);
     S.zones.update(dt);
     S.props.update(dt);
-    S.looks?.occlusion?.(dt);
     S.support.update(dt, realDt || dt);
     S.setPieces.update(realDt || dt);
     // v3 runtime
@@ -583,11 +581,7 @@ export function createSpells(game) {
   function prewarm() {
     try { objects.prewarm(); zones2.prewarm(); summons.prewarm(); structures.prewarm(); arch.prewarm(); } catch (err) { console.warn('[spells] prewarm', err); }
     warmed = false;
-    try { L.warmStats = L.warmup(); } catch (err) { console.warn('[spells] look warm-up', err); }
-    // v4: pooled rune circles are not in the scene until used: hand them to the boot compile + warm draw (main removes them again)
-    const out = [];
-    for (const s of S.props.sigilPool || []) if (!s.parent) { s.visible = true; s.scale.setScalar(1); out.push(s); }
-    return out.length ? out : null;
+    return null;
   }
 
   // Compile all spell shaders up-front (avoids a hitch on the first cast of each spell).
@@ -652,14 +646,16 @@ export function createSpells(game) {
     get projectiles() { return S.projectiles.active; },
     get charging() { return charging; }, get chargeFrac() { return chargeFrac; },
     resetCooldowns() { for (const id in cooldowns) cooldowns[id] = 0; },
-    /** v4 (§7.4.7): declared caster look level of a registry skill ('bespoke'|'archetype'|'generic'|'legacy'|null). */
+    /** v4 (§7.4.7): declared caster look level of a registry skill — 'legacy' (v3 look) or null. */
     lookOf: (id) => L.lookOf(id),
     /** v4 (§7.4.7): seconds of non-cancellable cast recovery (0 when free) — read by the player's dodge buffer. */
     get castLock() { return fin ? Math.max(0.05, L.castLock()) : L.castLock(); },
-    looks: L,
-    /** Test hook (playtest4 magic): remove every live spell visual / zone / object / summon / projectile. */
+    castCtx: L,
+    /** Test hook (playtest4 magic): remove every live spell visual / zone / object / summon / projectile and end an active finisher. */
     clearFx() {
       clearV3();
+      if (fin) { const f = fin; fin = null; try { f.kill?.(); } catch (err) { console.warn('[spells] clearFx finisher', err); } }
+      L.unlock();
       try { S.zones.clear?.(); S.projectiles.clear?.(); S.support.stop?.(true); S.props.clear?.(); timers.length = 0; realTimers.length = 0; } catch (err) { console.warn('[spells] clearFx', err); }
       try { game.vfx?.kit?.clear?.(); game.vfx?.clear?.(); } catch (_) { /* */ }
     },

@@ -1,7 +1,6 @@
 // 원소의 대가 (master path) skills for the mage: 5 awakened ultimates (F), 5 cinematic finishers (R),
 // 5 support skills (G). Defs carry Korean metadata; implementations use the shared spell context S.
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { ELEMENT_COLORS } from '../core/utils.js';
 
 const C = ELEMENT_COLORS;
@@ -41,18 +40,18 @@ function meteorStrike(S, pt, { scale = 0.55, R = 10, dmg = 130, fd, big = false,
         S.vfx('explosion', g, { element: 'fire', scale: big ? 3.8 : 1.7 });
         S.vfx('shockwave', g, { color: 0xffb060, radius: R * 1.4, duration: 0.7, thickness: big ? 2.4 : 1.2 });
         if (big) {
-          S.vfx('shockwave', g, { color: GLINT, radius: R * 0.8, duration: 0.4, thickness: 1.6 });
+          S.vfx('shockwave', g, { color: 0xffffff, radius: R * 0.8, duration: 0.4, thickness: 1.6 });
           S.vfx('debris', g, { count: 46, material: 'rock', color: 0x4a2014, size: 0.7, speed: 22, life: 2.4 });
           S.vfx('burst', g, { count: 140, color: [0xffe080, 0xff3a00], shape: 'ember', speed: 28, spread: 0.7, dir: UP, size: 0.4, life: 1.7, gravity: -18, drag: 0.6 });
           S.vfx('burst', g, { count: 26, color: [0x8a6a5a, 0x5a4a44], shape: 'smoke', speed: 11, spread: 0.6, dir: UP, size: 3.5, sizeEnd: 6, life: 1.6, additive: false, drag: 1.4, gravity: 1, alpha: 0.45 });
-          S.vfx('flash', g, { color: 0xff8030, intensity: 1.2, distance: 60, duration: 0.9 });
+          S.vfx('flash', g, { color: 0xff8030, intensity: 22, distance: 60, duration: 0.9 });
           S.vfx('screenFlash', 0xfff0d0, 0.5, 0.4);
           S.vfx('shake', 1); S.vfx('fovKick', 8, 0.55);
           S.sfx('explode_fire', { position: g, volume: 1.5, pitch: 0.55 }); S.sfx('explode_earth', { position: g, volume: 1.3 });
           S.decalRing(g, 8, 1.3, 7);
         } else {
           S.vfx('debris', g, { count: 12, material: 'rock', color: 0x4a2014, size: 0.45, speed: 13, life: 1.6 });
-          S.vfx('flash', g, { color: 0xff8030, intensity: 1.2, distance: 22, duration: 0.4 });
+          S.vfx('flash', g, { color: 0xff8030, intensity: 9, distance: 22, duration: 0.4 });
           S.vfx('shake', 0.45);
           S.sfx('explode_fire', { position: g, volume: 1, pitch: 0.8 });
         }
@@ -74,7 +73,7 @@ export const AWAKENED = {
       const pt = clampPoint(S, aim, 55);
       const fd = flatDir(S.aimDirFlat || aim.dir);
       S.props.sigil(pt, { color: C.fire, radius: 12, duration: 2.4, spin: 1.2 });
-      S.props.sigil(pt, { color: 0xffa53a /* fire light step */, radius: 6, duration: 2.0, spin: -2 });
+      S.props.sigil(pt, { color: 0xffd080, radius: 6, duration: 2.0, spin: -2 });
       S.vfx('decal', pt, { color: 0xff6a1f, radius: 12, duration: 2.2, opacity: 0.45 });
       S.vfx('screenFlash', 0xff8040, 0.25, 0.6);
       S.sfx('charge', { position: pt, pitch: 0.5 });
@@ -106,7 +105,7 @@ export const AWAKENED = {
             S.props.spikes.spawn(x, S.height(x, z), z, { height: hgt, width: 1.1 + k * 0.25, hold: 2.6 - k * 0.2, sink: 0.5, tiltX: Math.sin(a) * 0.45, tiltZ: -Math.cos(a) * 0.45 });
           }
           S.vfx('shockwave', c, { color: 0xbff4ff, radius: R + 1.5, duration: 0.5, thickness: 1.4 });
-          S.vfx('burst', c, { count: 50, color: [glint(0x9feaff), 0x9feaff], shape: 'snow', speed: 10 + k * 3, spread: 1, disc: true, size: 0.3, life: 1.2, drag: 1.5 });
+          S.vfx('burst', c, { count: 50, color: [0xffffff, 0x9feaff], shape: 'snow', speed: 10 + k * 3, spread: 1, disc: true, size: 0.3, life: 1.2, drag: 1.5 });
           S.vfx('shake', 0.35 + k * 0.12);
           S.sfx('impact_ice', { position: c, pitch: 0.9 - k * 0.1 });
           S.aoe(c, R + 1.2, null, (e) => (hitSet.has(e) ? null : (hitSet.add(e), { amount: 75, element: 'ice', status: { frozen: 4 }, launch: 3, tags: ['ultimate'] })));
@@ -117,8 +116,8 @@ export const AWAKENED = {
       // 빙하 붕괴: the frozen glacier shatters (heavy blow on frozen foes → 파쇄 reaction)
       S.later(1.45, () => {
         const c = S.ground(pp).clone();
-        S.vfx('screenFlash', GLINT, 0.35, 0.3); S.vfx('shake', 0.8); S.vfx('fovKick', 6, 0.4);
-        S.vfx('burst', c, { count: 90, color: [glint(0x7fe3ff), 0x7fe3ff], shape: 'shard', speed: 18, spread: 1, size: 0.3, life: 1, gravity: -12, drag: 0.8, radius: 6 });
+        S.vfx('screenFlash', 0xffffff, 0.35, 0.3); S.vfx('shake', 0.8); S.vfx('fovKick', 6, 0.4);
+        S.vfx('burst', c, { count: 90, color: [0xffffff, 0x7fe3ff], shape: 'shard', speed: 18, spread: 1, size: 0.3, life: 1, gravity: -12, drag: 0.8, radius: 6 });
         S.sfx('shatter', { position: c, volume: 1.4, pitch: 0.7 });
         for (const e of foes(S, c, 19.5)) {
           const p = S.center(e).clone();
@@ -145,9 +144,9 @@ export const AWAKENED = {
           else { const a = Math.random() * 6.28, r = 3 + Math.random() * 10; to = new THREE.Vector3(pt.x + Math.cos(a) * r, 0, pt.z + Math.sin(a) * r); to.y = S.height(to.x, to.z) + 0.3; }
           const from = new THREE.Vector3(to.x + (Math.random() - 0.5) * 4, to.y + 32, to.z + (Math.random() - 0.5) * 4);
           S.vfx('beam', from, to, { color: 0xd9c2ff, width: 0.95, duration: 0.4, jagged: 1.6, segments: 20, branches: 4 });
-          S.vfx('beam', from, to, { color: GLINT, width: 0.35, duration: 0.25, jagged: 0.9, segments: 16 });
+          S.vfx('beam', from, to, { color: 0xffffff, width: 0.35, duration: 0.25, jagged: 0.9, segments: 16 });
           S.vfx('explosion', S.ground(to).clone(), { element: 'lightning', scale: 1.3 });
-          S.vfx('flash', to, { color: 0xc9a4ff, intensity: 1.2, distance: 26, duration: 0.3 });
+          S.vfx('flash', to, { color: 0xc9a4ff, intensity: 12, distance: 26, duration: 0.3 });
           S.vfx('screenFlash', 0xf0e8ff, 0.18, 0.12);
           S.vfx('shake', 0.4);
           S.sfx('explode_lightning', { position: to });
@@ -180,7 +179,7 @@ export const AWAKENED = {
       // initial gale blast
       const o = new THREE.Vector3(pp.x, pp.y + 1.1, pp.z).addScaledVector(fd, 2);
       S.props.gust(o, fd, 22, C.wind);
-      S.vfx('burst', o, { count: 80, color: [C.wind, glint(C.wind)], shape: 'leaf', speed: 26, dir: fd, spread: 0.35, size: 0.22, life: 0.8, drag: 1.2 });
+      S.vfx('burst', o, { count: 80, color: [C.wind, 0xffffff], shape: 'leaf', speed: 26, dir: fd, spread: 0.35, size: 0.22, life: 0.8, drag: 1.2 });
       S.vfx('screenFlash', 0xd8ffe8, 0.22, 0.4); S.vfx('shake', 0.5); S.vfx('fovKick', 5, 0.4);
       S.sfx('explode_wind', { position: o, pitch: 0.6, volume: 1.3 });
       S.terrain.wind(o.clone().addScaledVector(fd, 10), fd, 2, 16);
@@ -204,7 +203,7 @@ export const AWAKENED = {
         S.later(k * 0.35, () => {
           const c = S.ground(pp).clone();
           S.vfx('shockwave', c, { color: C.earth, radius: R, duration: 0.6, thickness: 1.8 });
-          S.vfx('shockwave', c, { color: GLINT, radius: R * 0.9, duration: 0.4, thickness: 0.6 });
+          S.vfx('shockwave', c, { color: 0xffffff, radius: R * 0.9, duration: 0.4, thickness: 0.6 });
           S.vfx('shake', 0.6 + k * 0.12); S.vfx('fovKick', 2 + k, 0.3);
           S.sfx('explode_earth', { position: c, pitch: 0.75 - k * 0.08 }); S.sfx('golem_step', { position: c });
           const n = Math.round(R * 1.9);
@@ -263,12 +262,12 @@ export const FINISHERS = {
       const R = 14;
       S.vfx('explosion', c, { element: 'fire', scale: 4.5 });
       S.vfx('shockwave', c, { color: 0xffc060, radius: R * 1.5, duration: 0.8, thickness: 3 });
-      S.vfx('shockwave', c, { color: GLINT, radius: R, duration: 0.45, thickness: 2 });
+      S.vfx('shockwave', c, { color: 0xffffff, radius: R, duration: 0.45, thickness: 2 });
       S.vfx('burst', c, { count: 180, color: [0xfff0b0, 0xff4a10], shape: 'ember', speed: 30, spread: 0.8, dir: UP, size: 0.45, life: 1.8, gravity: -14, drag: 0.6 });
       S.vfx('burst', c, { count: 60, color: [0xffe080, 0xff6a1f], shape: 'ring', speed: 3, spread: 1, size: 1.5, sizeEnd: 7, life: 0.7 });
       // phoenix rebirth column
       S.vfx('burst', c, { count: 90, color: [0xffd070, 0xff3a00], shape: 'ember', speed: 14, dir: UP, spread: 0.12, size: 0.6, life: 1.4, gravity: 4, radius: 2 });
-      S.vfx('flash', c, { color: 0xff8030, intensity: 1.2, distance: 70, duration: 1 });
+      S.vfx('flash', c, { color: 0xff8030, intensity: 26, distance: 70, duration: 1 });
       S.vfx('screenFlash', 0xfff0d0, 0.6, 0.5);
       S.vfx('shake', 1); S.vfx('fovKick', 9, 0.6);
       S.sfx('explode_fire', { position: c, volume: 1.6, pitch: 0.5 });
@@ -287,8 +286,8 @@ export const FINISHERS = {
       S.vfx('shake', 1); S.vfx('fovKick', 8, 0.6);
       S.vfx('explosion', c, { element: 'ice', scale: 4 });
       S.vfx('shockwave', c, { color: 0xdffaff, radius: R * 1.4, duration: 0.8, thickness: 2.6 });
-      S.vfx('burst', c, { count: 160, color: [glint(0x9feaff), 0x9feaff], shape: 'snow', speed: 22, spread: 1, disc: true, size: 0.4, life: 2, drag: 1.2 });
-      S.vfx('flash', c, { color: 0x9feaff, intensity: 1.2, distance: 60, duration: 0.9 });
+      S.vfx('burst', c, { count: 160, color: [0xffffff, 0x9feaff], shape: 'snow', speed: 22, spread: 1, disc: true, size: 0.4, life: 2, drag: 1.2 });
+      S.vfx('flash', c, { color: 0x9feaff, intensity: 18, distance: 60, duration: 0.9 });
       S.sfx('shatter', { position: c, volume: 1.5, pitch: 0.55 }); S.sfx('explode_ice', { position: c, volume: 1.3 });
       // giant central spire + crystal landings
       for (let i = 0; i < 7; i++) { const a = i * 0.9; const r = i ? 1.6 : 0; const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r; S.props.spikes.spawn(x, S.height(x, z), z, { height: i ? 5 + Math.random() * 2 : 11, width: i ? 2 : 4, hold: 5, sink: 1, tiltX: Math.sin(a) * 0.3 * (i ? 1 : 0), tiltZ: -Math.cos(a) * 0.3 * (i ? 1 : 0) }); }
@@ -303,7 +302,7 @@ export const FINISHERS = {
       S.terrain.chill(c, 18);
       // the eternal winter shatters
       S.later(1.1, () => {
-        S.vfx('screenFlash', GLINT, 0.4, 0.3); S.vfx('shake', 0.7);
+        S.vfx('screenFlash', 0xffffff, 0.4, 0.3); S.vfx('shake', 0.7);
         S.sfx('shatter', { position: c, volume: 1.4 });
         for (const e of foes(S, c, R + 1)) {
           const p = S.center(e).clone();
@@ -318,11 +317,11 @@ export const FINISHERS = {
     impact(S, c) {
       const R = 15;
       const sky = new THREE.Vector3(c.x, c.y + 26, c.z);
-      for (let i = 0; i < 4; i++) S.vfx('beam', sky, c, { color: i ? 0xd9c2ff : GLINT, width: i ? 1.2 : 0.6, duration: 0.6, jagged: 1.4, segments: 22, branches: 5 });
+      for (let i = 0; i < 4; i++) S.vfx('beam', sky, c, { color: i ? 0xd9c2ff : 0xffffff, width: i ? 1.2 : 0.6, duration: 0.6, jagged: 1.4, segments: 22, branches: 5 });
       S.vfx('explosion', c, { element: 'lightning', scale: 4 });
       S.vfx('shockwave', c, { color: 0xd9c2ff, radius: R * 1.4, duration: 0.7, thickness: 2.4 });
-      S.vfx('burst', c, { count: 160, color: [glint(C.lightning), C.lightning], shape: 'spark', speed: 30, spread: 1, size: 0.2, life: 0.8, drag: 1.5, velocityStretch: 0.05 });
-      S.vfx('flash', c, { color: 0xc9a4ff, intensity: 1.2, distance: 80, duration: 0.8 });
+      S.vfx('burst', c, { count: 160, color: [0xffffff, C.lightning], shape: 'spark', speed: 30, spread: 1, size: 0.2, life: 0.8, drag: 1.5, velocityStretch: 0.05 });
+      S.vfx('flash', c, { color: 0xc9a4ff, intensity: 28, distance: 80, duration: 0.8 });
       S.vfx('screenFlash', 0xf4eeff, 0.7, 0.45);
       S.vfx('shake', 1); S.vfx('fovKick', 9, 0.6);
       S.sfx('explode_lightning', { position: c, volume: 1.6, pitch: 0.6 });
@@ -350,7 +349,7 @@ export const FINISHERS = {
     impact(S, c) {
       const R = 14;
       S.vfx('shockwave', c, { color: C.wind, radius: R * 1.5, duration: 0.8, thickness: 2.4 });
-      S.vfx('burst', c, { count: 140, color: [glint(C.wind), C.wind], shape: 'leaf', speed: 24, spread: 1, disc: true, size: 0.3, life: 1.4, drag: 1, tangential: 12 });
+      S.vfx('burst', c, { count: 140, color: [0xffffff, C.wind], shape: 'leaf', speed: 24, spread: 1, disc: true, size: 0.3, life: 1.4, drag: 1, tangential: 12 });
       S.vfx('screenFlash', 0xe8fff4, 0.5, 0.45); S.vfx('shake', 0.9); S.vfx('fovKick', 7, 0.6);
       S.sfx('explode_wind', { position: c, volume: 1.6, pitch: 0.5 });
       S.terrain.wind(c, null, 2, 22);
@@ -359,9 +358,9 @@ export const FINISHERS = {
       S.zones.spawn('tornado', c, { radius: 7, duration: 3.5 });
       // ...then the eye slams them back down
       S.later(1.25, () => {
-        S.vfx('shockwave', c, { color: GLINT, radius: R, duration: 0.5, thickness: 1.6 });
+        S.vfx('shockwave', c, { color: 0xffffff, radius: R, duration: 0.5, thickness: 1.6 });
         S.vfx('explosion', c, { element: 'wind', scale: 3 });
-        S.vfx('shake', 0.9); S.vfx('screenFlash', GLINT, 0.35, 0.25);
+        S.vfx('shake', 0.9); S.vfx('screenFlash', 0xffffff, 0.35, 0.25);
         S.sfx('explode_wind', { position: c, volume: 1.4, pitch: 0.7 });
         for (const e of caught) {
           if (!e.alive) continue;
@@ -379,10 +378,10 @@ export const FINISHERS = {
       const R = 14;
       S.vfx('explosion', c, { element: 'earth', scale: 4.5 });
       S.vfx('shockwave', c, { color: C.earth, radius: R * 1.5, duration: 0.8, thickness: 3 });
-      S.vfx('shockwave', c, { color: GLINT, radius: R * 0.8, duration: 0.45, thickness: 1.6 });
+      S.vfx('shockwave', c, { color: 0xffffff, radius: R * 0.8, duration: 0.45, thickness: 1.6 });
       S.vfx('debris', c, { count: 60, material: 'rock', color: 0xa7835a, size: 0.7, speed: 24, life: 2.6 });
       S.vfx('burst', c, { count: 50, color: [0xd9c09a, 0xa88a68], shape: 'smoke', speed: 14, spread: 0.6, dir: UP, size: 3.5, sizeEnd: 7, life: 1.8, additive: false, drag: 1.5, alpha: 0.6 });
-      S.vfx('flash', c, { color: 0xffb060, intensity: 1.2, distance: 50, duration: 0.7 });
+      S.vfx('flash', c, { color: 0xffb060, intensity: 16, distance: 50, duration: 0.7 });
       S.vfx('screenFlash', 0xfff0d8, 0.45, 0.4);
       S.vfx('shake', 1); S.vfx('fovKick', 9, 0.6);
       S.sfx('explode_earth', { position: c, volume: 1.7, pitch: 0.45 }); S.sfx('golem_step', { position: c, volume: 1.5 });
@@ -423,25 +422,23 @@ export function createSupportRuntime(S, assets) {
   let cur = null;      // {el, t, dur, vis, saved, emitters, shootT, hitT}
   const v = new THREE.Vector3(), v2 = new THREE.Vector3();
   const visCache = {};
-  // v4: the fire spirit (the only support visual kept with the kit) is built at load, so the first cast compiles nothing
-  try { if (S.looks?.on()) { visCache.fire = S.looks.adopt(makeVis('fire')); } } catch (_) { /* */ }
 
   function makeVis(el) {
     const g = new THREE.Group();
     const u = { parts: [] };
     if (el === 'fire') {
       const sp = new THREE.Group();
-      sp.add(new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), coreMat(0xff9a40, 1.2)));
+      sp.add(new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), coreMat(0xff9a40, 1.5)));
       sp.add(new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 10), fresnelMat(0xff5a10, { power: 1.8, intensity: 1.1, core: 0.02 })));
       const f = new THREE.Mesh(flameGeo(), flameMat()); f.scale.set(0.9, 1.1, 0.9); f.position.y = -0.1; sp.add(f);
       for (const s of [-1, 1]) { const w = new THREE.Mesh(flameGeo(), flameMat()); w.rotation.z = s * -1.2; w.scale.set(0.5, 0.9, 0.5); w.position.x = s * 0.15; sp.add(w); u.parts.push(w); }
       g.add(sp); u.spirit = sp;
     } else if (el === 'ice') {
-      const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), fresnelMat(0x9feaff, { power: 2, intensity: 1.2, core: 0.04 }));
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), fresnelMat(0x9feaff, { power: 2, intensity: 1.4, core: 0.04 }));
       g.add(shell); u.shell = shell;
       for (let i = 0; i < 6; i++) { const c = new THREE.Mesh(crystalGeo(), iceMatSolid()); const o = new THREE.Mesh(crystalGeo(), outlineBasic(0x1d4a66)); o.scale.setScalar(1.12); c.add(o); c.scale.setScalar(0.5); g.add(c); u.parts.push(c); }
     } else if (el === 'lightning') {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.035, 6, 32), fresnelMat(0xd9c2ff, { power: 0.5, intensity: 1.2, core: 0.6 }));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.035, 6, 32), fresnelMat(0xd9c2ff, { power: 0.5, intensity: 2.4, core: 0.6 }));
       const ring2 = ring.clone();
       g.add(ring, ring2); u.parts.push(ring, ring2);
     } else if (el === 'wind') {
@@ -454,7 +451,7 @@ export function createSupportRuntime(S, assets) {
       }
     } else if (el === 'earth') {
       for (let i = 0; i < 8; i++) { const r = new THREE.Mesh(rockGeo(), rockMat()); const o = new THREE.Mesh(rockGeo(), outlineBasic(0x2a1c10)); o.scale.setScalar(1.1); r.add(o); r.castShadow = true; g.add(r); u.parts.push(r); }
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.05, 6, 48), fresnelMat(0xe0a85a, { power: 0.5, intensity: 1.2, core: 0.5 })); ring.rotation.x = Math.PI / 2; g.add(ring); u.ring = ring;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.05, 6, 48), fresnelMat(0xe0a85a, { power: 0.5, intensity: 1.6, core: 0.5 })); ring.rotation.x = Math.PI / 2; g.add(ring); u.ring = ring;
     }
     g.userData = u;
     return g;
@@ -464,11 +461,10 @@ export function createSupportRuntime(S, assets) {
     if (!cur) return;
     try { game.stats?.clear?.(cur.statId); } catch (_) { /* */ }
     for (const e of cur.emitters) { try { e.stop(); } catch (_) { /* */ } }
-    if (cur.look) { S.looks?.stopAll(cur.look); cur.look = null; }
     game.scene.remove(cur.vis);
     if (!silent) {
       v.copy(S.playerPos()); v.y += 1;
-      S.vfx('burst', v, { count: 20, color: [C[cur.el], GLINT], shape: 'spark', speed: 4, spread: 1, size: 0.1, life: 0.4, drag: 2 });
+      S.vfx('burst', v, { count: 20, color: [C[cur.el], 0xffffff], shape: 'spark', speed: 4, spread: 1, size: 0.1, life: 0.4, drag: 2 });
       game.events.emit('supportEnd', { element: cur.el });
     }
     cur = null;
@@ -477,28 +473,25 @@ export function createSupportRuntime(S, assets) {
   function start(el) {
     stop(true);
     const def = SUPPORTS[el];
-    const vis = visCache[el] || (visCache[el] = S.looks ? S.looks.adopt(makeVis(el)) : makeVis(el));
-    // v4: buffs show the element aura motif (ground linework following the caster); the fire spirit stays (it is the familiar that shoots)
-    const v4 = !!S.looks?.on();
-    if (!v4 || el === 'fire') game.scene.add(vis);
+    const vis = visCache[el] || (visCache[el] = makeVis(el));
+    game.scene.add(vis);
     const pl = game.player;
     // v3: buffs are a timed game.stats source (CONTRACT §5); player.mods is a read-only getter view
     const statId = 'buff:' + el + '.sup';
     try { game.stats?.set?.(statId, statMods(el, def.mods), { duration: def.duration }); } catch (_) { /* */ }
-    cur = { el, t: 0, dur: def.duration, vis, statId, emitters: [], shootT: 0.6, hitT: 0, arcT: 0, look: null };
+    cur = { el, t: 0, dur: def.duration, vis, statId, emitters: [], shootT: 0.6, hitT: 0, arcT: 0 };
     const follow = pl?.object;
-    if (v4 && follow) { cur.look = S.looks.aura(el, follow, def.duration); S.looks.motif(el, 'summon', { pos: S.playerPos().clone(), r: 1 }); }
     const shape = { fire: 'ember', ice: 'snow', lightning: 'spark', wind: 'leaf', earth: 'smoke' }[el];
-    if (follow && !v4) {
-      const em = S.vfx('emitter', { follow, offset: new THREE.Vector3(0, 1, 0), rate: el === 'earth' ? 6 : 14, color: [C[el], GLINT], shape, speed: 1.2, spread: 1, size: el === 'earth' ? 0.5 : 0.12, sizeEnd: 0, life: 0.7, drag: 1.5, radius: 0.7, additive: el !== 'earth' });
+    if (follow) {
+      const em = S.vfx('emitter', { follow, offset: new THREE.Vector3(0, 1, 0), rate: el === 'earth' ? 6 : 14, color: [C[el], 0xffffff], shape, speed: 1.2, spread: 1, size: el === 'earth' ? 0.5 : 0.12, sizeEnd: 0, life: 0.7, drag: 1.5, radius: 0.7, additive: el !== 'earth' });
       if (em) cur.emitters.push(em);
     }
     // cast flourish
     v.copy(S.playerPos()); v.y += 1;
     S.vfx('shockwave', S.ground(v).clone(), { color: C[el], radius: 4, duration: 0.5, thickness: 0.8 });
     S.vfx('shockwave', v, { color: C[el], radius: 2.4, duration: 0.4, vertical: true, thickness: 0.3 });
-    S.vfx('burst', v, { count: 40, color: [C[el], GLINT], shape, speed: 6, spread: 1, size: 0.2, life: 0.7, drag: 2 });
-    S.vfx('flash', v, { color: C[el], intensity: 1.2, distance: 12, duration: 0.4 });
+    S.vfx('burst', v, { count: 40, color: [C[el], 0xffffff], shape, speed: 6, spread: 1, size: 0.2, life: 0.7, drag: 2 });
+    S.vfx('flash', v, { color: C[el], intensity: 6, distance: 12, duration: 0.4 });
     S.vfx('screenFlash', C[el], 0.12, 0.3);
     S.props.sigil(S.ground(v).clone(), { color: C[el], radius: 2.6, duration: 1, spin: 2 });
     game.events.emit('supportStart', { element: el, duration: def.duration });
@@ -612,7 +605,7 @@ export function createSupportRuntime(S, assets) {
     S.combat.applyStatus(src, 'chilled', 3);
     if (!src.statuses?.frozen && !(src._iceArmorT > game.time)) { src._iceArmorT = game.time + 3; S.combat.applyStatus(src, 'frozen', 1.6); }
     const c = S.center(src).clone();
-    S.vfx('burst', c, { count: 18, color: [glint(0x9feaff), 0x9feaff], shape: 'shard', speed: 6, spread: 1, size: 0.16, life: 0.5, gravity: -6 });
+    S.vfx('burst', c, { count: 18, color: [0xffffff, 0x9feaff], shape: 'shard', speed: 6, spread: 1, size: 0.16, life: 0.5, gravity: -6 });
     S.sfx('impact_ice', { position: c, volume: 0.6 });
   }
 

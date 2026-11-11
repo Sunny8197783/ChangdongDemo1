@@ -5,7 +5,6 @@
 // plus shared pooled particles. Blackholes add a pooled core (2 meshes), updrafts a pooled funnel. No lights, no shadows.
 // Zones are reaction objects: {isZone, kind, position, radius, convert(to)} for combat.reactObject (DESIGN §4.5 step 2).
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { elColor } from '../core/elements.js';
 import { uTime, makeGroundDisc, conformDisc, fresnelMat, tornadoMat, tornadoGeo } from './assets.js';
 
@@ -16,23 +15,23 @@ const PAT = { liquid: 0, mist: 1, holy: 2, vines: 3, sand: 4, spiral: 5, lane: 6
 /** Per-type look + rules. names are player-facing (Korean). */
 export const ZONE_TYPES = {
   mud:        { nameKo: '진흙탕',   pat: PAT.sand,   cols: [0x8a6a3a, 0x5a4022, 0x3a2a16], alpha: 0.85, el: 'earth', every: 0.5, kind: 'mud' },
-  holy:       { nameKo: '성역',     pat: PAT.holy,   cols: [glint(0xffe9a8), 0xffe9a8, 0xffc24a], alpha: 0.75, el: 'light', every: 0.5, kind: 'holy', additive: true },
+  holy:       { nameKo: '성역',     pat: PAT.holy,   cols: [0xffffff, 0xffe9a8, 0xffc24a], alpha: 0.75, el: 'light', every: 0.5, kind: 'holy', additive: true },
   miasma:     { nameKo: '저주의 안개', pat: PAT.mist, cols: [0xb14bff, 0x5b2a8a, 0x1a0b2e], alpha: 0.7, el: 'shadow', every: 0.5, kind: 'miasma' },
   spore:      { nameKo: '포자 구름', pat: PAT.mist,   cols: [0xe8ffb0, 0x9be86a, 0x3f7d2a], alpha: 0.6, el: 'nature', every: 0.5, kind: 'spore' },
   overgrowth: { nameKo: '덩굴밭',   pat: PAT.vines,  cols: [0xc8ff6a, 0x5fae3a, 0x1f4d1a], alpha: 0.85, el: 'nature', every: 0.5, kind: 'overgrowth' },
-  flood:      { nameKo: '대홍수',   pat: PAT.liquid, cols: [glint(0x7fd3ff), 0x7fd3ff, 0x1f6fb8], alpha: 0.7, el: 'water', every: 0.5, kind: 'water' },
-  spring:     { nameKo: '치유의 샘', pat: PAT.liquid, cols: [glint(0x9ff0ff), 0x9ff0ff, 0x2f9fd8], alpha: 0.75, el: 'water', every: 0.5, kind: 'water', additive: true },
+  flood:      { nameKo: '대홍수',   pat: PAT.liquid, cols: [0xffffff, 0x7fd3ff, 0x1f6fb8], alpha: 0.7, el: 'water', every: 0.5, kind: 'water' },
+  spring:     { nameKo: '치유의 샘', pat: PAT.liquid, cols: [0xffffff, 0x9ff0ff, 0x2f9fd8], alpha: 0.75, el: 'water', every: 0.5, kind: 'water', additive: true },
   sand:       { nameKo: '모래 폭풍', pat: PAT.sand,  cols: [0xfff1d6, 0xe8cf9a, 0xb8925a], alpha: 0.6, el: 'earth', every: 0.5, kind: 'sand' },
-  steam:      { nameKo: '증기',     pat: PAT.mist,   cols: [glint(0xdde6ee), 0xdde6ee, 0x9aa8b4], alpha: 0.5, el: 'water', every: 0.5, kind: 'steam' },
-  whirl:      { nameKo: '물살 감옥', pat: PAT.spiral, cols: [glint(0x7fd3ff), 0x7fd3ff, 0x1f5f9a], alpha: 0.75, el: 'water', every: 0.5, kind: 'water' },
+  steam:      { nameKo: '증기',     pat: PAT.mist,   cols: [0xffffff, 0xdde6ee, 0x9aa8b4], alpha: 0.5, el: 'water', every: 0.5, kind: 'steam' },
+  whirl:      { nameKo: '물살 감옥', pat: PAT.spiral, cols: [0xffffff, 0x7fd3ff, 0x1f5f9a], alpha: 0.75, el: 'water', every: 0.5, kind: 'water' },
   rain:       { nameKo: '정화의 비', pat: PAT.liquid, cols: [0xe8f6ff, 0x7fd3ff, 0x3a8ad0], alpha: 0.45, el: 'water', every: 0.5, kind: 'rain' },
   roots:      { nameKo: '덩굴 속박', pat: PAT.vines, cols: [0xd8ff9a, 0x6fcf4a, 0x2f5d22], alpha: 0.9, el: 'nature', every: 0.5, kind: 'roots' },
   blackhole:  { nameKo: '어둠의 심연', pat: PAT.spiral, cols: [0xb14bff, 0x5b2a8a, 0x07020f], alpha: 0.9, el: 'shadow', every: 0.25, kind: 'blackhole' },
-  updraft:    { nameKo: '바람 기둥', pat: PAT.spiral, cols: [glint(0xc8ffe9), 0xc8ffe9, 0x5fd6b0], alpha: 0.55, el: 'wind', every: 0.5, kind: 'updraft', additive: true },
-  lane:       { nameKo: '길',       pat: PAT.lane,   cols: [glint(0x9fe8ff), 0x9fe8ff, 0x2f7bd6], alpha: 0.7, el: 'ice', every: 0.5, kind: 'lane' },
+  updraft:    { nameKo: '바람 기둥', pat: PAT.spiral, cols: [0xffffff, 0xc8ffe9, 0x5fd6b0], alpha: 0.55, el: 'wind', every: 0.5, kind: 'updraft', additive: true },
+  lane:       { nameKo: '길',       pat: PAT.lane,   cols: [0xffffff, 0x9fe8ff, 0x2f7bd6], alpha: 0.7, el: 'ice', every: 0.5, kind: 'lane' },
   grove:      { nameKo: '가시 숲',   pat: PAT.vines, cols: [0xb8f070, 0x3f8a2a, 0x16330f], alpha: 0.9, el: 'nature', every: 0.5, kind: 'grove' },
 };
-const LANE_COLS = { ice: [glint(0x9fe8ff), 0x9fe8ff, 0x2f7bd6], wind: [glint(0xc8ffe9), 0xc8ffe9, 0x5fd6b0], frost: [glint(0xbff4ff), 0xbff4ff, 0x5aaee8] };
+const LANE_COLS = { ice: [0xffffff, 0x9fe8ff, 0x2f7bd6], wind: [0xffffff, 0xc8ffe9, 0x5fd6b0], frost: [0xffffff, 0xbff4ff, 0x5aaee8] };
 const MAX_ZONES = 16, DISCS = 14, LANES = 4, HOLES = 3, DRAFTS = 2;
 
 const SURFACE_FRAG = /* glsl */`
@@ -100,7 +99,7 @@ function surfaceMat(additive) {
   return new THREE.ShaderMaterial({
     uniforms: {
       time: uTime, fade: { value: 1 }, seed: { value: 0 }, radius: { value: 3 }, pattern: { value: 0 }, alpha: { value: 0.8 }, lane: { value: 0 },
-      colA: { value: new THREE.Color(GLINT) }, colB: { value: new THREE.Color(0x888888) }, colC: { value: new THREE.Color(0x222222) },
+      colA: { value: new THREE.Color(0xffffff) }, colB: { value: new THREE.Color(0x888888) }, colC: { value: new THREE.Color(0x222222) },
     },
     vertexShader: /* glsl */`varying vec2 vP; uniform float radius, lane;
       void main(){ vP = lane > 0.5 ? uv * 2.0 - 1.0 : position.xz / radius; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -122,7 +121,7 @@ export function createZones2(S) {
   const { game } = S;
   const E = game.events;
   // effectQuality 'low' drops the secondary visuals (decals, rune circles, flares, domes, debris): ≤ 10 extra calls per cast (§23)
-  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return S.looks ? S.looks.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  const fx = (n, ...a) => { if (OPTIONAL_FX.has(n) && game.settings?.values?.effectQuality === 'low') return null; try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
   const C = () => S.combat;   // shim: stamps the cast castId on every hit
   const scene = game.scene;
   const zones = [];
@@ -159,16 +158,16 @@ export function createZones2(S) {
   for (let i = 0; i < HOLES; i++) {
     const g = new THREE.Group();
     const core = new THREE.Mesh(holeCoreGeo, holeCoreMat);
-    const shell = new THREE.Mesh(holeShellGeo, fresnelMat(0xb14bff, { power: 1.6, intensity: 1.2, core: 0.0 }));
+    const shell = new THREE.Mesh(holeShellGeo, fresnelMat(0xb14bff, { power: 1.6, intensity: 2.2, core: 0.0 }));
     shell.scale.setScalar(1.35);
-    const ring = new THREE.Mesh(holeRingGeo, fresnelMat(0xd9a8ff, { power: 0.4, intensity: 1.2, core: 0.6 }));
+    const ring = new THREE.Mesh(holeRingGeo, fresnelMat(0xd9a8ff, { power: 0.4, intensity: 2.0, core: 0.6 }));
     ring.rotation.x = Math.PI / 2; ring.scale.setScalar(2.2);
     g.add(core, shell, ring); g.userData = { core, shell, ring };
     g.visible = false; scene.add(g); holePool.push(g); allVis.push(g);
   }
   for (let i = 0; i < DRAFTS; i++) {
     const m = new THREE.Mesh(tornadoGeo(), tornadoMat());
-    m.material.uniforms.colA.value.set(GLINT); m.material.uniforms.colB.value.set(0x7fe0c0); m.material.uniforms.opacity.value = 0.5;
+    m.material.uniforms.colA.value.set(0xffffff); m.material.uniforms.colB.value.set(0x7fe0c0); m.material.uniforms.opacity.value = 0.5;
     m.frustumCulled = false; m.visible = false; m.renderOrder = 3;
     scene.add(m); draftPool.push(m); allVis.push(m);
   }
@@ -200,12 +199,8 @@ export function createZones2(S) {
     z.pos = z.position;
     if (opts.dir) { z.dir.copy(opts.dir).setY(0); if (z.dir.lengthSq() < 1e-6) z.dir.set(0, 0, 1); z.dir.normalize(); }
     z.convert = (to) => convert(z, to);
-    // v4: linework zone look (looks.zone) instead of the filled ground disc / lane strip / updraft funnel
-    z.cur = S.looks?.cur || null; z.look = null;
-    const v4 = !!S.looks?.on();
-    if (v4) z.look = S.looks.zone(type, z.position.clone(), r, dur + 0.3, { follow: z.follow || null, el: T.el, dir: z.dir, len: z.len, width: z.width, laneKind: z.laneKind, z });
     // visual
-    if (v4) { /* no disc */ } else if (type === 'lane') {
+    if (type === 'lane') {
       const m = takeFrom(lanePool);
       if (m) { z.vis = m; setupLane(z); }
     } else {
@@ -222,7 +217,7 @@ export function createZones2(S) {
     }
     if (type === 'blackhole') { z.extra = takeFrom(holePool); if (z.extra) { z.extra.visible = true; z.extra.position.copy(z.position).setY(z.position.y + 2.2); z.extra.scale.setScalar(0.01); } }
     if (type === 'updraft') {
-      z.extra = v4 ? null : takeFrom(draftPool);
+      z.extra = takeFrom(draftPool);
       if (z.extra) { z.extra.visible = true; z.extra.position.copy(z.position); const h = (opts.params?.h || 18) / 11; z.extra.scale.set(r / 3.2, h, r / 3.2); }
       try { z.draft = game.world?.addUpdraft?.({ pos: z.position.clone(), r, h: opts.params?.h || 18, strength: opts.params?.updraft?.strength || opts.params?.strength || 14, life: dur }) || null; } catch (_) { z.draft = null; }
     }
@@ -312,18 +307,18 @@ export function createZones2(S) {
     switch (z.type) {
       case 'holy':
         fx('runeCircle', p.clone(), { element: 'light', r: R * 0.9, dur: z.dur, rotSpeed: 0.4 });
-        fx('burst', v, { count: 40, shape: 'mote', color: [glint(0xffe08a), 0xffe08a], disc: true, radius: R * 0.8, up: 3, speed: 0.4, size: 0.2, life: 1.2 });
+        fx('burst', v, { count: 40, shape: 'mote', color: [0xffffff, 0xffe08a], disc: true, radius: R * 0.8, up: 3, speed: 0.4, size: 0.2, life: 1.2 });
         try { W()?.surface2?.bless?.(p, R, z.dur); } catch (_) { /* */ }
         break;
       case 'spring':
-        fx('burst', v, { count: 50, shape: 'droplet', color: [glint(0x6fc8ff), 0x6fc8ff], disc: true, radius: R * 0.3, speed: 3, up: 6, size: 0.18, life: 0.9, gravity: 10 });
+        fx('burst', v, { count: 50, shape: 'droplet', color: [0xffffff, 0x6fc8ff], disc: true, radius: R * 0.3, speed: 3, up: 6, size: 0.18, life: 0.9, gravity: 10 });
         fx('shockwave', v, { color: 0x9ff0ff, radius: R, duration: 0.6, thickness: 0.3 });
         cleanse(z.params.cleanse || ['burning', 'corroded', 'blight']);
         try { S.terrain.soak(p, R, z.dur); } catch (_) { /* */ }
         break;
       case 'flood':
         fx('shockwave', v, { color: 0x7fd3ff, radius: R, duration: 1.0, thickness: 1.2 });
-        fx('burst', v, { count: 80, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], disc: true, radius: R * 0.5, speed: 6, up: 5, size: 0.2, life: 1.0, gravity: 9 });
+        fx('burst', v, { count: 80, shape: 'droplet', color: [0xffffff, 0x4fb4ff], disc: true, radius: R * 0.5, speed: 6, up: 5, size: 0.2, life: 1.0, gravity: 9 });
         try { S.terrain.soak(p, R, z.dur); } catch (_) { /* */ }
         if (z.params.rxBonus) floodBonus(true, z.params.rxBonus);
         break;
@@ -336,7 +331,7 @@ export function createZones2(S) {
       case 'miasma': try { W()?.surface2?.curse?.(p, R, z.dur); } catch (_) { /* */ } break;
       case 'roots': rootsBurst(z); break;
       case 'updraft':
-        fx('burst', v, { count: 40, shape: 'leaf', color: [glint(0x8fffc1), 0x8fffc1], disc: true, radius: R * 0.6, tangential: 6, up: 12, speed: 1, size: 0.2, life: 1.2 });
+        fx('burst', v, { count: 40, shape: 'leaf', color: [0xffffff, 0x8fffc1], disc: true, radius: R * 0.6, tangential: 6, up: 12, speed: 1, size: 0.2, life: 1.2 });
         fx('shockwave', v, { color: 0xc8ffe9, radius: R + 1, duration: 0.5, thickness: 0.3 });
         break;
       case 'lane':
@@ -462,12 +457,12 @@ export function createZones2(S) {
     const R = z.radius, p = z.position;
     const rp = () => { const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * R * 0.85; v3.set(p.x + Math.cos(a) * r, 0, p.z + Math.sin(a) * r); v3.y = S.height(v3.x, v3.z) + 0.2; return v3; };
     switch (z.type) {
-      case 'holy': fx('burst', rp(), { count: 2, shape: 'mote', color: [glint(0xffe08a), 0xffe08a], speed: 0.3, up: 2.4, size: 0.18, life: 1.2 }); break;
-      case 'spring': fx('burst', rp(), { count: 3, shape: 'droplet', color: [glint(0x7fd3ff), 0x7fd3ff], speed: 1, up: 4, size: 0.12, life: 0.7, gravity: 8 }); fx('burst', rp(), { count: 1, shape: 'mote', color: [glint(0x9ff0ff), 0x9ff0ff], speed: 0.2, up: 1.6, size: 0.2, life: 1 }); break;
-      case 'flood': fx('burst', rp(), { count: 2, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], speed: 1.5, up: 2.5, size: 0.14, life: 0.6, gravity: 8 }); break;
+      case 'holy': fx('burst', rp(), { count: 2, shape: 'mote', color: [0xffffff, 0xffe08a], speed: 0.3, up: 2.4, size: 0.18, life: 1.2 }); break;
+      case 'spring': fx('burst', rp(), { count: 3, shape: 'droplet', color: [0xffffff, 0x7fd3ff], speed: 1, up: 4, size: 0.12, life: 0.7, gravity: 8 }); fx('burst', rp(), { count: 1, shape: 'mote', color: [0xffffff, 0x9ff0ff], speed: 0.2, up: 1.6, size: 0.2, life: 1 }); break;
+      case 'flood': fx('burst', rp(), { count: 2, shape: 'droplet', color: [0xffffff, 0x4fb4ff], speed: 1.5, up: 2.5, size: 0.14, life: 0.6, gravity: 8 }); break;
       case 'miasma': fx('burst', rp(), { count: 2, shape: 'smoke', color: [0x5b2a8a, 0x1a0b2e], alpha: 0.45, additive: false, speed: 0.4, up: 0.5, size: 1.4, sizeEnd: 2.6, life: 1.4 }); break;
       case 'spore': fx('burst', rp(), { count: 2, shape: 'puff', color: [0xe8ffb0, 0x7fbf4a], alpha: 0.4, additive: false, speed: 0.4, up: 0.8, size: 1.0, sizeEnd: 2.2, life: 1.4 }); fx('burst', rp(), { count: 2, shape: 'mote', color: [0xf4ffd0, 0x9be86a], speed: 0.5, up: 1, size: 0.1, life: 1 }); break;
-      case 'steam': fx('burst', rp(), { count: 2, shape: 'smoke', color: [glint(0xdde6ee), 0xdde6ee], alpha: 0.4, additive: false, speed: 0.5, up: 1.5, size: 1.2, sizeEnd: 2.8, life: 1.3 }); break;
+      case 'steam': fx('burst', rp(), { count: 2, shape: 'smoke', color: [0xffffff, 0xdde6ee], alpha: 0.4, additive: false, speed: 0.5, up: 1.5, size: 1.2, sizeEnd: 2.8, life: 1.3 }); break;
       case 'sand': fx('burst', rp(), { count: 3, shape: 'dust', color: [0xe8cf9a, 0xb8925a], alpha: 0.4, additive: false, tangential: 5, speed: 1, up: 1, curl: 3, size: 0.7, sizeEnd: 1.6, life: 0.9 }); break;
       case 'mud': fx('burst', rp(), { count: 1, shape: 'dust', color: [0x8a6a3a, 0x5a4022], alpha: 0.5, additive: false, speed: 0.2, up: 0.4, size: 0.4, life: 0.6 }); break;
       case 'overgrowth': case 'grove': fx('burst', rp(), { count: 1, shape: 'leaf', color: [0xc8ff6a, 0x4f9e3a], speed: 0.3, up: 1, size: 0.2, life: 1 }); if (z.type === 'grove') fx('burst', rp(), { count: 2, shape: 'thorn', color: [0xb8f070, 0x2f7d3a], speed: 0.5, up: 3, size: 0.35, sizeEnd: 0.2, life: 0.4, gravity: 6 }); break;
@@ -477,12 +472,12 @@ export function createZones2(S) {
         for (let i = 0; i < 3; i++) { const q = rp(); q.y += 6; fx('burst', q, { count: 1, shape: 'streak', color: [0xe8f6ff, 0x7fd3ff], dir: v2.set(0, -1, 0), spread: 0.02, speed: 16, size: 0.12, life: 0.4, velocityStretch: 0.08 }); }
         break;
       }
-      case 'whirl': fx('burst', rp(), { count: 3, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], tangential: 6, radius: 0, speed: 0.5, up: z.params.spout ? 6 : 1.5, size: 0.14, life: 0.6, gravity: 5 }); break;
+      case 'whirl': fx('burst', rp(), { count: 3, shape: 'droplet', color: [0xffffff, 0x4fb4ff], tangential: 6, radius: 0, speed: 0.5, up: z.params.spout ? 6 : 1.5, size: 0.14, life: 0.6, gravity: 5 }); break;
       case 'blackhole': fx('burst', v2.copy(z.position).setY(z.position.y + 2.2), { count: 6, shape: 'wisp', color: [0xb14bff, 0x2a0b4e], radius: R, inward: true, speed: R * 1.8, size: 0.35, sizeEnd: 0.05, life: 0.45 }); break;
-      case 'updraft': fx('burst', rp(), { count: 2, shape: 'leaf', color: [glint(0x8fffc1), 0x8fffc1], tangential: 5, speed: 0.5, up: 10, size: 0.16, life: 1.2 }); break;
+      case 'updraft': fx('burst', rp(), { count: 2, shape: 'leaf', color: [0xffffff, 0x8fffc1], tangential: 5, speed: 0.5, up: 10, size: 0.16, life: 1.2 }); break;
       case 'lane': {
         v2.copy(p).addScaledVector(z.dir, Math.random() * z.len); v2.y = S.height(v2.x, v2.z) + 0.3;
-        fx('burst', v2, { count: 2, shape: z.laneKind === 'wind' ? 'leaf' : 'snow', color: z.laneKind === 'wind' ? [glint(0x8fffc1), 0x8fffc1] : [glint(0x9fe8ff), 0x9fe8ff], dir: z.dir, spread: 0.2, speed: z.laneKind === 'wind' ? 8 : 1, size: 0.16, life: 0.6 });
+        fx('burst', v2, { count: 2, shape: z.laneKind === 'wind' ? 'leaf' : 'snow', color: z.laneKind === 'wind' ? [0xffffff, 0x8fffc1] : [0xffffff, 0x9fe8ff], dir: z.dir, spread: 0.2, speed: z.laneKind === 'wind' ? 8 : 1, size: 0.16, life: 0.6 });
         break;
       }
       default: break;
@@ -529,8 +524,7 @@ export function createZones2(S) {
     const z = zones[i]; if (!z) return;
     zones.splice(i, 1);
     z.alive = false;
-    if (z.look) { S.looks?.stopAll(z.look); z.look = null; }
-    if (natural) { const pc = S.looks && z.cur ? S.looks.swap(z.cur) : undefined; try { end(z); } finally { if (pc !== undefined) S.looks.swap(pc); } }
+    if (natural) end(z);
     give(z.vis); z.vis = null;
     if (z.extra) { give(z.extra); z.extra = null; }
     if (z.draft) { try { game.world?.removeUpdraft?.(z.draft); } catch (_) { /* */ } z.draft = null; }
@@ -639,15 +633,8 @@ export function createZones2(S) {
     const pp = pl()?.object?.position;
     for (let i = zones.length - 1; i >= 0; i--) {
       const z = zones[i];
-      const prevC = S.looks && z.cur ? S.looks.swap(z.cur) : undefined;
-      try { zoneStep(z, i, dt); } finally { if (prevC !== undefined) S.looks.swap(prevC); }
-    }
-    void pp;
-  }
-  function zoneStep(z, i, dt) {
-    {
       z.age += dt; z.time -= dt;
-      if (z.time <= 0) { remove(i); return; }
+      if (z.time <= 0) { remove(i); continue; }
       // follow / travel
       if (z.follow && z.follow.position) {
         const f = z.follow.position;
@@ -681,7 +668,7 @@ export function createZones2(S) {
           z.waveT = z.params.every || 3; z.waves++;
           v.copy(z.position); v.y += 0.4;
           fx('shockwave', v, { color: 0xbfeaff, radius: z.radius, duration: 1.1, thickness: 1.4 });
-          fx('burst', v, { count: 60, shape: 'droplet', color: [glint(0x4fb4ff), 0x4fb4ff], disc: true, radius: z.radius * 0.4, speed: z.radius * 0.9, up: 3, size: 0.22, life: 0.9, gravity: 8 });
+          fx('burst', v, { count: 60, shape: 'droplet', color: [0xffffff, 0x4fb4ff], disc: true, radius: z.radius * 0.4, speed: z.radius * 0.9, up: 3, size: 0.22, life: 0.9, gravity: 8 });
           S.sfx('explode_water', { position: v, volume: 0.7 });
           for (const e of enemiesIn(z, 0, near).slice()) hitT(z, e, z.params.dmg || 40, { status: { wet: { dur: 8 } }, knockback: 4, tier: 'heavy' });
         }
@@ -691,6 +678,7 @@ export function createZones2(S) {
       z.tick -= dt;
       if (z.tick <= 0) { z.tick += z.every; try { tick(z); } catch (err) { warn('tick:' + z.type, err); } }
     }
+    void pp;
   }
 
   function isInside(type, pos) { for (const z of zones) if ((z.type === type || z.kind === type) && insideZ(z, pos)) return true; return false; }

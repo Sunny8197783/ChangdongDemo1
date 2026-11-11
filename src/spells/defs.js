@@ -1,6 +1,5 @@
 // The 15 spells: metadata (Korean) + cast implementations.
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { ELEMENT_COLORS } from '../core/utils.js';
 
 const C = ELEMENT_COLORS;
@@ -52,7 +51,7 @@ export const SPELLS = {
         onImpact(p, pos) {
           S.vfx('explosion', pos, { element: 'fire', scale: 1 + 1.6 * c });
           S.vfx('shockwave', pos, { color: 0xffa040, radius: R * 1.3, duration: 0.5, thickness: 1 });
-          S.vfx('flash', pos, { color: 0xff8030, intensity: 1.2, distance: R * 4, duration: 0.45 });
+          S.vfx('flash', pos, { color: 0xff8030, intensity: 10, distance: R * 4, duration: 0.45 });
           S.vfx('shake', 0.25 + 0.25 * c);
           S.vfx('fovKick', 2 + 3 * c, 0.3);
           S.sfx('explode_fire', { position: pos });
@@ -83,7 +82,7 @@ export const SPELLS = {
           if (need > start.y) start.y = need;
         }
         if (start.y > pt.y + 70) start.set(pt.x + sd.x * 4, pt.y + 40, pt.z + sd.z * 4);   // walled in: drop it from above
-        S.vfx('flash', start, { color: 0xffc070, intensity: 1.2, distance: 60, duration: 0.35 });
+        S.vfx('flash', start, { color: 0xffc070, intensity: 6, distance: 60, duration: 0.35 });
         S.vfx('burst', start, { count: 24, color: [0xfff0c0, 0xff8a30], shape: 'spark', speed: 6, spread: 1, size: 0.5, life: 0.35, drag: 2 });
         const dir = new THREE.Vector3().subVectors(pt, start); const dist = dir.length();
         S.projectiles.spawn({
@@ -97,11 +96,11 @@ export const SPELLS = {
             const R = 10;
             S.vfx('explosion', g, { element: 'fire', scale: 3.2 });
             S.vfx('shockwave', g, { color: 0xffb060, radius: R * 1.4, duration: 0.7, thickness: 2 });
-            S.vfx('shockwave', g, { color: GLINT, radius: R * 0.8, duration: 0.4, thickness: 1.5 });
+            S.vfx('shockwave', g, { color: 0xffffff, radius: R * 0.8, duration: 0.4, thickness: 1.5 });
             S.vfx('debris', g, { count: 40, material: 'rock', color: 0x4a2014, size: 0.6, speed: 20, life: 2.4 });
             S.vfx('burst', g, { count: 120, color: [0xffe080, 0xff3a00], shape: 'ember', speed: 26, spread: 0.7, dir: UP, size: 0.35, life: 1.6, gravity: -18, drag: 0.6 });
             S.vfx('burst', g, { count: 25, color: [0x8a6a5a, 0x5a4a44], shape: 'smoke', speed: 10, spread: 0.6, dir: UP, size: 3, sizeEnd: 5, life: 1.4, additive: false, drag: 1.4, gravity: 1, alpha: 0.45 });
-            S.vfx('flash', g, { color: 0xff8030, intensity: 1.2, distance: 50, duration: 0.8 });
+            S.vfx('flash', g, { color: 0xff8030, intensity: 20, distance: 50, duration: 0.8 });
             S.vfx('screenFlash', 0xfff0d0, 0.45, 0.35);
             S.vfx('shake', 1);
             S.vfx('fovKick', 7, 0.5);
@@ -133,10 +132,10 @@ export const SPELLS = {
         S.projectiles.spawn({
           kind: 'shard', element: 'ice', mesh: 'shard', pos: aim.origin, dir: d, speed: 52, radius: 0.38, damage: 9, life: 1.4,
           homing: i === 0 || aim.target ? 4 : 1.5, target: aim.target, status: { chilled: 3 }, knockback: 1.5, trailWidth: 0.22, trailLength: 10,
-          emitter: { rate: 25, color: [glint(0x9feaff), 0x9feaff], shape: 'snow', speed: 0.6, spread: 1, size: 0.1, sizeEnd: 0, life: 0.5, drag: 1 },
+          emitter: { rate: 25, color: [0xffffff, 0x9feaff], shape: 'snow', speed: 0.6, spread: 1, size: 0.1, sizeEnd: 0, life: 0.5, drag: 1 },
           onImpact(p, pos) {
             S.vfx('impact', pos, { element: 'ice', scale: 0.6 });
-            S.vfx('burst', pos, { count: 8, color: [glint(0x7fe3ff), 0x7fe3ff], shape: 'shard', speed: 5, spread: 1, size: 0.12, life: 0.4, gravity: -8 });
+            S.vfx('burst', pos, { count: 8, color: [0xffffff, 0x7fe3ff], shape: 'shard', speed: 5, spread: 1, size: 0.12, life: 0.4, gravity: -8 });
             S.sfx('impact_ice', { position: pos, volume: 0.6 });
             S.terrain.chill(pos, 1.2);
           },
@@ -151,9 +150,9 @@ export const SPELLS = {
         kind: 'lance', element: 'ice', mesh: 'lance', pos: aim.origin, dir: aim.dir, speed: 62, radius: 0.55 + 0.3 * c, scale: 0.8 + 0.6 * c,
         damage: 30 + 30 * c, life: (36 + 30 * c) / 62, pierce: true, homing: 1, target: aim.target, status: { frozen: 2 + 1.5 * c }, knockback: 5,
         trailWidth: 0.5, trailLength: 22, data: { aoe: 2.5 },
-        emitter: { rate: 70, color: [glint(0x7fe3ff), 0x7fe3ff], shape: 'snow', speed: 1.5, spread: 1, size: 0.16, sizeEnd: 0, life: 0.7, drag: 1.5 },
+        emitter: { rate: 70, color: [0xffffff, 0x7fe3ff], shape: 'snow', speed: 1.5, spread: 1, size: 0.16, sizeEnd: 0, life: 0.7, drag: 1.5 },
         onHitEntity(p, e, r, pt) {
-          S.vfx('burst', pt, { count: 20, color: [glint(0x7fe3ff), 0x7fe3ff], shape: 'shard', speed: 8, spread: 1, size: 0.16, life: 0.5, gravity: -6 });
+          S.vfx('burst', pt, { count: 20, color: [0xffffff, 0x7fe3ff], shape: 'shard', speed: 8, spread: 1, size: 0.16, life: 0.5, gravity: -6 });
           S.sfx('impact_ice', { position: pt });
         },
         onImpact(p, pos, ent, ground) {
@@ -190,7 +189,7 @@ export const SPELLS = {
             S.props.spikes.spawn(x, S.height(x, z), z, { height: hgt, width: k === 2 ? (last ? 2.4 : 1.5) : 1, hold: 2.6 + (N - i) * 0.02, sink: 0.6, tiltX: fd.z * lat * -0.12 + (Math.random() - 0.5) * 0.3, tiltZ: fd.x * lat * 0.12 + (Math.random() - 0.5) * 0.3 });
           }
           const pt = new THREE.Vector3(cx, cy + 0.5, cz);
-          S.vfx('burst', pt, { count: 18, color: [glint(0x9feaff), 0x9feaff], shape: 'shard', speed: 9, dir: UP, spread: 0.6, size: 0.18, life: 0.6, gravity: -12 });
+          S.vfx('burst', pt, { count: 18, color: [0xffffff, 0x9feaff], shape: 'shard', speed: 9, dir: UP, spread: 0.6, size: 0.18, life: 0.6, gravity: -12 });
           S.vfx('burst', pt, { count: 8, color: 0xe8f8ff, shape: 'smoke', speed: 3, spread: 1, size: 1, sizeEnd: 2.2, life: 0.9, additive: false, drag: 2 });
           if (i % 3 === 0) { S.sfx('impact_ice', { position: pt }); S.vfx('shake', 0.22); }
           if (last) {
@@ -217,7 +216,7 @@ export const SPELLS = {
       if (target && S.center(target).distanceTo(o) > 50) target = null;
       const end = target ? S.center(target).clone() : (aim.point.distanceTo(o) > 45 ? o.clone().addScaledVector(aim.dir, 45) : aim.point.clone());
       S.vfx('beam', o, end, { color: C.lightning, width: 0.14, duration: 0.16, jagged: 0.4, segments: 12, branches: 1 });
-      S.vfx('flash', end, { color: C.lightning, intensity: 1.2, distance: 8, duration: 0.15 });
+      S.vfx('flash', end, { color: C.lightning, intensity: 4, distance: 8, duration: 0.15 });
       S.sfx('impact_lightning', { position: end, volume: 0.7 });
       if (target) {
         S.combat.dealDamage(target, { amount: 16, element: 'lightning', source: 'player', point: end, status: { shocked: 3 }, direction: aim.dir.clone(), knockback: 1 });
@@ -268,9 +267,9 @@ export const SPELLS = {
           if (!e.alive) return;
           const tt = S.center(e).clone();
           S.vfx('beam', f, tt, { color: 0xd9c2ff, width: w, duration: 0.32, jagged: 0.9, segments: 16, branches: 3 });
-          S.vfx('beam', f, tt, { color: GLINT, width: w * 0.35, duration: 0.2, jagged: 0.6, segments: 12 });
-          S.vfx('flash', tt, { color: C.lightning, intensity: 1.2, distance: 12, duration: 0.25 });
-          S.vfx('burst', tt, { count: 22, color: [glint(C.lightning), C.lightning], shape: 'spark', speed: 10, spread: 1, size: 0.12, life: 0.4, drag: 2 });
+          S.vfx('beam', f, tt, { color: 0xffffff, width: w * 0.35, duration: 0.2, jagged: 0.6, segments: 12 });
+          S.vfx('flash', tt, { color: C.lightning, intensity: 7, distance: 12, duration: 0.25 });
+          S.vfx('burst', tt, { count: 22, color: [0xffffff, C.lightning], shape: 'spark', speed: 10, spread: 1, size: 0.12, life: 0.4, drag: 2 });
           S.vfx('shake', 0.15);
           S.sfx('impact_lightning', { position: tt });
           S.combat.dealDamage(e, { amount: amt, element: 'lightning', source: 'player', point: tt, status: { shocked: 4 }, knockback: 3, heavy: true });
@@ -298,9 +297,9 @@ export const SPELLS = {
       S.projectiles.spawn({
         kind: 'blade', element: 'wind', mesh: 'blade', pos: aim.origin, dir: aim.dir, speed: 40, radius: 1.0, damage: 14, life: 0.95,
         pierce: true, knockback: 9, launch: 1.5, trailWidth: 1.2, trailLength: 8, homing: 1.5, target: aim.target,
-        emitter: { rate: 30, color: [glint(C.wind), C.wind], shape: 'leaf', speed: 1, spread: 1, size: 0.12, life: 0.5, drag: 2 },
+        emitter: { rate: 30, color: [0xffffff, C.wind], shape: 'leaf', speed: 1, spread: 1, size: 0.12, life: 0.5, drag: 2 },
         data: { aoe: 1.5 },
-        onHitEntity(p, e, r, pt) { S.vfx('burst', pt, { count: 14, color: [glint(C.wind), C.wind], shape: 'leaf', speed: 7, spread: 1, size: 0.14, life: 0.5, drag: 2 }); S.sfx('impact_wind', { position: pt, volume: 0.6 }); },
+        onHitEntity(p, e, r, pt) { S.vfx('burst', pt, { count: 14, color: [0xffffff, C.wind], shape: 'leaf', speed: 7, spread: 1, size: 0.14, life: 0.5, drag: 2 }); S.sfx('impact_wind', { position: pt, volume: 0.6 }); },
         onUpdate(p) { p._wt = (p._wt || 0) + 1; if (p._wt % 6 === 0) S.terrain.wind(p.pos, p.vel, 0.7, 3); },
         onImpact(p, pos) { S.vfx('impact', pos, { element: 'wind', scale: 0.7 }); S.terrain.wind(pos, p.vel, 0.8, 3.5); },
       });
@@ -313,7 +312,7 @@ export const SPELLS = {
       const fd = flatDir(aim.dir);
       const range = 6 + 7 * c, cosA = Math.cos(0.75);
       const o = new THREE.Vector3(pp.x, pp.y + 1.1, pp.z).addScaledVector(fd, 2.5);
-      if (S.looks?.on()) S.looks.wave(o, fd, range, 86); else S.props.gust(o, fd, range, C.wind);
+      S.props.gust(o, fd, range, C.wind);
       S.vfx('burst', o, { count: 50, color: [C.wind, 0xd8ffe8], shape: 'leaf', speed: 16 + 10 * c, dir: fd, spread: 0.3, size: 0.18, life: 0.6, drag: 1.5, alpha: 0.8 });
       S.vfx('burst', o, { count: 10, color: [C.wind, 0xbff5d8], shape: 'ring', speed: 10 + 8 * c, dir: fd, spread: 0.25, size: 0.5, sizeEnd: 2, life: 0.4, alpha: 0.6 });
       S.vfx('shake', 0.25 + 0.2 * c);
@@ -405,7 +404,7 @@ export const SPELLS = {
         S.later(k * 0.45, () => {
           const c = S.ground(pp).clone();
           S.vfx('shockwave', c, { color: C.earth, radius: R, duration: 0.55, thickness: 1.4 });
-          S.vfx('shockwave', c, { color: GLINT, radius: R * 0.9, duration: 0.4, thickness: 0.5 });
+          S.vfx('shockwave', c, { color: 0xffffff, radius: R * 0.9, duration: 0.4, thickness: 0.5 });
           S.vfx('shake', 0.55 + k * 0.15);
           S.vfx('fovKick', 2 + k, 0.3);
           S.sfx('explode_earth', { position: c, pitch: 0.8 - k * 0.1 });

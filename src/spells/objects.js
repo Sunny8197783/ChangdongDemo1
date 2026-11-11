@@ -5,7 +5,6 @@
 // Element hits on an object go through combat.reactObject (pods: burgeon/hyperbloom/…, crystals: prism); combat then calls
 // obj.onReact(id, el) and we despawn. Bursts caused by other bursts (mine chains, pod cascades) use combat's stagger queue.
 import * as THREE from 'three';
-import { glint, GLINT } from './palette.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { elColor } from '../core/elements.js';
 import { toonMat } from '../core/utils.js';
@@ -15,7 +14,7 @@ const ni = (g) => (g.index ? g.toNonIndexed() : g);
 const POOL = { pod: 16, crystal: 8, mine: 6, droplet: 12, soul: 8, flower: 4, turret: 2, rod: 4 };
 export const OBJECT_KINDS = Object.keys(POOL);
 const LIFE = { pod: 5, crystal: 10, mine: 20, droplet: 8, soul: 10, flower: 4, turret: 6, rod: 12 };
-const BASE_COL = { pod: 0x9be86a, crystal: GLINT, mine: 0xd4b4ff, droplet: 0x8fd8ff, soul: 0xc9a8ff, flower: 0xcff6ff, turret: 0xffe08a, rod: 0xe9d8ff };
+const BASE_COL = { pod: 0x9be86a, crystal: 0xffffff, mine: 0xd4b4ff, droplet: 0x8fd8ff, soul: 0xc9a8ff, flower: 0xcff6ff, turret: 0xffe08a, rod: 0xe9d8ff };
 const PICK_R = { crystal: 1.5, soul: 1.7, droplet: 1.3 };
 
 function podGeo() {
@@ -61,16 +60,16 @@ function rodGeo() {
 export function createObjects(S) {
   const { game } = S;
   const E = game.events;
-  const fx = (n, ...a) => { try { return S.looks ? S.looks.fx(n, a) : game.vfx?.[n]?.(...a); } catch (_) { return null; } };
-  const glowMat = (opacity = 0.95) => new THREE.MeshBasicMaterial({ color: GLINT, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const fx = (n, ...a) => { try { return game.vfx?.[n]?.(...a); } catch (_) { return null; } };
+  const glowMat = (opacity = 0.95) => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const GEO = {
     pod: podGeo(), crystal: crystalGeo(), mine: mineGeo(), droplet: new THREE.SphereGeometry(0.17, 10, 8),
     soul: new THREE.IcosahedronGeometry(0.24, 2), flower: flowerGeo(), turret: turretGeo(), rod: rodGeo(),
   };
   const MAT = {
-    pod: toonMat(GLINT, { emissive: 0x1d3a12, emissiveIntensity: 0.6 }), crystal: glowMat(0.9), mine: toonMat(GLINT, { emissive: 0x2a1850, emissiveIntensity: 0.8 }),
-    droplet: glowMat(0.9), soul: glowMat(0.95), flower: glowMat(0.85), turret: toonMat(GLINT, { emissive: 0x6a4a10, emissiveIntensity: 0.5 }),
-    rod: toonMat(GLINT, { emissive: 0x3a2a70, emissiveIntensity: 0.9 }),
+    pod: toonMat(0xffffff, { emissive: 0x1d3a12, emissiveIntensity: 0.6 }), crystal: glowMat(0.9), mine: toonMat(0xffffff, { emissive: 0x2a1850, emissiveIntensity: 0.8 }),
+    droplet: glowMat(0.9), soul: glowMat(0.95), flower: glowMat(0.85), turret: toonMat(0xffffff, { emissive: 0x6a4a10, emissiveIntensity: 0.5 }),
+    rod: toonMat(0xffffff, { emissive: 0x3a2a70, emissiveIntensity: 0.9 }),
   };
   const meshes = {}, lists = {}, active = {};
   const col = new THREE.Color();
@@ -163,8 +162,8 @@ export function createObjects(S) {
     if (kind === 'pod') fx('burst', tv, { count: 10, shape: 'leaf', color: [0xd8ff9a, 0x5fae3a], speed: 2.4, up: 1.5, spread: 1, size: 0.18, life: 0.6, gravity: 4 });
     else if (kind === 'crystal') fx('burst', tv, { count: 14, shape: 'shard', color: [elColor(o.element, 'core'), elColor(o.element, 'mid')], speed: 3, spread: 1, size: 0.16, life: 0.5, drag: 2 });
     else if (kind === 'mine') { fx('shockwave', S.ground(o.position).clone(), { color: 0xc9a4ff, radius: o.r, duration: 0.4, thickness: 0.12 }); }
-    else if (kind === 'rod') fx('burst', tv.setY(o.position.y + 2.2), { count: 18, shape: 'spark', color: [glint(0xc9a4ff), 0xc9a4ff], speed: 6, spread: 1, size: 0.1, life: 0.35, drag: 2 });
-    else if (kind === 'flower') fx('burst', tv, { count: 18, shape: 'snow', color: [glint(0x9fe8ff), 0x9fe8ff], disc: true, radius: 0.3, speed: 3, size: 0.18, life: 0.6, drag: 2 });
+    else if (kind === 'rod') fx('burst', tv.setY(o.position.y + 2.2), { count: 18, shape: 'spark', color: [0xffffff, 0xc9a4ff], speed: 6, spread: 1, size: 0.1, life: 0.35, drag: 2 });
+    else if (kind === 'flower') fx('burst', tv, { count: 18, shape: 'snow', color: [0xffffff, 0x9fe8ff], disc: true, radius: 0.3, speed: 3, size: 0.18, life: 0.6, drag: 2 });
     else if (kind === 'turret') fx('burst', tv.setY(o.position.y + 1.3), { count: 16, shape: 'petal', color: [0xfff2a0, 0xffc24a], speed: 2.5, spread: 1, size: 0.22, life: 0.7, drag: 2 });
     E.emit('objectSpawn', { kind, point: o.position, element: o.element });
     return o;
@@ -221,7 +220,7 @@ export function createObjects(S) {
     if (o.kind === 'flower' && (el === 'earth' || hit.heavy || hit.tier === 'heavy')) {
       const p = tv2.copy(o.position); p.y += 0.5;
       fx('preset', 'explosion_ice', p, { scale: 1.2 });
-      fx('burst', p, { count: 40, shape: 'shard', color: [glint(0x9fe8ff), 0x9fe8ff], speed: 10, spread: 1, size: 0.2, life: 0.6, gravity: 10 });
+      fx('burst', p, { count: 40, shape: 'shard', color: [0xffffff, 0x9fe8ff], speed: 10, spread: 1, size: 0.2, life: 0.6, gravity: 10 });
       aoeHit(p, 5, { amount: 40, element: 'ice', tags: ['reaction', 'shatter'], tier: 'heavy', rxId: 'shatter' }, o.source);
       kill(o, false);
       return { id: 'shatter' };
@@ -281,7 +280,7 @@ export function createObjects(S) {
     const pullR = o.data.pull || 0;
     const blast = () => {
       fx('preset', 'explosion_lightning', p, { scale: 0.9 });
-      fx('burst', p, { count: 30, shape: 'spark', color: [glint(0xc9a4ff), 0xc9a4ff], speed: 12, spread: 1, size: 0.12, life: 0.4, drag: 2, velocityStretch: true });
+      fx('burst', p, { count: 30, shape: 'spark', color: [0xffffff, 0xc9a4ff], speed: 12, spread: 1, size: 0.12, life: 0.4, drag: 2, velocityStretch: true });
       fx('groundDecal', 'lichtenberg', S.ground(p).clone(), o.r, 5);
       S.sfx('impact_lightning', { position: p });
       const tpl = o.hit ? Object.assign({}, o.hit) : { amount: 40, element: 'lightning', status: { shocked: { dur: 5 }, stunned: { dur: 0.6 } } };
@@ -306,7 +305,7 @@ export function createObjects(S) {
         tv.subVectors(p, e.object.position).setY(0); const L = tv.length(); if (L < 0.4) continue;
         e.velocity.addScaledVector(tv.multiplyScalar(1 / L), Math.min(14, L * 4));
       }
-      fx('burst', p, { count: 20, shape: 'spark', color: [glint(0x9a7bff), 0x9a7bff], radius: o.r + pullR, inward: true, speed: (o.r + pullR) * 3, size: 0.12, life: 0.3 });
+      fx('burst', p, { count: 20, shape: 'spark', color: [0xffffff, 0x9a7bff], radius: o.r + pullR, inward: true, speed: (o.r + pullR) * 3, size: 0.12, life: 0.3 });
       o.alive && (o.data.armed = false);
       S.later(0.25, blast);
     } else blast();
@@ -363,7 +362,7 @@ export function createObjects(S) {
       case 'turret': case 'flower': kill(o, true); return;
       case 'rod': {
         tv.copy(o.position); tv.y += 2.2;
-        fx('burst', tv, { count: 16, shape: 'spark', color: [glint(0xc9a4ff), 0xc9a4ff], speed: 5, spread: 1, size: 0.1, life: 0.3, drag: 2 });
+        fx('burst', tv, { count: 16, shape: 'spark', color: [0xffffff, 0xc9a4ff], speed: 5, spread: 1, size: 0.1, life: 0.3, drag: 2 });
         kill(o, false); return;
       }
       default: kill(o, true);
@@ -402,7 +401,7 @@ export function createObjects(S) {
         enemiesNear.length = 0;
         c?.queryRadius?.(tv.copy(o.position).setY(o.position.y + 0.8), o.r, '!player', enemiesNear);
         for (const e of enemiesNear) { if (e.alive && !e.isProp) { o.data.pulling = true; detonate(o); break; } }
-        if (o.alive) { o.timer2 -= 0.1; if (o.timer2 <= 0) { o.timer2 = 0.6; tv.copy(o.position); tv.y += 0.5; fx('burst', tv, { count: 2, shape: 'spark', color: [glint(0xc9a4ff), 0xc9a4ff], speed: 1.5, spread: 1, size: 0.07, life: 0.25 }); } }
+        if (o.alive) { o.timer2 -= 0.1; if (o.timer2 <= 0) { o.timer2 = 0.6; tv.copy(o.position); tv.y += 0.5; fx('burst', tv, { count: 2, shape: 'spark', color: [0xffffff, 0xc9a4ff], speed: 1.5, spread: 1, size: 0.07, life: 0.25 }); } }
         break;
       }
       case 'flower': {
@@ -411,7 +410,7 @@ export function createObjects(S) {
         o.timer = 1;
         tv.copy(o.position); tv.y += 0.2;
         fx('shockwave', tv, { color: 0x9fe8ff, radius: o.r, duration: 0.5, thickness: 0.12, opacity: 0.6 });
-        fx('burst', tv, { count: 10, shape: 'snow', color: [glint(0x9fe8ff), 0x9fe8ff], disc: true, radius: 0.4, speed: o.r * 1.3, drag: 2, size: 0.18, life: 0.6 });
+        fx('burst', tv, { count: 10, shape: 'snow', color: [0xffffff, 0x9fe8ff], disc: true, radius: 0.4, speed: o.r * 1.3, drag: 2, size: 0.18, life: 0.6 });
         enemiesNear.length = 0; c?.queryRadius?.(tv, o.r, '!player', enemiesNear);
         for (const e of enemiesNear) if (e.alive && !e.isProp) { try { c.applyStatus(e, 'chilled', 3, { source: o.source === 'player' ? game.player?.entity : o.source, stacks: 1, el: 'ice' }); } catch (_) { /* */ } }
         break;
@@ -435,7 +434,7 @@ export function createObjects(S) {
         if (o.timer > 0) break;
         o.timer = 1.2;
         tv.copy(o.position); tv.y += 2.35;
-        fx('burst', tv, { count: 4, shape: 'spark', color: [glint(0xc9a4ff), 0xc9a4ff], speed: 3, spread: 1, size: 0.08, life: 0.25 });
+        fx('burst', tv, { count: 4, shape: 'spark', color: [0xffffff, 0xc9a4ff], speed: 3, spread: 1, size: 0.08, life: 0.25 });
         // puddles within r stay charged (zap the water network every 1.2 s)
         S.api?.zones?.chargeWater?.(o.position, o.r);
         break;
@@ -463,7 +462,7 @@ export function createObjects(S) {
       fx('burst', tv, { count: 18, shape: 'wisp', color: [0xe0c8ff, 0x9a5cff], speed: 3, up: 2, size: 0.3, life: 0.8 });
     } else if (o.kind === 'droplet') {
       heal(mx * (o.data.heal || 0.02), 'droplet');
-      fx('burst', tv, { count: 12, shape: 'droplet', color: [glint(0x6fc8ff), 0x6fc8ff], speed: 3, spread: 1, size: 0.14, life: 0.5, gravity: 6 });
+      fx('burst', tv, { count: 12, shape: 'droplet', color: [0xffffff, 0x6fc8ff], speed: 3, spread: 1, size: 0.14, life: 0.5, gravity: 6 });
     }
     kill(o, false);
   }

@@ -14,6 +14,11 @@
 //  (I) telegraph retention ≥ 95 % is verified by core at integration with the real looks of both families.
 const fs = require('fs'); const path = require('path');
 
+// v4 look rolled back to v3 at user request: the v4 look floors (rule 5 palette grep, motif files / registration, lookOf levels,
+// MG1.c per-tier ceilings / floors and measured look level, MG1.f element silhouettes) no longer apply; they are reported as notes.
+// MG1.a (first-cast warm-up), MG1.d (materials), MG1.e (near-white rotation) and MG1.g (castLock) are still checks.
+const LOOK_ROLLED_BACK = true;
+
 const BESPOKE = ['fire.charged', 'ice.nova', 'lightning.ult', 'wind.charged', 'wind.gust', 'water.ult', 'earth.charged', 'earth.ult', 'light.flash', 'light.sanctuary', 'light.ult', 'nature.roots',
   'fire.basic', 'ice.basic', 'lightning.basic', 'wind.basic', 'water.basic', 'earth.basic', 'nature.basic', 'light.basic', 'shadow.basic',
   'ice.charged', 'lightning.charged', 'water.charged', 'nature.charged', 'light.charged', 'shadow.charged',
@@ -206,9 +211,10 @@ module.exports = async function (PT) {
   const root = PT.root;
   const full = !!PT.flags.full, sheets = !!PT.flags.sheets;
   const g5 = grepRule5(root);
-  PT.check('MG static: rule 5 in src/spells* (no 0xffffff / #ffffff, no multiplier > 1.2)', g5.hits.length === 0, g5.hits.length ? g5.hits.slice(0, 20) : { files: g5.files });
+  const lookCheck = (name, ok, detail) => LOOK_ROLLED_BACK ? PT.note(`(skipped: v4 look rolled back to v3 at user request) ${name}: ${ok ? 'pass' : 'fail'}`) : PT.check(name, ok, detail);
+  lookCheck('MG static: rule 5 in src/spells* (no 0xffffff / #ffffff, no multiplier > 1.2)', g5.hits.length === 0, g5.hits.length ? g5.hits.slice(0, 20) : { files: g5.files });
   PT.check('MG static: no reserved threat shapes (hatch / chevron / diamond) in player linework', g5.reserved.length === 0, g5.reserved);
-  for (const el of ['fire', 'ice', 'lightning', 'wind', 'water']) PT.check(`MG static: src/spells/motifs/${el}.js exists`, fs.existsSync(path.join(root, 'src/spells/motifs', el + '.js')));
+  for (const el of ['fire', 'ice', 'lightning', 'wind', 'water']) lookCheck(`MG static: src/spells/motifs/${el}.js exists`, fs.existsSync(path.join(root, 'src/spells/motifs', el + '.js')));
 
   // ================================================================== fresh page: first casts, registration, lookOf, castLock
   const pg = await PT.boot('&cls=mage&level=30&skills=preset:endgame_mage', { w: 640, h: 360 });
@@ -216,21 +222,25 @@ module.exports = async function (PT) {
   if (!pg.ready) { await pg.close(); return; }
   await pg.eval(installMG);
   const reg = await pg.run('MG1.b registration', (bespoke) => {
-    const g = window.game, K = g.vfx?.kit, L = g.spells?.looks;
-    PT.check('kit present and caster looks installed', !!K && !!L?.installed);
+    const g = window.game, K = g.vfx?.kit;
+    // v4 look rolled back to v3 at user request: the motif / FM-shape / lookOf look-level checks no longer apply (notes only)
+    const tierOf = (def, id) => { if (!def) return 'A'; if (def.slot === 'basic') return 'B'; if (def.slot === 'charged') return 'C'; if (def.slot === 'ultimate' || /\.awakened$/.test(id)) return 'U'; if (def.slot === 'finisher') return 'F'; if (def.slot === 'support') return 'Z'; return 'A'; };
+    const ROLLED_BACK = true;   // v4 look rolled back to v3 at user request
+    const CHECK = (name, ok, detail) => ROLLED_BACK ? PT.note(`(skipped: v4 look rolled back to v3 at user request) ${name}: ${ok ? 'pass' : 'fail'}`) : PT.check(name, ok, detail);
+    PT.check('kit present', !!K);
     const kinds = ['cast', 'trail', 'burst', 'spark', 'zone', 'pillar', 'wave', 'aura', 'summon'];
     const miss = [];
     for (const el of ['fire', 'ice', 'lightning', 'wind', 'water']) for (const k of kinds) if (!K.hasMotif(el, k)) miss.push(el + ':' + k);
-    PT.check('5 elements × 9 motif kinds registered (kit.registerMotif)', miss.length === 0, miss);
+    CHECK('5 elements × 9 motif kinds registered (kit.registerMotif)', miss.length === 0, miss);
     const shapes = ['fire.flame', 'fire.tongue', 'fire.comet', 'fire.petal', 'fire.meteor', 'ice.prism', 'ice.stub', 'ice.shard', 'ice.lance', 'lightning.orb', 'lightning.spike', 'lightning.disc', 'wind.crescent', 'wind.leaf', 'water.droplet', 'water.sheet', 'water.bead'];
     const ms = shapes.filter((s) => !K._fm?.hasShape?.(s));
-    PT.check('FM shapes registered (§3.5 primaries)', ms.length === 0, ms);
+    CHECK('FM shapes registered (§3.5 primaries)', ms.length === 0, ms);
     const ids = [...g.skills.defs.keys()];
     const levels = {}; const bad = [];
     for (const id of ids) { const lv = g.debug.lookOf(id, 'caster'); levels[id] = lv; if (lv !== 'bespoke' && lv !== 'archetype') bad.push(id + ':' + lv); }
-    PT.check(`lookOf: every registry skill declares ≥ 'archetype' (${ids.length} ids)`, bad.length === 0, bad);
+    CHECK(`lookOf: every registry skill declares ≥ 'archetype' (${ids.length} ids)`, bad.length === 0, bad);
     const nb = bespoke.filter((id) => levels[id] !== 'bespoke');
-    PT.check(`lookOf: the bespoke set (${bespoke.length}) declares 'bespoke'`, nb.length === 0, nb);
+    CHECK(`lookOf: the bespoke set (${bespoke.length}) declares 'bespoke'`, nb.length === 0, nb);
     // the bespoke set is derived data: every *.basic / *.charged / *.ult of the registry and the starter_<cls> loadouts of the caster classes
     const need = ids.filter((id) => /\.(basic|charged|ult)$/.test(id));
     for (const cls of ['mage', 'ranger', 'spiritcaller']) {
@@ -239,8 +249,7 @@ module.exports = async function (PT) {
     }
     const notIn = [...new Set(need)].filter((id) => !bespoke.includes(id));
     PT.check(`bespoke set covers every registry basic / charged / ult and the caster starter loadouts (${new Set(need).size})`, notIn.length === 0, notIn);
-    PT.note(`motif sources: ${['earth', 'nature', 'light', 'shadow'].map((e) => e + '=' + L.motifSource(e)).join(' ')}`);
-    return { ids, levels, el: Object.fromEntries(ids.map((id) => [id, g.skills.def(id)?.element || g.spells.element])), arch: Object.fromEntries(ids.map((id) => [id, g.skills.def(id)?.archetype || null])), tier: Object.fromEntries(ids.map((id) => [id, L.tierOf(g.skills.def(id), id)])) };
+    return { ids, levels, el: Object.fromEntries(ids.map((id) => [id, g.skills.def(id)?.element || g.spells.element])), arch: Object.fromEntries(ids.map((id) => [id, g.skills.def(id)?.archetype || null])), tier: Object.fromEntries(ids.map((id) => [id, tierOf(g.skills.def(id), id)])) };
   }, BESPOKE);
   if (!reg) { await pg.close(); return; }
   // measured set: bespoke + first registry skill of every archetype not covered (default) / all (full)
@@ -308,6 +317,15 @@ module.exports = async function (PT) {
     for (let i = 0; i < 40; i++) g.step(1, 1 / 60, false);
     PT.check('castLock back to 0 after 0.67 s', Sp.castLock === 0, Sp.castLock);
     MG.clear();
+    // clearFx ends an active finisher (fin cleared, castLock 0, invulnerability restored) instead of leaving castLock at 0.05 forever
+    const ent = g.player?.entity, inv0 = !!ent?.invulnerable;
+    const ok = Sp.finisher('fire', { free: true, noCinematic: true }) !== false;
+    g.step(10, 1 / 60, false);
+    PT.check('castLock > 0 during a finisher', ok && Sp.castLock > 0, { ok, lock: Sp.castLock });
+    MG.clear();
+    PT.check('clearFx ends the finisher: castLock 0, finisherActive false, invulnerability restored', Sp.castLock === 0 && !Sp.finisherActive && !!ent?.invulnerable === inv0, { lock: Sp.castLock, fin: Sp.finisherActive, inv: !!ent?.invulnerable });
+    g.step(60, 1 / 60, false);
+    PT.check('castLock still 0 one second after clearFx', Sp.castLock === 0, Sp.castLock);
   });
 
   // ================================================================== MG1.c per-cast measurement
@@ -353,11 +371,11 @@ module.exports = async function (PT) {
     r.why = why;
     if (why.length) fails.push(`${r.id}[${r.tier}] ${why.join(', ')}`);
   }
-  PT.check(`MG1.c every measured cast meets its tier ceilings and floors (${rows.length})`, fails.length === 0, fails.slice(0, 40));
+  lookCheck(`MG1.c every measured cast meets its tier ceilings and floors (${rows.length})`, fails.length === 0, fails.slice(0, 40));
   const bes = rows.filter((r) => BESPOKE.includes(r.id));
-  PT.check(`MG1.c bespoke set measured 'bespoke' (${bes.length}/${BESPOKE.length})`, bes.length === BESPOKE.length && bes.every((r) => r.measured === 'bespoke'), bes.filter((r) => r.measured !== 'bespoke').map((r) => r.id + ':' + r.measured));
+  lookCheck(`MG1.c bespoke set measured 'bespoke' (${bes.length}/${BESPOKE.length})`, bes.length === BESPOKE.length && bes.every((r) => r.measured === 'bespoke'), bes.filter((r) => r.measured !== 'bespoke').map((r) => r.id + ':' + r.measured));
   const archOk = rows.filter((r) => !BESPOKE.includes(r.id));
-  PT.check(`MG1.c archetype representatives measured ≥ 'archetype' (${archOk.length})`, archOk.every((r) => r.measured === 'archetype' || r.measured === 'bespoke'), archOk.filter((r) => r.measured === 'fail').map((r) => r.id));
+  lookCheck(`MG1.c archetype representatives measured ≥ 'archetype' (${archOk.length})`, archOk.every((r) => r.measured === 'archetype' || r.measured === 'bespoke'), archOk.filter((r) => r.measured === 'fail').map((r) => r.id));
   const summary = (k) => { const v = rows.map((r) => r[k]); return { max: Math.max(...v), median: v.slice().sort((a, b) => a - b)[Math.floor(v.length / 2)] }; };
   PT.note(`MG1.c ranges: white ${JSON.stringify(summary('white'))} cov ${JSON.stringify(summary('cov'))} detail ${JSON.stringify(summary('detail'))} crisp ${JSON.stringify(summary('crisp'))} sat ${JSON.stringify(summary('sat'))}`);
   try { fs.mkdirSync(path.join(PT.OUT, 'magic'), { recursive: true }); fs.writeFileSync(path.join(PT.OUT, 'magic', 'mg1_rows.json'), JSON.stringify(rows, null, 1)); } catch (_) { /* */ }
@@ -433,7 +451,7 @@ module.exports = async function (PT) {
       }
     }
   }
-  PT.check(`MG1.f element silhouettes: pairwise impact-frame IoU < 0.5 for ${ARCH.length} archetypes`, iouFails.length === 0, iouFails);
+  lookCheck(`MG1.f element silhouettes: pairwise impact-frame IoU < 0.5 for ${ARCH.length} archetypes`, iouFails.length === 0, iouFails);
 
   const errs = pg.errors();
   PT.check('MG page: no uncaught errors', errs.length === 0, errs.slice(0, 8));
@@ -457,7 +475,7 @@ module.exports = async function (PT) {
         if (r.detail < T.detail) why.push('detail ' + r.detail);
         if (why.length) bad.push(`${id}: ${why.join(', ')}`);
       }
-      PT.check(`MG1.c (${cls}) bespoke set within ceilings / floors`, bad.length === 0, bad.slice(0, 20));
+      lookCheck(`MG1.c (${cls}) bespoke set within ceilings / floors`, bad.length === 0, bad.slice(0, 20));
       const e2 = p2.errors(); PT.check(`MG ${cls} page: no uncaught errors`, e2.length === 0, e2.slice(0, 6));
       await p2.close();
     }
