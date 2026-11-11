@@ -53,3 +53,10 @@
 - 아티팩트 v6 재배포 (https://claude.ai/artifact/7LwzvnUbMZoR78eALTV69d).
 - 남은 항목(major): 골렘 페이즈2 스킵(가끔), B-golem C6 공격 없음, treant 판정 flaky, magic castLock 0.05 고정(clearFx), 셰이더 프로그램 수 159–164 (예산 130), 일부 마법 가독성/실루엣 수치, 업로드 call 수.
 - push: 06:xx UTC 이후 GitHub 403으로 실패 중 (로컬 커밋 보존).
+
+## 2026-11-11 — 마법 이펙트 v3 롤백 + 골렘/캐스팅 버그 수정
+- 사용자 요청으로 마법 이펙트를 v3-rpg 모습으로 롤백 (looks/palette/motifs 삭제). castId·castLock 통합은 src/spells/castctx.js로 유지, lookOf는 항상 'legacy'.
+- castLock 0.05 고정 버그: 피니셔에 kill() 추가, clearFx()가 피니셔 종료 + castLock 리셋.
+- 골렘 페이즈2 스킵: 피니셔 damage 이벤트의 프록(lightning.p2.bolt)이 중첩 치명타로 페이즈2 진입 후, 바깥 치명타가 다시 onDeath → bossDefeated. golem.js/bossbase.js onDeath에서 hp > 0인 stale kill 무시.
+- B-golem C6 "공격 0": 등장 연출(5.2 s) 때문에 측정 창을 넘김 — 하네스 문제, 미수정.
+- 검증: bootcheck OK, playtest --quick PASS, playtest2 3회 PASS, playtest3 1274/0 fail, playtest4 magic(활성 체크)·player 59/59·bosses golem 37/0, kalis+nox 74/0.

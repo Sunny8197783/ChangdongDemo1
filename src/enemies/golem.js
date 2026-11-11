@@ -148,6 +148,15 @@ export function createGolem(ctx, pos, opts = {}) {
   const baseDeath = e.onDeath;
   let xpHold = null;
   e.onDeath = (result, hit) => {
+    // a stale kill: the pipeline marks `killed` before it emits `damage`, and a proc fired from that event (lightning
+    // bolt …) can land a nested lethal hit that clamps us to 50 % first; the outer hit then still arrives here as a kill
+    // with HP > 0 (a real kill always leaves hp ≤ 0). Ignore it, or it would skip phase 2 and defeat the golem.
+    if (e.hp > 0) {
+      e.alive = true;
+      if (!game.entities?.includes?.(e)) { try { game.combat.register(e); } catch (_) { /* */ } }
+      if (xpHold == null) { xpHold = e.xpValue; e.xpValue = 0; }
+      return;
+    }
     if (!e.phase2 && !hit?.fixed) {                      // fixed (scripted / debug) kills pass
       e.alive = true; e.hp = Math.round(e.maxHp * 0.5);
       if (!game.entities?.includes?.(e)) { try { game.combat.register(e); } catch (_) { /* */ } }

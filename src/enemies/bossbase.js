@@ -242,6 +242,14 @@ export function createBoss(ctx, cfg) {
   // ------------------------------------------------------------------ death / defeat
   e.onDeath = (result, hit) => {
     if (e.defeated) return;
+    // a stale kill (HP > 0): a nested hit from a `damage`-event proc already restored us (next phase / 1 HP) before the
+    // outer lethal hit reached onDeath — a real kill always leaves hp ≤ 0. Ignore it so no phase is skipped.
+    if (e.hp > 0) {
+      e.alive = true;
+      if (!game.entities?.includes?.(e)) { try { game.combat.register(e); } catch (_) { /* */ } }
+      if (xpHold == null) { xpHold = e.xpValue; e.xpValue = 0; }
+      return;
+    }
     // a boss whose own rules forbid dying here (more phases, Nox purify, Kalis's 2nd life) is restored at 1 HP
     const allow = (e.phase >= e.phases.length - 1) && (cfg.canDie ? cfg.canDie(e) : true);
     if (!allow) {
